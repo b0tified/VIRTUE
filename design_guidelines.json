@@ -1,0 +1,123 @@
+{
+  "theme": "LIGHT",
+  "archetype": "Comic Art Brutalism (Archetype 4/6 Hybrid)",
+  "emotional_tone": "Adrenaline, Heroic, Explosive, Action-Packed",
+  "typography": {
+    "fonts": {
+      "headings": "'Bangers', 'Anton', sans-serif",
+      "subheadings": "'Anton', sans-serif",
+      "body": "'Outfit', 'Space Grotesk', sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-5xl sm:text-6xl+ uppercase tracking-widest font-headings",
+      "h2": "text-4xl sm:text-5xl uppercase tracking-wider font-headings",
+      "h3": "text-2xl sm:text-3xl uppercase tracking-wide font-subheadings",
+      "h4": "text-xl uppercase font-subheadings",
+      "body": "text-base font-body tracking-tight",
+      "labels": "text-sm uppercase tracking-[0.2em] font-body font-bold"
+    },
+    "rules": [
+      "Headings must always be uppercase to mimic comic book lettering.",
+      "Use text shadow on large headings for a 'pop' effect (e.g., text-shadow: 2px 2px 0 #0a0a0a).",
+      "Body text should be highly legible, avoiding extreme stylization to maintain scanability."
+    ]
+  },
+  "colors": {
+    "primary": "#E62429",
+    "primary_hover": "#FF3366",
+    "secondary": "#FFD700",
+    "secondary_hover": "#FFE033",
+    "accent_blue": "#0055FF",
+    "background": "#FFFFFF",
+    "surface": "#F4F4F5",
+    "border_heavy": "#0A0A0A",
+    "text_dark": "#0A0A0A",
+    "text_light": "#FFFFFF",
+    "danger": "#D91C22",
+    "success": "#34C759"
+  },
+  "surfaces_and_components": {
+    "card": "bg-white border-4 border-black shadow-[8px_8px_0px_#0A0A0A] p-6 rounded-none",
+    "button_primary": "bg-[#E62429] text-white border-4 border-black shadow-[4px_4px_0px_#0A0A0A] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[8px_8px_0px_#0A0A0A] transition-all font-headings uppercase text-2xl px-8 py-3 rounded-none skew-x-[-5deg]",
+    "button_secondary": "bg-[#FFD700] text-black border-4 border-black shadow-[4px_4px_0px_#0A0A0A] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[8px_8px_0px_#0A0A0A] transition-all font-headings uppercase text-2xl px-8 py-3 rounded-none skew-x-[-5deg]",
+    "input_field": "bg-white border-4 border-black shadow-[4px_4px_0px_#0A0A0A] focus:outline-none focus:ring-4 focus:ring-[#FFD700] font-body p-4 text-lg rounded-none",
+    "halftone_pattern": "background-image: radial-gradient(circle, #0A0A0A 1.5px, transparent 1.5px); background-size: 12px 12px; opacity: 0.1;",
+    "hud_element": "bg-black/80 backdrop-blur-md border-2 border-white text-white font-subheadings skew-x-[-10deg] px-4 py-2"
+  },
+  "layout_and_spacing": {
+    "strategy": "Asymmetric Comic Panels",
+    "spacing_scale": "p-6, p-8, p-12",
+    "rules": [
+      "Use heavy padding inside containers with thick borders to prevent text collision.",
+      "Containers and hero elements should often use negative skew (skew-x-[-5deg]) to convey speed and action.",
+      "Overlap elements intentionally, mimicking comic book characters breaking out of panels.",
+      "Do not center everything; use dynamic, diagonal, or strong left/right alignments."
+    ]
+  },
+  "media": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/8b081fa1209a187bd002c4c2742fa0fa5a8482ace16352fe59e7f8325721f8f8.png",
+        "description": "Explosive comic burst background with halftones for the landing page hero section."
+      },
+      {
+        "category": "lobby_arena_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png",
+        "description": "Sci-fi 3D arena for the main menu/lobby background behind the UI."
+      },
+      {
+        "category": "ui_texture_overlay",
+        "url": "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/698e30be75aada4aa68e55e7f407187fa96381155dcd9fc6c8897654878b2c74.png",
+        "description": "Abstract pop art texture to be used selectively as section backgrounds or in the match end screen."
+      },
+      {
+        "category": "hero_character",
+        "url": "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/f6176224c075c82456aeca7104ae34753b636fcdb445dc839eccf6bc7db40b1e.png",
+        "description": "3D cel-shaded comic character to place dynamically in the lobby or hero section, overlapping panels."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "styling": "Use thick stroke-width (2.5 or 3) to match the bold comic aesthetic."
+    }
+  },
+  "views_and_composition": {
+    "landing_page": {
+      "hero": "Full screen with 'hero_background'. Massive H1 heading skewed, overlapping a 'hero_character' image. Giant Play Now button with heavy offset shadow.",
+      "branding": "Thick black outlines on everything. Use an SVG halftone overlay on the body."
+    },
+    "authentication": {
+      "layout": "Centered comic panel card. White background, 4px solid black border, 8px solid black offset shadow.",
+      "inputs": "Thick bordered inputs, labels in all-caps."
+    },
+    "main_menu_lobby": {
+      "background": "Use 'lobby_arena_background'.",
+      "layout": "Left side: Vertical list of skewed menu buttons (Play, Loadout, Profile, Leaderboard) with hover pop effects. Right side: 'hero_character' overlapping the UI.",
+      "hud": "Top right: Player profile summary. Bottom right: Social/Settings."
+    },
+    "in_game_hud": {
+      "health_bar": "Bottom left. Angled container (skewed). Red/Yellow fill with thick black border. Large font for HP numbers.",
+      "ammo": "Bottom right. Huge 'Anton' font numbers, thick outline.",
+      "kill_feed": "Top right. Small slanted black banners with white text.",
+      "crosshair": "Center. Crisp, high contrast, minimalist."
+    },
+    "match_end_scoreboard": {
+      "splash": "Use 'ui_texture_overlay'. Massive VICTORY or DEFEAT text in 'Bangers' font, yellow and blue styling.",
+      "table": "Bento grid style. Each player row is a comic panel (border-black border-2, alternating backgrounds)."
+    }
+  },
+  "interactions_and_motion": {
+    "hover": "Elements scale slightly and offset shadows increase (mimicking a 'pop' off the page).",
+    "transitions": "Use fast, snappy transitions. No slow, smooth fades—comic motion is punchy.",
+    "effects": "Consider using Framer Motion to slide panels in from the edges on page load (like turning a comic page)."
+  },
+  "technical_instructions_to_main_agent": [
+    "Use standard Tailwind CSS classes but heavily rely on custom drop-shadows and borders to achieve the neo-brutalist comic look.",
+    "For the halftone effect, create a reusable Tailwind utility or a global CSS class referencing the radial-gradient pattern provided in the surfaces object.",
+    "Ensure all fonts are imported properly (e.g., from Google Fonts: Bangers, Anton, Outfit).",
+    "Ensure 3D Three.js game canvas sits at z-index 0, and the Meta UI sits on top (z-10 or higher) with a transparent background.",
+    "All interactive elements must include 'data-testid' following kebab-case (e.g., 'play-match-button').",
+    "Override default Shadcn styles if used: remove subtle borders and radiuses, replace with thick 4px black borders, square corners, and solid offset shadows."
+  ]
+}
