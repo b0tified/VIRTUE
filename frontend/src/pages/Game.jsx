@@ -99,7 +99,14 @@ export default function Game() {
 
     const sock = new GameSocket({
       onOpen: () => setHud((h) => ({ ...h, connected: true })),
-      onClose: () => setHud((h) => ({ ...h, connected: false })),
+      onClose: (intentional) => {
+        setHud((h) => ({ ...h, connected: false }));
+        if (!intentional) {
+          // Lost connection — kick back to lobby.
+          try { document.exitPointerLock?.(); } catch {}
+          nav("/lobby?disconnected=1", { replace: true });
+        }
+      },
       onMessage: (msg) => {
         if (msg.type === "pong") {
           const rtt = Date.now() - (msg.ts || 0);

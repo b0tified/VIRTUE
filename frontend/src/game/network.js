@@ -17,6 +17,7 @@ export class GameSocket {
     const url = `${wsProto}//${httpUrl.host}/api/ws/game?${params.toString()}`;
     const ws = new WebSocket(url);
     this.ws = ws;
+    this._intentional = false;
     ws.onopen = () => this.onOpen();
     ws.onmessage = (ev) => {
       try {
@@ -24,7 +25,7 @@ export class GameSocket {
         this.onMessage(msg);
       } catch {}
     };
-    ws.onclose = () => this.onClose();
+    ws.onclose = () => this.onClose(this._intentional);
     ws.onerror = () => {};
     return ws;
   }
@@ -36,6 +37,7 @@ export class GameSocket {
   }
 
   close() {
+    this._intentional = true;
     this.ws?.close();
   }
 }

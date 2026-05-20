@@ -1,9 +1,9 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse, Users, Award, X, Loader2, Star } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse, Users, Award, X, Loader2, Star, WifiOff } from "lucide-react";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -12,6 +12,8 @@ const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5
 export default function Lobby() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
   const [muted, setMuted] = useState(false);
   const [sensitivity, setSensitivity] = useState(() => {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
@@ -66,6 +68,19 @@ export default function Lobby() {
   useEffect(() => {
     localStorage.setItem(SENS_KEY, String(sensitivity));
   }, [sensitivity]);
+
+  // Auto-clear ?disconnected=1 from URL after 5s, hide the toast.
+  useEffect(() => {
+    if (!disconnected) return;
+    const t = setTimeout(() => {
+      setDisconnected(false);
+      if (searchParams.get("disconnected")) {
+        searchParams.delete("disconnected");
+        setSearchParams(searchParams, { replace: true });
+      }
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [disconnected, searchParams, setSearchParams]);
 
   // Poll active player counts every 3s
   useEffect(() => {
@@ -290,6 +305,24 @@ export default function Lobby() {
             ))}
             <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-sm">
               +30 RP (1st) · +15 (2nd) · +5 (3rd) · -10 (lower)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disconnected toast — auto-kicked back from a match */}
+      {disconnected && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="disconnected-toast">
+          <div className="card-pow p-0 overflow-hidden">
+            <div className="px-4 py-2 flex items-center gap-2 bg-[#E62429] text-white">
+              <WifiOff size={18} strokeWidth={3} />
+              <span className="font-anton uppercase tracking-widest text-sm flex-1">Connection Lost</span>
+              <button onClick={() => setDisconnected(false)} className="font-anton hover:opacity-80" data-testid="disconnected-toast-close" title="Dismiss">
+                <X size={16} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="px-4 py-3 bg-white">
+              <p className="font-body text-xs text-neutral-700">You were disconnected from the match. You're safely back in the lobby.</p>
             </div>
           </div>
         </div>
