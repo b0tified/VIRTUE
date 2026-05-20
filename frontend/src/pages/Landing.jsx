@@ -42,7 +42,7 @@ export default function Landing() {
       <main className="relative z-10 px-6 md:px-12 lg:px-20 mt-6 md:mt-12">
         <div className="max-w-4xl">
           <div className="inline-block bg-[#FFD700] border-pow shadow-pow-sm px-4 py-1 mb-6 -rotate-3" data-testid="hero-tag">
-            <span className="font-anton uppercase tracking-widest text-lg">Online · FFA · Browser FPS</span>
+            <span className="font-anton uppercase tracking-widest text-lg">Online · FFA</span>
           </div>
           <h1 className="font-display uppercase text-6xl md:text-7xl lg:text-8xl leading-[0.92] text-[#0A0A0A]" data-testid="hero-title">
             <span className="text-pow-shadow-lg text-[#E62429]">FRAG</span>{" "}

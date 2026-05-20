@@ -19,6 +19,46 @@ export default function Lobby() {
   });
   const [showTiers, setShowTiers] = useState(false);
   const [counts, setCounts] = useState({ casual: 0, ranked: 0 });
+  const [queueState, setQueueState] = useState(null); // null | {tier, tier_name, position, tier_size, matched, match_id}
+  const queueTimerRef = useState({ id: null })[0];
+
+  const joinRankedQueue = async () => {
+    try {
+      const { data } = await api.post("/queue/ranked");
+      setQueueState(data);
+      const id = setInterval(async () => {
+        try {
+          const { data: s } = await api.get("/queue/ranked");
+          setQueueState(s);
+          if (s.matched) {
+            clearInterval(queueTimerRef.id);
+            queueTimerRef.id = null;
+            try { await api.post("/queue/ranked/ack"); } catch {}
+            nav("/play?mode=ranked");
+          }
+        } catch {}
+      }, 1000);
+      queueTimerRef.id = id;
+    } catch (e) {
+      alert("Failed to join queue: " + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const cancelRankedQueue = async () => {
+    if (queueTimerRef.id) {
+      clearInterval(queueTimerRef.id);
+      queueTimerRef.id = null;
+    }
+    try { await api.delete("/queue/ranked"); } catch {}
+    setQueueState(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (queueTimerRef.id) clearInterval(queueTimerRef.id);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
   const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
@@ -125,9 +165,9 @@ export default function Lobby() {
             <Link to="/play?mode=casual" className="btn-pow bg-[#E62429] text-white w-full text-3xl" data-testid="lobby-play-button">
               <span className="flex items-center gap-3"><Play size={28} strokeWidth={3} /> PLAY MATCH</span>
             </Link>
-            <Link to="/play?mode=ranked" className="btn-pow bg-[#0055FF] text-white w-full text-3xl" data-testid="lobby-ranked-button">
+            <button onClick={joinRankedQueue} className="btn-pow bg-[#0055FF] text-white w-full text-3xl" data-testid="lobby-ranked-button">
               <span className="flex items-center gap-3"><Trophy size={26} strokeWidth={3} /> RANKED MATCH</span>
-            </Link>
+            </button>
             <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={22} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
@@ -224,6 +264,45 @@ export default function Lobby() {
             ))}
             <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-sm">
               +30 RP (1st) · +15 (2nd) · +5 (3rd) · -10 (lower)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ranked queue overlay */}
+      {queueState && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" data-testid="queue-overlay">
+          <div className="card-pow p-8 w-full max-w-lg">
+            <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
+              <span className="font-anton uppercase tracking-widest">{queueState.matched ? "Match Found!" : "Searching..."}</span>
+            </div>
+            <h2 className="font-display text-5xl uppercase text-[#0055FF] text-pow-shadow" data-testid="queue-title">
+              {queueState.matched ? "READY UP" : "MATCHMAKING"}
+            </h2>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="border-pow shadow-pow-sm font-anton uppercase tracking-widest text-sm px-3 py-1" style={{ background: RANK_COLORS[queueState.tier ?? 0], color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A" }}>
+                TIER: {queueState.tier_name || "BRONZE"}
+              </div>
+              {!queueState.matched && (
+                <div className="border-pow-thin bg-white px-3 py-1 font-anton uppercase" data-testid="queue-count">
+                  {queueState.tier_size || 1} / 2 in queue
+                </div>
+              )}
+            </div>
+            <p className="font-body mt-4 text-neutral-700">
+              {queueState.matched
+                ? "Opponent found! Entering arena..."
+                : `Searching for another ${queueState.tier_name || "BRONZE"} player. Only same-tier players are matched.`}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {!queueState.matched && (
+                <button onClick={cancelRankedQueue} className="btn-pow bg-[#E62429] text-white" data-testid="queue-cancel">
+                  <span>CANCEL</span>
+                </button>
+              )}
+              {queueState.matched && (
+                <div className="font-display text-2xl text-[#E62429]">Match ID: <span className="font-anton">{queueState.match_id}</span></div>
+              )}
             </div>
           </div>
         </div>

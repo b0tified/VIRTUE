@@ -64,6 +64,8 @@ export class GameEngine {
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
     this._onMouseDown = this._onMouseDown.bind(this);
+    this._onMouseUp = this._onMouseUp.bind(this);
+    this._onContextMenu = this._onContextMenu.bind(this);
     this._onResize = this._onResize.bind(this);
 
     document.addEventListener("mousemove", this._onMouseMove);
@@ -71,6 +73,8 @@ export class GameEngine {
     document.addEventListener("keydown", this._onKeyDown);
     document.addEventListener("keyup", this._onKeyUp);
     document.addEventListener("mousedown", this._onMouseDown);
+    document.addEventListener("mouseup", this._onMouseUp);
+    document.addEventListener("contextmenu", this._onContextMenu);
     window.addEventListener("resize", this._onResize);
 
     this.lastTime = performance.now();
@@ -104,6 +108,8 @@ export class GameEngine {
     document.removeEventListener("keydown", this._onKeyDown);
     document.removeEventListener("keyup", this._onKeyUp);
     document.removeEventListener("mousedown", this._onMouseDown);
+    document.removeEventListener("mouseup", this._onMouseUp);
+    document.removeEventListener("contextmenu", this._onContextMenu);
     window.removeEventListener("resize", this._onResize);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     this.renderer.dispose();
@@ -120,13 +126,26 @@ export class GameEngine {
   }
   _onKeyDown(e) { this.keys.add(e.code); if (e.code === "Tab") e.preventDefault(); }
   _onKeyUp(e) { this.keys.delete(e.code); }
-  _onMouseDown() {
+  _onMouseDown(e) {
     if (!this.locked || !this.alive) return;
+    if (e.button === 2) {
+      // Right-click → ADS (only meaningful for primary/laser)
+      if (this.currentWeapon !== "secondary") this.setADS(true);
+      return;
+    }
     if (this.currentWeapon === "secondary") {
       this.pendingMelee = true;
     } else {
       this.pendingShoot = true;
     }
+  }
+
+  _onMouseUp(e) {
+    if (e.button === 2) this.setADS(false);
+  }
+
+  _onContextMenu(e) {
+    if (this.locked) e.preventDefault();
   }
   _onResize() {
     const w = this.canvas.clientWidth;
@@ -340,6 +359,65 @@ export class GameEngine {
     const statue = this._outlined(new THREE.ConeGeometry(0.6, 1.4, 8), 0xc94a4f, 1.06);
     statue.position.set(0, 9.4, 0);
     this.scene.add(statue);
+
+    // ===== Roads (asphalt strips with dashed lines) =====
+    const roadMat = this._toonMat(0x303237);
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const buildRoad = (x, z, w, l, rotY = 0) => {
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(w, l), roadMat);
+      road.rotation.x = -Math.PI / 2;
+      road.rotation.z = rotY;
+      road.position.set(x, 0.03, z);
+      this.scene.add(road);
+      // Dashed center line
+      const dashLen = 1.4;
+      const dashes = Math.floor(l / (dashLen * 1.8));
+      for (let i = 0; i < dashes; i++) {
+        const d = new THREE.Mesh(new THREE.PlaneGeometry(0.18, dashLen), dashMat);
+        d.rotation.x = -Math.PI / 2;
+        const offset = (i - dashes / 2 + 0.5) * (dashLen * 1.8);
+        // Rotate offset into world coords
+        const c = Math.cos(rotY), s = Math.sin(rotY);
+        d.position.set(x + (-s) * offset, 0.04, z + c * offset);
+        d.rotation.z = rotY;
+        this.scene.add(d);
+      }
+    };
+    // Cross of roads through the map (avoiding center tower)
+    buildRoad(0, 25, 4, 50);
+    buildRoad(0, -25, 4, 50);
+    buildRoad(25, 0, 4, 50, Math.PI / 2);
+    buildRoad(-25, 0, 4, 50, Math.PI / 2);
+
+    // ===== Extra decorative buildings (non-collidable, visual only) =====
+    // Place safely away from existing obstacles
+    const extras = [
+      { x: 42, z: 42, w: 5, h: 6, d: 5, color: 0xc94a4f },
+      { x: -42, z: 42, w: 5, h: 7, d: 5, color: 0x386bbf },
+      { x: 42, z: -42, w: 5, h: 5, d: 5, color: 0xd9aa3c },
+      { x: -42, z: -42, w: 5, h: 8, d: 5, color: 0x4a4a4a },
+      { x: 12, z: 38, w: 3, h: 4, d: 6, color: 0x386bbf },
+      { x: -12, z: 38, w: 3, h: 5, d: 6, color: 0xc94a4f },
+      { x: 12, z: -38, w: 3, h: 5, d: 6, color: 0xd9aa3c },
+      { x: -12, z: -38, w: 3, h: 4, d: 6, color: 0x386bbf },
+      { x: 38, z: 12, w: 6, h: 4, d: 3, color: 0xd9aa3c },
+      { x: 38, z: -12, w: 6, h: 5, d: 3, color: 0xc94a4f },
+      { x: -38, z: 12, w: 6, h: 4, d: 3, color: 0xc94a4f },
+      { x: -38, z: -12, w: 6, h: 6, d: 3, color: 0x386bbf },
+    ];
+    // Add these as visual-only buildings (skipped in obstacles list → no server sync needed,
+    // and the player can pass through them; positioned outside main play area)
+    extras.forEach((ob) => this._buildBuilding(ob));
+
+    // Fire hydrants on roads (just decorative)
+    [[8, 24], [-8, 24], [8, -24], [-8, -24], [24, 8], [-24, 8]].forEach(([x, z]) => {
+      const cap = this._outlined(new THREE.CylinderGeometry(0.18, 0.18, 0.6, 8), 0xe62429, 1.06);
+      cap.position.set(x, 0.3, z);
+      this.scene.add(cap);
+      const top = this._outlined(new THREE.SphereGeometry(0.16, 8, 6), 0xe62429, 1.08);
+      top.position.set(x, 0.7, z);
+      this.scene.add(top);
+    });
   }
 
   _makeGrassTexture() {
@@ -568,6 +646,52 @@ export class GameEngine {
     kat.visible = false; // start with AK
 
     root.add(ak); root.add(kat);
+
+    // ===== Laser Rifle =====
+    const laser = new THREE.Group();
+    // Main body (sleek dark)
+    const lBody = this._outlined(new THREE.BoxGeometry(0.16, 0.18, 0.6), 0x202833);
+    lBody.position.set(0, 0.02, -0.36);
+    laser.add(lBody);
+    // Glowing core stripe (blue)
+    const lCore = this._outlined(new THREE.BoxGeometry(0.12, 0.04, 0.5), 0x00cfff, 1.04);
+    lCore.position.set(0, 0.08, -0.36);
+    laser.add(lCore);
+    // Long emitter barrel
+    const lBarrel = this._outlined(new THREE.CylinderGeometry(0.05, 0.05, 0.55, 12), 0x111111, 1.08);
+    lBarrel.rotation.x = Math.PI / 2;
+    lBarrel.position.set(0, 0.02, -0.95);
+    laser.add(lBarrel);
+    // Emitter ring (glow)
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.018, 6, 16), new THREE.MeshBasicMaterial({ color: 0x00d8ff }));
+    ring.rotation.y = Math.PI / 2;
+    ring.position.set(0, 0.02, -1.22);
+    laser.add(ring);
+    // Tip
+    const lTip = this._outlined(new THREE.ConeGeometry(0.055, 0.12, 10), 0x00cfff, 1.1);
+    lTip.rotation.x = -Math.PI / 2;
+    lTip.position.set(0, 0.02, -1.3);
+    laser.add(lTip);
+    // Grip
+    const lGrip = this._outlined(new THREE.BoxGeometry(0.1, 0.22, 0.13), 0x1a1a1a);
+    lGrip.position.set(0, -0.18, 0.02);
+    lGrip.rotation.x = -0.3;
+    laser.add(lGrip);
+    // Mag (glowing battery)
+    const lMag = this._outlined(new THREE.BoxGeometry(0.1, 0.16, 0.16), 0x00d8ff, 1.06);
+    lMag.position.set(0, -0.2, -0.2);
+    laser.add(lMag);
+    // Hand
+    const lHand = this._outlined(new THREE.SphereGeometry(0.13, 12, 8), 0xf2c08a, 1.08);
+    lHand.position.set(0, -0.07, 0.02);
+    laser.add(lHand);
+
+    laser.position.set(0.22, -0.18, -0.05);
+    laser.rotation.y = -0.05;
+    laser.visible = false;
+    root.add(laser);
+
+    this._tertiaryGroup = laser;
     this._weapon = ak;
     this._primaryGroup = ak;
     this._secondaryGroup = kat;
@@ -579,11 +703,23 @@ export class GameEngine {
   }
 
   setWeapon(name) {
-    if (name !== "primary" && name !== "secondary") return;
+    if (name !== "primary" && name !== "secondary" && name !== "tertiary") return;
     this.currentWeapon = name;
     if (this._primaryGroup) this._primaryGroup.visible = name === "primary";
     if (this._secondaryGroup) this._secondaryGroup.visible = name === "secondary";
-    this._weapon = name === "primary" ? this._primaryGroup : this._secondaryGroup;
+    if (this._tertiaryGroup) this._tertiaryGroup.visible = name === "tertiary";
+    if (name === "primary") this._weapon = this._primaryGroup;
+    else if (name === "secondary") this._weapon = this._secondaryGroup;
+    else this._weapon = this._tertiaryGroup;
+  }
+
+  setADS(on) {
+    this.ads = !!on;
+    const targetFov = on ? 50 : 78;
+    if (this.camera.fov !== targetFov) {
+      this.camera.fov = targetFov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   triggerMelee() {
@@ -731,6 +867,8 @@ export class GameEngine {
       prevX: state.x, prevZ: state.z,
       animPhase: Math.random() * 6.28,
       movingSpeed: 0,
+      prevAlive: state.alive,
+      deathT: 0,
     };
     this.players.set(state.id, entry);
     return entry;
@@ -804,7 +942,19 @@ export class GameEngine {
 
         entry.mesh.position.lerp(new THREE.Vector3(p.x, 0, p.z), 0.5);
         entry.mesh.rotation.y = p.yaw;
-        entry.mesh.visible = p.alive;
+
+        // Death animation trigger
+        if (entry.prevAlive && !p.alive) {
+          entry.deathT = 0.001; // start animation
+        }
+        if (!entry.prevAlive && p.alive) {
+          // Respawned — reset
+          entry.deathT = 0;
+          entry.mesh.rotation.x = 0;
+          entry.mesh.rotation.z = 0;
+        }
+        entry.prevAlive = p.alive;
+        entry.mesh.visible = p.alive || entry.deathT > 0;
       }
       for (const id of Array.from(this.players.keys())) {
         if (!seen.has(id) && id !== this.youId) {
@@ -836,21 +986,22 @@ export class GameEngine {
   _spawnTracer(ev) {
     const cp = Math.cos(ev.pitch);
     const dir = new THREE.Vector3(Math.sin(ev.yaw) * cp, Math.sin(ev.pitch), -Math.cos(ev.yaw) * cp);
-    // Start slightly forward of the shooter so tracer doesn't pop inside the model
-    const start = new THREE.Vector3(ev.x, ev.y - 0.1, ev.z).add(dir.clone().multiplyScalar(0.8));
-    const end = start.clone().add(dir.clone().multiplyScalar(50));
+    const isLaser = ev.weapon === "laser";
+    const startOffset = isLaser ? 1.2 : 0.8;
+    const start = new THREE.Vector3(ev.x, ev.y - 0.1, ev.z).add(dir.clone().multiplyScalar(startOffset));
+    const end = start.clone().add(dir.clone().multiplyScalar(60));
     const length = start.distanceTo(end);
-    // Thick cylinder tracer (line widths don't render in most browsers)
-    const geom = new THREE.CylinderGeometry(0.04, 0.04, length, 6, 1, true);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.95 });
+    const radius = isLaser ? 0.06 : 0.04;
+    const color = isLaser ? 0x00e8ff : 0xffd700;
+    const geom = new THREE.CylinderGeometry(radius, radius, length, 6, 1, true);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: isLaser ? 1.0 : 0.95, blending: isLaser ? THREE.AdditiveBlending : THREE.NormalBlending });
     const tube = new THREE.Mesh(geom, mat);
-    // Cylinder default is Y-aligned; orient between start->end
     const mid = start.clone().add(end).multiplyScalar(0.5);
     tube.position.copy(mid);
     tube.lookAt(end);
     tube.rotateX(Math.PI / 2);
     this.scene.add(tube);
-    this.bullets.push({ line: tube, life: 0.18 });
+    this.bullets.push({ line: tube, life: isLaser ? 0.28 : 0.18 });
   }
 
   _spawnMeleeArc(ev) {
@@ -929,24 +1080,25 @@ export class GameEngine {
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
 
-    // Weapon sway + recoil
+    // Weapon sway + recoil + ADS
     if (this._weapon) {
-      const baseX = 0.22, baseY = -0.18, baseZ = -0.05;
-      const bob = moving ? Math.sin(performance.now() / (sprint ? 70 : 100)) * 0.018 : 0;
-      if (this.currentWeapon === "primary") {
+      const adsActive = !!this.ads && this.currentWeapon !== "secondary";
+      const baseX = adsActive ? 0.0 : 0.22;
+      const baseY = adsActive ? -0.07 : -0.18;
+      const baseZ = adsActive ? -0.15 : -0.05;
+      const bob = moving ? Math.sin(performance.now() / (sprint ? 70 : 100)) * (adsActive ? 0.006 : 0.018) : 0;
+      if (this.currentWeapon !== "secondary") {
         this._weapon.position.set(baseX, baseY + bob + this.recoil * 0.04, baseZ + this.recoil * 0.12);
         this._weapon.rotation.x = -this.recoil * 0.22;
+        this._weapon.rotation.y = adsActive ? 0 : -0.05;
         this.recoil = Math.max(0, this.recoil - dt * 5);
         if (this._muzzleFlash) {
           this._muzzleFlash.material.opacity = Math.max(0, this._muzzleFlash.material.opacity - dt * 14);
         }
       } else {
         // Katana: swing animation
-        const swing = this.meleeSwing;
-        // ease-out from 1 to 0
         this.meleeSwing = Math.max(0, this.meleeSwing - dt * 4.5);
-        // Big slash arc: yaw from +0.9 down to -0.3, pitch from -0.6 to +0.4
-        const sw = swing;
+        const sw = this.meleeSwing;
         this._weapon.position.set(baseX - sw * 0.15, baseY + bob + sw * 0.05, baseZ - sw * 0.15);
         this._weapon.rotation.set(-sw * 0.6, 0.6 + sw * 0.9, sw * 0.5);
       }
@@ -965,30 +1117,40 @@ export class GameEngine {
       }
     }
 
-    // Remote players: hit flash + running animation
+    // Remote players: hit flash + running animation + death anim
     const nowMs = performance.now();
     const flashRed = new THREE.Color(0xff2a2a);
     for (const entry of this.players.values()) {
+      // Death animation: 0 → 1 over 0.7s, then keep until respawn
+      if (entry.deathT > 0 && entry.deathT < 1) {
+        entry.deathT = Math.min(1, entry.deathT + dt / 0.7);
+        const t = entry.deathT;
+        // Topple backwards: rotation.x from 0 → -pi/2
+        entry.mesh.rotation.x = -Math.PI / 2 * t;
+        // Slight roll
+        entry.mesh.rotation.z = 0.18 * t;
+        // Sink slightly
+        entry.mesh.position.y = -0.4 * t;
+      }
       // Hit flash
       const flashing = nowMs < entry.flashUntil;
       for (const bm of entry.bodyMeshes) {
         if (flashing) bm.mesh.material.color.copy(flashRed);
         else bm.mesh.material.color.setHex(bm.baseColor);
       }
-      // Limb swing while moving
-      const moveAmount = Math.min(1, entry.movingSpeed / 6);
+      // Limb swing while moving (skip if dying)
+      const moveAmount = entry.deathT > 0 ? 0 : Math.min(1, entry.movingSpeed / 6);
       if (moveAmount > 0.05) {
         const cadence = 9 + moveAmount * 3;
         entry.animPhase += dt * cadence;
         const swing = Math.sin(entry.animPhase) * 0.6 * moveAmount;
         const swing2 = Math.cos(entry.animPhase) * 0.12 * moveAmount;
         entry.leftArm.rotation.x = swing;
-        entry.rightArm.rotation.x = -swing * 0.4; // dampened (holds gun)
+        entry.rightArm.rotation.x = -swing * 0.4;
         entry.leftLeg.rotation.x = -swing;
         entry.rightLeg.rotation.x = swing;
-        entry.mesh.position.y = Math.abs(swing2) * 0.08; // tiny bob
-      } else {
-        // ease to rest
+        if (entry.deathT === 0) entry.mesh.position.y = Math.abs(swing2) * 0.08;
+      } else if (entry.deathT === 0) {
         entry.leftArm.rotation.x *= 0.85;
         entry.rightArm.rotation.x *= 0.85;
         entry.leftLeg.rotation.x *= 0.85;

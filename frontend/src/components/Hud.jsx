@@ -145,8 +145,8 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
             <span className="text-[#E62429] font-display text-3xl">{deaths}</span>
           </div>
         </div>
-        <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : "rgba(255,215,0,0.92)", color: "#0A0A0A" }} data-testid="hud-weapon">
-          <div className="text-xs">{hud.weapon === "secondary" ? "[2/V] KATANA" : "[1] AK-47"}</div>
+        <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : "rgba(255,215,0,0.92)", color: "#0A0A0A" }} data-testid="hud-weapon">
+          <div className="text-xs">{hud.weapon === "secondary" ? "[2/V] KATANA" : hud.weapon === "tertiary" ? "[3] LASER" : "[1] AK-47"}</div>
         </div>
         <div className="hud-panel" style={{ background: "rgba(10,10,10,0.7)" }}>
           <div className="text-xs">TAB · SCOREBOARD</div>
@@ -223,7 +223,8 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
               <ul className="font-body text-sm mt-3 text-neutral-700 space-y-1">
                 <li><span className="font-anton">WASD</span> — Move</li>
                 <li><span className="font-anton">MOUSE</span> — Aim · <span className="font-anton">CLICK</span> — Shoot/Slash</li>
-                <li><span className="font-anton">1</span> — AK-47 · <span className="font-anton">2</span> or <span className="font-anton">V</span> — Katana</li>
+                <li><span className="font-anton">1</span> AK-47 · <span className="font-anton">2/V</span> Katana · <span className="font-anton">3</span> Laser</li>
+                <li><span className="font-anton">RIGHT-CLICK</span> — Aim Down Sights</li>
                 <li><span className="font-anton">SHIFT</span> — Sprint · <span className="font-anton">TAB</span> — Scoreboard</li>
               </ul>
               <div className="mt-5 flex flex-wrap gap-3">

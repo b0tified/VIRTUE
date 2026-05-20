@@ -142,7 +142,8 @@ export default function Game() {
         pitch: snap.pitch,
       });
       if (snap.shoot) {
-        sock.send({ type: "shoot", yaw: snap.yaw, pitch: snap.pitch });
+        const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+        sock.send({ type: "shoot", yaw: snap.yaw, pitch: snap.pitch, weapon });
       }
       if (snap.melee) {
         sock.send({ type: "melee", yaw: snap.yaw, pitch: snap.pitch });
@@ -180,6 +181,10 @@ export default function Game() {
       if (e.code === "Digit2" || e.code === "KeyV") {
         engineRef.current?.setWeapon("secondary");
         setHud((h) => ({ ...h, weapon: "secondary" }));
+      }
+      if (e.code === "Digit3") {
+        engineRef.current?.setWeapon("tertiary");
+        setHud((h) => ({ ...h, weapon: "tertiary" }));
       }
       if (e.code === "Escape") {
         // pointer lock auto-released

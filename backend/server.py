@@ -185,10 +185,14 @@ async def on_startup():
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
 
-    # Spawn bots
+    # Spawn bots in both rooms
     for name in BOT_NAMES[:NUM_BOTS]:
         game_room.spawn_bot(name)
+    for name in BOT_NAMES[:NUM_BOTS]:
+        ranked_room.spawn_bot(name + "-R")
     asyncio.create_task(game_room.run())
+    asyncio.create_task(ranked_room.run())
+    asyncio.create_task(matchmaker_loop())
 
 
 @app.on_event("shutdown")
@@ -354,17 +358,19 @@ SPAWN_POINTS = [
 PLAYER_RADIUS = 0.5
 PLAYER_HEIGHT = 1.8
 MAX_HP = 100
-BOT_MAX_HP = 60
+BOT_MAX_HP = 25
 SHOT_DAMAGE = 25
-BOT_SHOT_DAMAGE = 10
-MELEE_DAMAGE = 60
-MELEE_RANGE = 3.2
-MELEE_CONE = 0.9  # radians (~52° half-angle generous)
+LASER_DAMAGE = 35
+BOT_SHOT_DAMAGE = 6
+MELEE_DAMAGE = 200  # one-shot
+MELEE_RANGE = 3.4
+MELEE_CONE = 0.95
 SHOT_RANGE = 100
 SHOT_COOLDOWN_MS = 250
-MELEE_COOLDOWN_MS = 700
-BOT_SHOT_COOLDOWN_MS = 1100
-BOT_AIM_NOISE = 0.10  # yaw+pitch jitter radians
+LASER_COOLDOWN_MS = 280
+MELEE_COOLDOWN_MS = 600
+BOT_SHOT_COOLDOWN_MS = 1400
+BOT_AIM_NOISE = 0.20
 TICK_RATE = 20
 NUM_BOTS = 3
 RANKED_MIN_REAL_PLAYERS = 2
@@ -669,6 +675,7 @@ class GameRoom:
             "shooter_id": shooter.id,
             "x": shooter.x, "y": shooter.y, "z": shooter.z,
             "yaw": shooter.yaw, "pitch": shooter.pitch,
+            "weapon": getattr(shooter, "weapon", "ak47"),
         })
         hit = self.raycast_hit(shooter)
         if hit and hit.alive:
@@ -737,14 +744,18 @@ class GameRoom:
             now_ms = int(time.time() * 1000)
             if not player.alive:
                 return
-            if now_ms - player.last_shot_ms < SHOT_COOLDOWN_MS:
+            weapon = msg.get("weapon", "ak47")
+            cooldown = LASER_COOLDOWN_MS if weapon == "laser" else SHOT_COOLDOWN_MS
+            if now_ms - player.last_shot_ms < cooldown:
                 return
             player.last_shot_ms = now_ms
             if "yaw" in msg:
                 player.yaw = float(msg["yaw"])
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
-            await self._apply_shoot(player, SHOT_DAMAGE)
+            player.weapon = weapon
+            dmg = LASER_DAMAGE if weapon == "laser" else SHOT_DAMAGE
+            await self._apply_shoot(player, dmg)
         elif mtype == "melee":
             now_ms = int(time.time() * 1000)
             if not player.alive:
@@ -959,6 +970,85 @@ class GameRoom:
 
 game_room = GameRoom(is_ranked=False)
 ranked_room = GameRoom(is_ranked=True, match_duration=300.0)
+
+# -------------------------------------------------------------------
+# Ranked Matchmaking Queue
+# -------------------------------------------------------------------
+QUEUE_LOCK = asyncio.Lock()
+RANKED_QUEUE: Dict[int, List[dict]] = {i: [] for i in range(len(RANK_TIERS))}
+MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
+
+
+async def matchmaker_loop():
+    while True:
+        try:
+            async with QUEUE_LOCK:
+                for tier_idx, q in RANKED_QUEUE.items():
+                    while len(q) >= 2:
+                        a = q.pop(0)
+                        b = q.pop(0)
+                        mid = uuid.uuid4().hex[:10]
+                        MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": time.time()}
+                        MATCHED_USERS[b["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": time.time()}
+                        logger.info("Matched tier=%d %s vs %s (mid=%s)", tier_idx, a["username"], b["username"], mid)
+        except Exception as e:
+            logger.warning("matchmaker error: %s", e)
+        await asyncio.sleep(0.5)
+
+
+@api.post("/queue/ranked")
+async def queue_ranked_join(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    points = int(user.get("rank_points", 0) or 0)
+    tier_idx, tier_name = rank_for_points(points)
+    async with QUEUE_LOCK:
+        if user_id in MATCHED_USERS:
+            m = MATCHED_USERS[user_id]
+            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name}
+        for q in RANKED_QUEUE.values():
+            for e in q:
+                if e["user_id"] == user_id:
+                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q)}
+        RANKED_QUEUE[tier_idx].append({
+            "user_id": user_id,
+            "username": user.get("username", ""),
+            "joined_at": time.time(),
+        })
+    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx])}
+
+
+@api.get("/queue/ranked")
+async def queue_ranked_status(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    points = int(user.get("rank_points", 0) or 0)
+    tier_idx, tier_name = rank_for_points(points)
+    if user_id in MATCHED_USERS:
+        m = MATCHED_USERS[user_id]
+        return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name}
+    for ti, q in RANKED_QUEUE.items():
+        for i, e in enumerate(q):
+            if e["user_id"] == user_id:
+                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q)}
+    return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name}
+
+
+@api.delete("/queue/ranked")
+async def queue_ranked_leave(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        for q in RANKED_QUEUE.values():
+            q[:] = [e for e in q if e["user_id"] != user_id]
+        MATCHED_USERS.pop(user_id, None)
+    return {"ok": True}
+
+
+@api.post("/queue/ranked/ack")
+async def queue_ranked_ack(user: dict = Depends(get_current_user)):
+    """Called by client after entering the ranked match to clear matched state."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        MATCHED_USERS.pop(user_id, None)
+    return {"ok": True}
 
 
 # -------------------------------------------------------------------
