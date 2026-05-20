@@ -181,7 +181,7 @@ export default function Lobby() {
 
           <div className="mt-8 space-y-4 max-w-md">
             <Link to="/play?mode=casual" className="btn-pow bg-[#E62429] text-white w-full text-3xl" data-testid="lobby-play-button">
-              <span className="flex items-center gap-3"><Play size={28} strokeWidth={3} /> PLAY MATCH</span>
+              <span className="flex items-center gap-3"><Play size={28} strokeWidth={3} /> QUICK MATCH</span>
             </Link>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
@@ -295,9 +295,9 @@ export default function Lobby() {
         </div>
       )}
 
-      {/* Ranked queue toast (bottom-right, non-blocking — players can roam the lobby) */}
+      {/* Ranked queue toast (top-center, non-blocking — players can roam the lobby) */}
       {queueState && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-sm" data-testid="queue-toast">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="queue-toast">
           <div className="card-pow p-0 overflow-hidden">
             <div
               className="px-4 py-2 flex items-center gap-2 text-white"
