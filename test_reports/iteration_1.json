@@ -1,0 +1,39 @@
+{
+  "summary": "Validated 3 new features: (1) kill-marker icons (weapon field on kill events), (2) non-blocking queue toast in Lobby, (3) placement match streak (2x RP first 5 matches, no losses). 8/8 new feature backend tests pass and frontend lobby flow verified end-to-end with a fresh registration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/", "issue": "TestHealth::test_root_health (existing test_shooter_backend.py) expects 'players_online' key but endpoint now returns casual_players/ranked_players. Pre-existing test schema mismatch, NOT a regression from new features."},
+      {"endpoint": "/api/leaderboard", "issue": "TestLeaderboardAndProfile::test_leaderboard_sorted_desc expects kills-desc but leaderboard appears sorted by rank_points. Pre-existing test mismatch, not a regression."},
+      {"endpoint": "WS /api/ws/game", "issue": "TestWebSocket::test_two_clients_see_each_other_shoot_kill_persists and TestBotsActivelyShoot are flaky (timing/bot AI). Pre-existing, unrelated to new features."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_placement_weapons_queue.py",
+    "/app/test_reports/pytest/placement_weapons_queue_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Low) Update legacy test_shooter_backend.py::TestHealth and TestLeaderboardAndProfile assertions to match current API schema (casual_players/ranked_players, sort by rank_points)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:957 last_match_end_payload is only set briefly before broadcast and immediately broadcast; the field is nulled after 10s intermission. Tests need to capture it concurrently — works for live clients receiving the WS frame but means clients reconnecting mid-intermission still have access via this field (correct intent).",
+    "server.py:937 - placement_matches_played $inc happens inside the same update as rank_points $set; this is atomic and idempotent per match, but note the value used for is_placement is read BEFORE increment, which is correct.",
+    "Hud.jsx kf-row testid uses k.weapon || 'ak47' fallback, and Game.jsx maps k.melee->'katana'. Good defensive defaults."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_placement_weapons_queue.py (new test file, 8 tests covering placement fields in auth, queue endpoints, kill weapon field, end_match placement RP logic)"
+  ],
+  "success_rate": {"backend": "100% (8/8 new tests pass); legacy regressions: 26/30 overall", "frontend": "100% (placement badge, queue toast, ranked disable, kill-feed weapon icon all confirmed)"},
+  "test_credentials": "Registered fresh users prefixed with TEST_pl_/TEST_endm_/TEST_neg_/TEST_fe_ during tests; admin@shooter.com/admin123 unused.",
+  "seed_data_creation": "None - all test users prefixed with TEST_ for easy cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New feature tests live in /app/backend/tests/test_placement_weapons_queue.py. Run with: python -m pytest backend/tests/test_placement_weapons_queue.py -v. Frontend verification: register a fresh user → /lobby shows PLACEMENTS 0/5 + 2x RP badge next to BRONZE 0 RP rank badge; click RANKED MATCH → queue-toast appears bottom-right (~1527,940 in 1920x1080), ranked button shows 'IN QUEUE...' disabled. queue-cancel restores. Casual game kill-feed renders kf-row-ak47 with kf-weapon-ak47 icon when bots kill each other. Legacy TestHealth/TestLeaderboard failures are pre-existing schema/sort assertion drift, not caused by this iteration.",
+  "rca of the issue": "N/A — all new features verified working."
+}

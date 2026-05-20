@@ -88,6 +88,7 @@ def set_auth_cookies(response: Response, access: str, refresh: str):
 def public_user(user: dict) -> dict:
     points = int(user.get("rank_points", 0) or 0)
     tier_idx, tier_name = rank_for_points(points)
+    placement_played = int(user.get("placement_matches_played", 0) or 0)
     return {
         "id": str(user["_id"]),
         "email": user["email"],
@@ -97,6 +98,9 @@ def public_user(user: dict) -> dict:
         "rank_points": points,
         "rank_tier": tier_idx,
         "rank_name": tier_name,
+        "placement_matches_played": placement_played,
+        "placement_matches_total": PLACEMENT_MATCHES,
+        "in_placements": placement_played < PLACEMENT_MATCHES,
         "created_at": user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
     }
 
@@ -360,21 +364,24 @@ PLAYER_HEIGHT = 1.8
 MAX_HP = 100
 BOT_MAX_HP = 25
 SHOT_DAMAGE = 25
-LASER_DAMAGE = 35
+LASER_DAMAGE = 8
 BOT_SHOT_DAMAGE = 6
-MELEE_DAMAGE = 200  # one-shot
+MELEE_DAMAGE = 200
 MELEE_RANGE = 3.4
 MELEE_CONE = 0.95
 SHOT_RANGE = 100
 SHOT_COOLDOWN_MS = 250
-LASER_COOLDOWN_MS = 280
+LASER_COOLDOWN_MS = 90
 MELEE_COOLDOWN_MS = 600
 BOT_SHOT_COOLDOWN_MS = 1400
 BOT_AIM_NOISE = 0.20
 TICK_RATE = 20
 NUM_BOTS = 3
-RANKED_MIN_REAL_PLAYERS = 2
+RANKED_MIN_REAL_PLAYERS = 1
+QUEUE_BOT_FILL_SEC = 30.0
 BOT_NAMES = ["BLAZE-7", "VORTEX", "RAVEN-X", "GHOST-9", "TITAN", "CYPHER"]
+PLACEMENT_MATCHES = 5
+PLACEMENT_MULTIPLIER = 2
 
 
 def random_spawn():
@@ -656,6 +663,7 @@ class GameRoom:
                     "victim_id": best.id,
                     "victim_name": best.username,
                     "melee": True,
+                    "weapon": "katana",
                 })
                 if not attacker.is_bot and attacker.user_id:
                     try:
@@ -702,6 +710,7 @@ class GameRoom:
                     "shooter_name": shooter.username,
                     "victim_id": hit.id,
                     "victim_name": hit.username,
+                    "weapon": getattr(shooter, "weapon", "ak47"),
                 })
                 # Persist only for real users
                 if not shooter.is_bot and shooter.user_id:
@@ -902,18 +911,29 @@ class GameRoom:
         placements = []
         for i, p in enumerate(real_players):
             if i < len(rewards):
-                delta = rewards[i]
+                base_delta = rewards[i]
             else:
-                delta = -10
+                base_delta = -10
             new_points = 0
+            placement_played_before = 0
+            is_placement = False
+            delta = base_delta
             try:
                 udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
                 cur = int((udoc or {}).get("rank_points", 0) or 0)
+                placement_played_before = int((udoc or {}).get("placement_matches_played", 0) or 0)
+                is_placement = placement_played_before < PLACEMENT_MATCHES
+                # Placement streak: 2x positive gains, no negative loss
+                if is_placement:
+                    if base_delta > 0:
+                        delta = base_delta * PLACEMENT_MULTIPLIER
+                    else:
+                        delta = 0
                 new_points = max(0, cur + delta)
                 tier_idx, tier_name = rank_for_points(new_points)
                 await db.users.update_one(
                     {"_id": ObjectId(p.user_id)},
-                    {"$set": {"rank_points": new_points}, "$inc": {"stats.matches": 1}},
+                    {"$set": {"rank_points": new_points}, "$inc": {"stats.matches": 1, "placement_matches_played": 1}},
                 )
             except Exception as e:
                 logger.warning("rank update failed: %s", e)
@@ -924,9 +944,13 @@ class GameRoom:
                 "kills": p.kills,
                 "deaths": p.deaths,
                 "delta": delta,
+                "base_delta": base_delta,
                 "new_points": new_points,
                 "rank_tier": tier_idx,
                 "rank_name": tier_name,
+                "is_placement": is_placement,
+                "placement_match_number": placement_played_before + 1 if is_placement else None,
+                "placement_matches_total": PLACEMENT_MATCHES,
             })
 
         payload = {"type": "match_end", "placements": placements, "duration": self.match_duration}
@@ -969,7 +993,7 @@ class GameRoom:
 
 
 game_room = GameRoom(is_ranked=False)
-ranked_room = GameRoom(is_ranked=True, match_duration=300.0)
+ranked_room = GameRoom(is_ranked=True, match_duration=120.0)
 
 # -------------------------------------------------------------------
 # Ranked Matchmaking Queue
@@ -982,15 +1006,24 @@ MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 async def matchmaker_loop():
     while True:
         try:
+            now = time.time()
             async with QUEUE_LOCK:
+                # Pair real-vs-real players in same tier
                 for tier_idx, q in RANKED_QUEUE.items():
                     while len(q) >= 2:
                         a = q.pop(0)
                         b = q.pop(0)
                         mid = uuid.uuid4().hex[:10]
-                        MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": time.time()}
-                        MATCHED_USERS[b["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": time.time()}
+                        MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
+                        MATCHED_USERS[b["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
                         logger.info("Matched tier=%d %s vs %s (mid=%s)", tier_idx, a["username"], b["username"], mid)
+                # Bot-fill: any player queued for > QUEUE_BOT_FILL_SEC gets matched against bots
+                for tier_idx, q in RANKED_QUEUE.items():
+                    while q and (now - q[0]["joined_at"]) >= QUEUE_BOT_FILL_SEC:
+                        a = q.pop(0)
+                        mid = uuid.uuid4().hex[:10]
+                        MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True}
+                        logger.info("Bot-filled %s after %ds queue", a["username"], int(QUEUE_BOT_FILL_SEC))
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
         await asyncio.sleep(0.5)

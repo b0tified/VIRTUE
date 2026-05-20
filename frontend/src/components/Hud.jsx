@@ -1,7 +1,28 @@
 import { useEffect, useState } from "react";
-import { Heart, Skull, Trophy, LogOut, Play, Activity, Wifi, Bot, User, Timer } from "lucide-react";
+import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, User, Timer, Crosshair, Zap, Swords, Star } from "lucide-react";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+
+const WEAPON_META = {
+  ak47:   { Icon: Crosshair, color: "#FFD700", label: "AK-47" },
+  laser:  { Icon: Zap,       color: "#00CFFF", label: "LASER" },
+  katana: { Icon: Swords,    color: "#9B59B6", label: "KATANA" },
+};
+
+function WeaponIcon({ weapon }) {
+  const meta = WEAPON_META[weapon] || WEAPON_META.ak47;
+  const I = meta.Icon;
+  return (
+    <span
+      className="inline-flex items-center justify-center border-pow-thin"
+      style={{ background: meta.color, color: "#0A0A0A", width: 22, height: 22 }}
+      title={meta.label}
+      data-testid={`kf-weapon-${weapon}`}
+    >
+      <I size={13} strokeWidth={3} />
+    </span>
+  );
+}
 
 function formatTime(seconds) {
   if (seconds == null) return "--:--";
@@ -104,10 +125,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       {/* Top-right: kill feed */}
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end max-w-[420px]" data-testid="hud-kill-feed">
         {hud.killFeed.slice(0, 6).map((k) => (
-          <div key={k.id} className="hud-panel kf-row" style={{ background: "rgba(10,10,10,0.88)" }}>
-            <div>
-              <span className="text-[#FFD700]">{k.shooter}</span>{" "}
-              <Skull size={14} strokeWidth={3} className="inline -mt-1" />{" "}
+          <div key={k.id} className="hud-panel kf-row" style={{ background: "rgba(10,10,10,0.88)" }} data-testid={`kf-row-${k.weapon || "ak47"}`}>
+            <div className="flex items-center gap-2">
+              <span className="text-[#FFD700]">{k.shooter}</span>
+              <WeaponIcon weapon={k.weapon} />
               <span className="text-[#E62429]">{k.victim}</span>
             </div>
           </div>
@@ -183,10 +204,24 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
               return (
                 <div key={p.id} className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i === 0 ? "bg-[#FFE680]" : "bg-white"}`} data-testid={`match-end-row-${i}`}>
                   <div className="col-span-1 font-display text-xl">{i + 1}</div>
-                  <div className="col-span-5 font-anton uppercase">{p.username}</div>
+                  <div className="col-span-5 font-anton uppercase flex items-center gap-2">
+                    <span>{p.username}</span>
+                    {p.is_placement && (
+                      <span
+                        className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-1.5 text-[10px] font-anton uppercase"
+                        title={`Placement match ${p.placement_match_number}/${p.placement_matches_total} — 2x RP, no loss`}
+                        data-testid={`placement-badge-${i}`}
+                      >
+                        <Star size={10} strokeWidth={3} /> P{p.placement_match_number}/{p.placement_matches_total}
+                      </span>
+                    )}
+                  </div>
                   <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
-                  <div className={`col-span-2 text-right font-display text-2xl ${p.delta >= 0 ? "text-[#06A35F]" : "text-[#E62429]"}`}>
+                  <div className={`col-span-2 text-right font-display text-2xl ${p.delta >= 0 ? "text-[#06A35F]" : "text-[#E62429]"}`} data-testid={`match-end-delta-${i}`}>
                     {p.delta >= 0 ? "+" : ""}{p.delta}
+                    {p.is_placement && p.delta > 0 && (
+                      <span className="ml-1 text-xs font-anton text-[#9B59B6]">2x</span>
+                    )}
                   </div>
                   <div className="col-span-2 text-right">
                     <span className="font-anton uppercase text-sm px-2 py-1" style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}>

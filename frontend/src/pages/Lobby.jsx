@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse, Users, Award, X } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse, Users, Award, X, Loader2, Star } from "lucide-react";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -152,6 +152,24 @@ export default function Lobby() {
 
           <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="rank-badge-row">
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
+            {user?.in_placements && (
+              <div
+                className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white"
+                data-testid="placement-streak-badge"
+                title="Placement streak: 2x RP gains, no losses for your first 5 ranked matches."
+              >
+                <div className="px-3 py-2 flex items-center gap-2">
+                  <Star size={14} strokeWidth={3} className="text-[#FFD700]" />
+                  <span className="font-anton uppercase text-xs tracking-widest">PLACEMENTS</span>
+                  <span className="font-display text-xl leading-none">
+                    {user?.placement_matches_played ?? 0}/{user?.placement_matches_total ?? 5}
+                  </span>
+                </div>
+                <div className="bg-[#FFD700] text-black font-anton uppercase tracking-widest text-xs px-2 py-2">
+                  2x RP
+                </div>
+              </div>
+            )}
             <button
               onClick={() => setShowTiers(true)}
               className="btn-pow bg-white text-black"
@@ -165,8 +183,16 @@ export default function Lobby() {
             <Link to="/play?mode=casual" className="btn-pow bg-[#E62429] text-white w-full text-3xl" data-testid="lobby-play-button">
               <span className="flex items-center gap-3"><Play size={28} strokeWidth={3} /> PLAY MATCH</span>
             </Link>
-            <button onClick={joinRankedQueue} className="btn-pow bg-[#0055FF] text-white w-full text-3xl" data-testid="lobby-ranked-button">
-              <span className="flex items-center gap-3"><Trophy size={26} strokeWidth={3} /> RANKED MATCH</span>
+            <button
+              onClick={queueState ? undefined : joinRankedQueue}
+              disabled={!!queueState}
+              className="btn-pow bg-[#0055FF] text-white w-full text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
+              data-testid="lobby-ranked-button"
+            >
+              <span className="flex items-center gap-3">
+                {queueState && !queueState.matched ? <Loader2 size={26} strokeWidth={3} className="animate-spin" /> : <Trophy size={26} strokeWidth={3} />}
+                {queueState ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...") : "RANKED MATCH"}
+              </span>
             </button>
             <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={22} strokeWidth={3} /> LEADERBOARD</span>
@@ -269,39 +295,49 @@ export default function Lobby() {
         </div>
       )}
 
-      {/* Ranked queue overlay */}
+      {/* Ranked queue toast (bottom-right, non-blocking — players can roam the lobby) */}
       {queueState && (
-        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" data-testid="queue-overlay">
-          <div className="card-pow p-8 w-full max-w-lg">
-            <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
-              <span className="font-anton uppercase tracking-widest">{queueState.matched ? "Match Found!" : "Searching..."}</span>
-            </div>
-            <h2 className="font-display text-5xl uppercase text-[#0055FF] text-pow-shadow" data-testid="queue-title">
-              {queueState.matched ? "READY UP" : "MATCHMAKING"}
-            </h2>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <div className="border-pow shadow-pow-sm font-anton uppercase tracking-widest text-sm px-3 py-1" style={{ background: RANK_COLORS[queueState.tier ?? 0], color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A" }}>
-                TIER: {queueState.tier_name || "BRONZE"}
-              </div>
-              {!queueState.matched && (
-                <div className="border-pow-thin bg-white px-3 py-1 font-anton uppercase" data-testid="queue-count">
-                  {queueState.tier_size || 1} / 2 in queue
-                </div>
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm" data-testid="queue-toast">
+          <div className="card-pow p-0 overflow-hidden">
+            <div
+              className="px-4 py-2 flex items-center gap-2 text-white"
+              style={{ background: queueState.matched ? "#06A35F" : "#0055FF" }}
+            >
+              {queueState.matched ? (
+                <Trophy size={18} strokeWidth={3} />
+              ) : (
+                <Loader2 size={18} strokeWidth={3} className="animate-spin" />
               )}
-            </div>
-            <p className="font-body mt-4 text-neutral-700">
-              {queueState.matched
-                ? "Opponent found! Entering arena..."
-                : `Searching for another ${queueState.tier_name || "BRONZE"} player. Only same-tier players are matched.`}
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
+              <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="queue-toast-title">
+                {queueState.matched ? "Match Found!" : "Queued — Searching"}
+              </span>
               {!queueState.matched && (
-                <button onClick={cancelRankedQueue} className="btn-pow bg-[#E62429] text-white" data-testid="queue-cancel">
-                  <span>CANCEL</span>
+                <button onClick={cancelRankedQueue} className="font-anton hover:opacity-80" data-testid="queue-cancel" title="Leave queue">
+                  <X size={16} strokeWidth={3} />
                 </button>
               )}
+            </div>
+            <div className="px-4 py-3 bg-white">
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5"
+                  style={{ background: RANK_COLORS[queueState.tier ?? 0], color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A" }}
+                >
+                  {queueState.tier_name || "BRONZE"}
+                </div>
+                {!queueState.matched && (
+                  <div className="font-anton uppercase text-xs opacity-70" data-testid="queue-count">
+                    {queueState.tier_size || 1} / 2 same-tier
+                  </div>
+                )}
+              </div>
+              <p className="font-body text-xs text-neutral-600">
+                {queueState.matched
+                  ? "Entering arena..."
+                  : "Roam the lobby — we'll auto-join when an opponent is ready."}
+              </p>
               {queueState.matched && (
-                <div className="font-display text-2xl text-[#E62429]">Match ID: <span className="font-anton">{queueState.match_id}</span></div>
+                <div className="mt-2 font-anton text-xs text-[#E62429]">Match ID: {queueState.match_id}</div>
               )}
             </div>
           </div>

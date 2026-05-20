@@ -56,6 +56,7 @@ export default function Game() {
                 id: Math.random().toString(36).slice(2),
                 shooter: k.shooter_name,
                 victim: k.victim_name,
+                weapon: k.weapon || (k.melee ? "katana" : "ak47"),
                 ts: Date.now(),
               })),
               ...h.killFeed,
