@@ -189,10 +189,10 @@ async def on_startup():
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
 
-    # Spawn bots in casual room only. Ranked room only gets a bot when
-    # the matchmaker bot-fills a queued player (after QUEUE_BOT_FILL_SEC).
+    # Spawn bots in casual room. Ranked room gets exactly 1 permanent bot.
     for name in BOT_NAMES[:NUM_BOTS]:
         game_room.spawn_bot(name)
+    ranked_room.spawn_bot(BOT_NAMES[0] + "-R")
     asyncio.create_task(game_room.run())
     asyncio.create_task(ranked_room.run())
     asyncio.create_task(matchmaker_loop())
@@ -476,9 +476,6 @@ class GameRoom:
     async def remove(self, player: Player):
         async with self.lock:
             self.players.pop(player.id, None)
-            # Ranked: if no real players remain, clear all bots too.
-            if self.is_ranked and not any(p for p in self.players.values() if not p.is_bot):
-                self.players.clear()
         await self.broadcast({"type": "leave", "id": player.id})
 
     async def _send(self, player: Player, msg: dict):
@@ -1026,9 +1023,6 @@ async def matchmaker_loop():
                         mid = uuid.uuid4().hex[:10]
                         MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True}
                         logger.info("Bot-filled %s after %ds queue", a["username"], int(QUEUE_BOT_FILL_SEC))
-                        # Ensure exactly one bot is present in the ranked room.
-                        if not any(p.is_bot for p in ranked_room.players.values()):
-                            ranked_room.spawn_bot(random.choice(BOT_NAMES) + "-R")
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
         await asyncio.sleep(0.5)
