@@ -270,19 +270,21 @@ async def refresh_token(request: Request, response: Response):
 # -------------------------------------------------------------------
 @api.get("/leaderboard")
 async def leaderboard():
-    cursor = db.users.find({}, {"_id": 0, "username": 1, "stats": 1, "email": 1}).sort([("stats.kills", -1)]).limit(50)
+    cursor = db.users.find({}, {"_id": 0, "username": 1, "rank_points": 1, "stats": 1, "email": 1}).sort([("rank_points", -1), ("stats.kills", -1)]).limit(50)
     rows = []
     async for u in cursor:
         s = u.get("stats", {})
         kills = s.get("kills", 0)
-        deaths = s.get("deaths", 0)
+        pts = int(u.get("rank_points", 0) or 0)
+        idx, name = rank_for_points(pts)
         rows.append({
             "username": u.get("username", u.get("email", "anon")),
             "kills": kills,
-            "deaths": deaths,
+            "deaths": s.get("deaths", 0),
             "matches": s.get("matches", 0),
-            "wins": s.get("wins", 0),
-            "kd": round(kills / deaths, 2) if deaths > 0 else float(kills),
+            "rank_points": pts,
+            "rank_tier": idx,
+            "rank_name": name,
         })
     return rows
 
@@ -352,13 +354,20 @@ SPAWN_POINTS = [
 PLAYER_RADIUS = 0.5
 PLAYER_HEIGHT = 1.8
 MAX_HP = 100
+BOT_MAX_HP = 60
 SHOT_DAMAGE = 25
-BOT_SHOT_DAMAGE = 12
+BOT_SHOT_DAMAGE = 10
+MELEE_DAMAGE = 60
+MELEE_RANGE = 3.2
+MELEE_CONE = 0.9  # radians (~52° half-angle generous)
 SHOT_RANGE = 100
 SHOT_COOLDOWN_MS = 250
-BOT_SHOT_COOLDOWN_MS = 900
+MELEE_COOLDOWN_MS = 700
+BOT_SHOT_COOLDOWN_MS = 1100
+BOT_AIM_NOISE = 0.10  # yaw+pitch jitter radians
 TICK_RATE = 20
 NUM_BOTS = 3
+RANKED_MIN_REAL_PLAYERS = 2
 BOT_NAMES = ["BLAZE-7", "VORTEX", "RAVEN-X", "GHOST-9", "TITAN", "CYPHER"]
 
 
@@ -376,9 +385,11 @@ class Player:
         if is_bot:
             self.user_id = None
             self.username = bot_name
+            self.max_hp = BOT_MAX_HP
         else:
             self.user_id = str(user["_id"])
             self.username = user.get("username", user["email"].split("@")[0])
+            self.max_hp = MAX_HP
         self.id = ("bot_" if is_bot else "p_") + uuid.uuid4().hex[:10]
         x, z = random_spawn()
         self.x = float(x)
@@ -386,15 +397,15 @@ class Player:
         self.z = float(z)
         self.yaw = 0.0
         self.pitch = 0.0
-        self.hp = MAX_HP
+        self.hp = self.max_hp
         self.kills = 0
         self.deaths = 0
         self.alive = True
         self.last_shot_ms = 0
+        self.last_melee_ms = 0
         self.respawn_at = 0.0
         self.invuln_until = time.time() + 3.0
         self.last_attacker: Optional[str] = None
-        # Bot state
         self.bot_strafe_t = random.uniform(0, 6.28)
         self.bot_repath_at = 0.0
         self.bot_target_id: Optional[str] = None
@@ -585,6 +596,72 @@ class GameRoom:
                 best = p
         return best
 
+    async def _apply_melee(self, attacker: Player):
+        """Resolve a melee swing: cone in front of attacker, range MELEE_RANGE."""
+        cp = math.cos(attacker.pitch)
+        dx = math.sin(attacker.yaw) * cp
+        dz = -math.cos(attacker.yaw) * cp
+        self.events.append({
+            "type": "melee",
+            "shooter_id": attacker.id,
+            "x": attacker.x, "y": attacker.y, "z": attacker.z,
+            "yaw": attacker.yaw, "pitch": attacker.pitch,
+        })
+        # Find closest victim within range + cone
+        best = None
+        best_d = MELEE_RANGE
+        for p in self.players.values():
+            if p.id == attacker.id or not p.alive:
+                continue
+            if time.time() < p.invuln_until:
+                continue
+            vx = p.x - attacker.x
+            vz = p.z - attacker.z
+            d = math.hypot(vx, vz)
+            if d > MELEE_RANGE or d < 0.05:
+                continue
+            # Angle between attacker forward and target direction
+            dot = (vx * dx + vz * dz) / d
+            if dot < math.cos(MELEE_CONE):
+                continue
+            if d < best_d:
+                best_d = d
+                best = p
+        if best is not None:
+            best.hp -= MELEE_DAMAGE
+            best.last_attacker = attacker.id
+            self.events.append({
+                "type": "hit",
+                "shooter_id": attacker.id,
+                "victim_id": best.id,
+                "hp": max(0, best.hp),
+                "melee": True,
+            })
+            if best.hp <= 0:
+                best.alive = False
+                best.hp = 0
+                best.deaths += 1
+                attacker.kills += 1
+                best.respawn_at = time.time() + 3.0
+                self.events.append({
+                    "type": "kill",
+                    "shooter_id": attacker.id,
+                    "shooter_name": attacker.username,
+                    "victim_id": best.id,
+                    "victim_name": best.username,
+                    "melee": True,
+                })
+                if not attacker.is_bot and attacker.user_id:
+                    try:
+                        await db.users.update_one({"_id": ObjectId(attacker.user_id)}, {"$inc": {"stats.kills": 1}})
+                    except Exception:
+                        pass
+                if not best.is_bot and best.user_id:
+                    try:
+                        await db.users.update_one({"_id": ObjectId(best.user_id)}, {"$inc": {"stats.deaths": 1}})
+                    except Exception:
+                        pass
+
     async def _apply_shoot(self, shooter: Player, damage: int):
         """Resolve a shoot action from shooter: append events + apply damage + persist stats."""
         self.events.append({
@@ -668,6 +745,18 @@ class GameRoom:
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
             await self._apply_shoot(player, SHOT_DAMAGE)
+        elif mtype == "melee":
+            now_ms = int(time.time() * 1000)
+            if not player.alive:
+                return
+            if now_ms - player.last_melee_ms < MELEE_COOLDOWN_MS:
+                return
+            player.last_melee_ms = now_ms
+            if "yaw" in msg:
+                player.yaw = float(msg["yaw"])
+            if "pitch" in msg:
+                player.pitch = float(msg["pitch"])
+            await self._apply_melee(player)
 
     async def _update_bots(self, dt: float):
         now_ms = int(time.time() * 1000)
@@ -743,16 +832,26 @@ class GameRoom:
                 else:
                     bot.bot_strafe_t += 0.3
 
-            # Shoot when ready & LoS — fully accurate (no aim wiggle)
+            # Shoot when ready & LoS — with small aim noise (bots are less accurate)
             if now_ms - bot.last_shot_ms >= BOT_SHOT_COOLDOWN_MS:
                 if self._has_los(bot, target):
                     bot.last_shot_ms = now_ms
+                    orig_yaw, orig_pitch = bot.yaw, bot.pitch
+                    bot.yaw += random.uniform(-BOT_AIM_NOISE, BOT_AIM_NOISE)
+                    bot.pitch += random.uniform(-BOT_AIM_NOISE * 0.7, BOT_AIM_NOISE * 0.7)
                     await self._apply_shoot(bot, BOT_SHOT_DAMAGE)
+                    bot.yaw, bot.pitch = orig_yaw, orig_pitch
 
     async def tick(self):
         now = time.time()
         dt = max(0.0, now - self._last_tick)
         self._last_tick = now
+
+        # Ranked queueing: if not enough real players, pause the match timer
+        real_count = sum(1 for p in self.players.values() if not p.is_bot)
+        in_queue = self.is_ranked and real_count < RANKED_MIN_REAL_PLAYERS
+        if in_queue:
+            self.match_start = now  # freeze timer
 
         # Respawn dead
         for p in self.players.values():
@@ -760,12 +859,12 @@ class GameRoom:
                 x, z = random_spawn()
                 p.x, p.z = float(x), float(z)
                 p.y = PLAYER_HEIGHT
-                p.hp = MAX_HP
+                p.hp = p.max_hp
                 p.alive = True
                 p.invuln_until = now + 3.0
                 self.events.append({"type": "respawn", "id": p.id})
 
-        # Bot AI
+        # Bot AI (still runs during queue, just for atmosphere)
         await self._update_bots(dt)
 
         state = {
@@ -774,8 +873,11 @@ class GameRoom:
             "players": [p.to_state() for p in self.players.values()],
             "events": self.events,
             "is_ranked": self.is_ranked,
-            "time_left": max(0.0, self.match_duration - (now - self.match_start)) if self.is_ranked else None,
+            "time_left": max(0.0, self.match_duration - (now - self.match_start)) if (self.is_ranked and not in_queue) else None,
             "in_intermission": self.in_intermission,
+            "in_queue": in_queue,
+            "real_count": real_count,
+            "min_real_players": RANKED_MIN_REAL_PLAYERS,
         }
         self.events = []
         await self.broadcast(state)
@@ -830,7 +932,7 @@ class GameRoom:
             x, z = random_spawn()
             p.x, p.z = float(x), float(z)
             p.y = PLAYER_HEIGHT
-            p.hp = MAX_HP
+            p.hp = p.max_hp
             p.alive = True
             p.invuln_until = time.time() + 3.0
             p.last_attacker = None
@@ -844,9 +946,11 @@ class GameRoom:
         while True:
             try:
                 if self.is_ranked and not self.in_intermission:
-                    if time.time() - self.match_start >= self.match_duration:
-                        await self.end_match()
-                        continue
+                    real_count = sum(1 for p in self.players.values() if not p.is_bot)
+                    if real_count >= RANKED_MIN_REAL_PLAYERS:
+                        if time.time() - self.match_start >= self.match_duration:
+                            await self.end_match()
+                            continue
                 await self.tick()
             except Exception as e:
                 logger.exception("tick error: %s", e)

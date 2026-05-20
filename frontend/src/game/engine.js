@@ -122,7 +122,11 @@ export class GameEngine {
   _onKeyUp(e) { this.keys.delete(e.code); }
   _onMouseDown() {
     if (!this.locked || !this.alive) return;
-    this.pendingShoot = true;
+    if (this.currentWeapon === "secondary") {
+      this.pendingMelee = true;
+    } else {
+      this.pendingShoot = true;
+    }
   }
   _onResize() {
     const w = this.canvas.clientWidth;
@@ -451,74 +455,139 @@ export class GameEngine {
 
   // -------- Weapon (FPS held) --------
   _buildWeapon() {
-    const group = new THREE.Group();
+    // Container that holds both primary (AK-47) and secondary (katana)
+    const root = new THREE.Group();
 
-    // Forearm sleeve (red)
-    const sleeve = this._outlined(new THREE.BoxGeometry(0.22, 0.22, 0.4), 0xe62429);
-    sleeve.position.set(0, -0.07, 0.18);
-    group.add(sleeve);
-
-    // Hand (skin)
-    const hand = this._outlined(new THREE.SphereGeometry(0.13, 12, 8), 0xf2c08a, 1.08);
-    hand.position.set(0, -0.07, -0.05);
-    group.add(hand);
-
-    // Gun receiver (main body, darker steel)
-    const receiver = this._outlined(new THREE.BoxGeometry(0.16, 0.18, 0.5), 0x1a1a1a);
-    receiver.position.set(0, 0.02, -0.4);
-    group.add(receiver);
-
-    // Slide on top (lighter)
-    const slide = this._outlined(new THREE.BoxGeometry(0.14, 0.06, 0.42), 0x2a2a2a);
-    slide.position.set(0, 0.13, -0.4);
-    group.add(slide);
-
-    // Grip (angled)
-    const grip = this._outlined(new THREE.BoxGeometry(0.12, 0.24, 0.16), 0x222222);
-    grip.position.set(0, -0.16, -0.22);
-    grip.rotation.x = -0.28;
-    group.add(grip);
-
-    // Trigger guard (thin ring approx with a box arc)
-    const trigGuard = this._outlined(new THREE.TorusGeometry(0.08, 0.018, 6, 10, Math.PI), 0x111111, 1.1);
-    trigGuard.position.set(0, -0.06, -0.27);
-    trigGuard.rotation.set(0, 0, 0);
-    group.add(trigGuard);
-
-    // Magazine (sticks down from grip)
-    const mag = this._outlined(new THREE.BoxGeometry(0.1, 0.15, 0.12), 0xffd700);
-    mag.position.set(0, -0.3, -0.2);
-    group.add(mag);
-
-    // Barrel
-    const barrel = this._outlined(new THREE.CylinderGeometry(0.045, 0.045, 0.4, 14), 0x0a0a0a, 1.06);
+    // ===== AK-47 =====
+    const ak = new THREE.Group();
+    // Wood stock (rear, slanted down)
+    const stock = this._outlined(new THREE.BoxGeometry(0.13, 0.16, 0.5), 0x6b4226);
+    stock.position.set(0, -0.04, 0.18);
+    stock.rotation.x = 0.08;
+    ak.add(stock);
+    // Receiver (dark steel)
+    const receiver = this._outlined(new THREE.BoxGeometry(0.16, 0.16, 0.5), 0x2a2a2a);
+    receiver.position.set(0, 0.0, -0.24);
+    ak.add(receiver);
+    // Gas tube on top
+    const gasTube = this._outlined(new THREE.BoxGeometry(0.1, 0.06, 0.5), 0x6b4226);
+    gasTube.position.set(0, 0.13, -0.24);
+    ak.add(gasTube);
+    // Front handguard (wood)
+    const handGuard = this._outlined(new THREE.BoxGeometry(0.14, 0.13, 0.32), 0x6b4226);
+    handGuard.position.set(0, -0.02, -0.55);
+    ak.add(handGuard);
+    // Long barrel
+    const barrel = this._outlined(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 14), 0x111111, 1.08);
     barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.03, -0.7);
-    group.add(barrel);
-
-    // Front sight blade
-    const sight = this._outlined(new THREE.BoxGeometry(0.025, 0.07, 0.04), 0xffd700, 1.12);
-    sight.position.set(0, 0.18, -0.83);
-    group.add(sight);
-    // Rear sight notch
-    const rear = this._outlined(new THREE.BoxGeometry(0.12, 0.04, 0.04), 0xffd700, 1.1);
-    rear.position.set(0, 0.18, -0.18);
-    group.add(rear);
-
-    // Muzzle flash
+    barrel.position.set(0, 0.03, -0.95);
+    ak.add(barrel);
+    // Muzzle brake (slotted)
+    const muzzle = this._outlined(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 10), 0x0a0a0a, 1.1);
+    muzzle.rotation.x = Math.PI / 2;
+    muzzle.position.set(0, 0.03, -1.25);
+    ak.add(muzzle);
+    // Banana magazine (curved → approximate w/ two angled boxes)
+    const magTop = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.16), 0x3a2510);
+    magTop.position.set(0, -0.18, -0.18);
+    ak.add(magTop);
+    const magBot = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.14), 0x3a2510);
+    magBot.position.set(0, -0.34, -0.08);
+    magBot.rotation.x = -0.5;
+    ak.add(magBot);
+    // Grip (angled)
+    const grip = this._outlined(new THREE.BoxGeometry(0.1, 0.22, 0.13), 0x3a2510);
+    grip.position.set(0, -0.18, 0.02);
+    grip.rotation.x = -0.32;
+    ak.add(grip);
+    // Front sight
+    const fs = this._outlined(new THREE.BoxGeometry(0.025, 0.09, 0.04), 0x0a0a0a, 1.12);
+    fs.position.set(0, 0.18, -1.08);
+    ak.add(fs);
+    // Rear sight
+    const rs = this._outlined(new THREE.BoxGeometry(0.12, 0.04, 0.05), 0x0a0a0a, 1.1);
+    rs.position.set(0, 0.18, -0.05);
+    ak.add(rs);
+    // Trigger
+    const trigger = this._outlined(new THREE.BoxGeometry(0.03, 0.06, 0.04), 0xc0c0c0, 1.12);
+    trigger.position.set(0, -0.1, -0.05);
+    ak.add(trigger);
+    // Hand
+    const hand = this._outlined(new THREE.SphereGeometry(0.13, 12, 8), 0xf2c08a, 1.08);
+    hand.position.set(0, -0.07, 0.02);
+    ak.add(hand);
+    // Forward hand on handguard
+    const lh = this._outlined(new THREE.SphereGeometry(0.12, 10, 8), 0xf2c08a, 1.08);
+    lh.position.set(0, -0.05, -0.55);
+    ak.add(lh);
+    // Muzzle flash sprite
     const flashTex = this._makeFlashTexture();
     const flashMat = new THREE.SpriteMaterial({ map: flashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0 });
     const flash = new THREE.Sprite(flashMat);
-    flash.scale.set(0.7, 0.7, 1);
-    flash.position.set(0, 0.03, -0.92);
-    group.add(flash);
+    flash.scale.set(0.85, 0.85, 1);
+    flash.position.set(0, 0.03, -1.32);
+    ak.add(flash);
     this._muzzleFlash = flash;
 
-    group.position.set(0.22, -0.18, -0.05);
-    group.rotation.y = -0.05;
-    this._weapon = group;
-    this.camera.add(group);
+    // ===== Katana =====
+    const kat = new THREE.Group();
+    // Tsuka (handle) wrap
+    const tsuka = this._outlined(new THREE.CylinderGeometry(0.04, 0.04, 0.32, 8), 0x2a1a0a, 1.1);
+    tsuka.rotation.z = Math.PI / 2;
+    tsuka.position.set(0.05, -0.06, 0.12);
+    kat.add(tsuka);
+    // Tsuba (guard, golden disk)
+    const tsuba = this._outlined(new THREE.CylinderGeometry(0.09, 0.09, 0.025, 16), 0xffd700, 1.1);
+    tsuba.rotation.z = Math.PI / 2;
+    tsuba.position.set(-0.12, -0.04, 0.0);
+    kat.add(tsuba);
+    // Blade — long thin box with slight curve via two segments
+    const bladeA = this._outlined(new THREE.BoxGeometry(0.7, 0.05, 0.05), 0xe8eef5, 1.04);
+    bladeA.position.set(-0.5, 0.02, -0.25);
+    bladeA.rotation.y = 0.08;
+    kat.add(bladeA);
+    const bladeB = this._outlined(new THREE.BoxGeometry(0.6, 0.05, 0.05), 0xe8eef5, 1.04);
+    bladeB.position.set(-1.05, 0.06, -0.55);
+    bladeB.rotation.y = 0.18;
+    kat.add(bladeB);
+    // Blade tip
+    const tip = this._outlined(new THREE.ConeGeometry(0.045, 0.18, 6), 0xe8eef5, 1.06);
+    tip.rotation.z = Math.PI / 2;
+    tip.rotation.y = 0.18;
+    tip.position.set(-1.42, 0.07, -0.65);
+    kat.add(tip);
+    // Hand on tsuka
+    const khand = this._outlined(new THREE.SphereGeometry(0.13, 10, 8), 0xf2c08a, 1.08);
+    khand.position.set(0.05, -0.08, 0.05);
+    kat.add(khand);
+
+    // Position weapons
+    ak.position.set(0.22, -0.18, -0.05);
+    ak.rotation.y = -0.05;
+    kat.position.set(0.22, -0.18, -0.05);
+    kat.visible = false; // start with AK
+
+    root.add(ak); root.add(kat);
+    this._weapon = ak;
+    this._primaryGroup = ak;
+    this._secondaryGroup = kat;
+    this.currentWeapon = "primary";
+    this.meleeSwing = 0; // 0..1
+
+    this.camera.add(root);
     this.scene.add(this.camera);
+  }
+
+  setWeapon(name) {
+    if (name !== "primary" && name !== "secondary") return;
+    this.currentWeapon = name;
+    if (this._primaryGroup) this._primaryGroup.visible = name === "primary";
+    if (this._secondaryGroup) this._secondaryGroup.visible = name === "secondary";
+    this._weapon = name === "primary" ? this._primaryGroup : this._secondaryGroup;
+  }
+
+  triggerMelee() {
+    this.meleeSwing = 1;
   }
 
   _makeFlashTexture() {
@@ -748,10 +817,11 @@ export class GameEngine {
         if (ev.type === "shot") {
           this._spawnTracer(ev);
           if (ev.shooter_id !== this.youId) {
-            // Distance from listener (player) for remote gunshot
             const dist = Math.hypot(ev.x - this.position.x, ev.z - this.position.z);
             this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist });
           }
+        } else if (ev.type === "melee") {
+          this._spawnMeleeArc(ev);
         } else if (ev.type === "hit") {
           if (ev.victim_id === this.youId) this.onLocalUpdate({ type: "damaged" });
           else if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-hit" });
@@ -766,13 +836,36 @@ export class GameEngine {
   _spawnTracer(ev) {
     const cp = Math.cos(ev.pitch);
     const dir = new THREE.Vector3(Math.sin(ev.yaw) * cp, Math.sin(ev.pitch), -Math.cos(ev.yaw) * cp);
-    const start = new THREE.Vector3(ev.x, ev.y - 0.1, ev.z);
-    const end = start.clone().add(dir.clone().multiplyScalar(40));
-    const geom = new THREE.BufferGeometry().setFromPoints([start, end]);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffd700, transparent: true, opacity: 1 });
-    const line = new THREE.Line(geom, mat);
-    this.scene.add(line);
-    this.bullets.push({ line, life: 0.12 });
+    // Start slightly forward of the shooter so tracer doesn't pop inside the model
+    const start = new THREE.Vector3(ev.x, ev.y - 0.1, ev.z).add(dir.clone().multiplyScalar(0.8));
+    const end = start.clone().add(dir.clone().multiplyScalar(50));
+    const length = start.distanceTo(end);
+    // Thick cylinder tracer (line widths don't render in most browsers)
+    const geom = new THREE.CylinderGeometry(0.04, 0.04, length, 6, 1, true);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.95 });
+    const tube = new THREE.Mesh(geom, mat);
+    // Cylinder default is Y-aligned; orient between start->end
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+    tube.position.copy(mid);
+    tube.lookAt(end);
+    tube.rotateX(Math.PI / 2);
+    this.scene.add(tube);
+    this.bullets.push({ line: tube, life: 0.18 });
+  }
+
+  _spawnMeleeArc(ev) {
+    // A bright arc swipe sprite at attacker's forward position — short-lived
+    const cp = Math.cos(ev.pitch);
+    const fwd = new THREE.Vector3(Math.sin(ev.yaw) * cp, Math.sin(ev.pitch), -Math.cos(ev.yaw) * cp);
+    const pos = new THREE.Vector3(ev.x, ev.y, ev.z).add(fwd.clone().multiplyScalar(1.4));
+    const arc = new THREE.Mesh(
+      new THREE.TorusGeometry(1.2, 0.06, 6, 16, Math.PI),
+      new THREE.MeshBasicMaterial({ color: 0xe8eef5, transparent: true, opacity: 0.85 })
+    );
+    arc.position.copy(pos);
+    arc.lookAt(new THREE.Vector3(ev.x, ev.y, ev.z));
+    this.scene.add(arc);
+    this.bullets.push({ line: arc, life: 0.18 });
   }
 
   _collides(x, z) {
@@ -840,11 +933,22 @@ export class GameEngine {
     if (this._weapon) {
       const baseX = 0.22, baseY = -0.18, baseZ = -0.05;
       const bob = moving ? Math.sin(performance.now() / (sprint ? 70 : 100)) * 0.018 : 0;
-      this._weapon.position.set(baseX, baseY + bob + this.recoil * 0.04, baseZ + this.recoil * 0.12);
-      this._weapon.rotation.x = -this.recoil * 0.22;
-      this.recoil = Math.max(0, this.recoil - dt * 5);
-      if (this._muzzleFlash) {
-        this._muzzleFlash.material.opacity = Math.max(0, this._muzzleFlash.material.opacity - dt * 14);
+      if (this.currentWeapon === "primary") {
+        this._weapon.position.set(baseX, baseY + bob + this.recoil * 0.04, baseZ + this.recoil * 0.12);
+        this._weapon.rotation.x = -this.recoil * 0.22;
+        this.recoil = Math.max(0, this.recoil - dt * 5);
+        if (this._muzzleFlash) {
+          this._muzzleFlash.material.opacity = Math.max(0, this._muzzleFlash.material.opacity - dt * 14);
+        }
+      } else {
+        // Katana: swing animation
+        const swing = this.meleeSwing;
+        // ease-out from 1 to 0
+        this.meleeSwing = Math.max(0, this.meleeSwing - dt * 4.5);
+        // Big slash arc: yaw from +0.9 down to -0.3, pitch from -0.6 to +0.4
+        const sw = swing;
+        this._weapon.position.set(baseX - sw * 0.15, baseY + bob + sw * 0.05, baseZ - sw * 0.15);
+        this._weapon.rotation.set(-sw * 0.6, 0.6 + sw * 0.9, sw * 0.5);
       }
     }
 
@@ -852,7 +956,7 @@ export class GameEngine {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
       b.life -= dt;
-      b.line.material.opacity = Math.max(0, b.life / 0.12);
+      b.line.material.opacity = Math.max(0, b.life / 0.18);
       if (b.life <= 0) {
         this.scene.remove(b.line);
         b.line.geometry.dispose();
@@ -912,10 +1016,15 @@ export class GameEngine {
 
   snapshot() {
     const shoot = this.pendingShoot;
+    const melee = this.pendingMelee;
     this.pendingShoot = false;
+    this.pendingMelee = false;
     if (shoot) {
       this.triggerMuzzleFlash();
       this.onShoot();
+    }
+    if (melee) {
+      this.triggerMelee();
     }
     return {
       x: this.position.x,
@@ -923,6 +1032,7 @@ export class GameEngine {
       yaw: this.yaw,
       pitch: this.pitch,
       shoot,
+      melee,
     };
   }
 }

@@ -2,7 +2,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse } from "lucide-react";
+import api from "@/api";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse, Users, Award, X } from "lucide-react";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -16,6 +17,8 @@ export default function Lobby() {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
     return Number.isFinite(v) && v > 0 ? v : 1.0;
   });
+  const [showTiers, setShowTiers] = useState(false);
+  const [counts, setCounts] = useState({ casual: 0, ranked: 0 });
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
   const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
@@ -23,6 +26,21 @@ export default function Lobby() {
   useEffect(() => {
     localStorage.setItem(SENS_KEY, String(sensitivity));
   }, [sensitivity]);
+
+  // Poll active player counts every 3s
+  useEffect(() => {
+    let alive = true;
+    const fetchCounts = async () => {
+      try {
+        const { data } = await api.get("/");
+        if (!alive) return;
+        setCounts({ casual: data.casual_players || 0, ranked: data.ranked_players || 0 });
+      } catch {}
+    };
+    fetchCounts();
+    const id = setInterval(fetchCounts, 3000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
 
   // Start lobby music on first user interaction (browser autoplay rules)
   useEffect(() => {
@@ -94,6 +112,13 @@ export default function Lobby() {
 
           <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="rank-badge-row">
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
+            <button
+              onClick={() => setShowTiers(true)}
+              className="btn-pow bg-white text-black"
+              data-testid="show-tiers-button"
+            >
+              <span className="flex items-center gap-2"><Award size={16} strokeWidth={3} /> SHOW TIERS</span>
+            </button>
           </div>
 
           <div className="mt-8 space-y-4 max-w-md">
@@ -111,6 +136,21 @@ export default function Lobby() {
             </Link>
           </div>
 
+          <div className="mt-6 flex flex-wrap gap-3" data-testid="active-players-row">
+            <div className="border-pow shadow-pow-sm px-4 py-2 -rotate-1" style={{ background: "#E62429", color: "#fff" }} data-testid="active-casual">
+              <div className="font-anton text-xs uppercase tracking-widest opacity-90 flex items-center gap-1">
+                <Users size={12} strokeWidth={3} /> Casual online
+              </div>
+              <div className="font-display text-3xl">{counts.casual}</div>
+            </div>
+            <div className="border-pow shadow-pow-sm px-4 py-2 rotate-1" style={{ background: "#0055FF", color: "#fff" }} data-testid="active-ranked">
+              <div className="font-anton text-xs uppercase tracking-widest opacity-90 flex items-center gap-1">
+                <Users size={12} strokeWidth={3} /> Ranked online
+              </div>
+              <div className="font-display text-3xl">{counts.ranked}</div>
+            </div>
+          </div>
+
           {/* Stat strip */}
           <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl">
             <StatChip label="KILLS" value={stats.kills} color="#E62429" testid="stat-kills" />
@@ -121,31 +161,7 @@ export default function Lobby() {
         </div>
 
         <div className="lg:col-span-5 relative hidden lg:flex items-center justify-center">
-          <div className="card-pow p-8 w-full rotate-2" style={{ background: "#0055FF", color: "#fff" }}>
-            <div className="font-anton uppercase tracking-widest text-sm opacity-80">Match Info</div>
-            <div className="font-display text-5xl uppercase text-pow-shadow mt-2">FREE-FOR-ALL</div>
-            <div className="mt-4 grid grid-cols-2 gap-3 font-anton uppercase">
-              <div className="border-pow-thin bg-white text-black p-3">
-                <div className="text-xs opacity-70">Mode</div>
-                <div className="text-xl">Deathmatch</div>
-              </div>
-              <div className="border-pow-thin bg-white text-black p-3">
-                <div className="text-xs opacity-70">Arena</div>
-                <div className="text-xl">Comic Block</div>
-              </div>
-              <div className="border-pow-thin bg-[#FFD700] text-black p-3">
-                <div className="text-xs opacity-70">Tickrate</div>
-                <div className="text-xl">20 Hz</div>
-              </div>
-              <div className="border-pow-thin bg-[#E62429] text-white p-3">
-                <div className="text-xs opacity-80">Respawn</div>
-                <div className="text-xl">3 sec</div>
-              </div>
-            </div>
-          </div>
-          <div className="absolute -bottom-4 -right-4 bg-[#FFD700] border-pow shadow-pow px-6 py-2 rotate-3">
-            <span className="font-display text-3xl uppercase">POW!</span>
-          </div>
+          {/* Match info panel removed per request */}
         </div>
       </main>
 
@@ -184,6 +200,34 @@ export default function Lobby() {
           <p className="font-body text-xs text-neutral-500 mt-2">Saved automatically. Applies on next match.</p>
         </div>
       </div>
+
+      {/* Tiers modal */}
+      {showTiers && (
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-6" data-testid="tiers-modal" onClick={() => setShowTiers(false)}>
+          <div className="card-pow p-0 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
+              <div className="font-display text-3xl text-[#FFD700]">RANK TIERS</div>
+              <button onClick={() => setShowTiers(false)} className="font-anton" data-testid="tiers-close">
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+            {RANK_TIERS.map((t, i) => (
+              <div key={t.name} className="grid grid-cols-12 border-t-2 border-black items-center" data-testid={`tier-row-${i}`}>
+                <div className="col-span-1 font-display text-2xl text-center bg-white py-3">{i + 1}</div>
+                <div className="col-span-6 font-display text-2xl py-3 px-4" style={{ background: t.color, color: t.name === "APEX" ? "#FFD700" : "#0A0A0A" }}>
+                  {t.name}
+                </div>
+                <div className="col-span-5 font-anton uppercase text-sm py-3 px-4 bg-white">
+                  {t.min} RP {RANK_TIERS[i + 1] ? `→ ${RANK_TIERS[i + 1].min - 1} RP` : "+"}
+                </div>
+              </div>
+            ))}
+            <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-sm">
+              +30 RP (1st) · +15 (2nd) · +5 (3rd) · -10 (lower)
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -197,7 +241,18 @@ function StatChip({ label, value, color, textColor = "#fff", testid }) {
   );
 }
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_TIERS = [
+  { name: "BRONZE", min: 0, color: "#CD7F32" },
+  { name: "SILVER", min: 100, color: "#C0C0C0" },
+  { name: "GOLD", min: 250, color: "#FFD700" },
+  { name: "PLATINUM", min: 500, color: "#5BC0EB" },
+  { name: "DIAMOND", min: 800, color: "#9D4EDD" },
+  { name: "MASTER", min: 1200, color: "#E63946" },
+  { name: "GRANDMASTER", min: 1700, color: "#06D6A0" },
+  { name: "APEX", min: 2300, color: "#000000" },
+];
+
+const RANK_COLORS = RANK_TIERS.map(t => t.color);
 
 function RankBadge({ tier, name, points }) {
   const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];

@@ -31,6 +31,10 @@ export default function Game() {
     isRanked: mode === "ranked",
     timeLeft: null,
     matchEnd: null,
+    inQueue: false,
+    realCount: 0,
+    minRealPlayers: 2,
+    weapon: "primary",
   });
   const [pointerLocked, setPointerLocked] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
@@ -110,10 +114,15 @@ export default function Game() {
           return;
         }
         if (msg.type === "state") {
-          // Surface ranked timer into HUD
-          if (msg.is_ranked) {
-            setHud((h) => ({ ...h, timeLeft: msg.time_left, isRanked: true }));
-          }
+          // Surface ranked timer + queue info into HUD
+          setHud((h) => ({
+            ...h,
+            timeLeft: msg.time_left ?? null,
+            isRanked: !!msg.is_ranked,
+            inQueue: !!msg.in_queue,
+            realCount: msg.real_count ?? 0,
+            minRealPlayers: msg.min_real_players ?? 2,
+          }));
         }
         engineRef.current?.applyServerState(msg);
       },
@@ -134,6 +143,9 @@ export default function Game() {
       });
       if (snap.shoot) {
         sock.send({ type: "shoot", yaw: snap.yaw, pitch: snap.pitch });
+      }
+      if (snap.melee) {
+        sock.send({ type: "melee", yaw: snap.yaw, pitch: snap.pitch });
       }
     }, 1000 / 20);
 
@@ -160,6 +172,14 @@ export default function Game() {
       if (e.code === "Tab") {
         e.preventDefault();
         setHud((h) => ({ ...h, showScoreboard: true }));
+      }
+      if (e.code === "Digit1") {
+        engineRef.current?.setWeapon("primary");
+        setHud((h) => ({ ...h, weapon: "primary" }));
+      }
+      if (e.code === "Digit2" || e.code === "KeyV") {
+        engineRef.current?.setWeapon("secondary");
+        setHud((h) => ({ ...h, weapon: "secondary" }));
       }
       if (e.code === "Escape") {
         // pointer lock auto-released
