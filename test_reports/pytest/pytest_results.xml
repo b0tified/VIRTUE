@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="16" time="67.272" timestamp="2026-05-19T23:56:20.481622+00:00" hostname="agent-env-25d45d6b-753b-41d1-946d-c22b86c106d9"><testcase classname="backend.tests.test_shooter_backend.TestHealth" name="test_root_health" time="0.273" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_register_creates_user_and_sets_cookies" time="0.335" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_register_duplicate_email_400" time="0.478" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_login_admin_success_and_me" time="0.523" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_login_invalid_credentials_401" time="0.330" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_me_without_auth_401" time="0.103" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_logout_clears_cookies" time="0.458" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_refresh_issues_new_access" time="0.416" /><testcase classname="backend.tests.test_shooter_backend.TestAuth" name="test_refresh_without_cookie_401" time="0.104" /><testcase classname="backend.tests.test_shooter_backend.TestLeaderboardAndProfile" name="test_leaderboard_sorted_desc" time="0.114" /><testcase classname="backend.tests.test_shooter_backend.TestLeaderboardAndProfile" name="test_profile_me_requires_auth" time="0.127" /><testcase classname="backend.tests.test_shooter_backend.TestLeaderboardAndProfile" name="test_profile_me_with_auth" time="0.408" /><testcase classname="backend.tests.test_shooter_backend.TestWebSocket" name="test_ws_rejects_without_token" time="0.140" /><testcase classname="backend.tests.test_shooter_backend.TestWebSocket" name="test_ws_welcome_and_state" time="0.523" /><testcase classname="backend.tests.test_shooter_backend.TestWebSocket" name="test_two_clients_see_each_other_shoot_kill_persists" time="61.567"><failure message="websockets.exceptions.ConnectionClosedError: no close frame received or sent">backend/tests/test_shooter_backend.py:348: in test_two_clients_see_each_other_shoot_kill_persists
+    asyncio.run(run())
+/usr/local/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/tests/test_shooter_backend.py:335: in run
+    await ws1.send(json.dumps({"type": "shoot", "yaw": yaw_to + dyaw, "pitch": 0.0}))
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/connection.py:478: in send
+    async with self.send_context():
+/usr/local/lib/python3.11/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/connection.py:965: in send_context
+    raise self.protocol.close_exc from original_exc
+E   websockets.exceptions.ConnectionClosedError: no close frame received or sent</failure></testcase><testcase classname="backend.tests.test_shooter_backend.TestKillAndStatsPersistence" name="test_kill_persists_stats" time="1.221" /></testsuite></testsuites>
