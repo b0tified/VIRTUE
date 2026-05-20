@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GameEngine } from "@/game/engine";
 import { GameSocket } from "@/game/network";
@@ -12,6 +12,8 @@ export default function Game() {
   const sockRef = useRef(null);
   const { user, accessToken } = useAuth();
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+  const mode = searchParams.get("mode") === "ranked" ? "ranked" : "casual";
 
   const [hud, setHud] = useState({
     hp: 100,
@@ -26,6 +28,9 @@ export default function Game() {
     fps: 0,
     ping: 0,
     invuln: false,
+    isRanked: mode === "ranked",
+    timeLeft: null,
+    matchEnd: null,
   });
   const [pointerLocked, setPointerLocked] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
@@ -71,18 +76,20 @@ export default function Game() {
           setHud((h) => ({ ...h, damaged: Date.now() }));
           audioBus.hurt();
         } else if (ev.type === "remote-shot") {
-          audioBus.gunshot();
+          audioBus.gunshot(ev.shooterId, ev.distance);
         } else if (ev.type === "you-hit") {
           audioBus.hitmark();
           setHud((h) => ({ ...h, hitConfirm: Date.now() }));
         } else if (ev.type === "you-killed") {
           audioBus.killSfx();
           setHud((h) => ({ ...h, hitConfirm: Date.now() }));
+        } else if (ev.type === "footstep") {
+          audioBus.footstep(ev.sprint);
         }
       },
     });
     engineRef.current = engine;
-    engine.onShoot = () => audioBus.gunshot();
+    engine.onShoot = () => audioBus.gunshot(engine.youId, 0);
     engine.start();
 
     const sock = new GameSocket({
@@ -94,11 +101,25 @@ export default function Game() {
           pingRef.current.value = rtt;
           return;
         }
+        if (msg.type === "match_end") {
+          setHud((h) => ({ ...h, matchEnd: msg }));
+          return;
+        }
+        if (msg.type === "match_start") {
+          setHud((h) => ({ ...h, matchEnd: null }));
+          return;
+        }
+        if (msg.type === "state") {
+          // Surface ranked timer into HUD
+          if (msg.is_ranked) {
+            setHud((h) => ({ ...h, timeLeft: msg.time_left, isRanked: true }));
+          }
+        }
         engineRef.current?.applyServerState(msg);
       },
     });
     sockRef.current = sock;
-    sock.connect(accessToken);
+    sock.connect(accessToken, mode);
 
     // Network send loop @ 20Hz
     const intervalId = setInterval(() => {

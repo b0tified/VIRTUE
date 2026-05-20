@@ -2,7 +2,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse } from "lucide-react";
+
+const SENS_KEY = "virtue.mouseSensitivity";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
 
@@ -10,9 +12,17 @@ export default function Lobby() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const [muted, setMuted] = useState(false);
+  const [sensitivity, setSensitivity] = useState(() => {
+    const v = parseFloat(localStorage.getItem(SENS_KEY));
+    return Number.isFinite(v) && v > 0 ? v : 1.0;
+  });
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
   const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
+
+  useEffect(() => {
+    localStorage.setItem(SENS_KEY, String(sensitivity));
+  }, [sensitivity]);
 
   // Start lobby music on first user interaction (browser autoplay rules)
   useEffect(() => {
@@ -81,13 +91,17 @@ export default function Lobby() {
           <h1 className="font-display text-6xl md:text-7xl uppercase text-white text-pow-shadow-lg">
             READY UP, <span className="text-[#E62429]">{user?.username}</span>!
           </h1>
-          <p className="font-body text-white/90 mt-3 max-w-lg">
-            Jump straight into the arena. First to make their enemies cry uncle wins eternal comic glory.
-          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="rank-badge-row">
+            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
+          </div>
 
           <div className="mt-8 space-y-4 max-w-md">
-            <Link to="/play" className="btn-pow bg-[#E62429] text-white w-full text-3xl" data-testid="lobby-play-button">
+            <Link to="/play?mode=casual" className="btn-pow bg-[#E62429] text-white w-full text-3xl" data-testid="lobby-play-button">
               <span className="flex items-center gap-3"><Play size={28} strokeWidth={3} /> PLAY MATCH</span>
+            </Link>
+            <Link to="/play?mode=ranked" className="btn-pow bg-[#0055FF] text-white w-full text-3xl" data-testid="lobby-ranked-button">
+              <span className="flex items-center gap-3"><Trophy size={26} strokeWidth={3} /> RANKED MATCH</span>
             </Link>
             <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={22} strokeWidth={3} /> LEADERBOARD</span>
@@ -135,8 +149,8 @@ export default function Lobby() {
         </div>
       </main>
 
-      <div className="relative z-10 px-6 md:px-12 lg:px-20 mt-12 pb-12">
-        <div className="card-pow p-5 max-w-3xl">
+      <div className="relative z-10 px-6 md:px-12 lg:px-20 mt-12 pb-12 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl">
+        <div className="card-pow p-5">
           <div className="font-anton uppercase tracking-widest text-sm text-neutral-500">Controls</div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2">
             <ControlKey k="WASD" d="Move" />
@@ -145,6 +159,29 @@ export default function Lobby() {
             <ControlKey k="SHIFT" d="Sprint" />
             <ControlKey k="TAB" d="Score" />
           </div>
+        </div>
+        <div className="card-pow p-5" data-testid="settings-card">
+          <div className="font-anton uppercase tracking-widest text-sm text-neutral-500 flex items-center gap-2">
+            <Mouse size={16} strokeWidth={3} /> Mouse Sensitivity
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <span className="font-anton text-xs">0.3</span>
+            <input
+              type="range"
+              min="0.3"
+              max="3.0"
+              step="0.05"
+              value={sensitivity}
+              onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+              className="flex-1 accent-[#E62429]"
+              data-testid="sensitivity-slider"
+            />
+            <span className="font-anton text-xs">3.0</span>
+            <div className="border-pow-thin bg-[#FFD700] px-3 py-1 font-anton text-lg min-w-[60px] text-center" data-testid="sensitivity-value">
+              {sensitivity.toFixed(2)}x
+            </div>
+          </div>
+          <p className="font-body text-xs text-neutral-500 mt-2">Saved automatically. Applies on next match.</p>
         </div>
       </div>
     </div>
@@ -156,6 +193,23 @@ function StatChip({ label, value, color, textColor = "#fff", testid }) {
     <div className="border-pow shadow-pow-sm p-3" style={{ background: color, color: textColor }} data-testid={testid}>
       <div className="font-anton uppercase tracking-widest text-xs opacity-80">{label}</div>
       <div className="font-display text-3xl mt-1">{value}</div>
+    </div>
+  );
+}
+
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+
+function RankBadge({ tier, name, points }) {
+  const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
+  const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
+  return (
+    <div className="border-pow shadow-pow-sm flex items-center" data-testid="rank-badge">
+      <div className="font-display px-4 py-2 text-2xl uppercase" style={{ background: color, color: textColor }}>
+        {name}
+      </div>
+      <div className="bg-white px-3 py-2 font-anton uppercase tracking-widest text-sm">
+        {points} <span className="opacity-60">RP</span>
+      </div>
     </div>
   );
 }

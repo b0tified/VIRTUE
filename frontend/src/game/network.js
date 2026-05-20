@@ -8,10 +8,13 @@ export class GameSocket {
     this.ws = null;
   }
 
-  connect(token) {
+  connect(token, mode) {
     const httpUrl = new URL(BACKEND_URL);
     const wsProto = httpUrl.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${wsProto}//${httpUrl.host}/api/ws/game${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    const params = new URLSearchParams();
+    if (token) params.set("token", token);
+    if (mode) params.set("mode", mode);
+    const url = `${wsProto}//${httpUrl.host}/api/ws/game?${params.toString()}`;
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => this.onOpen();

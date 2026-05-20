@@ -86,14 +86,41 @@ def set_auth_cookies(response: Response, access: str, refresh: str):
 
 
 def public_user(user: dict) -> dict:
+    points = int(user.get("rank_points", 0) or 0)
+    tier_idx, tier_name = rank_for_points(points)
     return {
         "id": str(user["_id"]),
         "email": user["email"],
         "username": user.get("username", user["email"].split("@")[0]),
         "role": user.get("role", "user"),
         "stats": user.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
+        "rank_points": points,
+        "rank_tier": tier_idx,
+        "rank_name": tier_name,
         "created_at": user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
     }
+
+
+RANK_TIERS = [
+    (0,    "BRONZE"),
+    (100,  "SILVER"),
+    (250,  "GOLD"),
+    (500,  "PLATINUM"),
+    (800,  "DIAMOND"),
+    (1200, "MASTER"),
+    (1700, "GRANDMASTER"),
+    (2300, "APEX"),
+]
+
+
+def rank_for_points(points: int):
+    idx = 0
+    name = RANK_TIERS[0][1]
+    for i, (threshold, n) in enumerate(RANK_TIERS):
+        if points >= threshold:
+            idx = i
+            name = n
+    return idx, name
 
 
 async def _user_from_token(token: str) -> Optional[dict]:
@@ -391,11 +418,16 @@ class Player:
 
 
 class GameRoom:
-    def __init__(self):
+    def __init__(self, is_ranked: bool = False, match_duration: float = 300.0):
         self.players: Dict[str, Player] = {}
         self.events: List[dict] = []
         self.lock = asyncio.Lock()
         self._last_tick = time.time()
+        self.is_ranked = is_ranked
+        self.match_duration = match_duration
+        self.match_start = time.time()
+        self.in_intermission = False
+        self.last_match_end_payload: Optional[dict] = None
 
     def spawn_bot(self, name: str):
         bot = Player(ws=None, is_bot=True, bot_name=name)
@@ -405,8 +437,18 @@ class GameRoom:
     async def add(self, player: Player):
         async with self.lock:
             self.players[player.id] = player
-        await self._send(player, {"type": "welcome", "you": player.to_state(), "arena": ARENA})
+        await self._send(player, {
+            "type": "welcome",
+            "you": player.to_state(),
+            "arena": ARENA,
+            "is_ranked": self.is_ranked,
+            "match_duration": self.match_duration if self.is_ranked else None,
+            "match_start": self.match_start if self.is_ranked else None,
+        })
         await self.broadcast({"type": "join", "player": player.to_state()})
+        # If we just ended a match and a player joins, send them the placements
+        if self.last_match_end_payload and self.in_intermission:
+            await self._send(player, self.last_match_end_payload)
 
     async def remove(self, player: Player):
         async with self.lock:
@@ -524,14 +566,12 @@ class GameRoom:
         for p in self.players.values():
             if p.id == shooter.id or not p.alive:
                 continue
-            # 3-sphere capsule hitbox matching visible humanoid (~2m tall, feet at y=0)
-            # Player.y stores eye height (1.8), so body base is at y=0
-            base = p.y - PLAYER_HEIGHT  # feet (~0)
-            # Head, torso, legs spheres
+            # 3-sphere capsule hitbox matching visible humanoid (generous - "bigger hitbox")
+            base = p.y - PLAYER_HEIGHT
             spheres = [
-                (p.x, base + 1.65, p.z, 0.42),  # head
-                (p.x, base + 1.05, p.z, 0.55),  # torso
-                (p.x, base + 0.45, p.z, 0.45),  # legs
+                (p.x, base + 1.65, p.z, 0.55),  # head
+                (p.x, base + 1.05, p.z, 0.75),  # torso
+                (p.x, base + 0.45, p.z, 0.60),  # legs
             ]
             best_part_t = None
             for (cx, cy, cz, r) in spheres:
@@ -703,16 +743,11 @@ class GameRoom:
                 else:
                     bot.bot_strafe_t += 0.3
 
-            # Shoot when ready & LoS
+            # Shoot when ready & LoS — fully accurate (no aim wiggle)
             if now_ms - bot.last_shot_ms >= BOT_SHOT_COOLDOWN_MS:
                 if self._has_los(bot, target):
                     bot.last_shot_ms = now_ms
-                    # Add small aim noise to make it fair
-                    orig_yaw, orig_pitch = bot.yaw, bot.pitch
-                    bot.yaw += random.uniform(-0.05, 0.05)
-                    bot.pitch += random.uniform(-0.03, 0.03)
                     await self._apply_shoot(bot, BOT_SHOT_DAMAGE)
-                    bot.yaw, bot.pitch = orig_yaw, orig_pitch
 
     async def tick(self):
         now = time.time()
@@ -738,28 +773,95 @@ class GameRoom:
             "t": int(now * 1000),
             "players": [p.to_state() for p in self.players.values()],
             "events": self.events,
+            "is_ranked": self.is_ranked,
+            "time_left": max(0.0, self.match_duration - (now - self.match_start)) if self.is_ranked else None,
+            "in_intermission": self.in_intermission,
         }
         self.events = []
         await self.broadcast(state)
+
+    async def end_match(self):
+        """End a ranked match: award rank points to real players, broadcast standings, reset."""
+        self.in_intermission = True
+        real_players = [p for p in self.players.values() if not p.is_bot and p.user_id]
+        real_players.sort(key=lambda p: p.kills, reverse=True)
+        rewards = [30, 15, 5]
+        placements = []
+        for i, p in enumerate(real_players):
+            if i < len(rewards):
+                delta = rewards[i]
+            else:
+                delta = -10
+            new_points = 0
+            try:
+                udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
+                cur = int((udoc or {}).get("rank_points", 0) or 0)
+                new_points = max(0, cur + delta)
+                tier_idx, tier_name = rank_for_points(new_points)
+                await db.users.update_one(
+                    {"_id": ObjectId(p.user_id)},
+                    {"$set": {"rank_points": new_points}, "$inc": {"stats.matches": 1}},
+                )
+            except Exception as e:
+                logger.warning("rank update failed: %s", e)
+                tier_idx, tier_name = rank_for_points(new_points)
+            placements.append({
+                "id": p.id,
+                "username": p.username,
+                "kills": p.kills,
+                "deaths": p.deaths,
+                "delta": delta,
+                "new_points": new_points,
+                "rank_tier": tier_idx,
+                "rank_name": tier_name,
+            })
+
+        payload = {"type": "match_end", "placements": placements, "duration": self.match_duration}
+        self.last_match_end_payload = payload
+        await self.broadcast(payload)
+
+        # Intermission: 10s
+        await asyncio.sleep(10.0)
+
+        # Reset for next match
+        for p in self.players.values():
+            p.kills = 0
+            p.deaths = 0
+            x, z = random_spawn()
+            p.x, p.z = float(x), float(z)
+            p.y = PLAYER_HEIGHT
+            p.hp = MAX_HP
+            p.alive = True
+            p.invuln_until = time.time() + 3.0
+            p.last_attacker = None
+        self.match_start = time.time()
+        self.in_intermission = False
+        self.last_match_end_payload = None
+        await self.broadcast({"type": "match_start", "duration": self.match_duration})
 
     async def run(self):
         interval = 1.0 / TICK_RATE
         while True:
             try:
+                if self.is_ranked and not self.in_intermission:
+                    if time.time() - self.match_start >= self.match_duration:
+                        await self.end_match()
+                        continue
                 await self.tick()
             except Exception as e:
                 logger.exception("tick error: %s", e)
             await asyncio.sleep(interval)
 
 
-game_room = GameRoom()
+game_room = GameRoom(is_ranked=False)
+ranked_room = GameRoom(is_ranked=True, match_duration=300.0)
 
 
 # -------------------------------------------------------------------
 # WebSocket endpoint
 # -------------------------------------------------------------------
 @api.websocket("/ws/game")
-async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None)):
+async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual")):
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -771,9 +873,10 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         await websocket.close(code=4401)
         return
 
+    room = ranked_room if mode == "ranked" else game_room
     await websocket.accept()
     player = Player(websocket, user=user, is_bot=False)
-    await game_room.add(player)
+    await room.add(player)
 
     try:
         while True:
@@ -782,18 +885,41 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
                 msg = json.loads(raw)
             except Exception:
                 continue
-            await game_room.handle_message(player, msg)
+            await room.handle_message(player, msg)
     except WebSocketDisconnect:
         pass
     except Exception as e:
         logger.warning("ws error: %s", e)
     finally:
-        await game_room.remove(player)
+        await room.remove(player)
 
 
 @api.get("/")
 async def root():
-    return {"message": "Shooter PvP API", "players_online": len(game_room.players)}
+    return {
+        "message": "Shooter PvP API",
+        "casual_players": len(game_room.players),
+        "ranked_players": len(ranked_room.players),
+    }
+
+
+@api.get("/leaderboard/ranked")
+async def leaderboard_ranked():
+    cursor = db.users.find({}, {"_id": 0, "username": 1, "rank_points": 1, "stats": 1, "email": 1}).sort([("rank_points", -1)]).limit(50)
+    rows = []
+    async for u in cursor:
+        s = u.get("stats", {})
+        pts = int(u.get("rank_points", 0) or 0)
+        idx, name = rank_for_points(pts)
+        rows.append({
+            "username": u.get("username", u.get("email", "anon")),
+            "rank_points": pts,
+            "rank_tier": idx,
+            "rank_name": name,
+            "kills": s.get("kills", 0),
+            "deaths": s.get("deaths", 0),
+        })
+    return rows
 
 
 app.include_router(api)

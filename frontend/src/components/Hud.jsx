@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { Heart, Skull, Trophy, LogOut, Play, Activity, Wifi, Bot, User } from "lucide-react";
+import { Heart, Skull, Trophy, LogOut, Play, Activity, Wifi, Bot, User, Timer } from "lucide-react";
+
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+
+function formatTime(seconds) {
+  if (seconds == null) return "--:--";
+  const s = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
 
 export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
   const [showDmg, setShowDmg] = useState(false);
@@ -68,6 +78,19 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       </div>
 
+      {/* Top-center: match timer (ranked only) */}
+      {hud.isRanked && hud.timeLeft != null && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20" data-testid="hud-match-timer">
+          <div className="hud-panel" style={{ background: hud.timeLeft < 30 ? "rgba(230,36,41,0.95)" : "rgba(0,85,255,0.92)" }}>
+            <div className="flex items-center gap-3">
+              <Timer size={20} strokeWidth={3} />
+              <span className="text-xs opacity-80">RANKED</span>
+              <span className="font-display text-3xl" data-testid="hud-time-left">{formatTime(hud.timeLeft)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top-right: kill feed */}
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end max-w-[420px]" data-testid="hud-kill-feed">
         {hud.killFeed.slice(0, 6).map((k) => (
@@ -127,6 +150,46 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       )}
 
+      {/* Match end overlay */}
+      {hud.matchEnd && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-6" data-testid="match-end-overlay">
+          <div className="card-pow p-0 w-full max-w-2xl">
+            <div className="bg-[#0055FF] text-white px-6 py-4 flex items-center justify-between">
+              <div className="font-display text-4xl text-[#FFD700]">MATCH OVER</div>
+              <div className="font-anton uppercase text-sm tracking-widest">Next match in 10s</div>
+            </div>
+            <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
+              <div className="col-span-1">#</div>
+              <div className="col-span-5">Player</div>
+              <div className="col-span-2 text-right">Kills</div>
+              <div className="col-span-2 text-right">Δ RP</div>
+              <div className="col-span-2 text-right">Rank</div>
+            </div>
+            {(hud.matchEnd.placements || []).map((p, i) => {
+              const c = RANK_COLORS[Math.max(0, Math.min(7, p.rank_tier ?? 0))];
+              return (
+                <div key={p.id} className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i === 0 ? "bg-[#FFE680]" : "bg-white"}`} data-testid={`match-end-row-${i}`}>
+                  <div className="col-span-1 font-display text-xl">{i + 1}</div>
+                  <div className="col-span-5 font-anton uppercase">{p.username}</div>
+                  <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
+                  <div className={`col-span-2 text-right font-display text-2xl ${p.delta >= 0 ? "text-[#06A35F]" : "text-[#E62429]"}`}>
+                    {p.delta >= 0 ? "+" : ""}{p.delta}
+                  </div>
+                  <div className="col-span-2 text-right">
+                    <span className="font-anton uppercase text-sm px-2 py-1" style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}>
+                      {p.rank_name}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {(!hud.matchEnd.placements || hud.matchEnd.placements.length === 0) && (
+              <div className="p-6 font-anton text-center uppercase">No ranked players this match</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Click-to-play overlay */}
       {!pointerLocked && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" data-testid="game-start-overlay">
@@ -136,7 +199,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
             </div>
             <div className="card-pow p-8 max-w-lg w-full">
               <div className="inline-block bg-[#E62429] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
-                <span className="font-anton uppercase tracking-widest">Arena · FFA</span>
+                <span className="font-anton uppercase tracking-widest">{hud.isRanked ? "Ranked · FFA" : "Arena · FFA"}</span>
               </div>
               <h2 className="font-display text-5xl uppercase text-[#E62429] text-pow-shadow">
                 {hud.connected ? "READY!" : "CONNECTING..."}
