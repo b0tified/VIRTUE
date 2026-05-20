@@ -79,14 +79,32 @@ class AudioBus {
   hitmark() {
     if (!this._ensure()) return;
     const ctx = this.ctx;
-    const osc = ctx.createOscillator();
-    osc.type = "square";
-    osc.frequency.value = 1500;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.18, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
-    osc.connect(g); g.connect(this.sfxGain);
-    osc.start(); osc.stop(ctx.currentTime + 0.08);
+    const now = ctx.currentTime;
+    // 2-note ding: high-low
+    [
+      { f: 1800, t: now, dur: 0.06 },
+      { f: 2400, t: now + 0.04, dur: 0.08 },
+    ].forEach(({ f, t, dur }) => {
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.32, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(g); g.connect(this.sfxGain);
+      osc.start(t); osc.stop(t + dur + 0.02);
+    });
+    // tiny noise click for punch
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.02, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0.2;
+    src.connect(g2); g2.connect(this.sfxGain);
+    src.start(now);
   }
 
   /* -------- Damage (you got hit) -------- */

@@ -361,16 +361,112 @@ export class GameEngine {
     }
   }
 
+  _buildHumanoid(bodyColor) {
+    const group = new THREE.Group();
+    const skin = 0xf2c08a;
+    const dark = 0x1a1a1a;
+    const bodyMeshes = []; // for hit flash
+
+    const pushMesh = (geom, color, scale = 1.05) => {
+      const mat = this._toonMat(color);
+      const mesh = new THREE.Mesh(geom, mat);
+      const outlineMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a, side: THREE.BackSide });
+      const outline = new THREE.Mesh(geom, outlineMat);
+      outline.scale.multiplyScalar(scale);
+      const g = new THREE.Group();
+      g.add(mesh);
+      g.add(outline);
+      bodyMeshes.push({ mesh, baseColor: color });
+      return g;
+    };
+
+    // Head
+    const head = pushMesh(new THREE.SphereGeometry(0.32, 14, 10), skin, 1.06);
+    head.position.y = 1.65;
+    group.add(head);
+
+    // Comic mask (dark band over eyes) - flat plane
+    const maskGeo = new THREE.BoxGeometry(0.62, 0.14, 0.02);
+    const mask = pushMesh(maskGeo, 0x0a0a0a, 1.02);
+    mask.position.set(0, 1.7, 0.3);
+    group.add(mask);
+
+    // Torso
+    const torso = pushMesh(new THREE.BoxGeometry(0.65, 0.85, 0.4), bodyColor, 1.05);
+    torso.position.y = 1.05;
+    group.add(torso);
+
+    // Chest emblem (yellow stripe)
+    const emblem = pushMesh(new THREE.BoxGeometry(0.3, 0.18, 0.02), 0xffd700, 1.04);
+    emblem.position.set(0, 1.15, 0.21);
+    group.add(emblem);
+
+    // Arms (sleeves matching body)
+    const armGeo = new THREE.BoxGeometry(0.22, 0.7, 0.22);
+    const leftArm = pushMesh(armGeo, bodyColor, 1.05);
+    leftArm.position.set(-0.47, 1.05, 0);
+    group.add(leftArm);
+    const rightArm = pushMesh(armGeo, bodyColor, 1.05);
+    rightArm.position.set(0.47, 1.05, 0);
+    group.add(rightArm);
+
+    // Hands (skin)
+    const handG = new THREE.SphereGeometry(0.13, 10, 8);
+    const lh = pushMesh(handG, skin, 1.08);
+    lh.position.set(-0.47, 0.58, 0);
+    group.add(lh);
+    const rh = pushMesh(handG, skin, 1.08);
+    rh.position.set(0.47, 0.58, 0.2);
+    group.add(rh);
+
+    // Legs
+    const legGeo = new THREE.BoxGeometry(0.24, 0.85, 0.28);
+    const leftLeg = pushMesh(legGeo, dark, 1.05);
+    leftLeg.position.set(-0.18, 0.4, 0);
+    group.add(leftLeg);
+    const rightLeg = pushMesh(legGeo, dark, 1.05);
+    rightLeg.position.set(0.18, 0.4, 0);
+    group.add(rightLeg);
+
+    // Boots
+    const bootGeo = new THREE.BoxGeometry(0.28, 0.16, 0.36);
+    const lb = pushMesh(bootGeo, 0x0a0a0a, 1.05);
+    lb.position.set(-0.18, 0.05, 0.04);
+    group.add(lb);
+    const rb = pushMesh(bootGeo, 0x0a0a0a, 1.05);
+    rb.position.set(0.18, 0.05, 0.04);
+    group.add(rb);
+
+    // Held gun (right hand)
+    const gunG = new THREE.BoxGeometry(0.15, 0.12, 0.42);
+    const gun = pushMesh(gunG, 0x0a0a0a, 1.06);
+    gun.position.set(0.47, 0.6, 0.35);
+    group.add(gun);
+    const barrelG = new THREE.CylinderGeometry(0.04, 0.04, 0.22, 8);
+    const barrel = pushMesh(barrelG, 0x0a0a0a, 1.08);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0.47, 0.6, 0.62);
+    group.add(barrel);
+
+    return { group, bodyMeshes };
+  }
+
   _addRemotePlayer(state) {
-    const g = new THREE.CapsuleGeometry(0.45, 1.1, 4, 8);
     const color = state.is_bot ? 0x9b59b6 : this._hashColor(state.id);
-    const mesh = this._outlinedMesh(g, color);
-    mesh.position.set(state.x, state.y - 0.4, state.z);
-    this.scene.add(mesh);
+    const { group, bodyMeshes } = this._buildHumanoid(color);
+    group.position.set(state.x, 0, state.z);
+    this.scene.add(group);
     const label = this._makeLabel(state.username, state.is_bot);
-    label.position.set(0, 1.6, 0);
-    mesh.add(label);
-    const entry = { mesh, label, color };
+    label.position.set(0, 2.2, 0);
+    group.add(label);
+    const entry = {
+      mesh: group,
+      label,
+      color,
+      bodyMeshes,
+      lastHp: state.hp,
+      flashUntil: 0,
+    };
     this.players.set(state.id, entry);
     return entry;
   }
@@ -431,7 +527,13 @@ export class GameEngine {
         }
         let entry = this.players.get(p.id);
         if (!entry) entry = this._addRemotePlayer(p);
-        entry.mesh.position.lerp(new THREE.Vector3(p.x, p.y - 0.4, p.z), 0.5);
+        // Detect HP drop → flash red
+        if (entry.lastHp != null && p.hp < entry.lastHp && p.alive) {
+          entry.flashUntil = performance.now() + 180;
+        }
+        entry.lastHp = p.hp;
+        // Position: humanoid group has feet at y=0
+        entry.mesh.position.lerp(new THREE.Vector3(p.x, 0, p.z), 0.5);
         entry.mesh.rotation.y = p.yaw;
         entry.mesh.visible = p.alive;
       }
@@ -445,7 +547,6 @@ export class GameEngine {
       for (const ev of msg.events || []) {
         if (ev.type === "shot") {
           this._spawnTracer(ev);
-          // Audio: only for OTHER shooters (own is played immediately)
           if (ev.shooter_id !== this.youId) {
             this.onLocalUpdate({ type: "remote-shot", from: ev });
           }
@@ -550,6 +651,21 @@ export class GameEngine {
         b.line.geometry.dispose();
         b.line.material.dispose();
         this.bullets.splice(i, 1);
+      }
+    }
+
+    // Remote-player hit flash
+    const nowMs = performance.now();
+    const flashRed = new THREE.Color(0xff2a2a);
+    for (const entry of this.players.values()) {
+      if (!entry.bodyMeshes) continue;
+      const flashing = nowMs < entry.flashUntil;
+      for (const bm of entry.bodyMeshes) {
+        if (flashing) {
+          bm.mesh.material.color.copy(flashRed);
+        } else {
+          bm.mesh.material.color.setHex(bm.baseColor);
+        }
       }
     }
   }

@@ -505,25 +505,43 @@ class GameRoom:
             if t is not None and t < occlusion_t:
                 occlusion_t = t
 
+        def sphere_t(cx, cy, cz, r):
+            mx_, my_, mz_ = ox - cx, oy - cy, oz - cz
+            b = mx_ * dx + my_ * dy + mz_ * dz
+            c = mx_ * mx_ + my_ * my_ + mz_ * mz_ - r * r
+            disc = b * b - c
+            if disc < 0:
+                return None
+            t = -b - math.sqrt(disc)
+            if t < 0:
+                t = -b + math.sqrt(disc)
+            if t < 0 or t > SHOT_RANGE:
+                return None
+            return t
+
         best_t = SHOT_RANGE
         best: Optional[Player] = None
         for p in self.players.values():
             if p.id == shooter.id or not p.alive:
                 continue
-            cx, cy, cz = p.x, p.y - PLAYER_HEIGHT / 2 + 0.9, p.z
-            mx, my, mz = ox - cx, oy - cy, oz - cz
-            b = mx * dx + my * dy + mz * dz
-            c = mx * mx + my * my + mz * mz - (PLAYER_RADIUS + 0.3) ** 2
-            disc = b * b - c
-            if disc < 0:
+            # 3-sphere capsule hitbox matching visible humanoid (~2m tall, feet at y=0)
+            # Player.y stores eye height (1.8), so body base is at y=0
+            base = p.y - PLAYER_HEIGHT  # feet (~0)
+            # Head, torso, legs spheres
+            spheres = [
+                (p.x, base + 1.65, p.z, 0.42),  # head
+                (p.x, base + 1.05, p.z, 0.55),  # torso
+                (p.x, base + 0.45, p.z, 0.45),  # legs
+            ]
+            best_part_t = None
+            for (cx, cy, cz, r) in spheres:
+                t = sphere_t(cx, cy, cz, r)
+                if t is not None and (best_part_t is None or t < best_part_t):
+                    best_part_t = t
+            if best_part_t is None:
                 continue
-            t = -b - math.sqrt(disc)
-            if t < 0:
-                t = -b + math.sqrt(disc)
-            if t < 0 or t > SHOT_RANGE:
-                continue
-            if t < best_t and t < occlusion_t:
-                best_t = t
+            if best_part_t < best_t and best_part_t < occlusion_t:
+                best_t = best_part_t
                 best = p
         return best
 
