@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import math
+import random
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -33,7 +34,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 JWT_ALGORITHM = "HS256"
-ACCESS_TTL_MIN = 60 * 24  # 1 day so WS doesn't expire mid-match
+ACCESS_TTL_MIN = 60 * 24
 REFRESH_TTL_DAYS = 7
 
 app = FastAPI()
@@ -141,7 +142,6 @@ class LoginIn(BaseModel):
 async def on_startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("username")
-    # Seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@shooter.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
@@ -158,7 +158,9 @@ async def on_startup():
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
 
-    # Start game loop
+    # Spawn bots
+    for name in BOT_NAMES[:NUM_BOTS]:
+        game_room.spawn_bot(name)
     asyncio.create_task(game_room.run())
 
 
@@ -264,49 +266,93 @@ async def profile_me(user: dict = Depends(get_current_user)):
 
 
 # -------------------------------------------------------------------
-# Game Server (Free-For-All Deathmatch)
+# Arena
 # -------------------------------------------------------------------
 ARENA = {
-    "size": 50,  # half-extent: arena spans -50..50 on x/z
+    "size": 50,
     "obstacles": [
-        # (x, z, w, h, d)
-        {"x": 0, "z": 0, "w": 6, "h": 4, "d": 6},
-        {"x": 15, "z": 10, "w": 4, "h": 3, "d": 8},
-        {"x": -15, "z": -10, "w": 8, "h": 3, "d": 4},
-        {"x": -18, "z": 15, "w": 4, "h": 5, "d": 4},
+        # Center mega tower + ring of low platforms
+        {"x": 0, "z": 0, "w": 6, "h": 8, "d": 6},
+        {"x": 9, "z": 0, "w": 3, "h": 1.2, "d": 3},
+        {"x": -9, "z": 0, "w": 3, "h": 1.2, "d": 3},
+        {"x": 0, "z": 9, "w": 3, "h": 1.2, "d": 3},
+        {"x": 0, "z": -9, "w": 3, "h": 1.2, "d": 3},
+
+        # NE quadrant
+        {"x": 18, "z": 14, "w": 4, "h": 3, "d": 8},
+        {"x": 26, "z": 24, "w": 6, "h": 4, "d": 3},
+        {"x": 14, "z": 28, "w": 3, "h": 5, "d": 3},
+        {"x": 30, "z": 12, "w": 3, "h": 3, "d": 5},
+
+        # SW quadrant
+        {"x": -18, "z": -14, "w": 8, "h": 3, "d": 4},
+        {"x": -26, "z": -24, "w": 3, "h": 4, "d": 8},
+        {"x": -10, "z": -28, "w": 6, "h": 3, "d": 3},
+        {"x": -30, "z": -12, "w": 3, "h": 3, "d": 5},
+
+        # NW quadrant
+        {"x": -18, "z": 14, "w": 4, "h": 5, "d": 4},
+        {"x": -28, "z": 20, "w": 3, "h": 4, "d": 6},
+        {"x": -5, "z": 22, "w": 10, "h": 3, "d": 3},
+        {"x": -32, "z": 5, "w": 3, "h": 4, "d": 4},
+
+        # SE quadrant
         {"x": 20, "z": -18, "w": 6, "h": 4, "d": 4},
-        {"x": -5, "z": 20, "w": 10, "h": 3, "d": 3},
+        {"x": 28, "z": -22, "w": 3, "h": 5, "d": 8},
         {"x": 8, "z": -22, "w": 3, "h": 6, "d": 3},
-        {"x": -25, "z": 0, "w": 3, "h": 4, "d": 10},
-        {"x": 25, "z": 5, "w": 3, "h": 4, "d": 10},
-    ]
+        {"x": 32, "z": -5, "w": 3, "h": 4, "d": 4},
+
+        # Outer screening walls (close to borders, leave gaps)
+        {"x": -35, "z": 30, "w": 8, "h": 4, "d": 2},
+        {"x": 35, "z": -30, "w": 8, "h": 4, "d": 2},
+        {"x": -38, "z": -35, "w": 2, "h": 4, "d": 8},
+        {"x": 38, "z": 35, "w": 2, "h": 4, "d": 8},
+
+        # Small crates (barrels)
+        {"x": 4, "z": 14, "w": 1.6, "h": 1.6, "d": 1.6},
+        {"x": -4, "z": -14, "w": 1.6, "h": 1.6, "d": 1.6},
+        {"x": 14, "z": -4, "w": 1.6, "h": 1.6, "d": 1.6},
+        {"x": -14, "z": 4, "w": 1.6, "h": 1.6, "d": 1.6},
+    ],
 }
 
 SPAWN_POINTS = [
-    (30, 30), (-30, 30), (30, -30), (-30, -30),
-    (0, 35), (0, -35), (35, 0), (-35, 0),
+    (35, 35), (-35, 35), (35, -35), (-35, -35),
+    (0, 40), (0, -40), (40, 0), (-40, 0),
+    (22, -2), (-22, 2),
 ]
 
 PLAYER_RADIUS = 0.5
 PLAYER_HEIGHT = 1.8
 MAX_HP = 100
 SHOT_DAMAGE = 25
+BOT_SHOT_DAMAGE = 12
 SHOT_RANGE = 100
 SHOT_COOLDOWN_MS = 250
-TICK_RATE = 20  # Hz
+BOT_SHOT_COOLDOWN_MS = 900
+TICK_RATE = 20
+NUM_BOTS = 3
+BOT_NAMES = ["BLAZE-7", "VORTEX", "RAVEN-X", "GHOST-9", "TITAN", "CYPHER"]
 
 
 def random_spawn():
-    import random
     return random.choice(SPAWN_POINTS)
 
 
+# -------------------------------------------------------------------
+# Player & Bot
+# -------------------------------------------------------------------
 class Player:
-    def __init__(self, ws: WebSocket, user: dict):
+    def __init__(self, ws: Optional[WebSocket], user: Optional[dict] = None, is_bot: bool = False, bot_name: str = ""):
         self.ws = ws
-        self.user_id = str(user["_id"])
-        self.username = user.get("username", user["email"].split("@")[0])
-        self.id = uuid.uuid4().hex
+        self.is_bot = is_bot
+        if is_bot:
+            self.user_id = None
+            self.username = bot_name
+        else:
+            self.user_id = str(user["_id"])
+            self.username = user.get("username", user["email"].split("@")[0])
+        self.id = ("bot_" if is_bot else "p_") + uuid.uuid4().hex[:10]
         x, z = random_spawn()
         self.x = float(x)
         self.y = PLAYER_HEIGHT
@@ -319,7 +365,12 @@ class Player:
         self.alive = True
         self.last_shot_ms = 0
         self.respawn_at = 0.0
+        self.invuln_until = time.time() + 3.0
         self.last_attacker: Optional[str] = None
+        # Bot state
+        self.bot_strafe_t = random.uniform(0, 6.28)
+        self.bot_repath_at = 0.0
+        self.bot_target_id: Optional[str] = None
 
     def to_state(self):
         return {
@@ -334,14 +385,22 @@ class Player:
             "kills": self.kills,
             "deaths": self.deaths,
             "alive": self.alive,
+            "is_bot": self.is_bot,
+            "invuln": time.time() < self.invuln_until,
         }
 
 
 class GameRoom:
     def __init__(self):
         self.players: Dict[str, Player] = {}
-        self.events: List[dict] = []  # kill feed / shot events broadcast each tick
+        self.events: List[dict] = []
         self.lock = asyncio.Lock()
+        self._last_tick = time.time()
+
+    def spawn_bot(self, name: str):
+        bot = Player(ws=None, is_bot=True, bot_name=name)
+        self.players[bot.id] = bot
+        logger.info("Bot spawned: %s (%s)", name, bot.id)
 
     async def add(self, player: Player):
         async with self.lock:
@@ -355,6 +414,8 @@ class GameRoom:
         await self.broadcast({"type": "leave", "id": player.id})
 
     async def _send(self, player: Player, msg: dict):
+        if player.is_bot or player.ws is None:
+            return
         try:
             await player.ws.send_text(json.dumps(msg))
         except Exception:
@@ -364,6 +425,8 @@ class GameRoom:
         data = json.dumps(msg)
         dead = []
         for p in list(self.players.values()):
+            if p.is_bot or p.ws is None:
+                continue
             try:
                 await p.ws.send_text(data)
             except Exception:
@@ -372,7 +435,6 @@ class GameRoom:
             self.players.pop(p.id, None)
 
     def collides_obstacle(self, x: float, z: float) -> bool:
-        # Bounds
         s = ARENA["size"]
         if x < -s + PLAYER_RADIUS or x > s - PLAYER_RADIUS:
             return True
@@ -384,27 +446,43 @@ class GameRoom:
                 return True
         return False
 
+    def _has_los(self, shooter: Player, target: Player) -> bool:
+        """Cheap line-of-sight check (2D over obstacles full-height assumption)."""
+        ox, oz = shooter.x, shooter.z
+        tx, tz = target.x, target.z
+        dx, dz = tx - ox, tz - oz
+        dist = math.hypot(dx, dz)
+        if dist < 0.01:
+            return True
+        nx, nz = dx / dist, dz / dist
+        steps = max(2, int(dist / 0.6))
+        for i in range(1, steps):
+            px = ox + nx * (i * 0.6)
+            pz = oz + nz * (i * 0.6)
+            for ob in ARENA["obstacles"]:
+                hx = ob["w"] / 2
+                hz = ob["d"] / 2
+                if abs(px - ob["x"]) < hx and abs(pz - ob["z"]) < hz:
+                    return False
+        return True
+
     def raycast_hit(self, shooter: Player) -> Optional[Player]:
-        """Find first player hit by ray from shooter pos along shooter.yaw/pitch."""
-        # Ray direction
         cp = math.cos(shooter.pitch)
         dx = math.sin(shooter.yaw) * cp
         dy = math.sin(shooter.pitch)
-        dz = -math.cos(shooter.yaw) * cp  # forward = -Z when yaw=0
+        dz = -math.cos(shooter.yaw) * cp
         ox, oy, oz = shooter.x, shooter.y, shooter.z
 
-        # Compute t-distance to obstacles (AABBs) for occlusion
         def aabb_t(ob):
-            # Box from min to max
             mn = (ob["x"] - ob["w"] / 2, 0.0, ob["z"] - ob["d"] / 2)
             mx = (ob["x"] + ob["w"] / 2, ob["h"], ob["z"] + ob["d"] / 2)
             tmin = 0.0
             tmax = SHOT_RANGE
-            for i, (o, d, lo, hi) in enumerate([
+            for o, d, lo, hi in [
                 (ox, dx, mn[0], mx[0]),
                 (oy, dy, mn[1], mx[1]),
                 (oz, dz, mn[2], mx[2]),
-            ]):
+            ]:
                 if abs(d) < 1e-6:
                     if o < lo or o > hi:
                         return None
@@ -427,13 +505,11 @@ class GameRoom:
             if t is not None and t < occlusion_t:
                 occlusion_t = t
 
-        # For each other player, check ray-sphere
         best_t = SHOT_RANGE
         best: Optional[Player] = None
         for p in self.players.values():
             if p.id == shooter.id or not p.alive:
                 continue
-            # Sphere center at player position (mid body)
             cx, cy, cz = p.x, p.y - PLAYER_HEIGHT / 2 + 0.9, p.z
             mx, my, mz = ox - cx, oy - cy, oz - cz
             b = mx * dx + my * dy + mz * dz
@@ -451,15 +527,59 @@ class GameRoom:
                 best = p
         return best
 
+    async def _apply_shoot(self, shooter: Player, damage: int):
+        """Resolve a shoot action from shooter: append events + apply damage + persist stats."""
+        self.events.append({
+            "type": "shot",
+            "shooter_id": shooter.id,
+            "x": shooter.x, "y": shooter.y, "z": shooter.z,
+            "yaw": shooter.yaw, "pitch": shooter.pitch,
+        })
+        hit = self.raycast_hit(shooter)
+        if hit and hit.alive:
+            # Spawn invulnerability protection
+            if time.time() < hit.invuln_until:
+                return
+            hit.hp -= damage
+            hit.last_attacker = shooter.id
+            self.events.append({
+                "type": "hit",
+                "shooter_id": shooter.id,
+                "victim_id": hit.id,
+                "hp": max(0, hit.hp),
+            })
+            if hit.hp <= 0:
+                hit.alive = False
+                hit.hp = 0
+                hit.deaths += 1
+                shooter.kills += 1
+                hit.respawn_at = time.time() + 3.0
+                self.events.append({
+                    "type": "kill",
+                    "shooter_id": shooter.id,
+                    "shooter_name": shooter.username,
+                    "victim_id": hit.id,
+                    "victim_name": hit.username,
+                })
+                # Persist only for real users
+                if not shooter.is_bot and shooter.user_id:
+                    try:
+                        await db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}})
+                    except Exception:
+                        pass
+                if not hit.is_bot and hit.user_id:
+                    try:
+                        await db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}})
+                    except Exception:
+                        pass
+
     async def handle_message(self, player: Player, msg: dict):
         mtype = msg.get("type")
         if mtype == "input":
-            # Movement: server-authoritative, validate distance
             x = float(msg.get("x", player.x))
             z = float(msg.get("z", player.z))
             yaw = float(msg.get("yaw", player.yaw))
             pitch = float(msg.get("pitch", player.pitch))
-            # cap movement delta per tick (~ max sprint 8 units/s * 1/20 + slack)
             max_delta = 1.2
             if not player.alive:
                 return
@@ -482,50 +602,103 @@ class GameRoom:
             if now_ms - player.last_shot_ms < SHOT_COOLDOWN_MS:
                 return
             player.last_shot_ms = now_ms
-            # Use latest yaw/pitch from client if present
             if "yaw" in msg:
                 player.yaw = float(msg["yaw"])
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
-            self.events.append({
-                "type": "shot",
-                "shooter_id": player.id,
-                "x": player.x, "y": player.y, "z": player.z,
-                "yaw": player.yaw, "pitch": player.pitch,
-            })
-            hit = self.raycast_hit(player)
-            if hit and hit.alive:
-                hit.hp -= SHOT_DAMAGE
-                hit.last_attacker = player.id
-                self.events.append({
-                    "type": "hit",
-                    "shooter_id": player.id,
-                    "victim_id": hit.id,
-                    "hp": max(0, hit.hp),
-                })
-                if hit.hp <= 0:
-                    hit.alive = False
-                    hit.hp = 0
-                    hit.deaths += 1
-                    player.kills += 1
-                    hit.respawn_at = time.time() + 3.0
-                    self.events.append({
-                        "type": "kill",
-                        "shooter_id": player.id,
-                        "shooter_name": player.username,
-                        "victim_id": hit.id,
-                        "victim_name": hit.username,
-                    })
-                    # Persist stats
-                    try:
-                        await db.users.update_one({"_id": ObjectId(player.user_id)}, {"$inc": {"stats.kills": 1}})
-                        await db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}})
-                    except Exception:
-                        pass
+            await self._apply_shoot(player, SHOT_DAMAGE)
+
+    async def _update_bots(self, dt: float):
+        now_ms = int(time.time() * 1000)
+        for bot in list(self.players.values()):
+            if not bot.is_bot or not bot.alive:
+                continue
+            # Find target = closest alive other player
+            target: Optional[Player] = None
+            best = float("inf")
+            for p in self.players.values():
+                if p is bot or not p.alive:
+                    continue
+                d = math.hypot(p.x - bot.x, p.z - bot.z)
+                if d < best:
+                    best = d
+                    target = p
+            if target is None:
+                # Wander
+                bot.bot_strafe_t += dt
+                wx = math.cos(bot.bot_strafe_t * 0.4) * 2 * dt
+                wz = math.sin(bot.bot_strafe_t * 0.4) * 2 * dt
+                nx, nz = bot.x + wx, bot.z + wz
+                if not self.collides_obstacle(nx, bot.z):
+                    bot.x = nx
+                if not self.collides_obstacle(bot.x, nz):
+                    bot.z = nz
+                continue
+
+            # Aim at target (head height ~1.6)
+            tx, tz = target.x, target.z
+            ty = target.y - 0.2
+            dx = tx - bot.x
+            dz = tz - bot.z
+            dist = math.hypot(dx, dz)
+            if dist > 0.01:
+                bot.yaw = math.atan2(dx, -dz)
+            dy = ty - bot.y
+            bot.pitch = max(-1.0, min(1.0, math.atan2(dy, dist) if dist > 0.01 else 0))
+
+            # Move: keep desired distance 12-16
+            bot.bot_strafe_t += dt
+            move_speed = 4.0 * dt
+            mx_, mz_ = 0.0, 0.0
+            desired = 14.0
+            if dist > desired + 2:
+                # approach
+                if dist > 0.01:
+                    mx_, mz_ = dx / dist, dz / dist
+            elif dist < desired - 4:
+                # back off
+                if dist > 0.01:
+                    mx_, mz_ = -dx / dist, -dz / dist
+            # strafe
+            strafe = math.sin(bot.bot_strafe_t * 1.4) * 0.7
+            if dist > 0.01:
+                # perpendicular dir
+                px, pz = -dz / dist, dx / dist
+                mx_ += px * strafe
+                mz_ += pz * strafe
+            L = math.hypot(mx_, mz_)
+            if L > 0:
+                mx_ /= L
+                mz_ /= L
+                nx = bot.x + mx_ * move_speed
+                nz = bot.z + mz_ * move_speed
+                if not self.collides_obstacle(nx, bot.z):
+                    bot.x = nx
+                else:
+                    # try sideways
+                    bot.bot_strafe_t += 0.3
+                if not self.collides_obstacle(bot.x, nz):
+                    bot.z = nz
+                else:
+                    bot.bot_strafe_t += 0.3
+
+            # Shoot when ready & LoS
+            if now_ms - bot.last_shot_ms >= BOT_SHOT_COOLDOWN_MS:
+                if self._has_los(bot, target):
+                    bot.last_shot_ms = now_ms
+                    # Add small aim noise to make it fair
+                    orig_yaw, orig_pitch = bot.yaw, bot.pitch
+                    bot.yaw += random.uniform(-0.05, 0.05)
+                    bot.pitch += random.uniform(-0.03, 0.03)
+                    await self._apply_shoot(bot, BOT_SHOT_DAMAGE)
+                    bot.yaw, bot.pitch = orig_yaw, orig_pitch
 
     async def tick(self):
-        # Respawn dead players
         now = time.time()
+        dt = max(0.0, now - self._last_tick)
+        self._last_tick = now
+
+        # Respawn dead
         for p in self.players.values():
             if not p.alive and now >= p.respawn_at:
                 x, z = random_spawn()
@@ -533,7 +706,11 @@ class GameRoom:
                 p.y = PLAYER_HEIGHT
                 p.hp = MAX_HP
                 p.alive = True
+                p.invuln_until = now + 3.0
                 self.events.append({"type": "respawn", "id": p.id})
+
+        # Bot AI
+        await self._update_bots(dt)
 
         state = {
             "type": "state",
@@ -562,7 +739,6 @@ game_room = GameRoom()
 # -------------------------------------------------------------------
 @api.websocket("/ws/game")
 async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None)):
-    # Auth: try cookie first, then token query param
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -575,7 +751,7 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         return
 
     await websocket.accept()
-    player = Player(websocket, user)
+    player = Player(websocket, user=user, is_bot=False)
     await game_room.add(player)
 
     try:

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GameEngine } from "@/game/engine";
 import { GameSocket } from "@/game/network";
+import audioBus from "@/game/audio";
 import Hud from "@/components/Hud";
 
 export default function Game() {
@@ -56,16 +57,25 @@ export default function Game() {
             killFeed: kf,
             hp: you ? you.hp : h.hp,
             alive: you ? you.alive : h.alive,
+            invuln: you ? !!you.invuln : false,
           };
         });
       },
       onLocalUpdate: (ev) => {
         if (ev.type === "damaged") {
           setHud((h) => ({ ...h, damaged: Date.now() }));
+          audioBus.hurt();
+        } else if (ev.type === "remote-shot") {
+          audioBus.gunshot();
+        } else if (ev.type === "you-hit") {
+          audioBus.hitmark();
+        } else if (ev.type === "you-killed") {
+          audioBus.killSfx();
         }
       },
     });
     engineRef.current = engine;
+    engine.onShoot = () => audioBus.gunshot();
     engine.start();
 
     const sock = new GameSocket({
@@ -126,6 +136,7 @@ export default function Game() {
   }, []);
 
   const handleStart = useCallback(() => {
+    audioBus.stopLobbyMusic();
     engineRef.current?.requestPointerLock();
   }, []);
 

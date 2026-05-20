@@ -47,11 +47,11 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
       {/* Bottom-left: HP */}
       <div className="absolute bottom-6 left-6 z-20" data-testid="hud-health">
-        <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)" }}>
+        <div className="hud-panel" style={{ background: hud.invuln ? "rgba(0,85,255,0.85)" : "rgba(10,10,10,0.85)" }}>
           <div className="flex items-center gap-3">
             <Heart size={22} strokeWidth={3} className="text-[#E62429]" />
             <div className="font-display text-4xl">{hud.hp}</div>
-            <div className="text-xs opacity-70">HP</div>
+            <div className="text-xs opacity-70">HP{hud.invuln ? " · SHIELDED" : ""}</div>
           </div>
           <div className="mt-2 w-56 h-3 border-2 border-white" style={{ transform: "skewX(0deg)" }}>
             <div

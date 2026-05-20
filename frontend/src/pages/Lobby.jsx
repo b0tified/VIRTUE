@@ -1,17 +1,43 @@
 import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Trophy, User, LogOut, Play } from "lucide-react";
+import audioBus from "@/game/audio";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX } from "lucide-react";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
 
 export default function Lobby() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const [muted, setMuted] = useState(false);
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
   const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
 
+  // Start lobby music on first user interaction (browser autoplay rules)
+  useEffect(() => {
+    const onFirstInteract = () => {
+      audioBus.startLobbyMusic();
+      document.removeEventListener("click", onFirstInteract);
+      document.removeEventListener("keydown", onFirstInteract);
+    };
+    document.addEventListener("click", onFirstInteract);
+    document.addEventListener("keydown", onFirstInteract);
+    return () => {
+      audioBus.stopLobbyMusic();
+      document.removeEventListener("click", onFirstInteract);
+      document.removeEventListener("keydown", onFirstInteract);
+    };
+  }, []);
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    audioBus.setMuted(next);
+  };
+
   const doLogout = async () => {
+    audioBus.stopLobbyMusic();
     await logout();
     nav("/login");
   };
@@ -33,6 +59,14 @@ export default function Lobby() {
           <div className="hud-panel" data-testid="lobby-user-badge">
             <div><span className="text-[#FFD700]">{user?.username}</span> <span className="opacity-70 text-sm">· K/D {kd}</span></div>
           </div>
+          <button
+            onClick={toggleMute}
+            className="btn-pow bg-[#FFD700] text-black"
+            data-testid="lobby-mute-toggle"
+            title={muted ? "Unmute" : "Mute"}
+          >
+            <span className="flex items-center gap-2">{muted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
+          </button>
           <button onClick={doLogout} className="btn-pow bg-white text-black" data-testid="lobby-logout-button">
             <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> LOGOUT</span>
           </button>
