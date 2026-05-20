@@ -190,7 +190,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
           <div className="card-pow p-0 w-full max-w-2xl">
             <div className="bg-[#0055FF] text-white px-6 py-4 flex items-center justify-between">
               <div className="font-display text-4xl text-[#FFD700]">MATCH OVER</div>
-              <div className="font-anton uppercase text-sm tracking-widest">Next match in 10s</div>
+              <div className="font-anton uppercase text-sm tracking-widest">
+                {hud.isRanked ? "Returning to lobby..." : "Next match in 10s"}
+              </div>
             </div>
             <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
               <div className="col-span-1">#</div>

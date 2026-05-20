@@ -115,6 +115,13 @@ export default function Game() {
         }
         if (msg.type === "match_end") {
           setHud((h) => ({ ...h, matchEnd: msg }));
+          // Ranked: auto-return to lobby after showing results.
+          if (mode === "ranked") {
+            setTimeout(() => {
+              try { document.exitPointerLock?.(); } catch {}
+              nav("/lobby", { replace: true });
+            }, 8000);
+          }
           return;
         }
         if (msg.type === "match_start") {
