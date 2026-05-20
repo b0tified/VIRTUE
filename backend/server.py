@@ -575,6 +575,9 @@ class GameRoom:
 
     async def handle_message(self, player: Player, msg: dict):
         mtype = msg.get("type")
+        if mtype == "ping":
+            await self._send(player, {"type": "pong", "ts": msg.get("ts", 0)})
+            return
         if mtype == "input":
             x = float(msg.get("x", player.x))
             z = float(msg.get("z", player.z))

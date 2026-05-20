@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Heart, Crosshair, Skull, Trophy, LogOut, Play } from "lucide-react";
+import { Heart, Skull, Trophy, LogOut, Play, Activity, Wifi, Bot, User } from "lucide-react";
 
 export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
   const [showDmg, setShowDmg] = useState(false);
+  const [showHit, setShowHit] = useState(false);
+
   useEffect(() => {
     if (!hud.damaged) return;
     setShowDmg(true);
@@ -10,20 +12,54 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
     return () => clearTimeout(t);
   }, [hud.damaged]);
 
+  useEffect(() => {
+    if (!hud.hitConfirm) return;
+    setShowHit(true);
+    const t = setTimeout(() => setShowHit(false), 220);
+    return () => clearTimeout(t);
+  }, [hud.hitConfirm]);
+
   const you = hud.players.find((p) => p.id === hud.youId);
   const kills = you?.kills ?? 0;
   const deaths = you?.deaths ?? 0;
 
+  const fpsColor = hud.fps >= 50 ? "#34C759" : hud.fps >= 30 ? "#FFD700" : "#E62429";
+  const pingColor = hud.ping > 0 && hud.ping <= 80 ? "#34C759" : hud.ping <= 200 ? "#FFD700" : "#E62429";
+
   return (
     <>
       {/* Crosshair */}
-      {pointerLocked && hud.alive && <div className="crosshair" />}
+      {pointerLocked && hud.alive && (
+        <div className={`crosshair ${showHit ? "crosshair-hit" : ""}`} data-testid="crosshair" />
+      )}
 
       {/* Damage vignette */}
       {showDmg && <div className="dmg-vignette" />}
 
-      {/* Top-left: connection / username */}
+      {/* Hit confirm pop near crosshair */}
+      {showHit && pointerLocked && (
+        <div className="hit-pop" data-testid="hit-pop">HIT!</div>
+      )}
+
+      {/* Top-left: FPS / Ping / Username */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2" data-testid="hud-top-left">
+        <div className="flex gap-2">
+          <div className="hud-panel !py-1 !px-3" data-testid="hud-fps" title="Frames per second">
+            <div className="flex items-center gap-2 text-sm">
+              <Activity size={14} strokeWidth={3} style={{ color: fpsColor }} />
+              <span className="opacity-70">FPS</span>
+              <span className="font-anton" style={{ color: fpsColor }}>{hud.fps}</span>
+            </div>
+          </div>
+          <div className="hud-panel !py-1 !px-3" data-testid="hud-ping" title="Round-trip time to server">
+            <div className="flex items-center gap-2 text-sm">
+              <Wifi size={14} strokeWidth={3} style={{ color: pingColor }} />
+              <span className="opacity-70">PING</span>
+              <span className="font-anton" style={{ color: pingColor }}>{hud.ping}</span>
+              <span className="opacity-60 text-xs">ms</span>
+            </div>
+          </div>
+        </div>
         <div className="hud-panel">
           <div className="text-[#FFD700]">{username}</div>
         </div>
@@ -33,9 +69,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       </div>
 
       {/* Top-right: kill feed */}
-      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end" data-testid="hud-kill-feed">
+      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end max-w-[420px]" data-testid="hud-kill-feed">
         {hud.killFeed.slice(0, 6).map((k) => (
-          <div key={k.id} className="hud-panel kf-row" style={{ background: "rgba(10,10,10,0.85)" }}>
+          <div key={k.id} className="hud-panel kf-row" style={{ background: "rgba(10,10,10,0.88)" }}>
             <div>
               <span className="text-[#FFD700]">{k.shooter}</span>{" "}
               <Skull size={14} strokeWidth={3} className="inline -mt-1" />{" "}
@@ -47,13 +83,13 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
       {/* Bottom-left: HP */}
       <div className="absolute bottom-6 left-6 z-20" data-testid="hud-health">
-        <div className="hud-panel" style={{ background: hud.invuln ? "rgba(0,85,255,0.85)" : "rgba(10,10,10,0.85)" }}>
+        <div className="hud-panel" style={{ background: hud.invuln ? "rgba(0,85,255,0.9)" : "rgba(10,10,10,0.85)" }}>
           <div className="flex items-center gap-3">
             <Heart size={22} strokeWidth={3} className="text-[#E62429]" />
             <div className="font-display text-4xl">{hud.hp}</div>
-            <div className="text-xs opacity-70">HP{hud.invuln ? " · SHIELDED" : ""}</div>
+            <div className="text-xs opacity-80">HP{hud.invuln ? " · SHIELDED" : ""}</div>
           </div>
-          <div className="mt-2 w-56 h-3 border-2 border-white" style={{ transform: "skewX(0deg)" }}>
+          <div className="mt-2 w-56 h-3 border-2 border-white">
             <div
               className="h-full"
               style={{
@@ -66,7 +102,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       </div>
 
-      {/* Bottom-right: Score */}
+      {/* Bottom-right: Score + ammo */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2" data-testid="hud-score">
         <div className="hud-panel">
           <div className="flex items-center gap-3">
@@ -94,28 +130,33 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       {/* Click-to-play overlay */}
       {!pointerLocked && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" data-testid="game-start-overlay">
-          <div className="card-pow p-8 max-w-lg w-full">
-            <div className="inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
-              <span className="font-anton uppercase tracking-widest">Arena</span>
+          <div className="relative">
+            <div className="absolute -top-6 -left-6 bg-[#FFD700] border-pow shadow-pow-sm px-4 py-1 -rotate-6 z-10">
+              <span className="font-display text-2xl uppercase">VIRTUE</span>
             </div>
-            <h2 className="font-display text-5xl uppercase text-[#E62429] text-pow-shadow">
-              {hud.connected ? "READY!" : "CONNECTING..."}
-            </h2>
-            <p className="font-body mt-2 text-black">
-              Click PLAY to lock your cursor and enter the arena. Press <span className="font-anton">ESC</span> to release.
-            </p>
-            <ul className="font-body text-sm mt-3 text-neutral-700 space-y-1">
-              <li><span className="font-anton">WASD</span> — Move</li>
-              <li><span className="font-anton">MOUSE</span> — Aim · <span className="font-anton">CLICK</span> — Shoot</li>
-              <li><span className="font-anton">SHIFT</span> — Sprint · <span className="font-anton">TAB</span> — Scoreboard</li>
-            </ul>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button onClick={onStart} className="btn-pow bg-[#E62429] text-white text-2xl" data-testid="game-start-button">
-                <span className="flex items-center gap-2"><Play size={20} strokeWidth={3} /> PLAY</span>
-              </button>
-              <button onClick={onExit} className="btn-pow bg-white text-black" data-testid="game-exit-button">
-                <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> EXIT</span>
-              </button>
+            <div className="card-pow p-8 max-w-lg w-full">
+              <div className="inline-block bg-[#E62429] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
+                <span className="font-anton uppercase tracking-widest">Arena · FFA</span>
+              </div>
+              <h2 className="font-display text-5xl uppercase text-[#E62429] text-pow-shadow">
+                {hud.connected ? "READY!" : "CONNECTING..."}
+              </h2>
+              <p className="font-body mt-2 text-black">
+                Click PLAY to lock your cursor and enter the arena. You'll spawn with a 3-second shield. Press <span className="font-anton">ESC</span> to release the cursor.
+              </p>
+              <ul className="font-body text-sm mt-3 text-neutral-700 space-y-1">
+                <li><span className="font-anton">WASD</span> — Move</li>
+                <li><span className="font-anton">MOUSE</span> — Aim · <span className="font-anton">CLICK</span> — Shoot</li>
+                <li><span className="font-anton">SHIFT</span> — Sprint · <span className="font-anton">TAB</span> — Scoreboard</li>
+              </ul>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button onClick={onStart} className="btn-pow bg-[#E62429] text-white text-2xl" data-testid="game-start-button">
+                  <span className="flex items-center gap-2"><Play size={20} strokeWidth={3} /> PLAY</span>
+                </button>
+                <button onClick={onExit} className="btn-pow bg-white text-black" data-testid="game-exit-button">
+                  <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> EXIT</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -124,26 +165,41 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       {/* Scoreboard (Tab) */}
       {hud.showScoreboard && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" data-testid="scoreboard-overlay">
-          <div className="card-pow p-0 w-full max-w-2xl">
+          <div className="card-pow p-0 w-full max-w-3xl">
             <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
               <div className="font-display text-3xl text-[#FFD700]">SCOREBOARD</div>
               <div className="font-anton uppercase text-sm tracking-widest">Free-For-All</div>
             </div>
             <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
               <div className="col-span-1">#</div>
-              <div className="col-span-7">Player</div>
+              <div className="col-span-1"></div>
+              <div className="col-span-6">Player</div>
               <div className="col-span-2 text-right">Kills</div>
               <div className="col-span-2 text-right">Deaths</div>
             </div>
             {hud.players.map((p, i) => (
               <div
                 key={p.id}
-                className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black ${p.id === hud.youId ? "bg-[#FFE680]" : "bg-white"}`}
+                className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${
+                  p.id === hud.youId ? "bg-[#FFE680]" : i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"
+                }`}
+                data-testid={`scoreboard-row-${i}`}
               >
                 <div className="col-span-1 font-display text-xl">{i + 1}</div>
-                <div className="col-span-7 font-anton uppercase">{p.username}</div>
-                <div className="col-span-2 text-right font-anton">{p.kills}</div>
-                <div className="col-span-2 text-right font-anton">{p.deaths}</div>
+                <div className="col-span-1">
+                  {p.is_bot ? (
+                    <span className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-2 text-xs font-anton uppercase">
+                      <Bot size={12} strokeWidth={3} /> BOT
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 bg-[#0055FF] text-white border-pow-thin px-2 text-xs font-anton uppercase">
+                      <User size={12} strokeWidth={3} /> P
+                    </span>
+                  )}
+                </div>
+                <div className="col-span-6 font-anton uppercase">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
+                <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
+                <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
               </div>
             ))}
             {hud.players.length === 0 && (

@@ -21,9 +21,14 @@ export default function Game() {
     killFeed: [],
     showScoreboard: false,
     damaged: 0,
+    hitConfirm: 0,
     connected: false,
+    fps: 0,
+    ping: 0,
+    invuln: false,
   });
   const [pointerLocked, setPointerLocked] = useState(false);
+  const pingRef = useRef({ lastSent: 0, value: 0 });
 
   // Setup engine + socket
   useEffect(() => {
@@ -69,8 +74,10 @@ export default function Game() {
           audioBus.gunshot();
         } else if (ev.type === "you-hit") {
           audioBus.hitmark();
+          setHud((h) => ({ ...h, hitConfirm: Date.now() }));
         } else if (ev.type === "you-killed") {
           audioBus.killSfx();
+          setHud((h) => ({ ...h, hitConfirm: Date.now() }));
         }
       },
     });
@@ -82,6 +89,11 @@ export default function Game() {
       onOpen: () => setHud((h) => ({ ...h, connected: true })),
       onClose: () => setHud((h) => ({ ...h, connected: false })),
       onMessage: (msg) => {
+        if (msg.type === "pong") {
+          const rtt = Date.now() - (msg.ts || 0);
+          pingRef.current.value = rtt;
+          return;
+        }
         engineRef.current?.applyServerState(msg);
       },
     });
@@ -103,6 +115,20 @@ export default function Game() {
         sock.send({ type: "shoot", yaw: snap.yaw, pitch: snap.pitch });
       }
     }, 1000 / 20);
+
+    // Ping loop @ 1Hz
+    const pingId = setInterval(() => {
+      sock.send({ type: "ping", ts: Date.now() });
+    }, 1000);
+
+    // FPS/ping display refresh @ 4Hz
+    const statsId = setInterval(() => {
+      setHud((h) => ({
+        ...h,
+        fps: engineRef.current?.getFps() ?? 0,
+        ping: pingRef.current.value,
+      }));
+    }, 250);
 
     const onLockChange = () => {
       setPointerLocked(document.pointerLockElement === canvas);
@@ -126,6 +152,8 @@ export default function Game() {
 
     return () => {
       clearInterval(intervalId);
+      clearInterval(pingId);
+      clearInterval(statsId);
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);

@@ -274,6 +274,9 @@ class TestWebSocket:
                             break
                 assert both_seen, "Players did not see each other within timeout"
 
+                # Wait for spawn invulnerability (3s) to expire on both players
+                await asyncio.sleep(3.2)
+
                 import math
 
                 async def latest_positions():
@@ -397,16 +400,20 @@ class TestKillAndStatsPersistence:
                 async def send_text(self, *_a, **_kw):
                     return None
             p1 = srv.Player.__new__(srv.Player)
-            p1.ws = FakeWS(); p1.user_id = str(u1["_id"]); p1.username = "killA"
+            p1.ws = FakeWS(); p1.is_bot = False; p1.user_id = str(u1["_id"]); p1.username = "killA"
             p1.id = "p1"; p1.x = 30.0; p1.y = srv.PLAYER_HEIGHT; p1.z = 0.0
             p1.yaw = math.pi / 2; p1.pitch = 0.0; p1.hp = srv.MAX_HP; p1.kills = 0; p1.deaths = 0
             p1.alive = True; p1.last_shot_ms = 0; p1.respawn_at = 0.0; p1.last_attacker = None
+            p1.invuln_until = 0.0
+            p1.bot_strafe_t = 0.0; p1.bot_repath_at = 0.0; p1.bot_target_id = None
 
             p2 = srv.Player.__new__(srv.Player)
-            p2.ws = FakeWS(); p2.user_id = str(u2["_id"]); p2.username = "killB"
+            p2.ws = FakeWS(); p2.is_bot = False; p2.user_id = str(u2["_id"]); p2.username = "killB"
             p2.id = "p2"; p2.x = 35.0; p2.y = srv.PLAYER_HEIGHT; p2.z = 0.0  # 5 units in +X (clear of obstacles)
             p2.yaw = 0.0; p2.pitch = 0.0; p2.hp = srv.MAX_HP; p2.kills = 0; p2.deaths = 0
             p2.alive = True; p2.last_shot_ms = 0; p2.respawn_at = 0.0; p2.last_attacker = None
+            p2.invuln_until = 0.0
+            p2.bot_strafe_t = 0.0; p2.bot_repath_at = 0.0; p2.bot_target_id = None
 
             # Use a fresh game room not to interfere with running one
             room = srv.GameRoom()

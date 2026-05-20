@@ -128,9 +128,40 @@ body {
 .crosshair::before, .crosshair::after {
   content: ""; position: absolute; background: #fff;
   box-shadow: 0 0 0 1.5px #000;
+  transition: background 0.08s;
 }
 .crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
 .crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%;  transform: translateY(-50%); }
+.crosshair-hit::before, .crosshair-hit::after {
+  background: #E62429;
+  box-shadow: 0 0 0 1.5px #FFD700;
+}
+.crosshair-hit {
+  animation: hit-pulse 0.18s ease-out;
+}
+@keyframes hit-pulse {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.6); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+.hit-pop {
+  position: absolute;
+  left: 50%; top: calc(50% - 38px);
+  transform: translateX(-50%);
+  font-family: 'Bangers', 'Anton', cursive;
+  font-size: 1.5rem;
+  letter-spacing: 0.06em;
+  color: #FFD700;
+  text-shadow: 2px 2px 0 #0A0A0A, -1px -1px 0 #0A0A0A;
+  pointer-events: none;
+  animation: hit-pop-anim 0.22s ease-out forwards;
+}
+@keyframes hit-pop-anim {
+  0%   { opacity: 0; transform: translate(-50%, 6px) scale(0.7); }
+  30%  { opacity: 1; transform: translate(-50%, -6px) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -18px) scale(1); }
+}
 
 @layer base {
   * { border-color: var(--pow-black); }

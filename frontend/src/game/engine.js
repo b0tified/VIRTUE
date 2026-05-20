@@ -72,6 +72,15 @@ export class GameEngine {
 
     this.lastTime = performance.now();
     this.running = false;
+
+    // FPS tracking
+    this._fpsFrames = 0;
+    this._fpsLastT = performance.now();
+    this.fps = 0;
+  }
+
+  getFps() {
+    return this.fps;
   }
 
   start() {
@@ -552,6 +561,12 @@ export class GameEngine {
     this.lastTime = now;
     this._update(dt);
     this.renderer.render(this.scene, this.camera);
+    this._fpsFrames++;
+    if (now - this._fpsLastT >= 500) {
+      this.fps = Math.round((this._fpsFrames * 1000) / (now - this._fpsLastT));
+      this._fpsFrames = 0;
+      this._fpsLastT = now;
+    }
     requestAnimationFrame(this._loop);
   };
 
