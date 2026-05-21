@@ -36,6 +36,7 @@ db = client[os.environ['DB_NAME']]
 JWT_ALGORITHM = "HS256"
 ACCESS_TTL_MIN = 60 * 24
 REFRESH_TTL_DAYS = 7
+SEASON_LENGTH_DAYS = 14
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
@@ -87,6 +88,10 @@ def set_auth_cookies(response: Response, access: str, refresh: str):
 
 def public_user(user: dict) -> dict:
     points = int(user.get("rank_points", 0) or 0)
+    peak = int(user.get("peak_rank_points", points) or points)
+    if points > peak:
+        peak = points
+    peak_idx, peak_name = rank_for_points(peak)
     tier_idx, tier_name = rank_for_points(points)
     placement_played = int(user.get("placement_matches_played", 0) or 0)
     return {
@@ -98,10 +103,77 @@ def public_user(user: dict) -> dict:
         "rank_points": points,
         "rank_tier": tier_idx,
         "rank_name": tier_name,
+        "peak_rank_points": peak,
+        "peak_rank_tier": peak_idx,
+        "peak_rank_name": peak_name,
         "placement_matches_played": placement_played,
         "placement_matches_total": PLACEMENT_MATCHES,
         "in_placements": placement_played < PLACEMENT_MATCHES,
         "created_at": user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+    }
+
+
+# -------------------------------------------------------------------
+# Season (rank reset every 14 days)
+# -------------------------------------------------------------------
+async def get_or_init_season() -> dict:
+    """Return the current season doc, initializing it on first run."""
+    doc = await db.meta.find_one({"_id": "season"})
+    now = datetime.now(timezone.utc)
+    if not doc:
+        doc = {"_id": "season", "season_number": 1, "season_start": now}
+        await db.meta.insert_one(doc)
+    return doc
+
+
+async def maybe_reset_season() -> dict:
+    """If the season has elapsed, reset ranks for everyone and bump season number."""
+    doc = await get_or_init_season()
+    start = doc.get("season_start")
+    if isinstance(start, datetime) and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    ends_at = start + timedelta(days=SEASON_LENGTH_DAYS)
+    if now >= ends_at:
+        next_num = int(doc.get("season_number", 1)) + 1
+        # Snapshot current rank into peak_rank_points (only if higher), then reset.
+        await db.users.update_many(
+            {"rank_points": {"$exists": True}},
+            [{
+                "$set": {
+                    "peak_rank_points": {
+                        "$max": [
+                            {"$ifNull": ["$peak_rank_points", 0]},
+                            {"$ifNull": ["$rank_points", 0]},
+                        ]
+                    },
+                    "rank_points": 0,
+                    "placement_matches_played": 0,
+                }
+            }],
+        )
+        await db.meta.update_one(
+            {"_id": "season"},
+            {"$set": {"season_number": next_num, "season_start": now}},
+        )
+        logger.info("Season reset → S%d", next_num)
+        doc = {"_id": "season", "season_number": next_num, "season_start": now}
+    return doc
+
+
+def season_payload(doc: dict) -> dict:
+    start = doc.get("season_start")
+    if isinstance(start, datetime) and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    ends_at = start + timedelta(days=SEASON_LENGTH_DAYS)
+    now = datetime.now(timezone.utc)
+    seconds_left = max(0, int((ends_at - now).total_seconds()))
+    return {
+        "season_number": int(doc.get("season_number", 1)),
+        "season_start": start.isoformat() if start else None,
+        "season_ends_at": ends_at.isoformat(),
+        "seconds_left": seconds_left,
+        "length_days": SEASON_LENGTH_DAYS,
     }
 
 
@@ -193,9 +265,15 @@ async def on_startup():
     for name in BOT_NAMES[:NUM_BOTS]:
         game_room.spawn_bot(name)
     ranked_room.spawn_bot(BOT_NAMES[0] + "-R")
+
+    # Initialize season metadata (rank reset every 14 days)
+    await get_or_init_season()
+    await maybe_reset_season()
+
     asyncio.create_task(game_room.run())
     asyncio.create_task(ranked_room.run())
     asyncio.create_task(matchmaker_loop())
+    asyncio.create_task(season_loop())
 
 
 @app.on_event("shutdown")
@@ -930,9 +1008,14 @@ class GameRoom:
                         delta = 0
                 new_points = max(0, cur + delta)
                 tier_idx, tier_name = rank_for_points(new_points)
+                prev_peak = int((udoc or {}).get("peak_rank_points", 0) or 0)
+                new_peak = max(prev_peak, new_points)
+                update_set = {"rank_points": new_points}
+                if new_peak > prev_peak:
+                    update_set["peak_rank_points"] = new_peak
                 await db.users.update_one(
                     {"_id": ObjectId(p.user_id)},
-                    {"$set": {"rank_points": new_points}, "$inc": {"stats.matches": 1, "placement_matches_played": 1}},
+                    {"$set": update_set, "$inc": {"stats.matches": 1, "placement_matches_played": 1}},
                 )
             except Exception as e:
                 logger.warning("rank update failed: %s", e)
@@ -1028,25 +1111,42 @@ async def matchmaker_loop():
         await asyncio.sleep(0.5)
 
 
+async def season_loop():
+    """Periodically checks if the season has elapsed and resets ranks if so."""
+    while True:
+        try:
+            await maybe_reset_season()
+        except Exception as e:
+            logger.warning("season_loop error: %s", e)
+        await asyncio.sleep(60.0)
+
+
+@api.get("/season")
+async def season_status():
+    doc = await maybe_reset_season()
+    return season_payload(doc)
+
+
 @api.post("/queue/ranked")
 async def queue_ranked_join(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
     points = int(user.get("rank_points", 0) or 0)
     tier_idx, tier_name = rank_for_points(points)
+    now_ts = time.time()
     async with QUEUE_LOCK:
         if user_id in MATCHED_USERS:
             m = MATCHED_USERS[user_id]
-            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name}
+            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": int(QUEUE_BOT_FILL_SEC)}
         for q in RANKED_QUEUE.values():
             for e in q:
                 if e["user_id"] == user_id:
-                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q)}
+                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q), "wait_seconds": int(now_ts - e["joined_at"]), "bot_fill_seconds": int(QUEUE_BOT_FILL_SEC)}
         RANKED_QUEUE[tier_idx].append({
             "user_id": user_id,
             "username": user.get("username", ""),
-            "joined_at": time.time(),
+            "joined_at": now_ts,
         })
-    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx])}
+    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx]), "wait_seconds": 0, "bot_fill_seconds": int(QUEUE_BOT_FILL_SEC)}
 
 
 @api.get("/queue/ranked")
@@ -1054,14 +1154,15 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
     points = int(user.get("rank_points", 0) or 0)
     tier_idx, tier_name = rank_for_points(points)
+    now_ts = time.time()
     if user_id in MATCHED_USERS:
         m = MATCHED_USERS[user_id]
-        return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name}
+        return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": int(QUEUE_BOT_FILL_SEC)}
     for ti, q in RANKED_QUEUE.items():
         for i, e in enumerate(q):
             if e["user_id"] == user_id:
-                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q)}
-    return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name}
+                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q), "wait_seconds": int(now_ts - e["joined_at"]), "bot_fill_seconds": int(QUEUE_BOT_FILL_SEC)}
+    return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": int(QUEUE_BOT_FILL_SEC)}
 
 
 @api.delete("/queue/ranked")

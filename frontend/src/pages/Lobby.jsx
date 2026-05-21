@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Mouse, Users, Award, X, Loader2, Star, WifiOff } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Clock } from "lucide-react";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -14,7 +14,8 @@ export default function Lobby() {
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
-  const [muted, setMuted] = useState(false);
+  const [musicMuted, setMusicMuted] = useState(false);
+  const [sfxMuted, setSfxMuted] = useState(false);
   const [sensitivity, setSensitivity] = useState(() => {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
     return Number.isFinite(v) && v > 0 ? v : 1.0;
@@ -113,10 +114,16 @@ export default function Lobby() {
     };
   }, []);
 
-  const toggleMute = () => {
-    const next = !muted;
-    setMuted(next);
-    audioBus.setMuted(next);
+  const toggleMusic = () => {
+    const next = !musicMuted;
+    setMusicMuted(next);
+    audioBus.setMusicMuted(next);
+  };
+
+  const toggleSfx = () => {
+    const next = !sfxMuted;
+    setSfxMuted(next);
+    audioBus.setSfxMuted(next);
   };
 
   const doLogout = async () => {
@@ -143,12 +150,20 @@ export default function Lobby() {
             <div><span className="text-[#FFD700]">{user?.username}</span> <span className="opacity-70 text-sm">· K/D {kd}</span></div>
           </div>
           <button
-            onClick={toggleMute}
-            className="btn-pow bg-[#FFD700] text-black"
-            data-testid="lobby-mute-toggle"
-            title={muted ? "Unmute" : "Mute"}
+            onClick={toggleMusic}
+            className={`btn-pow ${musicMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
+            data-testid="lobby-music-toggle"
+            title={musicMuted ? "Unmute music" : "Mute music"}
           >
-            <span className="flex items-center gap-2">{muted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
+            <span className="flex items-center gap-2"><Music size={18} strokeWidth={3} /></span>
+          </button>
+          <button
+            onClick={toggleSfx}
+            className={`btn-pow ${sfxMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
+            data-testid="lobby-sfx-toggle"
+            title={sfxMuted ? "Unmute SFX" : "Mute SFX"}
+          >
+            <span className="flex items-center gap-2">{sfxMuted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
           </button>
           <button onClick={doLogout} className="btn-pow bg-white text-black" data-testid="lobby-logout-button">
             <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> LOGOUT</span>
@@ -345,7 +360,13 @@ export default function Lobby() {
                 {queueState.matched ? "Match Found!" : "Queued — Searching"}
               </span>
               {!queueState.matched && (
-                <button onClick={cancelRankedQueue} className="font-anton hover:opacity-80" data-testid="queue-cancel" title="Leave queue">
+                <div className="font-anton text-xs flex items-center gap-1 bg-black/30 px-2 py-0.5 rounded-sm" data-testid="queue-wait-timer">
+                  <Clock size={12} strokeWidth={3} />
+                  {fmtMS(queueState.wait_seconds || 0)}
+                </div>
+              )}
+              {!queueState.matched && (
+                <button onClick={cancelRankedQueue} className="font-anton hover:opacity-80 ml-1" data-testid="queue-cancel" title="Leave queue">
                   <X size={16} strokeWidth={3} />
                 </button>
               )}
@@ -364,6 +385,22 @@ export default function Lobby() {
                   </div>
                 )}
               </div>
+              {!queueState.matched && (queueState.bot_fill_seconds || 0) > 0 && (
+                <div className="mb-2">
+                  <div className="h-1.5 w-full bg-neutral-200 border border-black overflow-hidden">
+                    <div
+                      className="h-full bg-[#0055FF] transition-all"
+                      style={{
+                        width: `${Math.min(100, ((queueState.wait_seconds || 0) / queueState.bot_fill_seconds) * 100)}%`,
+                      }}
+                      data-testid="queue-progress-bar"
+                    />
+                  </div>
+                  <p className="font-anton uppercase text-[10px] tracking-widest text-neutral-500 mt-1">
+                    Bot-fill in {Math.max(0, queueState.bot_fill_seconds - (queueState.wait_seconds || 0))}s
+                  </p>
+                </div>
+              )}
               <p className="font-body text-xs text-neutral-600">
                 {queueState.matched
                   ? "Entering arena..."
@@ -387,6 +424,13 @@ function StatChip({ label, value, color, textColor = "#fff", testid }) {
       <div className="font-display text-3xl mt-1">{value}</div>
     </div>
   );
+}
+
+function fmtMS(totalSec) {
+  const s = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
 const RANK_TIERS = [
