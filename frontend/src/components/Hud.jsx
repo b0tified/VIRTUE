@@ -59,9 +59,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
   return (
     <>
-      {/* Crosshair */}
+      {/* Crosshair — Overwatch-style: 4 ticks that grow with current spread */}
       {pointerLocked && hud.alive && (
-        <div className={`crosshair ${showHit ? "crosshair-hit" : ""}`} data-testid="crosshair" />
+        <DynamicCrosshair spread={hud.spread || 0} showHit={showHit} headshot={!!hud.hitHeadshot} />
       )}
 
       {/* Damage vignette */}
@@ -69,7 +69,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
       {/* Hit confirm pop near crosshair */}
       {showHit && pointerLocked && (
-        <div className="hit-pop" data-testid="hit-pop">HIT!</div>
+        <div className="hit-pop" data-testid="hit-pop" style={hud.hitHeadshot ? { color: "#FFD700" } : undefined}>
+          {hud.hitHeadshot ? "HEADSHOT!" : "HIT!"}
+        </div>
       )}
 
       {/* Top-left: FPS / Ping / Username */}
@@ -156,7 +158,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       </div>
 
-      {/* Bottom-right: Score + weapon */}
+      {/* Bottom-right: Score + weapon + ammo */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2" data-testid="hud-score">
         <div className="hud-panel">
           <div className="flex items-center gap-3">
@@ -166,11 +168,38 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
             <span className="text-[#E62429] font-display text-3xl">{deaths}</span>
           </div>
         </div>
+
+        {/* Ammo + reload (only for ranged weapons; hidden for katana) */}
+        {hud.weapon !== "secondary" && hud.ammo != null && (
+          <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)" }} data-testid="hud-ammo">
+            <div className="flex items-end gap-2">
+              <span
+                className="font-display text-4xl tabular-nums"
+                style={{ color: hud.ammo === 0 ? "#E62429" : hud.ammo <= Math.max(3, Math.floor((hud.magSize || 1) * 0.2)) ? "#FFD700" : "#FFFFFF" }}
+              >
+                {hud.ammo}
+              </span>
+              <span className="font-anton text-lg text-white/60 mb-1">/ {hud.magSize ?? "—"}</span>
+            </div>
+            {hud.reloading && (
+              <div className="mt-1 w-32 h-1.5 border border-white/40 overflow-hidden" data-testid="hud-reload-bar">
+                <div
+                  className="h-full bg-[#FFD700] transition-all"
+                  style={{ width: `${Math.min(100, Math.max(0, (hud.reloadProgress || 0) * 100))}%` }}
+                />
+              </div>
+            )}
+            {!hud.reloading && hud.ammo === 0 && (
+              <div className="font-anton uppercase text-[10px] tracking-widest text-[#E62429] mt-1">PRESS R · RELOAD</div>
+            )}
+          </div>
+        )}
+
         <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : "rgba(255,215,0,0.92)", color: "#0A0A0A" }} data-testid="hud-weapon">
           <div className="text-xs">{hud.weapon === "secondary" ? "[2/V] KATANA" : hud.weapon === "tertiary" ? "[3] LASER" : "[1] AK-47"}</div>
         </div>
         <div className="hud-panel" style={{ background: "rgba(10,10,10,0.7)" }}>
-          <div className="text-xs">TAB · SCOREBOARD</div>
+          <div className="text-xs">TAB · SCOREBOARD · R · RELOAD</div>
         </div>
       </div>
 
@@ -324,5 +353,45 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       )}
     </>
+  );
+}
+
+// Overwatch-style dynamic crosshair: 4 ticks that spread outward as the
+// shooter's accumulated recoil (spread) grows. Server reports `spread` in
+// radians; we map it linearly to a pixel gap. Heads-up: hit confirmation
+// briefly recolors the ticks (gold on body, red on headshot).
+function DynamicCrosshair({ spread, showHit, headshot }) {
+  // 0 rad → 4px gap, 0.16 rad (max) → 22px gap
+  const gap = 4 + Math.min(22, Math.round((spread / 0.16) * 18));
+  const len = 8;
+  const thickness = 2;
+  const color = showHit ? (headshot ? "#FFD700" : "#FFFFFF") : "#FFFFFF";
+  const shadow = "0 0 0 1px #000";
+  const common = { position: "absolute", background: color, boxShadow: shadow, pointerEvents: "none" };
+  return (
+    <div
+      className="pointer-events-none"
+      style={{
+        position: "fixed",
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%, -50%)",
+        width: 0,
+        height: 0,
+        zIndex: 20,
+      }}
+      data-testid="crosshair"
+    >
+      {/* center dot */}
+      <div style={{ ...common, width: 3, height: 3, left: -1.5, top: -1.5 }} />
+      {/* top */}
+      <div style={{ ...common, width: thickness, height: len, left: -thickness / 2, top: -(gap + len) }} />
+      {/* bottom */}
+      <div style={{ ...common, width: thickness, height: len, left: -thickness / 2, top: gap }} />
+      {/* left */}
+      <div style={{ ...common, width: len, height: thickness, left: -(gap + len), top: -thickness / 2 }} />
+      {/* right */}
+      <div style={{ ...common, width: len, height: thickness, left: gap, top: -thickness / 2 }} />
+    </div>
   );
 }

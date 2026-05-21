@@ -1,0 +1,36 @@
+{
+  "summary": "Verified the Overwatch-style shooting pipeline end-to-end. 8/8 new backend tests pass (auth-login schema, /api/season, /api/queue/ranked bot_fill_seconds 45 Bronze and 120 Master+, WS shoot decrements ammo 25->24 with 'shot' event, full-mag drain auto-reload with reload_progress monotonic increase and refill to 25, manual reload sets reloading=true, hit events carry body_part/damage/headshot). Frontend smoke check on QUICK MATCH confirms hud-ammo renders '25 / 25', crosshair has 5 children (4 ticks + dot), gameplay arena loads with bots and AK-47 model.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_overwatch_shoot.py",
+    "/app/test_reports/pytest/overwatch_shoot_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:577 start_reload() bails when ammo >= mag_size and when already reloading — this is correct, matches manual-reload test expectation (no-op on full mag).",
+    "server.py:888-901 damage formula correctly applies headshot/legs multipliers then distance falloff, then int rounds — for ak47 25 dmg, headshot becomes 50, leg shot 21. Falloff start 15m, end 40m at 0.5x min mult, matches PRD.",
+    "server.py:1125 spread decay runs only when shooter.alive and not is_bot — appropriate; sets floor to spread_base each tick so cone never collapses below the base.",
+    "server.py:980 auto-reload trigger on shoot-with-zero-ammo and server.py:990 trigger when last shot drops mag to 0 — covers both 'click on empty' and 'last bullet of mag' paths.",
+    "Hud.jsx:174-185 hud-ammo + hud-reload-bar use data-testid (verified visually); hit-pop (line 72) toggles HEADSHOT! gold (#FFD700) vs HIT! based on hud.hitHeadshot — consistent with backend headshot bool.",
+    "engine.js _spawnTracer no lateral offset (per request); snapshot exposes ads — not directly testable without WS hook into FE but the backend handles 'ads' field in input correctly (server.py:964).",
+    "test_credentials reset cleanly: admin RP set back to 0 in finally block of master test."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_overwatch_shoot.py (new — 8 tests, all passing in ~18s)"
+  ],
+  "success_rate": {"backend": "100% (8/8 new tests pass)", "frontend": "100% on smoke checks (hud-ammo 25/25, crosshair 5 children rendered, arena loads with bots)"},
+  "test_credentials": "admin@shooter.com/admin123 used; RP manipulated via direct MongoDB writes (pymongo) and reset to 0 in test teardown.",
+  "seed_data_creation": "TEST_ow_<suffix>@shooter.com users created per test; no cleanup needed (prefixed for easy DB cleanup).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: python -m pytest backend/tests/test_overwatch_shoot.py -v. Hit-event test relies on at least one bot being non-invuln within ~3s of spawn — robust loop tries 60 shots while re-aiming each frame; took ~6s in this run. WebSocket endpoint expects ?token=<JWT>&mode=casual. The pymongo client used in tests reads MONGO_URL/DB_NAME from env (matches backend/.env). For frontend manual check, login as admin → click QUICK MATCH → click PLAY → arena loads with HUD on right (HP/Score/Ammo 25/25/Weapon) and dynamic crosshair visible.",
+  "rca of the issue": "N/A — all features verified working end-to-end."
+}

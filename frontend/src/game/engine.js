@@ -974,9 +974,9 @@ export class GameEngine {
           this._spawnMeleeArc(ev);
         } else if (ev.type === "hit") {
           if (ev.victim_id === this.youId) this.onLocalUpdate({ type: "damaged" });
-          else if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-hit" });
+          else if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-hit", headshot: !!ev.headshot, damage: ev.damage, bodyPart: ev.body_part });
         } else if (ev.type === "kill") {
-          if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-killed", victim: ev.victim_name });
+          if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-killed", victim: ev.victim_name, headshot: !!ev.headshot });
         }
       }
       this.onState(msg);
@@ -1200,6 +1200,7 @@ export class GameEngine {
       pitch: this.pitch,
       shoot,
       melee,
+      ads: !!this.ads,
     };
   }
 }

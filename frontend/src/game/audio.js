@@ -122,20 +122,21 @@ class AudioBus {
   }
 
   /* -------- Hit marker (you hit someone) -------- */
-  hitmark() {
+  hitmark(headshot = false) {
     if (!this._ensure()) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    [
-      { f: 1800, t: now, dur: 0.06 },
-      { f: 2400, t: now + 0.04, dur: 0.08 },
-    ].forEach(({ f, t, dur }) => {
+    // Headshot = higher, brighter "ting-ting" (Overwatch headshot ding).
+    const tones = headshot
+      ? [{ f: 2400, t: now, dur: 0.05 }, { f: 3400, t: now + 0.03, dur: 0.10 }]
+      : [{ f: 1800, t: now, dur: 0.06 }, { f: 2400, t: now + 0.04, dur: 0.08 }];
+    tones.forEach(({ f, t, dur }) => {
       const osc = ctx.createOscillator();
       osc.type = "triangle";
       osc.frequency.value = f;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0, t);
-      g.gain.linearRampToValueAtTime(0.32, t + 0.005);
+      g.gain.linearRampToValueAtTime(headshot ? 0.42 : 0.32, t + 0.005);
       g.gain.exponentialRampToValueAtTime(0.001, t + dur);
       osc.connect(g); g.connect(this.sfxGain);
       osc.start(t); osc.stop(t + dur + 0.02);
@@ -156,11 +157,11 @@ class AudioBus {
     osc.start(); osc.stop(ctx.currentTime + 0.22);
   }
 
-  killSfx() {
+  killSfx(headshot = false) {
     if (!this._ensure()) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    const notes = [880, 1175, 1568];
+    const notes = headshot ? [1175, 1568, 1976] : [880, 1175, 1568];
     notes.forEach((f, i) => {
       const osc = ctx.createOscillator();
       osc.type = "triangle";
@@ -168,7 +169,7 @@ class AudioBus {
       const g = ctx.createGain();
       const t = now + i * 0.07;
       g.gain.setValueAtTime(0.0, t);
-      g.gain.linearRampToValueAtTime(0.22, t + 0.01);
+      g.gain.linearRampToValueAtTime(headshot ? 0.3 : 0.22, t + 0.01);
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
       osc.connect(g); g.connect(this.sfxGain);
       osc.start(t); osc.stop(t + 0.2);

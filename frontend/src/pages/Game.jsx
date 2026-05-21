@@ -73,6 +73,11 @@ export default function Game() {
             hp: you ? you.hp : h.hp,
             alive: you ? you.alive : h.alive,
             invuln: you ? !!you.invuln : false,
+            ammo: you?.ammo ?? h.ammo,
+            magSize: you?.mag_size ?? h.magSize,
+            reloading: you?.reloading ?? false,
+            reloadProgress: you?.reload_progress ?? 1,
+            spread: you?.spread ?? 0,
           };
         });
       },
@@ -83,11 +88,11 @@ export default function Game() {
         } else if (ev.type === "remote-shot") {
           audioBus.gunshot(ev.shooterId, ev.distance);
         } else if (ev.type === "you-hit") {
-          audioBus.hitmark();
-          setHud((h) => ({ ...h, hitConfirm: Date.now() }));
+          audioBus.hitmark(!!ev.headshot);
+          setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));
         } else if (ev.type === "you-killed") {
-          audioBus.killSfx();
-          setHud((h) => ({ ...h, hitConfirm: Date.now() }));
+          audioBus.killSfx(!!ev.headshot);
+          setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));
         } else if (ev.type === "footstep") {
           audioBus.footstep(ev.sprint);
         }
@@ -155,6 +160,7 @@ export default function Game() {
         z: snap.z,
         yaw: snap.yaw,
         pitch: snap.pitch,
+        ads: !!snap.ads,
       });
       if (snap.shoot) {
         const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
@@ -200,6 +206,10 @@ export default function Game() {
       if (e.code === "Digit3") {
         engineRef.current?.setWeapon("tertiary");
         setHud((h) => ({ ...h, weapon: "tertiary" }));
+      }
+      if (e.code === "KeyR") {
+        const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+        sock.send({ type: "reload", weapon: w });
       }
       if (e.code === "Escape") {
         // pointer lock auto-released

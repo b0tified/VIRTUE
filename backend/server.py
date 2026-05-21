@@ -459,6 +459,48 @@ QUEUE_BOT_FILL_SEC = 45.0
 QUEUE_BOT_FILL_SEC_HIGH = 120.0  # Master tier (5) and above wait longer
 QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 
+# -------------------------------------------------------------------
+# Overwatch-style weapon configs (hitscan + falloff + spread + reload)
+# -------------------------------------------------------------------
+WEAPON_CONFIGS = {
+    "ak47":  {
+        "damage": SHOT_DAMAGE,
+        "cooldown_ms": SHOT_COOLDOWN_MS,
+        "mag_size": 25,
+        "reload_ms": 1500,
+        "headshot_mult": 2.0,
+        "legs_mult": 0.85,
+        "falloff_start": 15.0,  # m — full damage before this
+        "falloff_end": 40.0,    # m — 50% damage at/after this
+        "min_damage_mult": 0.5,
+        "spread_base": 0.005,   # rad
+        "spread_per_shot": 0.030,
+        "spread_max": 0.16,
+        "spread_decay": 4.0,    # per second
+        "ads_spread_mult": 0.25,
+    },
+    "laser": {
+        "damage": LASER_DAMAGE,
+        "cooldown_ms": LASER_COOLDOWN_MS,
+        "mag_size": 60,
+        "reload_ms": 1800,
+        "headshot_mult": 1.5,
+        "legs_mult": 0.9,
+        "falloff_start": 25.0,
+        "falloff_end": 70.0,
+        "min_damage_mult": 0.6,
+        "spread_base": 0.0,     # laser stays pinpoint
+        "spread_per_shot": 0.0,
+        "spread_max": 0.0,
+        "spread_decay": 1.0,
+        "ads_spread_mult": 1.0,
+    },
+}
+
+
+def weapon_cfg(name: str) -> dict:
+    return WEAPON_CONFIGS.get(name, WEAPON_CONFIGS["ak47"])
+
 
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
     return QUEUE_BOT_FILL_SEC_HIGH if tier_idx >= QUEUE_HIGH_TIER_MIN else QUEUE_BOT_FILL_SEC
@@ -505,6 +547,51 @@ class Player:
         self.bot_strafe_t = random.uniform(0, 6.28)
         self.bot_repath_at = 0.0
         self.bot_target_id: Optional[str] = None
+        # Weapon state (Overwatch-style)
+        self.weapon = "ak47"
+        self.ammo: Dict[str, int] = {
+            "ak47": WEAPON_CONFIGS["ak47"]["mag_size"],
+            "laser": WEAPON_CONFIGS["laser"]["mag_size"],
+        }
+        self.reload_until_ms: Dict[str, int] = {"ak47": 0, "laser": 0}
+        self.spread: float = 0.0  # current cone radius in radians
+        self.is_ads: bool = False
+
+    def cur_ammo(self) -> int:
+        return self.ammo.get(self.weapon, 0)
+
+    def mag_size(self) -> int:
+        return weapon_cfg(self.weapon)["mag_size"]
+
+    def is_reloading(self) -> bool:
+        return int(time.time() * 1000) < self.reload_until_ms.get(self.weapon, 0)
+
+    def reload_progress(self) -> float:
+        cfg = weapon_cfg(self.weapon)
+        end = self.reload_until_ms.get(self.weapon, 0)
+        now_ms = int(time.time() * 1000)
+        if now_ms >= end or cfg["reload_ms"] <= 0:
+            return 1.0
+        return max(0.0, 1.0 - (end - now_ms) / cfg["reload_ms"])
+
+    def start_reload(self):
+        if self.is_bot:
+            return
+        cfg = weapon_cfg(self.weapon)
+        if self.ammo.get(self.weapon, 0) >= cfg["mag_size"]:
+            return
+        if self.is_reloading():
+            return
+        now_ms = int(time.time() * 1000)
+        self.reload_until_ms[self.weapon] = now_ms + cfg["reload_ms"]
+
+    def finish_reload_if_due(self):
+        """Called from tick — completes any expired reload by refilling the magazine."""
+        now_ms = int(time.time() * 1000)
+        for w, end in list(self.reload_until_ms.items()):
+            if end > 0 and now_ms >= end:
+                self.ammo[w] = WEAPON_CONFIGS.get(w, WEAPON_CONFIGS["ak47"])["mag_size"]
+                self.reload_until_ms[w] = 0
 
     def to_state(self):
         return {
@@ -521,6 +608,12 @@ class Player:
             "alive": self.alive,
             "is_bot": self.is_bot,
             "invuln": time.time() < self.invuln_until,
+            "weapon": self.weapon,
+            "ammo": self.cur_ammo(),
+            "mag_size": self.mag_size(),
+            "reloading": self.is_reloading(),
+            "reload_progress": round(self.reload_progress(), 3),
+            "spread": round(self.spread, 4),
         }
 
 
@@ -615,11 +708,14 @@ class GameRoom:
                     return False
         return True
 
-    def raycast_hit(self, shooter: Player) -> Optional[Player]:
-        cp = math.cos(shooter.pitch)
-        dx = math.sin(shooter.yaw) * cp
-        dy = math.sin(shooter.pitch)
-        dz = -math.cos(shooter.yaw) * cp
+    def raycast_hit(self, shooter: Player, yaw_override: Optional[float] = None, pitch_override: Optional[float] = None):
+        """Returns (hit_player, body_part, distance) where body_part in {'head','torso','legs'} or (None, None, None)."""
+        yaw = shooter.yaw if yaw_override is None else yaw_override
+        pitch = shooter.pitch if pitch_override is None else pitch_override
+        cp = math.cos(pitch)
+        dx = math.sin(yaw) * cp
+        dy = math.sin(pitch)
+        dz = -math.cos(yaw) * cp
         ox, oy, oz = shooter.x, shooter.y, shooter.z
 
         def aabb_t(ob):
@@ -670,27 +766,24 @@ class GameRoom:
 
         best_t = SHOT_RANGE
         best: Optional[Player] = None
+        best_part: Optional[str] = None
         for p in self.players.values():
             if p.id == shooter.id or not p.alive:
                 continue
-            # 3-sphere capsule hitbox matching visible humanoid (generous - "bigger hitbox")
+            # 3-sphere capsule hitbox: head, torso, legs (each with its own label)
             base = p.y - PLAYER_HEIGHT
             spheres = [
-                (p.x, base + 1.65, p.z, 0.55),  # head
-                (p.x, base + 1.05, p.z, 0.75),  # torso
-                (p.x, base + 0.45, p.z, 0.60),  # legs
+                ("head",  p.x, base + 1.65, p.z, 0.45),
+                ("torso", p.x, base + 1.05, p.z, 0.65),
+                ("legs",  p.x, base + 0.45, p.z, 0.55),
             ]
-            best_part_t = None
-            for (cx, cy, cz, r) in spheres:
+            for (label, cx, cy, cz, r) in spheres:
                 t = sphere_t(cx, cy, cz, r)
-                if t is not None and (best_part_t is None or t < best_part_t):
-                    best_part_t = t
-            if best_part_t is None:
-                continue
-            if best_part_t < best_t and best_part_t < occlusion_t:
-                best_t = best_part_t
-                best = p
-        return best
+                if t is not None and t < best_t and t < occlusion_t:
+                    best_t = t
+                    best = p
+                    best_part = label
+        return (best, best_part, best_t if best is not None else None)
 
     async def _apply_melee(self, attacker: Player):
         """Resolve a melee swing: cone in front of attacker, range MELEE_RANGE."""
@@ -759,20 +852,53 @@ class GameRoom:
                     except Exception:
                         pass
 
-    async def _apply_shoot(self, shooter: Player, damage: int):
-        """Resolve a shoot action from shooter: append events + apply damage + persist stats."""
+    async def _apply_shoot(self, shooter: Player, base_damage: int):
+        """Overwatch-style shot resolution: spread cone + falloff + headshot multiplier.
+        Bots use base_damage directly; real players use weapon config."""
+        cfg = weapon_cfg(getattr(shooter, "weapon", "ak47"))
+        # Compute effective spread (ADS tightens). Bots have no spread.
+        if shooter.is_bot:
+            spread = 0.0
+        else:
+            spread = shooter.spread * (cfg["ads_spread_mult"] if shooter.is_ads else 1.0)
+        # Randomized aim deviation within a cone of half-angle `spread`.
+        yaw = shooter.yaw
+        pitch = shooter.pitch
+        if spread > 0.0:
+            ang = random.uniform(0, 2 * math.pi)
+            r = spread * math.sqrt(random.random())
+            yaw = shooter.yaw + math.cos(ang) * r
+            pitch = max(-1.5, min(1.5, shooter.pitch + math.sin(ang) * r))
         self.events.append({
             "type": "shot",
             "shooter_id": shooter.id,
             "x": shooter.x, "y": shooter.y, "z": shooter.z,
-            "yaw": shooter.yaw, "pitch": shooter.pitch,
+            "yaw": yaw, "pitch": pitch,
             "weapon": getattr(shooter, "weapon", "ak47"),
         })
-        hit = self.raycast_hit(shooter)
+        # Increase shooter's accumulated spread (recoil) for next shot.
+        if not shooter.is_bot:
+            shooter.spread = min(cfg["spread_max"], shooter.spread + cfg["spread_per_shot"])
+        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=yaw, pitch_override=pitch)
         if hit and hit.alive:
-            # Spawn invulnerability protection
             if time.time() < hit.invuln_until:
                 return
+            # Damage scaling
+            if shooter.is_bot:
+                damage = base_damage
+            else:
+                damage = cfg["damage"]
+                if body_part == "head":
+                    damage *= cfg["headshot_mult"]
+                elif body_part == "legs":
+                    damage *= cfg["legs_mult"]
+                # Distance falloff
+                if dist is not None:
+                    fs, fe, mn = cfg["falloff_start"], cfg["falloff_end"], cfg["min_damage_mult"]
+                    if dist > fs:
+                        t = min(1.0, (dist - fs) / max(0.001, fe - fs))
+                        damage *= 1.0 - t * (1.0 - mn)
+                damage = int(round(damage))
             hit.hp -= damage
             hit.last_attacker = shooter.id
             self.events.append({
@@ -780,6 +906,9 @@ class GameRoom:
                 "shooter_id": shooter.id,
                 "victim_id": hit.id,
                 "hp": max(0, hit.hp),
+                "body_part": body_part,
+                "damage": damage,
+                "headshot": body_part == "head" and not shooter.is_bot,
             })
             if hit.hp <= 0:
                 hit.alive = False
@@ -794,8 +923,8 @@ class GameRoom:
                     "victim_id": hit.id,
                     "victim_name": hit.username,
                     "weapon": getattr(shooter, "weapon", "ak47"),
+                    "headshot": body_part == "head" and not shooter.is_bot,
                 })
-                # Persist only for real users
                 if not shooter.is_bot and shooter.user_id:
                     try:
                         await db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}})
@@ -832,22 +961,40 @@ class GameRoom:
                 player.z = z
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
+            if "ads" in msg:
+                player.is_ads = bool(msg["ads"])
         elif mtype == "shoot":
             now_ms = int(time.time() * 1000)
             if not player.alive:
                 return
             weapon = msg.get("weapon", "ak47")
-            cooldown = LASER_COOLDOWN_MS if weapon == "laser" else SHOT_COOLDOWN_MS
+            cfg = weapon_cfg(weapon)
+            cooldown = cfg["cooldown_ms"]
             if now_ms - player.last_shot_ms < cooldown:
                 return
+            player.weapon = weapon
+            # Reject if reloading or out of ammo (auto-trigger reload when empty).
+            if player.is_reloading():
+                return
+            if player.ammo.get(weapon, 0) <= 0:
+                player.start_reload()
+                return
             player.last_shot_ms = now_ms
+            player.ammo[weapon] = max(0, player.ammo.get(weapon, 0) - 1)
             if "yaw" in msg:
                 player.yaw = float(msg["yaw"])
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
-            player.weapon = weapon
-            dmg = LASER_DAMAGE if weapon == "laser" else SHOT_DAMAGE
-            await self._apply_shoot(player, dmg)
+            await self._apply_shoot(player, cfg["damage"])
+            # Auto-reload when magazine hits zero
+            if player.ammo.get(weapon, 0) == 0:
+                player.start_reload()
+        elif mtype == "reload":
+            if not player.alive or player.is_bot:
+                return
+            weapon = msg.get("weapon", player.weapon)
+            player.weapon = weapon if weapon in WEAPON_CONFIGS else player.weapon
+            player.start_reload()
         elif mtype == "melee":
             now_ms = int(time.time() * 1000)
             if not player.alive:
@@ -956,7 +1103,7 @@ class GameRoom:
         if in_queue:
             self.match_start = now  # freeze timer
 
-        # Respawn dead
+        # Respawn dead + decay weapon spread + complete reloads
         for p in self.players.values():
             if not p.alive and now >= p.respawn_at:
                 x, z = random_spawn()
@@ -965,7 +1112,21 @@ class GameRoom:
                 p.hp = p.max_hp
                 p.alive = True
                 p.invuln_until = now + 3.0
+                # Refill ammo on respawn (cancel any pending reloads)
+                for w in p.ammo.keys():
+                    p.ammo[w] = WEAPON_CONFIGS.get(w, WEAPON_CONFIGS["ak47"])["mag_size"]
+                    p.reload_until_ms[w] = 0
+                p.spread = 0.0
+                p.is_ads = False
                 self.events.append({"type": "respawn", "id": p.id})
+            if not p.is_bot and p.alive:
+                # Decay spread when not firing (Overwatch-style recoil recovery)
+                cfg = weapon_cfg(p.weapon)
+                p.spread = max(0.0, p.spread - cfg["spread_decay"] * dt)
+                # Spread floor depends on weapon (so cone is never below base)
+                if p.spread < cfg["spread_base"]:
+                    p.spread = cfg["spread_base"]
+                p.finish_reload_if_due()
 
         # Bot AI (still runs during queue, just for atmosphere)
         await self._update_bots(dt)
