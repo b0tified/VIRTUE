@@ -253,7 +253,7 @@ class AudioBus {
     const RIFF_A = [12, null, 10, 12, null, 7, null, 10, null, 7, 5, null, 7, null, 12, null];
     const RIFF_B = [10, null, 7,  10, null, 5, null, 7,  null, 3, 5, 7,  null, null, 12, null];
 
-    const BPM = 110;
+    const BPM = 84;
     const beat = 60 / BPM;
     const sixteenth = beat / 4;
 
@@ -261,31 +261,31 @@ class AudioBus {
     // Soft pad (low-pass filtered saw)
     const padFilt = ctx.createBiquadFilter();
     padFilt.type = "lowpass";
-    padFilt.frequency.value = 1200;
+    padFilt.frequency.value = 950;
     padFilt.Q.value = 0.4;
     const padBus = ctx.createGain();
-    padBus.gain.value = 0.22;
+    padBus.gain.value = 0.26;
     padFilt.connect(padBus);
     padBus.connect(this.musicGain);
 
     // Lead bus with gentle overdrive + slap-back delay
     const leadDrive = ctx.createWaveShaper();
-    leadDrive.curve = this._makeDistortionCurve(15);
+    leadDrive.curve = this._makeDistortionCurve(8);
     leadDrive.oversample = "4x";
     const leadFilt = ctx.createBiquadFilter();
     leadFilt.type = "lowpass";
-    leadFilt.frequency.value = 2800;
+    leadFilt.frequency.value = 2200;
     const leadBus = ctx.createGain();
-    leadBus.gain.value = 0.32;
+    leadBus.gain.value = 0.18;
     leadDrive.connect(leadFilt); leadFilt.connect(leadBus);
     leadBus.connect(this.musicGain);
 
     const delay = ctx.createDelay(0.6);
     delay.delayTime.value = sixteenth * 3;
     const fb = ctx.createGain();
-    fb.gain.value = 0.28;
+    fb.gain.value = 0.32;
     const delayMix = ctx.createGain();
-    delayMix.gain.value = 0.22;
+    delayMix.gain.value = 0.26;
     delay.connect(fb); fb.connect(delay);
     delay.connect(delayMix); delayMix.connect(this.musicGain);
     leadBus.connect(delay);
@@ -293,9 +293,9 @@ class AudioBus {
     // Bass bus
     const bassFilt = ctx.createBiquadFilter();
     bassFilt.type = "lowpass";
-    bassFilt.frequency.value = 600;
+    bassFilt.frequency.value = 450;
     const bassBus = ctx.createGain();
-    bassBus.gain.value = 0.4;
+    bassBus.gain.value = 0.28;
     bassFilt.connect(bassBus);
     bassBus.connect(this.musicGain);
 
@@ -326,29 +326,29 @@ class AudioBus {
       });
     };
 
-    // Bass: arpeggiated root-5-octave-5 in 8ths
+    // Bass: gentle root on every beat (calmer than 8ths)
     const playBassArp = (root, t) => {
-      const seq = [1, 1.5, 2, 1.5, 1, 1.5, 2, 1.5];
+      const seq = [1, 1, 1, 1];
       seq.forEach((mult, i) => {
-        const tt = t + i * (beat / 2);
+        const tt = t + i * beat;
         const osc = ctx.createOscillator();
         osc.type = "triangle";
         osc.frequency.value = root * 0.5 * mult;
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0, tt);
-        g.gain.linearRampToValueAtTime(0.7, tt + 0.005);
-        g.gain.exponentialRampToValueAtTime(0.001, tt + beat * 0.45);
+        g.gain.linearRampToValueAtTime(0.55, tt + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.001, tt + beat * 0.85);
         // sub layer
         const sub = ctx.createOscillator();
         sub.type = "sine";
         sub.frequency.value = root * 0.5;
         const sg = ctx.createGain();
-        sg.gain.setValueAtTime(0.45, tt);
-        sg.gain.exponentialRampToValueAtTime(0.001, tt + beat * 0.5);
+        sg.gain.setValueAtTime(0.35, tt);
+        sg.gain.exponentialRampToValueAtTime(0.001, tt + beat * 0.9);
         osc.connect(g); g.connect(bassFilt);
         sub.connect(sg); sg.connect(bassFilt);
-        osc.start(tt); osc.stop(tt + beat * 0.5);
-        sub.start(tt); sub.stop(tt + beat * 0.55);
+        osc.start(tt); osc.stop(tt + beat * 0.95);
+        sub.start(tt); sub.stop(tt + beat);
       });
     };
 
@@ -377,35 +377,36 @@ class AudioBus {
     const kick = (t, accent = false) => {
       const osc = ctx.createOscillator();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(140, t);
+      osc.frequency.setValueAtTime(120, t);
       osc.frequency.exponentialRampToValueAtTime(40, t + 0.18);
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0, t);
-      g.gain.linearRampToValueAtTime(accent ? 0.85 : 0.7, t + 0.004);
+      g.gain.linearRampToValueAtTime(accent ? 0.45 : 0.35, t + 0.005);
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
       osc.connect(g); g.connect(this.musicGain);
       osc.start(t); osc.stop(t + 0.25);
     };
 
     const snare = (t) => {
-      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
+      // Soft rim/tick instead of full snare for ambient feel
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.05), ctx.sampleRate);
       const d = buf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
       const src = ctx.createBufferSource();
       src.buffer = buf;
       const bp = ctx.createBiquadFilter();
       bp.type = "bandpass";
-      bp.frequency.value = 1800;
-      bp.Q.value = 0.7;
+      bp.frequency.value = 3500;
+      bp.Q.value = 1.2;
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.4, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      g.gain.setValueAtTime(0.18, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
       src.connect(bp); bp.connect(g); g.connect(this.musicGain);
       src.start(t);
     };
 
     const hihat = (t, open = false, accent = false) => {
-      const dur = open ? 0.16 : 0.03;
+      const dur = open ? 0.16 : 0.025;
       const buf = ctx.createBuffer(1, Math.max(2, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
       const d = buf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (open ? Math.pow(1 - i / d.length, 1.5) : 1);
@@ -413,9 +414,9 @@ class AudioBus {
       src.buffer = buf;
       const hp = ctx.createBiquadFilter();
       hp.type = "highpass";
-      hp.frequency.value = 8000;
+      hp.frequency.value = 9000;
       const g = ctx.createGain();
-      g.gain.setValueAtTime(open ? 0.13 : (accent ? 0.12 : 0.06), t);
+      g.gain.setValueAtTime(open ? 0.06 : (accent ? 0.05 : 0.03), t);
       g.gain.exponentialRampToValueAtTime(0.001, t + dur);
       src.connect(hp); hp.connect(g); g.connect(this.musicGain);
       src.start(t);
@@ -447,29 +448,24 @@ class AudioBus {
       const root = ROOTS[phraseBar];
       const triad = CHORDS[phraseBar];
 
-      // Soft shimmer at the start of each 8-bar phrase
-      if (phraseBar === 0) shimmer(startAt);
-
       // Pad — sustained throughout the bar
       playPad(root, triad, startAt, beat * 4);
 
       // Bass arp — 8 eighth notes
       playBassArp(root, startAt);
 
-      // Drums — soft pop-rock pattern
-      kick(startAt, phraseBar % 2 === 0);
+      // Drums — gentle / ambient: soft kick on 1+3, soft rim/tick on 2+4, light closed hat 8ths
+      kick(startAt);
       kick(startAt + beat * 2);
       snare(startAt + beat * 1);
       snare(startAt + beat * 3);
       for (let i = 0; i < 8; i++) {
-        const isOpen = i === 7;
-        hihat(startAt + i * (beat / 2), isOpen, i % 2 === 0);
+        hihat(startAt + i * (beat / 2), false, false);
       }
 
-      // Lead — every other 4 bars use a different riff for variety
-      if (phraseBar === 3 || phraseBar === 7) {
-        const riff = phraseBar === 3 ? RIFF_A : RIFF_B;
-        riff.forEach((s, i) => {
+      // Lead — sparse melodic phrase on bar 4 only of each 8-bar loop
+      if (phraseBar === 7) {
+        RIFF_A.forEach((s, i) => {
           if (s === null) return;
           playLead(root, s, startAt + i * sixteenth, sixteenth * 2.2);
         });

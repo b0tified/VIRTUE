@@ -987,17 +987,13 @@ export class GameEngine {
     const cp = Math.cos(ev.pitch);
     const dir = new THREE.Vector3(Math.sin(ev.yaw) * cp, Math.sin(ev.pitch), -Math.cos(ev.yaw) * cp);
     const isLaser = ev.weapon === "laser";
-    // Origin: shooter's eyes. Server reports ev.y at PLAYER_HEIGHT (eye level);
-    // nudge up slightly to match the head sphere position and forward to leave
-    // the face. Slight side bias so the tracer is visibly off-center (like real
-    // FPS games' first-person view) but still appears to come from the head.
+    // Hitscan: origin = shooter's eye (server uses identical x/y/z + yaw/pitch
+    // for raycast), direction = aim vector. No lateral offset so the tracer
+    // visually aligns with the crosshair / point of impact.
     const eyeY = ev.y + 0.05;
-    const sideAngle = ev.yaw + Math.PI / 2;
-    const side = new THREE.Vector3(Math.sin(sideAngle), 0, -Math.cos(sideAngle));
     const startOffset = isLaser ? 0.45 : 0.35;
     const start = new THREE.Vector3(ev.x, eyeY, ev.z)
-      .add(dir.clone().multiplyScalar(startOffset))
-      .add(side.clone().multiplyScalar(0.12));
+      .add(dir.clone().multiplyScalar(startOffset));
     const end = start.clone().add(dir.clone().multiplyScalar(60));
     const length = start.distanceTo(end);
     const radius = isLaser ? 0.06 : 0.04;

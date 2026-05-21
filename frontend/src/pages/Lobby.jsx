@@ -310,7 +310,7 @@ export default function Lobby() {
             {RANK_TIERS.map((t, i) => (
               <div key={t.name} className="grid grid-cols-12 border-t-2 border-black items-center" data-testid={`tier-row-${i}`}>
                 <div className="col-span-1 font-display text-2xl text-center bg-white py-3">{i + 1}</div>
-                <div className="col-span-6 font-display text-2xl py-3 px-4" style={{ background: t.color, color: t.name === "APEX" ? "#FFD700" : "#0A0A0A" }}>
+                <div className="col-span-6 font-display text-2xl py-3 px-4" style={{ background: t.color, color: t.name === "GOONMASTER" ? "#FFD700" : "#0A0A0A" }}>
                   {t.name}
                 </div>
                 <div className="col-span-5 font-anton uppercase text-sm py-3 px-4 bg-white">
@@ -396,9 +396,6 @@ export default function Lobby() {
                       data-testid="queue-progress-bar"
                     />
                   </div>
-                  <p className="font-anton uppercase text-[10px] tracking-widest text-neutral-500 mt-1">
-                    Bot-fill in {Math.max(0, queueState.bot_fill_seconds - (queueState.wait_seconds || 0))}s
-                  </p>
                 </div>
               )}
               <p className="font-body text-xs text-neutral-600">
@@ -441,7 +438,7 @@ const RANK_TIERS = [
   { name: "DIAMOND", min: 800, color: "#9D4EDD" },
   { name: "MASTER", min: 1200, color: "#E63946" },
   { name: "GRANDMASTER", min: 1700, color: "#06D6A0" },
-  { name: "APEX", min: 2300, color: "#000000" },
+  { name: "GOONMASTER", min: 2300, color: "#000000" },
 ];
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);
