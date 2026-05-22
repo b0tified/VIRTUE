@@ -97,6 +97,9 @@ export default function Game() {
           setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));
         } else if (ev.type === "footstep") {
           audioBus.footstep(ev.sprint);
+        } else if (ev.type === "reload-pressed") {
+          const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+          sockRef.current?.send({ type: "reload", weapon: w });
         }
       },
     });

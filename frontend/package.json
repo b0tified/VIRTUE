@@ -59,7 +59,22 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "electron:install": "yarn add -D electron electron-builder",
+    "electron:dev": "electron electron/main.js",
+    "electron:build:linux": "electron-builder --linux AppImage deb",
+    "electron:build:win": "electron-builder --win nsis",
+    "electron:build:mac": "electron-builder --mac dmg"
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.virtue.fps",
+    "productName": "VIRTUE",
+    "directories": { "output": "dist-electron" },
+    "files": ["electron/**/*", "public/icon-*.png"],
+    "linux": { "target": ["AppImage", "deb"], "category": "Game", "icon": "public/icon-512.png" },
+    "win": { "target": "nsis", "icon": "public/icon-512.png" },
+    "mac": { "target": "dmg", "category": "public.app-category.action-games", "icon": "public/icon-512.png" }
   },
   "browserslist": {
     "production": [

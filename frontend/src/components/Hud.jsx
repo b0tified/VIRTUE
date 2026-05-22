@@ -291,7 +291,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
                 <li><span className="font-anton">MOUSE</span> — Aim · <span className="font-anton">CLICK</span> — Shoot/Slash</li>
                 <li><span className="font-anton">1</span> AK-47 · <span className="font-anton">2/V</span> Katana · <span className="font-anton">3</span> Laser</li>
                 <li><span className="font-anton">RIGHT-CLICK</span> — Aim Down Sights</li>
+                <li><span className="font-anton">SPACE</span> — Jump · <span className="font-anton">R</span> — Reload</li>
                 <li><span className="font-anton">SHIFT</span> — Sprint · <span className="font-anton">TAB</span> — Scoreboard</li>
+                <li className="text-neutral-500 text-xs">Controller supported · LS move · RS look · RT fire · A jump</li>
               </ul>
               <div className="mt-5 flex flex-wrap gap-3">
                 <button onClick={onStart} className="btn-pow bg-[#E62429] text-white text-2xl" data-testid="game-start-button">

@@ -45,6 +45,12 @@ export class GameEngine {
     this.locked = false;
     this.pendingShoot = false;
     this.recoil = 0;
+    // Jump / vertical physics
+    this.vy = 0;
+    this.onGround = true;
+    // Gamepad
+    this._gamepadEnabled = true;
+    this._gpPrev = { fire: false, melee: false, jump: false, reload: false, weapon: false, ads: false };
     // Graphics / FPS cap
     this._frameMinMs = 0;
     this._settings = null;
@@ -1041,6 +1047,9 @@ export class GameEngine {
   }
 
   _update(dt) {
+    // Drive virtual inputs from a connected gamepad (Xbox / PS-style).
+    this._pollGamepad(dt);
+
     let mx = 0, mz = 0;
     if (this.keys.has("KeyW")) mz -= 1;
     if (this.keys.has("KeyS")) mz += 1;
@@ -1062,10 +1071,29 @@ export class GameEngine {
       if (!this._collides(nx, this.position.z)) this.position.x = nx;
       if (!this._collides(this.position.x, nz)) this.position.z = nz;
     }
-    this.position.y = 1.8;
+
+    // Jump + gravity (server is purely 2D, jump is client-visual only — server
+    // sees pitch/yaw and clamps Y; we just bob the camera up and back down).
+    const GROUND_Y = 1.8;
+    if (this.keys.has("Space") && this.onGround && this.alive) {
+      this.vy = 6.5;
+      this.onGround = false;
+      this.onLocalUpdate?.({ type: "jump" });
+    }
+    if (!this.onGround) {
+      this.vy -= 18 * dt; // gravity
+      this.position.y += this.vy * dt;
+      if (this.position.y <= GROUND_Y) {
+        this.position.y = GROUND_Y;
+        this.vy = 0;
+        this.onGround = true;
+      }
+    } else {
+      this.position.y = GROUND_Y;
+    }
 
     // Footstep cadence
-    if (moving) {
+    if (moving && this.onGround) {
       const stride = sprint ? 0.28 : 0.42;
       this._footAcc += dt;
       if (this._footAcc >= stride) {
@@ -1166,6 +1194,101 @@ export class GameEngine {
         entry.mesh.position.y *= 0.85;
       }
     }
+  }
+
+  /* Xbox/PS-style gamepad input. Polled per-frame via the Gamepad API.
+     Standard mapping:
+       LS x/y → move (WASD synth), RS x/y → look (yaw/pitch)
+       RT (7) → fire, LT (6) → ADS hold
+       A (0) → jump, X (2) → melee, B (1) → reload, Y (3) → weapon swap
+       LB (4) → prev weapon, RB (5) → next weapon */
+  _pollGamepad(dt) {
+    if (!this._gamepadEnabled || !navigator.getGamepads) return;
+    const pads = navigator.getGamepads();
+    let gp = null;
+    for (let i = 0; i < pads.length; i++) {
+      if (pads[i] && pads[i].connected) { gp = pads[i]; break; }
+    }
+    if (!gp) {
+      this.gamepadConnected = false;
+      // Clear synthesized move keys if pad just disconnected
+      return;
+    }
+    this.gamepadConnected = true;
+
+    const axes = gp.axes || [];
+    const btn = (i) => gp.buttons && gp.buttons[i] ? gp.buttons[i].pressed : false;
+    const dz = (v) => (Math.abs(v) < 0.18 ? 0 : v);
+
+    // ---- Movement (LS) ----
+    const lx = dz(axes[0] || 0);
+    const ly = dz(axes[1] || 0);
+    const KEYS = ["KeyW", "KeyS", "KeyA", "KeyD"];
+    const want = [ly < -0.18, ly > 0.18, lx < -0.18, lx > 0.18];
+    KEYS.forEach((k, i) => {
+      // Mark/unmark via a dedicated tag so we don't fight keyboard input.
+      if (want[i]) this.keys.add(k);
+      else if (this._gpPrev["_k" + i]) this.keys.delete(k);
+      this._gpPrev["_k" + i] = want[i];
+    });
+
+    // ---- Look (RS) ----
+    const rx = dz(axes[2] || 0);
+    const ry = dz(axes[3] || 0);
+    const sens = 2.6; // rad/sec at full stick
+    if (rx) this.yaw -= rx * sens * dt;
+    if (ry) this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - ry * sens * dt));
+
+    // ---- Triggers (RT fires, LT holds ADS) ----
+    const rt = gp.buttons && gp.buttons[7] ? gp.buttons[7].value : 0;
+    const lt = gp.buttons && gp.buttons[6] ? gp.buttons[6].value : 0;
+    const fireDown = rt > 0.4;
+    const adsDown = lt > 0.4;
+    // Fire on rising edge (single-shot) — auto fire for current weapon is
+    // handled by client-side cooldown already.
+    if (fireDown && !this._gpPrev.fire) {
+      this.pendingShoot = true;
+    }
+    // Repeat fire while held: pulse every ~120ms via _shootCooldown if we want
+    // full-auto. AK-47 server cooldown is 250ms so we just keep flagging.
+    if (fireDown) this.pendingShoot = true;
+    this._gpPrev.fire = fireDown;
+    this.ads = adsDown;
+
+    // ---- Face buttons ----
+    const aBtn = btn(0), bBtn = btn(1), xBtn = btn(2), yBtn = btn(3);
+    if (aBtn && !this._gpPrev.jump) {
+      this.keys.add("Space");
+      setTimeout(() => this.keys.delete("Space"), 60);
+    }
+    this._gpPrev.jump = aBtn;
+    if (xBtn && !this._gpPrev.melee) this.pendingMelee = true;
+    this._gpPrev.melee = xBtn;
+    if (bBtn && !this._gpPrev.reload) {
+      this.onLocalUpdate?.({ type: "reload-pressed" });
+    }
+    this._gpPrev.reload = bBtn;
+    if (yBtn && !this._gpPrev.weapon) {
+      const order = ["primary", "secondary", "tertiary"];
+      const i = order.indexOf(this.currentWeapon || "primary");
+      this.setWeapon(order[(i + 1) % order.length]);
+    }
+    this._gpPrev.weapon = yBtn;
+
+    // Shoulder buttons cycle weapons
+    const lb = btn(4), rb = btn(5);
+    if (rb && !this._gpPrev.rb) {
+      const order = ["primary", "secondary", "tertiary"];
+      const i = order.indexOf(this.currentWeapon || "primary");
+      this.setWeapon(order[(i + 1) % order.length]);
+    }
+    this._gpPrev.rb = rb;
+    if (lb && !this._gpPrev.lb) {
+      const order = ["primary", "secondary", "tertiary"];
+      const i = order.indexOf(this.currentWeapon || "primary");
+      this.setWeapon(order[(i + order.length - 1) % order.length]);
+    }
+    this._gpPrev.lb = lb;
   }
 
   _loop = () => {

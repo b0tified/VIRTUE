@@ -19,6 +19,7 @@ export default function Lobby() {
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 10..0
   const [sensitivity, setSensitivity] = useState(() => {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
     return Number.isFinite(v) && v > 0 ? v : 1.0;
@@ -116,6 +117,26 @@ export default function Lobby() {
       document.removeEventListener("keydown", onFirstInteract);
     };
   }, []);
+
+  const startQuickQueue = () => {
+    if (quickQueueSec !== null) return;
+    setQuickQueueSec(10);
+  };
+
+  const cancelQuickQueue = () => setQuickQueueSec(null);
+
+  // Quick-match queue ticker: 10s countdown that holds the player in the lobby
+  // so the casual room "matchmaking" feels intentional. After 10s we navigate
+  // to /play?mode=casual (the room is shared + bot-filled by the backend).
+  useEffect(() => {
+    if (quickQueueSec === null) return;
+    if (quickQueueSec <= 0) {
+      nav("/play?mode=casual");
+      return;
+    }
+    const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [quickQueueSec, nav]);
 
   const toggleMusic = () => {
     const next = !musicMuted;
@@ -222,9 +243,17 @@ export default function Lobby() {
           </div>
 
           <div className="mt-8 space-y-4 max-w-md">
-            <Link to="/play?mode=casual" className="btn-pow bg-[#E62429] text-white w-full text-3xl" data-testid="lobby-play-button">
-              <span className="flex items-center gap-3"><Play size={28} strokeWidth={3} /> QUICK MATCH</span>
-            </Link>
+            <button
+              onClick={quickQueueSec !== null ? undefined : startQuickQueue}
+              disabled={quickQueueSec !== null}
+              className="btn-pow bg-[#E62429] text-white w-full text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
+              data-testid="lobby-play-button"
+            >
+              <span className="flex items-center gap-3">
+                {quickQueueSec !== null ? <Loader2 size={28} strokeWidth={3} className="animate-spin" /> : <Play size={28} strokeWidth={3} />}
+                {quickQueueSec !== null ? `MATCHING... ${quickQueueSec}s` : "QUICK MATCH"}
+              </span>
+            </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
               disabled={!!queueState}
@@ -338,6 +367,37 @@ export default function Lobby() {
       )}
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* Quick-match (casual) queue toast — 10s countdown */}
+      {quickQueueSec !== null && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="quick-queue-toast">
+          <div className="card-pow p-0 overflow-hidden">
+            <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
+              <Loader2 size={18} strokeWidth={3} className="animate-spin" />
+              <span className="font-anton uppercase tracking-widest text-sm flex-1">Searching for Players</span>
+              <div className="font-anton text-xs flex items-center gap-1 bg-black/30 px-2 py-0.5 rounded-sm tabular-nums" data-testid="quick-queue-timer">
+                <Clock size={12} strokeWidth={3} />
+                {quickQueueSec}s
+              </div>
+              <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
+                <X size={16} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="px-4 py-3 bg-white">
+              <div className="h-1.5 w-full bg-neutral-200 border border-black overflow-hidden">
+                <div
+                  className="h-full bg-[#E62429] transition-all duration-1000 ease-linear"
+                  style={{ width: `${Math.min(100, ((10 - quickQueueSec) / 10) * 100)}%` }}
+                  data-testid="quick-queue-progress"
+                />
+              </div>
+              <p className="font-body text-xs text-neutral-600 mt-2">
+                Filling with bots if no opponents join in time.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Disconnected toast — auto-kicked back from a match */}
       {disconnected && (
