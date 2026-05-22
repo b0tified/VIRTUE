@@ -17,7 +17,7 @@ function isTouchDevice() {
   );
 }
 
-export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon }) {
+export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon, onToggleScoreboard }) {
   const [enabled, setEnabled] = useState(false);
   const moveStickRef = useRef(null);
   const lookStickRef = useRef(null);
@@ -228,6 +228,19 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
           </button>
         ))}
       </div>
+
+      {/* Scoreboard button (mobile-only press-and-hold to view; tap toggles) */}
+      <button
+        type="button"
+        onTouchStart={(e) => { e.preventDefault(); onToggleScoreboard?.(true); }}
+        onTouchEnd={(e) => { e.preventDefault(); onToggleScoreboard?.(false); }}
+        onTouchCancel={(e) => { e.preventDefault(); onToggleScoreboard?.(false); }}
+        className="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-black/70 border-2 border-white/40 rounded px-3 py-2 text-xs font-anton uppercase tracking-widest text-white active:bg-black/90"
+        data-testid="touch-scoreboard"
+        aria-label="Hold to view scoreboard"
+      >
+        SCORE
+      </button>
     </div>
   );
 }

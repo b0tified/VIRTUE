@@ -569,7 +569,17 @@ def weapon_cfg(name: str) -> dict:
 
 
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
+    # GOONMASTER (tier 7) is real-vs-real only — never bot-fill, queue stays
+    # open until two same-tier players are found.
+    if tier_idx >= 7:
+        return float("inf")
     return QUEUE_BOT_FILL_SEC_HIGH if tier_idx >= QUEUE_HIGH_TIER_MIN else QUEUE_BOT_FILL_SEC
+
+
+def bot_fill_seconds_for_tier_api(tier_idx: int) -> int:
+    """JSON-safe version: returns -1 when the tier never bot-fills (e.g. Goonmaster)."""
+    v = bot_fill_seconds_for_tier(tier_idx)
+    return -1 if v == float("inf") else int(v)
 BOT_NAMES = ["BLAZE-7", "VORTEX", "RAVEN-X", "GHOST-9", "TITAN", "CYPHER"]
 PLACEMENT_MATCHES = 5
 PLACEMENT_MULTIPLIER = 2
@@ -1397,9 +1407,12 @@ async def matchmaker_loop():
                         MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
                         MATCHED_USERS[b["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
                         logger.info("Matched tier=%d %s vs %s (mid=%s)", tier_idx, a["username"], b["username"], mid)
-                # Bot-fill: any player queued for > tier-specific timeout gets matched against bots
+                # Bot-fill: any player queued for > tier-specific timeout gets matched against bots.
+                # Goonmaster (tier 7) has timeout=inf — the loop body is unreachable for that tier.
                 for tier_idx, q in RANKED_QUEUE.items():
                     tier_timeout = bot_fill_seconds_for_tier(tier_idx)
+                    if tier_timeout == float("inf"):
+                        continue
                     while q and (now - q[0]["joined_at"]) >= tier_timeout:
                         a = q.pop(0)
                         mid = uuid.uuid4().hex[:10]
@@ -1431,7 +1444,7 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
     points = int(user.get("rank_points", 0) or 0)
     tier_idx, tier_name = rank_for_points(points)
-    fill = int(bot_fill_seconds_for_tier(tier_idx))
+    fill = bot_fill_seconds_for_tier_api(tier_idx)
     now_ts = time.time()
     async with QUEUE_LOCK:
         if user_id in MATCHED_USERS:
@@ -1454,7 +1467,7 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
     points = int(user.get("rank_points", 0) or 0)
     tier_idx, tier_name = rank_for_points(points)
-    fill = int(bot_fill_seconds_for_tier(tier_idx))
+    fill = bot_fill_seconds_for_tier_api(tier_idx)
     now_ts = time.time()
     if user_id in MATCHED_USERS:
         m = MATCHED_USERS[user_id]
@@ -1462,7 +1475,7 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
     for ti, q in RANKED_QUEUE.items():
         for i, e in enumerate(q):
             if e["user_id"] == user_id:
-                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q), "wait_seconds": int(now_ts - e["joined_at"]), "bot_fill_seconds": int(bot_fill_seconds_for_tier(ti))}
+                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q), "wait_seconds": int(now_ts - e["joined_at"]), "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti)}
     return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
 
 

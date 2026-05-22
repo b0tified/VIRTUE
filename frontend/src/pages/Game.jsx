@@ -311,6 +311,7 @@ export default function Game() {
           engineRef.current?.setWeapon(w);
           setHud((h) => ({ ...h, weapon: w }));
         }}
+        onToggleScoreboard={(show) => setHud((h) => ({ ...h, showScoreboard: !!show }))}
       />
       <Chat
         messages={chatMessages}

@@ -387,24 +387,28 @@ export default function Lobby() {
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
 
-      {/* Quick-match (casual) queue toast — uses same UI as ranked */}
+      {/* Quick-match (casual) queue toast — uses same UI as ranked.
+          No header text per UX: just spinner + cancel + countdown. */}
       {quickQueueSec !== null && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="quick-queue-toast">
           <div className="card-pow p-0 overflow-hidden">
             <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
               <Loader2 size={18} strokeWidth={3} className="animate-spin" />
-              <span className="font-anton uppercase tracking-widest text-sm flex-1">Quick Match — Searching</span>
+              <span className="flex-1" />
               <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
                 <X size={16} strokeWidth={3} />
               </button>
             </div>
             <div className="px-4 py-3 bg-white text-center">
-              <div className="flex items-center justify-center gap-2">
+              <div
+                className="font-display text-6xl text-[#E62429] leading-none tabular-nums"
+                data-testid="quick-queue-timer"
+              >
+                {quickQueueSec}
+              </div>
+              <div className="mt-2 flex items-center justify-center gap-2">
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#E62429] text-white">
                   CASUAL · FFA
-                </div>
-                <div className="font-anton uppercase text-xs text-neutral-500">
-                  5-min match
                 </div>
               </div>
             </div>
@@ -453,11 +457,10 @@ export default function Lobby() {
               )}
             </div>
             <div className="px-4 py-3 bg-white text-center">
-              {/* Match-found 3-2-1 countdown (kept — it tells the player when the match starts).
-                  Wait-time progress is hidden per UX request. */}
+              {/* Match-found 3-2-1 countdown OR elapsed wait timer — both displayed
+                  without labels per UX request. */}
               {queueState.matched ? (
                 <div data-testid="queue-match-found">
-                  <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">Starting in</div>
                   <div
                     className="font-display text-8xl text-[#06A35F] leading-none tabular-nums animate-pulse"
                     data-testid="match-found-countdown"
@@ -465,7 +468,14 @@ export default function Lobby() {
                     {matchFoundSec ?? 3}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div
+                  className="font-display text-6xl text-[#0055FF] leading-none tabular-nums"
+                  data-testid="queue-wait-timer"
+                >
+                  {fmtMS(queueState.wait_seconds || 0)}
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-center gap-2">
                 <div
                   className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5"
@@ -497,14 +507,11 @@ function StatChip({ label, value, color, textColor = "#fff", testid }) {
 }
 
 function fmtMS(totalSec) {
-  // eslint-disable-next-line no-unused-vars
   const s = Math.max(0, Math.floor(totalSec));
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
-// eslint-disable-next-line no-unused-vars
-const _fmtMSExport = fmtMS;
 
 const RANK_TIERS = [
   { name: "BRONZE", min: 0, color: "#CD7F32" },
