@@ -158,6 +158,13 @@ export default function SettingsModal({ open, onClose }) {
           {/* Visual toggles */}
           <section className="space-y-2">
             <ToggleRow
+              label="Aim Assist (controller / touch)"
+              note="Soft snap toward the nearest enemy in your aim cone."
+              checked={!!s.aimAssist}
+              onChange={(v) => patch({ aimAssist: v })}
+              testid="settings-aim-assist"
+            />
+            <ToggleRow
               label="Shadows"
               note="Soft shadows under players and props."
               checked={!!s.shadows}

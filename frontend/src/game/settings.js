@@ -11,6 +11,7 @@ const DEFAULTS = Object.freeze({
   fpsCap: 0,                // 0 = unlimited, else 30/60/120/144
   touchControls: "auto",    // "auto" | "on" | "off"
   fovDegrees: 75,
+  aimAssist: true,
 });
 
 function read() {

@@ -51,6 +51,10 @@ export class GameEngine {
     // Gamepad
     this._gamepadEnabled = true;
     this._gpPrev = { fire: false, melee: false, jump: false, reload: false, weapon: false, ads: false };
+    // Aim assist (gamepad + touch users get a soft snap toward enemies)
+    this._aimAssistStrength = 0.6;
+    this.touchActive = false;
+    this.gamepadConnected = false;
     // Graphics / FPS cap
     this._frameMinMs = 0;
     this._settings = null;
@@ -941,6 +945,8 @@ export class GameEngine {
           entry.flashUntil = performance.now() + 180;
         }
         entry.lastHp = p.hp;
+        entry.x = p.x; entry.y = p.y; entry.z = p.z;
+        entry.alive = p.alive; entry.is_bot = p.is_bot;
 
         // Track movement (speed) for limb swing
         const dx = p.x - entry.prevX;
@@ -977,7 +983,7 @@ export class GameEngine {
           this._spawnTracer(ev);
           if (ev.shooter_id !== this.youId) {
             const dist = Math.hypot(ev.x - this.position.x, ev.z - this.position.z);
-            this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist });
+            this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist, weapon: ev.weapon || "ak47" });
           }
         } else if (ev.type === "melee") {
           this._spawnMeleeArc(ev);
@@ -993,15 +999,24 @@ export class GameEngine {
   }
 
   _spawnTracer(ev) {
-    const cp = Math.cos(ev.pitch);
-    const dir = new THREE.Vector3(Math.sin(ev.yaw) * cp, Math.sin(ev.pitch), -Math.cos(ev.yaw) * cp);
     const isLaser = ev.weapon === "laser";
-    // Hitscan: origin = shooter's eye (server uses identical x/y/z + yaw/pitch
-    // for raycast), direction = aim vector. No lateral offset so the tracer
-    // visually aligns with the crosshair / point of impact.
-    const eyeY = ev.y + 0.05;
-    const startOffset = isLaser ? 0.45 : 0.35;
-    const start = new THREE.Vector3(ev.x, eyeY, ev.z)
+    // For the LOCAL shooter we always use the player's *current* camera yaw,
+    // pitch and position so the bullet visibly leaves the screen straight
+    // forward from the crosshair — even if the server snapshot is a frame or
+    // two behind. Remote shooters use the server-reported aim.
+    const isLocal = ev.shooter_id === this.youId;
+    const yaw   = isLocal ? this.yaw      : ev.yaw;
+    const pitch = isLocal ? this.pitch    : ev.pitch;
+    const ox    = isLocal ? this.position.x : ev.x;
+    const oy    = isLocal ? this.position.y : ev.y;
+    const oz    = isLocal ? this.position.z : ev.z;
+    const cp = Math.cos(pitch);
+    const dir = new THREE.Vector3(Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+    // Local: push origin a bit ahead of the camera so the near-clip doesn't
+    // chop the start. Remote: tracer should leave the head/eye visually.
+    const eyeY = oy + (isLocal ? 0 : 0.05);
+    const startOffset = isLocal ? 0.6 : (isLaser ? 0.45 : 0.35);
+    const start = new THREE.Vector3(ox, eyeY, oz)
       .add(dir.clone().multiplyScalar(startOffset));
     const end = start.clone().add(dir.clone().multiplyScalar(60));
     const length = start.distanceTo(end);
@@ -1049,6 +1064,12 @@ export class GameEngine {
   _update(dt) {
     // Drive virtual inputs from a connected gamepad (Xbox / PS-style).
     this._pollGamepad(dt);
+
+    // Aim assist: only when gamepad connected OR touch mode active (set
+    // externally by TouchControls or via setAimAssist()).
+    if (this.gamepadConnected || this.touchActive) {
+      this.applyAimAssist(dt, this._aimAssistStrength ?? 0.5);
+    }
 
     let mx = 0, mz = 0;
     if (this.keys.has("KeyW")) mz -= 1;
@@ -1291,6 +1312,54 @@ export class GameEngine {
     this._gpPrev.lb = lb;
   }
 
+  /* Aim assist (soft snap) — called every frame for gamepad/touch users.
+     Finds the closest visible enemy within an aim cone and nudges yaw/pitch
+     toward their head/torso. `intensity` 0..1 controls strength. */
+  applyAimAssist(dt, intensity = 0.5) {
+    if (!intensity || intensity <= 0) return;
+    const me = this.players?.get(this.youId);
+    if (!me || !me.alive) return;
+    let best = null;
+    let bestAngle = 0.35; // ~20° cone
+    const cp = Math.cos(this.pitch);
+    const fwd = new THREE.Vector3(Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+    const eye = new THREE.Vector3(this.position.x, this.position.y, this.position.z);
+    if (!this.players) return;
+    this.players.forEach((p, id) => {
+      if (!p || id === this.youId || !p.alive) return;
+      // Target the torso (~1.2m off the ground) for stability
+      const tgt = new THREE.Vector3(p.x, (p.y || 1.8) - 0.6, p.z);
+      const to = new THREE.Vector3().subVectors(tgt, eye);
+      const dist = to.length();
+      if (dist < 0.5 || dist > 35) return;
+      to.normalize();
+      const dot = Math.max(-1, Math.min(1, fwd.dot(to)));
+      const ang = Math.acos(dot);
+      if (ang < bestAngle) {
+        bestAngle = ang;
+        best = { tgt, dist, ang };
+      }
+    });
+    if (!best) return;
+    // Compute desired yaw/pitch toward target
+    const dx = best.tgt.x - this.position.x;
+    const dy = best.tgt.y - this.position.y;
+    const dz = best.tgt.z - this.position.z;
+    const horiz = Math.hypot(dx, dz);
+    const desiredYaw = Math.atan2(dx, -dz);
+    const desiredPitch = Math.atan2(dy, horiz);
+    // Smoothly bias current orientation toward desired
+    const lerpRate = 6.0 * intensity; // higher = stronger snap
+    // Shortest-angle yaw delta
+    let yd = desiredYaw - this.yaw;
+    while (yd >  Math.PI) yd -= Math.PI * 2;
+    while (yd < -Math.PI) yd += Math.PI * 2;
+    const pd = desiredPitch - this.pitch;
+    const k = 1 - Math.exp(-lerpRate * dt);
+    this.yaw += yd * k;
+    this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch + pd * k));
+  }
+
   _loop = () => {
     if (!this.running) return;
     const now = performance.now();
@@ -1333,6 +1402,9 @@ export class GameEngine {
     if (s.fovDegrees !== undefined && this.camera) {
       this.camera.fov = Math.max(50, Math.min(110, s.fovDegrees));
       this.camera.updateProjectionMatrix();
+    }
+    if (s.aimAssist !== undefined) {
+      this._aimAssistStrength = s.aimAssist ? 0.6 : 0.0;
     }
   }
 

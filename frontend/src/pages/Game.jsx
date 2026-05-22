@@ -88,7 +88,7 @@ export default function Game() {
           setHud((h) => ({ ...h, damaged: Date.now() }));
           audioBus.hurt();
         } else if (ev.type === "remote-shot") {
-          audioBus.gunshot(ev.shooterId, ev.distance);
+          audioBus.gunshot(ev.shooterId, ev.distance, ev.weapon || "ak47");
         } else if (ev.type === "you-hit") {
           audioBus.hitmark(!!ev.headshot);
           setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));
@@ -108,7 +108,10 @@ export default function Game() {
     // Apply persisted graphics + FPS-cap settings and keep them live.
     engine.applySettings(settingsStore.get());
     const unsubSettings = settingsStore.subscribe((s) => engine.applySettings(s));
-    engine.onShoot = () => audioBus.gunshot(engine.youId, 0);
+    engine.onShoot = () => {
+      const w = engine.currentWeapon === "tertiary" ? "laser" : "ak47";
+      audioBus.gunshot(engine.youId, 0, w);
+    };
     engine.start();
 
     const sock = new GameSocket({
@@ -129,13 +132,11 @@ export default function Game() {
         }
         if (msg.type === "match_end") {
           setHud((h) => ({ ...h, matchEnd: msg }));
-          // Ranked: auto-return to lobby after showing results.
-          if (mode === "ranked") {
-            setTimeout(() => {
-              try { document.exitPointerLock?.(); } catch {}
-              nav("/lobby", { replace: true });
-            }, 8000);
-          }
+          // Auto-return to lobby after showing results (both casual + ranked).
+          setTimeout(() => {
+            try { document.exitPointerLock?.(); } catch {}
+            nav("/lobby", { replace: true });
+          }, 8000);
           return;
         }
         if (msg.type === "match_start") {
@@ -242,6 +243,15 @@ export default function Game() {
       engine.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-skip the click-to-lock overlay on touch devices (no pointer lock there).
+  useEffect(() => {
+    const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    if (isTouch) {
+      audioBus.stopLobbyMusic();
+      setPointerLocked(true);
+    }
   }, []);
 
   const handleStart = useCallback(() => {

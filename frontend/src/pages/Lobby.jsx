@@ -20,6 +20,7 @@ export default function Lobby() {
   const [sfxMuted, setSfxMuted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 10..0
+  const [matchFoundSec, setMatchFoundSec] = useState(null); // null | 3..0 — countdown after queue match
   const [sensitivity, setSensitivity] = useState(() => {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
     return Number.isFinite(v) && v > 0 ? v : 1.0;
@@ -41,7 +42,8 @@ export default function Lobby() {
             clearInterval(queueTimerRef.id);
             queueTimerRef.id = null;
             try { await api.post("/queue/ranked/ack"); } catch {}
-            nav("/play?mode=ranked");
+            // Start a 3-2-1 countdown before launching into the arena.
+            setMatchFoundSec(3);
           }
         } catch {}
       }, 1000);
@@ -138,6 +140,18 @@ export default function Lobby() {
     return () => clearTimeout(id);
   }, [quickQueueSec, nav]);
 
+  // Ranked match-found 3-2-1 countdown, then go into the arena.
+  useEffect(() => {
+    if (matchFoundSec === null) return;
+    if (matchFoundSec <= 0) {
+      setMatchFoundSec(null);
+      nav("/play?mode=ranked");
+      return;
+    }
+    const id = setTimeout(() => setMatchFoundSec((s) => (s === null ? null : s - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [matchFoundSec, nav]);
+
   const toggleMusic = () => {
     const next = !musicMuted;
     setMusicMuted(next);
@@ -165,12 +179,12 @@ export default function Lobby() {
       />
       <div className="absolute inset-0 bg-black/40" />
 
-      <header className="relative z-10 flex items-center justify-between px-6 md:px-12 py-5">
-        <div className="font-display text-3xl md:text-4xl text-[#FFD700] text-pow-shadow">
+      <header className="relative z-10 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-3 md:py-5">
+        <div className="font-display text-2xl sm:text-3xl md:text-4xl text-[#FFD700] text-pow-shadow">
           VIR<span className="text-[#E62429]">TUE</span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="hud-panel" data-testid="lobby-user-badge">
+        <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
+          <div className="hud-panel hidden sm:block" data-testid="lobby-user-badge">
             <div><span className="text-[#FFD700]">{user?.username}</span> <span className="opacity-70 text-sm">· K/D {kd}</span></div>
           </div>
           <button
@@ -204,12 +218,12 @@ export default function Lobby() {
         </div>
       </header>
 
-      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 px-6 md:px-12 lg:px-20 mt-4">
+      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-2 sm:mt-4">
         <div className="lg:col-span-7">
           <div className="inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
             <span className="font-anton uppercase tracking-widest">Free-For-All · Online</span>
           </div>
-          <h1 className="font-display text-6xl md:text-7xl uppercase text-white text-pow-shadow-lg">
+          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl uppercase text-white text-pow-shadow-lg">
             READY UP, <span className="text-[#E62429]">{user?.username}</span>!
           </h1>
 
@@ -242,34 +256,34 @@ export default function Lobby() {
             </button>
           </div>
 
-          <div className="mt-8 space-y-4 max-w-md">
+          <div className="mt-6 sm:mt-8 space-y-3 sm:space-y-4 max-w-md">
             <button
               onClick={quickQueueSec !== null ? undefined : startQuickQueue}
               disabled={quickQueueSec !== null}
-              className="btn-pow bg-[#E62429] text-white w-full text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#E62429] text-white w-full text-xl sm:text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
             >
               <span className="flex items-center gap-3">
-                {quickQueueSec !== null ? <Loader2 size={28} strokeWidth={3} className="animate-spin" /> : <Play size={28} strokeWidth={3} />}
+                {quickQueueSec !== null ? <Loader2 size={26} strokeWidth={3} className="animate-spin" /> : <Play size={26} strokeWidth={3} />}
                 {quickQueueSec !== null ? `MATCHING... ${quickQueueSec}s` : "QUICK MATCH"}
               </span>
             </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
               disabled={!!queueState}
-              className="btn-pow bg-[#0055FF] text-white w-full text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#0055FF] text-white w-full text-xl sm:text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
             >
               <span className="flex items-center gap-3">
-                {queueState && !queueState.matched ? <Loader2 size={26} strokeWidth={3} className="animate-spin" /> : <Trophy size={26} strokeWidth={3} />}
+                {queueState && !queueState.matched ? <Loader2 size={24} strokeWidth={3} className="animate-spin" /> : <Trophy size={24} strokeWidth={3} />}
                 {queueState ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...") : "RANKED MATCH"}
               </span>
             </button>
-            <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full" data-testid="lobby-leaderboard-button">
-              <span className="flex items-center gap-3"><Trophy size={22} strokeWidth={3} /> LEADERBOARD</span>
+            <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg" data-testid="lobby-leaderboard-button">
+              <span className="flex items-center gap-3"><Trophy size={20} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
-            <Link to="/profile" className="btn-pow bg-white text-black w-full" data-testid="lobby-profile-button">
-              <span className="flex items-center gap-3"><User size={22} strokeWidth={3} /> PROFILE</span>
+            <Link to="/profile" className="btn-pow bg-white text-black w-full text-base sm:text-lg" data-testid="lobby-profile-button">
+              <span className="flex items-center gap-3"><User size={20} strokeWidth={3} /> PROFILE</span>
             </Link>
           </div>
 
@@ -302,7 +316,7 @@ export default function Lobby() {
         </div>
       </main>
 
-      <div className="relative z-10 px-6 md:px-12 lg:px-20 mt-12 pb-12 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl">
+      <div className="relative z-10 px-3 sm:px-6 md:px-12 lg:px-20 mt-8 sm:mt-12 pb-12 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-5xl">
         <div className="card-pow p-5">
           <div className="font-anton uppercase tracking-widest text-sm text-neutral-500">Controls</div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2">
@@ -375,25 +389,21 @@ export default function Lobby() {
             <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
               <Loader2 size={18} strokeWidth={3} className="animate-spin" />
               <span className="font-anton uppercase tracking-widest text-sm flex-1">Searching for Players</span>
-              <div className="font-anton text-xs flex items-center gap-1 bg-black/30 px-2 py-0.5 rounded-sm tabular-nums" data-testid="quick-queue-timer">
-                <Clock size={12} strokeWidth={3} />
-                {quickQueueSec}s
-              </div>
               <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
                 <X size={16} strokeWidth={3} />
               </button>
             </div>
-            <div className="px-4 py-3 bg-white">
-              <div className="h-1.5 w-full bg-neutral-200 border border-black overflow-hidden">
-                <div
-                  className="h-full bg-[#E62429] transition-all duration-1000 ease-linear"
-                  style={{ width: `${Math.min(100, ((10 - quickQueueSec) / 10) * 100)}%` }}
-                  data-testid="quick-queue-progress"
-                />
+            <div className="px-4 py-4 bg-white text-center">
+              <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">
+                <Clock size={12} strokeWidth={3} className="inline -mt-0.5 mr-1" />
+                Filling with bots in
               </div>
-              <p className="font-body text-xs text-neutral-600 mt-2">
-                Filling with bots if no opponents join in time.
-              </p>
+              <div
+                className="font-display text-8xl text-[#E62429] leading-none tabular-nums"
+                data-testid="quick-queue-timer"
+              >
+                {quickQueueSec}
+              </div>
             </div>
           </div>
         </div>
@@ -431,22 +441,38 @@ export default function Lobby() {
                 <Loader2 size={18} strokeWidth={3} className="animate-spin" />
               )}
               <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="queue-toast-title">
-                {queueState.matched ? "Match Found!" : "Queued — Searching"}
+                {queueState.matched ? "Match Found!" : "Searching"}
               </span>
-              {!queueState.matched && (
-                <div className="font-anton text-xs flex items-center gap-1 bg-black/30 px-2 py-0.5 rounded-sm" data-testid="queue-wait-timer">
-                  <Clock size={12} strokeWidth={3} />
-                  {fmtMS(queueState.wait_seconds || 0)}
-                </div>
-              )}
               {!queueState.matched && (
                 <button onClick={cancelRankedQueue} className="font-anton hover:opacity-80 ml-1" data-testid="queue-cancel" title="Leave queue">
                   <X size={16} strokeWidth={3} />
                 </button>
               )}
             </div>
-            <div className="px-4 py-3 bg-white">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="px-4 py-4 bg-white text-center">
+              {/* BIG timer / match-found countdown */}
+              {queueState.matched ? (
+                <div data-testid="queue-match-found">
+                  <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">Starting in</div>
+                  <div
+                    className="font-display text-8xl text-[#06A35F] leading-none tabular-nums animate-pulse"
+                    data-testid="match-found-countdown"
+                  >
+                    {matchFoundSec ?? 3}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">
+                    <Clock size={12} strokeWidth={3} className="inline -mt-0.5 mr-1" />
+                    Wait time
+                  </div>
+                  <div className="font-display text-6xl text-[#0055FF] leading-none tabular-nums" data-testid="queue-wait-timer">
+                    {fmtMS(queueState.wait_seconds || 0)}
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 flex items-center justify-center gap-2">
                 <div
                   className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5"
                   style={{ background: RANK_COLORS[queueState.tier ?? 0], color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A" }}
@@ -454,32 +480,11 @@ export default function Lobby() {
                   {queueState.tier_name || "BRONZE"}
                 </div>
                 {!queueState.matched && (
-                  <div className="font-anton uppercase text-xs opacity-70" data-testid="queue-count">
+                  <div className="font-anton uppercase text-xs text-neutral-500" data-testid="queue-count">
                     {queueState.tier_size || 1} / 2 same-tier
                   </div>
                 )}
               </div>
-              {!queueState.matched && (queueState.bot_fill_seconds || 0) > 0 && (
-                <div className="mb-2">
-                  <div className="h-1.5 w-full bg-neutral-200 border border-black overflow-hidden">
-                    <div
-                      className="h-full bg-[#0055FF] transition-all"
-                      style={{
-                        width: `${Math.min(100, ((queueState.wait_seconds || 0) / queueState.bot_fill_seconds) * 100)}%`,
-                      }}
-                      data-testid="queue-progress-bar"
-                    />
-                  </div>
-                </div>
-              )}
-              <p className="font-body text-xs text-neutral-600">
-                {queueState.matched
-                  ? "Entering arena..."
-                  : "Roam the lobby — we'll auto-join when an opponent is ready."}
-              </p>
-              {queueState.matched && (
-                <div className="mt-2 font-anton text-xs text-[#E62429]">Match ID: {queueState.match_id}</div>
-              )}
             </div>
           </div>
         </div>

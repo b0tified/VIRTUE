@@ -63,13 +63,20 @@ class AudioBus {
     return Math.max(0, 1 - distance / 80);
   }
 
-  /* -------- Gunshot: pitch depends on shooter id, volume on distance -------- */
-  gunshot(shooterId = null, distance = 0) {
+  /* -------- Weapon sounds: AK = noisy bang+thump, Laser = futuristic zap -------- */
+  gunshot(shooterId = null, distance = 0, weapon = "ak47") {
     if (!this._ensure()) return;
-    const ctx = this.ctx;
     const vol = this._distVolume(distance);
     if (vol <= 0.02) return;
+    if (weapon === "laser") {
+      this._laserShot(vol);
+    } else {
+      this._akShot(shooterId, vol);
+    }
+  }
 
+  _akShot(shooterId, vol) {
+    const ctx = this.ctx;
     // Per-shooter pitch ratio 0.78 - 1.28 from hash; local shooter gets stable 1.0
     let pitch = 1.0;
     if (shooterId) {
@@ -119,6 +126,61 @@ class AudioBus {
     og.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.14);
     osc.connect(og); og.connect(this.sfxGain);
     osc.start(); osc.stop(ctx.currentTime + 0.16);
+  }
+
+  /* Laser: short sci-fi "pew" — descending square sweep + bright ring + zap noise. */
+  _laserShot(vol) {
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime;
+    const dur = 0.18;
+
+    // 1) Pitched sweep — square wave 2200 Hz → 380 Hz
+    const sweep = ctx.createOscillator();
+    sweep.type = "square";
+    sweep.frequency.setValueAtTime(2200, t0);
+    sweep.frequency.exponentialRampToValueAtTime(380, t0 + dur);
+    const sweepFilt = ctx.createBiquadFilter();
+    sweepFilt.type = "lowpass";
+    sweepFilt.frequency.setValueAtTime(4000, t0);
+    sweepFilt.frequency.exponentialRampToValueAtTime(900, t0 + dur);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0, t0);
+    sg.gain.linearRampToValueAtTime(0.55 * vol, t0 + 0.005);
+    sg.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    sweep.connect(sweepFilt); sweepFilt.connect(sg); sg.connect(this.sfxGain);
+    sweep.start(t0); sweep.stop(t0 + dur + 0.02);
+
+    // 2) Bright ringing partial — sine 1760 Hz with slight vibrato
+    const ring = ctx.createOscillator();
+    ring.type = "sine";
+    ring.frequency.value = 1760;
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 22;
+    const vibG = ctx.createGain();
+    vibG.gain.value = 80;
+    vib.connect(vibG); vibG.connect(ring.frequency);
+    const rg = ctx.createGain();
+    rg.gain.setValueAtTime(0, t0);
+    rg.gain.linearRampToValueAtTime(0.35 * vol, t0 + 0.005);
+    rg.gain.exponentialRampToValueAtTime(0.001, t0 + dur + 0.05);
+    ring.connect(rg); rg.connect(this.sfxGain);
+    ring.start(t0); ring.stop(t0 + dur + 0.07);
+    vib.start(t0); vib.stop(t0 + dur + 0.07);
+
+    // 3) High-pass noise zap for crackle
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.06), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 3500;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.25 * vol, t0);
+    ng.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
+    src.connect(hp); hp.connect(ng); ng.connect(this.sfxGain);
+    src.start(t0);
   }
 
   /* -------- Hit marker (you hit someone) -------- */

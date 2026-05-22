@@ -101,8 +101,8 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       </div>
 
-      {/* Top-center: match timer (ranked only) */}
-      {hud.isRanked && (hud.inQueue || hud.timeLeft != null) && (
+      {/* Top-center: match timer */}
+      {(hud.inQueue || hud.timeLeft != null) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20" data-testid="hud-match-timer">
           {hud.inQueue ? (
             <div className="hud-panel" style={{ background: "rgba(0,85,255,0.92)" }}>
@@ -113,10 +113,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
               </div>
             </div>
           ) : (
-            <div className="hud-panel" style={{ background: hud.timeLeft < 30 ? "rgba(230,36,41,0.95)" : "rgba(0,85,255,0.92)" }}>
+            <div className="hud-panel" style={{ background: hud.timeLeft < 30 ? "rgba(230,36,41,0.95)" : (hud.isRanked ? "rgba(0,85,255,0.92)" : "rgba(10,10,10,0.85)") }}>
               <div className="flex items-center gap-3">
                 <Timer size={20} strokeWidth={3} />
-                <span className="text-xs opacity-80">RANKED</span>
+                <span className="text-xs opacity-80">{hud.isRanked ? "RANKED" : "QUICK"}</span>
                 <span className="font-display text-3xl" data-testid="hud-time-left">{formatTime(hud.timeLeft)}</span>
               </div>
             </div>

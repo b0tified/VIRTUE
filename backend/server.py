@@ -1137,7 +1137,7 @@ class GameRoom:
             "players": [p.to_state() for p in self.players.values()],
             "events": self.events,
             "is_ranked": self.is_ranked,
-            "time_left": max(0.0, self.match_duration - (now - self.match_start)) if (self.is_ranked and not in_queue) else None,
+            "time_left": max(0.0, self.match_duration - (now - self.match_start)) if (not in_queue) else None,
             "in_intermission": self.in_intermission,
             "in_queue": in_queue,
             "real_count": real_count,
@@ -1147,62 +1147,91 @@ class GameRoom:
         await self.broadcast(state)
 
     async def end_match(self):
-        """End a ranked match: award rank points to real players, broadcast standings, reset."""
+        """End a match: for ranked, award rank points; for casual, just show standings.
+        Broadcasts a match_end payload, then resets the room after a 10s intermission."""
         self.in_intermission = True
         real_players = [p for p in self.players.values() if not p.is_bot and p.user_id]
         real_players.sort(key=lambda p: p.kills, reverse=True)
-        rewards = [30, 15, 5]
         placements = []
-        for i, p in enumerate(real_players):
-            if i < len(rewards):
-                base_delta = rewards[i]
-            else:
-                base_delta = -10
-            new_points = 0
-            placement_played_before = 0
-            is_placement = False
-            delta = base_delta
-            try:
-                udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
-                cur = int((udoc or {}).get("rank_points", 0) or 0)
-                placement_played_before = int((udoc or {}).get("placement_matches_played", 0) or 0)
-                is_placement = placement_played_before < PLACEMENT_MATCHES
-                # Placement streak: 2x positive gains, no negative loss
-                if is_placement:
-                    if base_delta > 0:
-                        delta = base_delta * PLACEMENT_MULTIPLIER
-                    else:
-                        delta = 0
-                new_points = max(0, cur + delta)
-                tier_idx, tier_name = rank_for_points(new_points)
-                prev_peak = int((udoc or {}).get("peak_rank_points", 0) or 0)
-                new_peak = max(prev_peak, new_points)
-                update_set = {"rank_points": new_points}
-                if new_peak > prev_peak:
-                    update_set["peak_rank_points"] = new_peak
-                await db.users.update_one(
-                    {"_id": ObjectId(p.user_id)},
-                    {"$set": update_set, "$inc": {"stats.matches": 1, "placement_matches_played": 1}},
-                )
-            except Exception as e:
-                logger.warning("rank update failed: %s", e)
-                tier_idx, tier_name = rank_for_points(new_points)
-            placements.append({
-                "id": p.id,
-                "username": p.username,
-                "kills": p.kills,
-                "deaths": p.deaths,
-                "delta": delta,
-                "base_delta": base_delta,
-                "new_points": new_points,
-                "rank_tier": tier_idx,
-                "rank_name": tier_name,
-                "is_placement": is_placement,
-                "placement_match_number": placement_played_before + 1 if is_placement else None,
-                "placement_matches_total": PLACEMENT_MATCHES,
-            })
+        if self.is_ranked:
+            rewards = [30, 15, 5]
+            for i, p in enumerate(real_players):
+                base_delta = rewards[i] if i < len(rewards) else -10
+                new_points = 0
+                placement_played_before = 0
+                is_placement = False
+                delta = base_delta
+                try:
+                    udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
+                    cur = int((udoc or {}).get("rank_points", 0) or 0)
+                    placement_played_before = int((udoc or {}).get("placement_matches_played", 0) or 0)
+                    is_placement = placement_played_before < PLACEMENT_MATCHES
+                    if is_placement:
+                        delta = base_delta * PLACEMENT_MULTIPLIER if base_delta > 0 else 0
+                    new_points = max(0, cur + delta)
+                    tier_idx, tier_name = rank_for_points(new_points)
+                    prev_peak = int((udoc or {}).get("peak_rank_points", 0) or 0)
+                    new_peak = max(prev_peak, new_points)
+                    update_set = {"rank_points": new_points}
+                    if new_peak > prev_peak:
+                        update_set["peak_rank_points"] = new_peak
+                    await db.users.update_one(
+                        {"_id": ObjectId(p.user_id)},
+                        {"$set": update_set, "$inc": {"stats.matches": 1, "placement_matches_played": 1}},
+                    )
+                except Exception as e:
+                    logger.warning("rank update failed: %s", e)
+                    tier_idx, tier_name = rank_for_points(new_points)
+                placements.append({
+                    "id": p.id,
+                    "username": p.username,
+                    "kills": p.kills,
+                    "deaths": p.deaths,
+                    "delta": delta,
+                    "base_delta": base_delta,
+                    "new_points": new_points,
+                    "rank_tier": tier_idx,
+                    "rank_name": tier_name,
+                    "is_placement": is_placement,
+                    "placement_match_number": placement_played_before + 1 if is_placement else None,
+                    "placement_matches_total": PLACEMENT_MATCHES,
+                })
+        else:
+            # Casual: no RP, just record the match in stats so K/D analytics still work.
+            for p in real_players:
+                cur_points = 0
+                tier_idx, tier_name = 0, "BRONZE"
+                try:
+                    udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
+                    cur_points = int((udoc or {}).get("rank_points", 0) or 0)
+                    tier_idx, tier_name = rank_for_points(cur_points)
+                    await db.users.update_one(
+                        {"_id": ObjectId(p.user_id)},
+                        {"$inc": {"stats.matches": 1}},
+                    )
+                except Exception:
+                    pass
+                placements.append({
+                    "id": p.id,
+                    "username": p.username,
+                    "kills": p.kills,
+                    "deaths": p.deaths,
+                    "delta": 0,
+                    "base_delta": 0,
+                    "new_points": cur_points,
+                    "rank_tier": tier_idx,
+                    "rank_name": tier_name,
+                    "is_placement": False,
+                    "placement_match_number": None,
+                    "placement_matches_total": PLACEMENT_MATCHES,
+                })
 
-        payload = {"type": "match_end", "placements": placements, "duration": self.match_duration}
+        payload = {
+            "type": "match_end",
+            "placements": placements,
+            "duration": self.match_duration,
+            "is_ranked": self.is_ranked,
+        }
         self.last_match_end_payload = payload
         await self.broadcast(payload)
 
@@ -1229,19 +1258,19 @@ class GameRoom:
         interval = 1.0 / TICK_RATE
         while True:
             try:
-                if self.is_ranked and not self.in_intermission:
+                if not self.in_intermission:
                     real_count = sum(1 for p in self.players.values() if not p.is_bot)
-                    if real_count >= RANKED_MIN_REAL_PLAYERS:
-                        if time.time() - self.match_start >= self.match_duration:
-                            await self.end_match()
-                            continue
+                    has_min = real_count >= (RANKED_MIN_REAL_PLAYERS if self.is_ranked else 1)
+                    if has_min and time.time() - self.match_start >= self.match_duration:
+                        await self.end_match()
+                        continue
                 await self.tick()
             except Exception as e:
                 logger.exception("tick error: %s", e)
             await asyncio.sleep(interval)
 
 
-game_room = GameRoom(is_ranked=False)
+game_room = GameRoom(is_ranked=False, match_duration=300.0)  # 5 minute Quick Match
 ranked_room = GameRoom(is_ranked=True, match_duration=50.0)
 
 # -------------------------------------------------------------------

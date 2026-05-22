@@ -44,6 +44,7 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     if (!enabled) return;
     const e = engineRef.current;
     if (!e) return;
+    e.touchActive = true;
     // Movement update loop @ 60Hz to feed the engine
     let raf = 0;
     const tick = () => {
@@ -73,7 +74,10 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       cancelAnimationFrame(raf);
       // Clear any latched virtual keys when disabling.
       const eng = engineRef.current;
-      if (eng) TOUCH_KEY_MAP.forEach((k) => eng.keys.delete("Key" + k.toUpperCase()));
+      if (eng) {
+        TOUCH_KEY_MAP.forEach((k) => eng.keys.delete("Key" + k.toUpperCase()));
+        eng.touchActive = false;
+      }
     };
   }, [enabled, engineRef]);
 

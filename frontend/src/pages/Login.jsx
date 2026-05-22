@@ -90,9 +90,6 @@ export default function Login() {
             Sign up
           </Link>
         </div>
-        <div className="text-center text-[10px] text-neutral-600 uppercase tracking-widest">
-          Demo: admin@shooter.com / admin123
-        </div>
       </form>
     </div>
   );
