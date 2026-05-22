@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Clock } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Clock, Settings as SettingsIcon } from "lucide-react";
 import InstallButton from "@/components/InstallButton";
+import SettingsModal from "@/components/SettingsModal";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -17,6 +18,7 @@ export default function Lobby() {
   const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [sensitivity, setSensitivity] = useState(() => {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
     return Number.isFinite(v) && v > 0 ? v : 1.0;
@@ -167,6 +169,14 @@ export default function Lobby() {
             <span className="flex items-center gap-2">{sfxMuted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
           </button>
           <InstallButton variant="secondary" />
+          <button
+            onClick={() => setShowSettings(true)}
+            className="btn-pow bg-white text-black"
+            data-testid="lobby-settings-button"
+            title="Graphics, FPS cap, touch controls"
+          >
+            <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
+          </button>
           <button onClick={doLogout} className="btn-pow bg-white text-black" data-testid="lobby-logout-button">
             <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> LOGOUT</span>
           </button>
@@ -326,6 +336,8 @@ export default function Lobby() {
           </div>
         </div>
       )}
+
+      <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
 
       {/* Disconnected toast — auto-kicked back from a match */}
       {disconnected && (

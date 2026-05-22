@@ -45,6 +45,9 @@ export class GameEngine {
     this.locked = false;
     this.pendingShoot = false;
     this.recoil = 0;
+    // Graphics / FPS cap
+    this._frameMinMs = 0;
+    this._settings = null;
 
     // Footstep cadence
     this._footAcc = 0;
@@ -1168,6 +1171,11 @@ export class GameEngine {
   _loop = () => {
     if (!this.running) return;
     const now = performance.now();
+    // FPS cap (0 = uncapped). Re-schedules without re-rendering when over budget.
+    if (this._frameMinMs > 0 && (now - this.lastTime) + 0.5 < this._frameMinMs) {
+      requestAnimationFrame(this._loop);
+      return;
+    }
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
     this._update(dt);
@@ -1180,6 +1188,30 @@ export class GameEngine {
     }
     requestAnimationFrame(this._loop);
   };
+
+  /* Live-applies graphics + FPS-cap settings from the settings store.
+     Quality "low" → 0.5x pixel ratio, "medium" → 1.0x, "high" → device DPR.
+     Shadows currently affect tone (we don't use shadow maps), so this is a
+     placeholder — kept stateful so a future shadow-map pass can read it. */
+  applySettings(s) {
+    if (!s) return;
+    this._settings = { ...(this._settings || {}), ...s };
+    if (s.graphics !== undefined) {
+      const dpr = window.devicePixelRatio || 1;
+      const ratio =
+        s.graphics === "low" ? 0.55 :
+        s.graphics === "medium" ? Math.min(1.0, dpr) :
+        Math.min(dpr, 2);
+      try { this.renderer.setPixelRatio(ratio); } catch {}
+    }
+    if (s.fpsCap !== undefined) {
+      this._frameMinMs = s.fpsCap > 0 ? (1000 / s.fpsCap) : 0;
+    }
+    if (s.fovDegrees !== undefined && this.camera) {
+      this.camera.fov = Math.max(50, Math.min(110, s.fovDegrees));
+      this.camera.updateProjectionMatrix();
+    }
+  }
 
   snapshot() {
     const shoot = this.pendingShoot;

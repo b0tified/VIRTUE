@@ -1,7 +1,6 @@
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Lobby from "@/pages/Lobby";
@@ -29,12 +28,19 @@ function GuestOnly({ children }) {
   return children;
 }
 
+function Root() {
+  // Send signed-in users straight to the lobby, guests straight to login.
+  const { user } = useAuth();
+  if (user === null) return null;
+  return <Navigate to={user ? "/lobby" : "/login"} replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={<Root />} />
           <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
           <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
           <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />

@@ -1,0 +1,257 @@
+import { useEffect, useRef, useState } from "react";
+import settingsStore from "@/game/settings";
+
+/* Mobile / touchscreen controls.
+   Renders two virtual joysticks (left = move WASD, right = look around) plus
+   on-screen buttons: shoot, melee, reload, jump, weapon switch.
+   Directly drives the engine via injected keyboard-like flags and yaw/pitch
+   deltas. Auto-hides on desktops unless the user forces "always on" in
+   settings. */
+const TOUCH_KEY_MAP = ["w", "s", "a", "d"]; // 0=up, 1=down, 2=left, 3=right
+
+function isTouchDevice() {
+  if (typeof window === "undefined") return false;
+  return (
+    "ontouchstart" in window ||
+    (window.navigator && window.navigator.maxTouchPoints > 0)
+  );
+}
+
+export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon }) {
+  const [enabled, setEnabled] = useState(false);
+  const moveStickRef = useRef(null);
+  const lookStickRef = useRef(null);
+  // Track active touches so we can drive both sticks simultaneously.
+  const stateRef = useRef({
+    move: { touchId: null, baseX: 0, baseY: 0, dx: 0, dy: 0 },
+    look: { touchId: null, lastX: 0, lastY: 0 },
+    keys: new Set(),
+    weapon: "primary",
+  });
+
+  // React to settings changes (touchControls: auto/on/off).
+  useEffect(() => {
+    const unsub = settingsStore.subscribe((s) => {
+      const mode = s.touchControls || "auto";
+      setEnabled(mode === "on" || (mode === "auto" && isTouchDevice()));
+    });
+    return unsub;
+  }, []);
+
+  // Engine input wiring. We synthesize keyboard-style keys on the engine
+  // (engine reads `this.keys` Set) and forward look deltas via yaw/pitch.
+  useEffect(() => {
+    if (!enabled) return;
+    const e = engineRef.current;
+    if (!e) return;
+    // Movement update loop @ 60Hz to feed the engine
+    let raf = 0;
+    const tick = () => {
+      const eng = engineRef.current;
+      if (eng) {
+        const m = stateRef.current.move;
+        const mag = Math.hypot(m.dx, m.dy);
+        const dead = 0.18;
+        const dirs = [false, false, false, false]; // up, down, left, right
+        if (mag > dead) {
+          const ny = m.dy / mag;  // -y is up in DOM, but stick: dy>0 = down
+          const nx = m.dx / mag;
+          if (ny < -0.35) dirs[0] = true;       // up = W
+          if (ny >  0.35) dirs[1] = true;       // down = S
+          if (nx < -0.35) dirs[2] = true;       // left = A
+          if (nx >  0.35) dirs[3] = true;       // right = D
+        }
+        TOUCH_KEY_MAP.forEach((k, i) => {
+          if (dirs[i]) eng.keys.add("Key" + k.toUpperCase());
+          else eng.keys.delete("Key" + k.toUpperCase());
+        });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      // Clear any latched virtual keys when disabling.
+      const eng = engineRef.current;
+      if (eng) TOUCH_KEY_MAP.forEach((k) => eng.keys.delete("Key" + k.toUpperCase()));
+    };
+  }, [enabled, engineRef]);
+
+  if (!enabled) return null;
+
+  // ----- Joystick handlers -----
+  const onMoveStart = (e) => {
+    const t = e.changedTouches[0];
+    const rect = moveStickRef.current.getBoundingClientRect();
+    stateRef.current.move.touchId = t.identifier;
+    stateRef.current.move.baseX = rect.left + rect.width / 2;
+    stateRef.current.move.baseY = rect.top + rect.height / 2;
+    onMoveMove(e);
+  };
+
+  const onMoveMove = (e) => {
+    const st = stateRef.current.move;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== st.touchId) continue;
+      const dx = t.clientX - st.baseX;
+      const dy = t.clientY - st.baseY;
+      const max = 60;
+      const mag = Math.min(max, Math.hypot(dx, dy));
+      const a = Math.atan2(dy, dx);
+      st.dx = (Math.cos(a) * mag) / max;
+      st.dy = (Math.sin(a) * mag) / max;
+    }
+  };
+
+  const onMoveEnd = (e) => {
+    const st = stateRef.current.move;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === st.touchId) {
+        st.touchId = null;
+        st.dx = 0; st.dy = 0;
+      }
+    }
+  };
+
+  // Look pad: any touch dragged in the right half rotates yaw/pitch.
+  const onLookStart = (e) => {
+    const t = e.changedTouches[0];
+    const st = stateRef.current.look;
+    st.touchId = t.identifier;
+    st.lastX = t.clientX;
+    st.lastY = t.clientY;
+  };
+
+  const onLookMove = (e) => {
+    const st = stateRef.current.look;
+    const eng = engineRef.current;
+    if (!eng) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== st.touchId) continue;
+      const dx = t.clientX - st.lastX;
+      const dy = t.clientY - st.lastY;
+      st.lastX = t.clientX;
+      st.lastY = t.clientY;
+      const sens = 0.005;
+      eng.yaw -= dx * sens;
+      eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
+    }
+  };
+
+  const onLookEnd = (e) => {
+    const st = stateRef.current.look;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === st.touchId) {
+        st.touchId = null;
+      }
+    }
+  };
+
+  const pressShoot = () => {
+    const eng = engineRef.current;
+    if (eng) eng.pendingShoot = true;
+    onShoot?.();
+  };
+
+  const pressMelee = () => {
+    const eng = engineRef.current;
+    if (eng) eng.pendingMelee = true;
+    onMelee?.();
+  };
+
+  const pressJump = () => {
+    const eng = engineRef.current;
+    if (eng) {
+      // Same path as Space key in engine input handler
+      eng.keys.add("Space");
+      setTimeout(() => eng.keys.delete("Space"), 60);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-30 pointer-events-none select-none" data-testid="touch-controls">
+      {/* LEFT: move stick */}
+      <div
+        className="pointer-events-auto absolute bottom-8 left-8 w-36 h-36 rounded-full bg-white/10 border-2 border-white/30"
+        ref={moveStickRef}
+        onTouchStart={onMoveStart}
+        onTouchMove={onMoveMove}
+        onTouchEnd={onMoveEnd}
+        onTouchCancel={onMoveEnd}
+        data-testid="touch-move-stick"
+      >
+        <Knob dx={stateRef.current.move.dx} dy={stateRef.current.move.dy} />
+        <div className="absolute -top-6 left-0 right-0 text-center text-[10px] uppercase tracking-widest text-white/60">Move</div>
+      </div>
+
+      {/* RIGHT: look stick (pad takes up most of right side) */}
+      <div
+        className="pointer-events-auto absolute right-0 top-0 bottom-0 w-1/2"
+        ref={lookStickRef}
+        onTouchStart={onLookStart}
+        onTouchMove={onLookMove}
+        onTouchEnd={onLookEnd}
+        onTouchCancel={onLookEnd}
+        data-testid="touch-look-pad"
+      />
+
+      {/* RIGHT: action buttons (sit above the look pad, in pointer-events-auto bubble) */}
+      <div className="pointer-events-auto absolute bottom-8 right-8 grid grid-cols-2 gap-3 z-40">
+        <ActionBtn label="Reload" onPress={() => onReload?.()} color="#FFD700" testid="touch-reload" />
+        <ActionBtn label="Melee"  onPress={pressMelee}        color="#9B59B6" testid="touch-melee" />
+        <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" />
+        <ActionBtn label="Fire"   onPress={pressShoot}        color="#E62429" big testid="touch-fire" />
+      </div>
+
+      {/* Weapon switcher (top-right above look pad) */}
+      <div className="pointer-events-auto absolute top-4 right-4 flex flex-col gap-1 z-40">
+        {[
+          { w: "primary",   k: "1", label: "AK"  },
+          { w: "secondary", k: "2", label: "KAT" },
+          { w: "tertiary",  k: "3", label: "LSR" },
+        ].map((it) => (
+          <button
+            key={it.w}
+            type="button"
+            onTouchStart={(e) => { e.preventDefault(); onSwitchWeapon?.(it.w); }}
+            className="bg-black/60 border border-white/30 rounded px-2 py-1 text-[10px] font-anton uppercase tracking-widest text-white"
+            data-testid={`touch-weapon-${it.w}`}
+          >
+            {it.k} · {it.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Knob({ dx, dy }) {
+  return (
+    <div
+      className="absolute w-14 h-14 rounded-full bg-white/40 border-2 border-white pointer-events-none"
+      style={{
+        left: "50%",
+        top: "50%",
+        transform: `translate(-50%, -50%) translate(${(dx || 0) * 40}px, ${(dy || 0) * 40}px)`,
+        transition: dx || dy ? "none" : "transform 120ms ease-out",
+      }}
+    />
+  );
+}
+
+function ActionBtn({ label, onPress, color, big = false, testid }) {
+  return (
+    <button
+      type="button"
+      onTouchStart={(e) => { e.preventDefault(); onPress(); }}
+      className={`rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform ${big ? "w-20 h-20 text-lg" : "w-16 h-16 text-xs"}`}
+      style={{ background: color, boxShadow: "0 4px 0 #000" }}
+      data-testid={testid}
+    >
+      {label}
+    </button>
+  );
+}

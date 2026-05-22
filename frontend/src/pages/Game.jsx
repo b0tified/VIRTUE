@@ -4,7 +4,9 @@ import { useAuth } from "@/context/AuthContext";
 import { GameEngine } from "@/game/engine";
 import { GameSocket } from "@/game/network";
 import audioBus from "@/game/audio";
+import settingsStore from "@/game/settings";
 import Hud from "@/components/Hud";
+import TouchControls from "@/components/TouchControls";
 
 export default function Game() {
   const canvasRef = useRef(null);
@@ -99,6 +101,10 @@ export default function Game() {
       },
     });
     engineRef.current = engine;
+
+    // Apply persisted graphics + FPS-cap settings and keep them live.
+    engine.applySettings(settingsStore.get());
+    const unsubSettings = settingsStore.subscribe((s) => engine.applySettings(s));
     engine.onShoot = () => audioBus.gunshot(engine.youId, 0);
     engine.start();
 
@@ -228,6 +234,7 @@ export default function Game() {
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
+      unsubSettings();
       sock.close();
       engine.dispose();
     };
@@ -252,6 +259,19 @@ export default function Game() {
         pointerLocked={pointerLocked}
         onStart={handleStart}
         onExit={handleExit}
+      />
+      <TouchControls
+        engineRef={engineRef}
+        onShoot={() => {}}
+        onMelee={() => {}}
+        onReload={() => {
+          const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+          sockRef.current?.send({ type: "reload", weapon: w });
+        }}
+        onSwitchWeapon={(w) => {
+          engineRef.current?.setWeapon(w);
+          setHud((h) => ({ ...h, weapon: w }));
+        }}
       />
     </div>
   );
