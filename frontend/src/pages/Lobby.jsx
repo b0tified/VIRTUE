@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus } from "lucide-react";
 import InstallButton from "@/components/InstallButton";
 import SettingsModal from "@/components/SettingsModal";
+import PlayerCard from "@/components/PlayerCard";
+import FriendsModal from "@/components/FriendsModal";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -19,6 +21,7 @@ export default function Lobby() {
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFriends, setShowFriends] = useState(false);
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 10..0
   const [matchFoundSec, setMatchFoundSec] = useState(null); // null | 3..0 — countdown after queue match
   const [sensitivity, setSensitivity] = useState(() => {
@@ -122,21 +125,21 @@ export default function Lobby() {
 
   const startQuickQueue = () => {
     if (quickQueueSec !== null) return;
-    setQuickQueueSec(10);
+    setQuickQueueSec(0);
   };
 
   const cancelQuickQueue = () => setQuickQueueSec(null);
 
-  // Quick-match queue ticker: 10s countdown that holds the player in the lobby
-  // so the casual room "matchmaking" feels intentional. After 10s we navigate
-  // to /play?mode=casual (the room is shared + bot-filled by the backend).
+  // Quick-match queue ticker: count UP from 0 → 10 (10s grace window so the
+  // casual "matchmaking" feels intentional). After 10s we navigate to
+  // /play?mode=casual (the room is shared + bot-filled by the backend).
   useEffect(() => {
     if (quickQueueSec === null) return;
-    if (quickQueueSec <= 0) {
+    if (quickQueueSec >= 10) {
       nav("/play?mode=casual");
       return;
     }
-    const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s - 1)), 1000);
+    const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s + 1)), 1000);
     return () => clearTimeout(id);
   }, [quickQueueSec, nav]);
 
@@ -184,9 +187,27 @@ export default function Lobby() {
           VIR<span className="text-[#E62429]">TUE</span>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
-          <div className="hud-panel hidden sm:block" data-testid="lobby-user-badge">
-            <div><span className="text-[#FFD700]">{user?.username}</span> <span className="opacity-70 text-sm">· K/D {kd}</span></div>
-          </div>
+          {user && (
+            <PlayerCard
+              size="sm"
+              username={user.username}
+              avatar={user.avatar ?? 0}
+              rankTier={user.rank_tier ?? 0}
+              rankName={user.rank_name || "BRONZE"}
+              rankPoints={user.rank_points ?? 0}
+              online
+              className="hidden sm:inline-flex"
+              testid="lobby-user-card"
+            />
+          )}
+          <button
+            onClick={() => setShowFriends(true)}
+            className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
+            data-testid="lobby-friends-button"
+            title="Friends list"
+          >
+            <span className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} /><span className="hidden sm:inline">FRIENDS</span></span>
+          </button>
           <button
             onClick={toggleMusic}
             className={`btn-pow !hidden sm:!inline-block ${musicMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
@@ -389,6 +410,7 @@ export default function Lobby() {
       )}
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
+      <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
 
       {/* Quick-match (casual) queue toast — uses same UI as ranked.
           No header text per UX: just spinner + cancel + countdown. */}

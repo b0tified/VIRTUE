@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2 } from "lucide-react";
+import PlayerCard from "@/components/PlayerCard";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -235,11 +236,26 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
       {/* Death overlay */}
       {!hud.alive && pointerLocked && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60" data-testid="death-overlay">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/60" data-testid="death-overlay">
           <div className="text-center">
-            <div className="font-display text-8xl text-[#E62429] text-pow-shadow-lg">YOU'RE DOWN!</div>
+            <div className="font-display text-7xl sm:text-8xl text-[#E62429] text-pow-shadow-lg">YOU'RE DOWN!</div>
             <div className="font-anton uppercase tracking-widest text-white mt-3">Respawning...</div>
           </div>
+          {hud.lastKiller && (
+            <div className="mt-6 flex flex-col items-center" data-testid="death-killer-card">
+              <div className="font-anton uppercase tracking-widest text-xs text-white/70 mb-2">Killed by</div>
+              <PlayerCard
+                size="md"
+                username={hud.lastKiller.username}
+                avatar={hud.lastKiller.avatar}
+                rankTier={hud.lastKiller.rankTier}
+                rankName={hud.lastKiller.rankName}
+                rankPoints={hud.lastKiller.rankPoints}
+                isBot={!!hud.lastKiller.isBot}
+                testid="killer-card"
+              />
+            </div>
+          )}
         </div>
       )}
 

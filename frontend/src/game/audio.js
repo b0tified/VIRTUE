@@ -312,7 +312,10 @@ class AudioBus {
       [0, 4, 7],   // E major
     ];
     // 16-step melody (semitone offset from root, or null for rest).
-    // Two complementary phrases for bars 4 & 8.
+    // RIFF_A used to play on bar 7 (the loop's last bar) which made the
+    // song feel like it ended each cycle. Removed for a continuous loop;
+    // RIFF_B plays mid-loop instead.
+    // eslint-disable-next-line no-unused-vars
     const RIFF_A = [12, null, 10, 12, null, 7, null, 10, null, 7, 5, null, 7, null, 12, null];
     const RIFF_B = [10, null, 7,  10, null, 5, null, 7,  null, 3, 5, 7,  null, null, 12, null];
 
@@ -526,11 +529,15 @@ class AudioBus {
         hihat(startAt + i * (beat / 2), false, false);
       }
 
-      // Lead — sparse melodic phrase on bar 4 only of each 8-bar loop
-      if (phraseBar === 7) {
-        RIFF_A.forEach((s, i) => {
+      // Lead — DISABLED for a seamless continuous loop (the bar-7 riff used
+      // to give the song an audible "ending" that broke the loop). Quiet
+      // melody fragments instead, played every 4 bars so the texture stays
+      // ambient but never resolves.
+      if (phraseBar === 3) {
+        // Half the original RIFF_B, no resolution back to root
+        RIFF_B.slice(0, 8).forEach((s, i) => {
           if (s === null) return;
-          playLead(root, s, startAt + i * sixteenth, sixteenth * 2.2);
+          playLead(root, s, startAt + i * sixteenth, sixteenth * 1.6);
         });
       }
     };

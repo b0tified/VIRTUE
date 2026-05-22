@@ -992,6 +992,20 @@ export class GameEngine {
           else if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-hit", headshot: !!ev.headshot, damage: ev.damage, bodyPart: ev.body_part });
         } else if (ev.type === "kill") {
           if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-killed", victim: ev.victim_name, headshot: !!ev.headshot });
+          else if (ev.victim_id === this.youId) {
+            this.onLocalUpdate({
+              type: "killed-by",
+              killer: {
+                username: ev.shooter_name,
+                avatar: ev.shooter_avatar || 0,
+                rankTier: ev.shooter_rank_tier || 0,
+                rankName: ev.shooter_rank_name || "BRONZE",
+                rankPoints: ev.shooter_rank_points || 0,
+                isBot: !!ev.shooter_is_bot,
+                weapon: ev.weapon || "ak47",
+              },
+            });
+          }
         }
       }
       this.onState(msg);

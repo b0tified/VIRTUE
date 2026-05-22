@@ -1,0 +1,49 @@
+{
+  "summary": "Full backend + frontend testing of the Jan-2026 batch: Friends API (request/accept/decline/remove/block/unblock/list/search), avatar 0-4 endpoint, per-tier ranked-bot rooms (3 bots <Master, 1 Master/GM, 0 Goonmaster), kill events include shooter_avatar/rank_tier/rank_name/rank_points/is_bot, ONLINE_USERS WS tracking, lobby PlayerCard + FriendsModal + Quick Match counting UP from 0, mobile lobby fit. Backend: 24/24 tests pass (23 fast + 1 slow Diamond bot-fill). Frontend: all critical UI flows verified (lobby card, friends modal w/ 5 tabs + search returning ADD rows, mobile 390x700 fits without scroll, offline navigation).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_friends_avatar_botrooms.py",
+    "/app/backend/tests/pytest.ini",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/friends_avatar_botrooms_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:1491-1496 ranked_bot_count_for_tier — clean integer table: tier>=7 → 0 (Goonmaster never reached), 5-6 → 1 (Master/GM), <5 → 3. Verified all 8 tier indices via direct import.",
+    "server.py:1529-1542 get_or_create_ranked_bot_room — per-user RANKED_BOT_ROOMS dict prevents leaking rooms across users; bots get '-RB' suffix for unique naming. cleanup_ranked_bot_room_if_empty triggered only when all real players disconnect (good — re-entry idempotent).",
+    "server.py:1583-1584 matchmaker_loop — `if tier_timeout == float('inf'): continue` correctly short-circuits Goonmaster bot-fill. Verified live: 2500-RP user stays queued indefinitely with bot_fill_seconds=-1 from API.",
+    "server.py:1678-1701 ONLINE_USERS reference-counted per user — supports multi-tab/multi-mode connections (e.g. casual + ranked open simultaneously won't double-count). Decrement clamped via max(0, ...) — no negative leak.",
+    "server.py:1782-1786 auto-accept on reverse-pending — when A->B exists pending and B sends to A, the existing row is flipped to accepted instead of creating a second row. Avoids duplicate-row violation on the (from_user_id, to_user_id) unique index. Verified.",
+    "server.py:1851-1862 block clears any prior friendship rows before inserting the one-way block. Subsequent /friends/request returns 403 from either direction. Unblock removes only the blocker's own row (correct directional semantic).",
+    "server.py:1879-1892 /users/search — case-insensitive prefix regex, excludes self, returns [] for q<2 chars, projects compact friend-card fields. Limit clamp [1,20] enforced.",
+    "server.py:975-979 + 1064-1067 — kill events from both _apply_shoot and _apply_melee carry shooter_avatar/shooter_rank_tier/shooter_rank_name/shooter_rank_points/shooter_is_bot. Verified live in offline mode (kill event captured with all 5 new fields).",
+    "Lobby.jsx — Quick Match toast counter now increments 0,1,2,3,4… (live screenshot at t≈4.4s shows '4'). The previous-iteration countdown reversal is fixed.",
+    "Lobby.jsx — Mobile 390x700: scrollH==clientH==700 (NO scroll). The previous-iteration overflow regression is resolved. Confirmed via documentElement.scrollHeight.",
+    "FriendsModal.jsx — All 5 tabs render with data-testid friends-tab-{friends|incoming|outgoing|blocked|search}; the 'outgoing' tab label is 'SENT' (cosmetic) but testid is correct. Existing player2 friend appears in FRIENDS list with avatar+rank chip+RP+OFFLINE indicator. Unfriend and Block buttons present per row.",
+    "Search ADD flow — typing 'play' fetches /api/users/search and renders 3 ADD rows (player2, etc.) with proper PlayerCard + ADD button shape.",
+    "/app/backend/tests/pytest.ini — added asyncio_mode=auto so async WS tests run without explicit decorators (fixed pre-existing test infra gap)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_friends_avatar_botrooms.py (NEW — 24 tests)",
+    "/app/backend/tests/pytest.ini (NEW — asyncio_mode=auto config)",
+    "/app/backend/tests/conftest.py (NEW — minimal hook)"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 — all friends/avatar/bot-room/kill-event tests pass; Diamond bot-fill verified after 50s real-time wait)",
+    "frontend": "100% (PlayerCard + FriendsModal + 5 tabs + search + Quick Match UP-counter + mobile fit + offline nav all confirmed)"
+  },
+  "test_credentials": "player1@shooter.com / player123, player2@shooter.com / player123 (existing). New test users TEST_fr_<uuid>@shooter.com with username TESTfr<A|B><uuid> created in fixture; rows in db.friendships cleaned up in teardown. Avatar persisted on player1 (set to 3).",
+  "seed_data_creation": "Direct mongo writes: temporary rank_points overrides on player1's user doc (1000 Diamond, 1800 GM, 2500 Goonmaster) — all reset to 0 in test finally-blocks. db.friendships rows between paired test users wiped in module fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run full backend suite: `python -m pytest /app/backend/tests/ -v -c /app/backend/tests/pytest.ini --tb=short`. The Diamond bot-fill test takes ~50s (QUEUE_BOT_FILL_SEC=45s) and Master/GM 120s — those are deselected by default if you want fast runs. Use --deselect test_ranked_botfill_low_tier_3_bots for <20s wall time. Frontend: REACT_APP_BACKEND_URL=https://blast-arena-servers.preview.emergentagent.com. Login as player1@shooter.com / player123; player2 is already in player1's friends list as accepted. To test live online status, open a second WS connection as player2 and observe /api/friends from player1 → b_row.online flips True/False.",
+  "rca of the issue": "N/A — no real bugs. Initial Diamond test failure was a test-author tier-threshold mistake (1200 RP = Master, not Diamond) — fixed to use 1000 RP. Initial async tests not running was missing pytest-asyncio + config — installed + added pytest.ini with asyncio_mode=auto."
+}

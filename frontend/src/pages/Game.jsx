@@ -84,6 +84,8 @@ export default function Game() {
             hp: you ? you.hp : h.hp,
             alive: you ? you.alive : h.alive,
             invuln: you ? !!you.invuln : false,
+            // Clear killer card when you respawn alive again.
+            lastKiller: you && you.alive ? null : h.lastKiller,
             ammo: you?.ammo ?? h.ammo,
             magSize: you?.mag_size ?? h.magSize,
             reloading: you?.reloading ?? false,
@@ -106,6 +108,9 @@ export default function Game() {
           setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));
         } else if (ev.type === "footstep") {
           audioBus.footstep(ev.sprint);
+        } else if (ev.type === "killed-by") {
+          // Show the killer's PlayerCard on the death overlay.
+          setHud((h) => ({ ...h, lastKiller: ev.killer }));
         } else if (ev.type === "reload-pressed") {
           const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
           sockRef.current?.send({ type: "reload", weapon: w });

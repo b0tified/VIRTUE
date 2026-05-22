@@ -99,6 +99,7 @@ def public_user(user: dict) -> dict:
         "email": user["email"],
         "username": user.get("username", user["email"].split("@")[0]),
         "role": user.get("role", "user"),
+        "avatar": int(user.get("avatar", 0) or 0),
         "stats": user.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
         "rank_points": points,
         "rank_tier": tier_idx,
@@ -246,6 +247,11 @@ async def on_startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("username")
     await db.match_history.create_index([("user_id", 1), ("ended_at", -1)])
+    # Friendships: bidirectional pair, status in {pending,accepted,blocked}.
+    # Pending: `from_user_id` sent the request; `to_user_id` must accept.
+    await db.friendships.create_index([("from_user_id", 1), ("to_user_id", 1)], unique=True)
+    await db.friendships.create_index("to_user_id")
+    await db.friendships.create_index("from_user_id")
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@shooter.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
@@ -446,6 +452,17 @@ async def profile_me(user: dict = Depends(get_current_user)):
     return public_user(user)
 
 
+class AvatarIn(BaseModel):
+    avatar: int = Field(ge=0, le=4)
+
+
+@api.post("/profile/me/avatar")
+async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"avatar": payload.avatar}})
+    user["avatar"] = payload.avatar
+    return public_user(user)
+
+
 @api.get("/profile/me/history")
 async def profile_history(user: dict = Depends(get_current_user), limit: int = 10):
     """Last N matches for the current user (newest first). Includes mode, placement, kills/deaths, RP delta."""
@@ -628,10 +645,20 @@ class Player:
             self.user_id = None
             self.username = bot_name
             self.max_hp = BOT_MAX_HP
+            self.avatar = 0
+            self.rank_tier = 0
+            self.rank_name = "BOT"
+            self.rank_points = 0
         else:
             self.user_id = str(user["_id"])
             self.username = user.get("username", user["email"].split("@")[0])
             self.max_hp = MAX_HP
+            self.avatar = int(user.get("avatar", 0) or 0)
+            pts = int(user.get("rank_points", 0) or 0)
+            t_idx, t_name = rank_for_points(pts)
+            self.rank_tier = t_idx
+            self.rank_name = t_name
+            self.rank_points = pts
         self.id = ("bot_" if is_bot else "p_") + uuid.uuid4().hex[:10]
         x, z = random_spawn()
         self.x = float(x)
@@ -945,6 +972,11 @@ class GameRoom:
                     "type": "kill",
                     "shooter_id": attacker.id,
                     "shooter_name": attacker.username,
+                    "shooter_avatar": attacker.avatar,
+                    "shooter_rank_tier": attacker.rank_tier,
+                    "shooter_rank_name": attacker.rank_name,
+                    "shooter_rank_points": attacker.rank_points,
+                    "shooter_is_bot": attacker.is_bot,
                     "victim_id": best.id,
                     "victim_name": best.username,
                     "melee": True,
@@ -1029,6 +1061,11 @@ class GameRoom:
                     "type": "kill",
                     "shooter_id": shooter.id,
                     "shooter_name": shooter.username,
+                    "shooter_avatar": shooter.avatar,
+                    "shooter_rank_tier": shooter.rank_tier,
+                    "shooter_rank_name": shooter.rank_name,
+                    "shooter_rank_points": shooter.rank_points,
+                    "shooter_is_bot": shooter.is_bot,
                     "victim_id": hit.id,
                     "victim_name": hit.username,
                     "weapon": getattr(shooter, "weapon", "ak47"),
@@ -1444,6 +1481,19 @@ practice_room.is_practice = True
 # Offline-vs-AI: one private room per user, spawned on demand.
 OFFLINE_ROOMS: Dict[str, "GameRoom"] = {}
 OFFLINE_ROOM_TASKS: Dict[str, asyncio.Task] = {}
+# Ranked-vs-bots: one private RANKED room per user when bot-fill triggers.
+# Low-tier (Bronze..Diamond, idx 0-4) → 3 combat bots. Master/GM (5-6) → 1 bot.
+# Goonmaster (7) never bot-fills.
+RANKED_BOT_ROOMS: Dict[str, "GameRoom"] = {}
+RANKED_BOT_ROOM_TASKS: Dict[str, asyncio.Task] = {}
+
+
+def ranked_bot_count_for_tier(tier_idx: int) -> int:
+    if tier_idx >= 7:
+        return 0  # never reached — Goonmaster doesn't bot-fill
+    if tier_idx >= 5:
+        return 1  # Master / Grandmaster
+    return 3  # Bronze..Diamond
 
 
 async def get_or_create_offline_room(user_id: str) -> "GameRoom":
@@ -1474,6 +1524,35 @@ async def cleanup_offline_room_if_empty(user_id: str):
         task.cancel()
     OFFLINE_ROOMS.pop(user_id, None)
     logger.info("Offline room destroyed for user=%s", user_id)
+
+
+async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoom":
+    """Per-user ranked-vs-bots room — bot count scales with tier (3 for Bronze..Diamond, 1 for Master/GM)."""
+    room = RANKED_BOT_ROOMS.get(user_id)
+    if room is not None:
+        return room
+    room = GameRoom(is_ranked=True, match_duration=50.0)
+    room.is_ranked_bot = True
+    bot_count = ranked_bot_count_for_tier(tier_idx)
+    for name in BOT_NAMES[:bot_count]:
+        room.spawn_bot(f"{name}-RB")
+    RANKED_BOT_ROOMS[user_id] = room
+    RANKED_BOT_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
+    logger.info("Ranked-bot room spawned for user=%s tier=%d bots=%d", user_id, tier_idx, bot_count)
+    return room
+
+
+async def cleanup_ranked_bot_room_if_empty(user_id: str):
+    room = RANKED_BOT_ROOMS.get(user_id)
+    if room is None:
+        return
+    if any(not p.is_bot for p in room.players.values()):
+        return
+    task = RANKED_BOT_ROOM_TASKS.pop(user_id, None)
+    if task and not task.done():
+        task.cancel()
+    RANKED_BOT_ROOMS.pop(user_id, None)
+    logger.info("Ranked-bot room destroyed for user=%s", user_id)
 
 # -------------------------------------------------------------------
 # Ranked Matchmaking Queue
@@ -1589,8 +1668,233 @@ async def queue_ranked_ack(user: dict = Depends(get_current_user)):
 
 
 # -------------------------------------------------------------------
-# WebSocket endpoint
+# Friends list — send / accept / decline / block / unfriend, + online status
+# Schema: db.friendships = { from_user_id, to_user_id, status, created_at }
+#   status ∈ {"pending","accepted","blocked"}
+#   "blocked" rows are stored from blocker → blocked (one direction).
+#   "pending"/"accepted" rows are also one direction; we union both sides
+#   when listing.
 # -------------------------------------------------------------------
+ONLINE_USERS: Dict[str, int] = {}  # user_id -> open WS connection count
+
+
+def is_online(user_id: str) -> bool:
+    return ONLINE_USERS.get(user_id, 0) > 0
+
+
+class FriendActionIn(BaseModel):
+    username: str = Field(min_length=2, max_length=30)
+
+
+def _friend_card(u: dict) -> dict:
+    """Compact public view for friend rows (with online status)."""
+    pts = int(u.get("rank_points", 0) or 0)
+    t_idx, t_name = rank_for_points(pts)
+    return {
+        "id": str(u["_id"]),
+        "username": u.get("username", ""),
+        "avatar": int(u.get("avatar", 0) or 0),
+        "rank_points": pts,
+        "rank_tier": t_idx,
+        "rank_name": t_name,
+        "online": is_online(str(u["_id"])),
+    }
+
+
+async def _find_user_by_username(username: str) -> Optional[dict]:
+    return await db.users.find_one({"username": {"$regex": f"^{username}$", "$options": "i"}})
+
+
+@api.get("/friends")
+async def friends_list(user: dict = Depends(get_current_user)):
+    """Returns the user's accepted friends + pending incoming + pending outgoing + blocked."""
+    me_id = str(user["_id"])
+    # Accepted: either side of the row matches me
+    accepted_cur = db.friendships.find({
+        "status": "accepted",
+        "$or": [{"from_user_id": me_id}, {"to_user_id": me_id}],
+    })
+    accepted_ids = []
+    async for f in accepted_cur:
+        other = f["to_user_id"] if f["from_user_id"] == me_id else f["from_user_id"]
+        accepted_ids.append(other)
+    incoming_cur = db.friendships.find({"status": "pending", "to_user_id": me_id})
+    incoming = []
+    async for f in incoming_cur:
+        incoming.append(f["from_user_id"])
+    outgoing_cur = db.friendships.find({"status": "pending", "from_user_id": me_id})
+    outgoing = []
+    async for f in outgoing_cur:
+        outgoing.append(f["to_user_id"])
+    blocked_cur = db.friendships.find({"status": "blocked", "from_user_id": me_id})
+    blocked = []
+    async for f in blocked_cur:
+        blocked.append(f["to_user_id"])
+
+    async def hydrate(ids):
+        out = []
+        for uid in ids:
+            try:
+                u = await db.users.find_one({"_id": ObjectId(uid)})
+                if u:
+                    out.append(_friend_card(u))
+            except Exception:
+                pass
+        out.sort(key=lambda r: (not r["online"], r["username"].lower()))
+        return out
+
+    return {
+        "friends": await hydrate(accepted_ids),
+        "incoming": await hydrate(incoming),
+        "outgoing": await hydrate(outgoing),
+        "blocked": await hydrate(blocked),
+    }
+
+
+@api.post("/friends/request")
+async def friends_request(payload: FriendActionIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    target = await _find_user_by_username(payload.username)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    t_id = str(target["_id"])
+    if t_id == me_id:
+        raise HTTPException(status_code=400, detail="Cannot friend yourself")
+    # Block check: either direction
+    blocked = await db.friendships.find_one({
+        "status": "blocked",
+        "$or": [
+            {"from_user_id": me_id, "to_user_id": t_id},
+            {"from_user_id": t_id, "to_user_id": me_id},
+        ],
+    })
+    if blocked:
+        raise HTTPException(status_code=403, detail="Blocked")
+    # Already friends?
+    existing = await db.friendships.find_one({
+        "status": {"$in": ["accepted", "pending"]},
+        "$or": [
+            {"from_user_id": me_id, "to_user_id": t_id},
+            {"from_user_id": t_id, "to_user_id": me_id},
+        ],
+    })
+    if existing:
+        # If they sent us a pending request first, auto-accept.
+        if existing.get("status") == "pending" and existing.get("from_user_id") == t_id:
+            await db.friendships.update_one({"_id": existing["_id"]}, {"$set": {"status": "accepted"}})
+            return {"status": "accepted", "user": _friend_card(target)}
+        return {"status": existing["status"], "user": _friend_card(target)}
+    await db.friendships.insert_one({
+        "from_user_id": me_id,
+        "to_user_id": t_id,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"status": "pending", "user": _friend_card(target)}
+
+
+@api.post("/friends/accept")
+async def friends_accept(payload: FriendActionIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    sender = await _find_user_by_username(payload.username)
+    if not sender:
+        raise HTTPException(status_code=404, detail="User not found")
+    r = await db.friendships.update_one(
+        {"from_user_id": str(sender["_id"]), "to_user_id": me_id, "status": "pending"},
+        {"$set": {"status": "accepted"}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="No pending request from that user")
+    return {"status": "accepted", "user": _friend_card(sender)}
+
+
+@api.post("/friends/decline")
+async def friends_decline(payload: FriendActionIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    sender = await _find_user_by_username(payload.username)
+    if not sender:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.friendships.delete_one({
+        "from_user_id": str(sender["_id"]), "to_user_id": me_id, "status": "pending",
+    })
+    return {"ok": True}
+
+
+@api.delete("/friends/{username}")
+async def friends_remove(username: str, user: dict = Depends(get_current_user)):
+    """Unfriend or cancel-outgoing-request."""
+    me_id = str(user["_id"])
+    other = await _find_user_by_username(username)
+    if not other:
+        raise HTTPException(status_code=404, detail="User not found")
+    o_id = str(other["_id"])
+    await db.friendships.delete_many({
+        "status": {"$in": ["accepted", "pending"]},
+        "$or": [
+            {"from_user_id": me_id, "to_user_id": o_id},
+            {"from_user_id": o_id, "to_user_id": me_id},
+        ],
+    })
+    return {"ok": True}
+
+
+@api.post("/friends/block")
+async def friends_block(payload: FriendActionIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    target = await _find_user_by_username(payload.username)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    t_id = str(target["_id"])
+    if t_id == me_id:
+        raise HTTPException(status_code=400, detail="Cannot block yourself")
+    # Wipe any prior relationship rows between us, then insert one-way block.
+    await db.friendships.delete_many({
+        "$or": [
+            {"from_user_id": me_id, "to_user_id": t_id},
+            {"from_user_id": t_id, "to_user_id": me_id},
+        ],
+    })
+    await db.friendships.insert_one({
+        "from_user_id": me_id,
+        "to_user_id": t_id,
+        "status": "blocked",
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"status": "blocked", "user": _friend_card(target)}
+
+
+@api.post("/friends/unblock")
+async def friends_unblock(payload: FriendActionIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    target = await _find_user_by_username(payload.username)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.friendships.delete_one({
+        "from_user_id": me_id, "to_user_id": str(target["_id"]), "status": "blocked",
+    })
+    return {"ok": True}
+
+
+@api.get("/users/search")
+async def users_search(q: str, user: dict = Depends(get_current_user), limit: int = 10):
+    """Username prefix search (case-insensitive) for the Friends modal."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    limit = max(1, min(20, int(limit)))
+    cursor = db.users.find(
+        {"username": {"$regex": f"^{q}", "$options": "i"}, "_id": {"$ne": user["_id"]}},
+        {"_id": 1, "username": 1, "avatar": 1, "rank_points": 1},
+    ).limit(limit)
+    rows = []
+    async for u in cursor:
+        rows.append(_friend_card(u))
+    return rows
+
+
+# -------------------------------------------------------------------
+
+
 @api.websocket("/ws/game")
 async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual")):
     auth_token = token
@@ -1605,7 +1909,15 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         return
 
     if mode == "ranked":
-        room = ranked_room
+        # If the user was bot-filled by the matchmaker, spawn a private ranked-bot
+        # room sized by their tier (3 bots for <Master, 1 for Master/GM).
+        # Goonmaster never bot-fills, so it always goes through the shared real-vs-real room.
+        u_id = str(user["_id"])
+        matched = MATCHED_USERS.get(u_id, {})
+        if matched.get("vs_bot"):
+            room = await get_or_create_ranked_bot_room(u_id, int(matched.get("tier", 0)))
+        else:
+            room = ranked_room
     elif mode == "practice":
         room = practice_room
     elif mode == "offline":
@@ -1613,6 +1925,8 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
     else:
         room = game_room
     await websocket.accept()
+    u_id_str = str(user["_id"])
+    ONLINE_USERS[u_id_str] = ONLINE_USERS.get(u_id_str, 0) + 1
     player = Player(websocket, user=user, is_bot=False)
     await room.add(player)
 
@@ -1630,8 +1944,13 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         logger.warning("ws error: %s", e)
     finally:
         await room.remove(player)
+        ONLINE_USERS[u_id_str] = max(0, ONLINE_USERS.get(u_id_str, 1) - 1)
+        if ONLINE_USERS.get(u_id_str, 0) == 0:
+            ONLINE_USERS.pop(u_id_str, None)
         if mode == "offline":
             await cleanup_offline_room_if_empty(str(user["_id"]))
+        elif mode == "ranked" and getattr(room, "is_ranked_bot", False):
+            await cleanup_ranked_bot_room_if_empty(str(user["_id"]))
 
 
 @api.get("/")
