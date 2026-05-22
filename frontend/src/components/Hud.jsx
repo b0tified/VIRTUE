@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, User, Timer, Crosshair, Zap, Swords, Star } from "lucide-react";
+import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2 } from "lucide-react";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -20,6 +20,24 @@ function WeaponIcon({ weapon }) {
       data-testid={`kf-weapon-${weapon}`}
     >
       <I size={13} strokeWidth={3} />
+    </span>
+  );
+}
+
+// Tiny pill showing the player's input platform: phone, monitor or gamepad.
+function PlatformIcon({ platform }) {
+  let Icon = Monitor;
+  let label = "PC";
+  if (platform === "mobile") { Icon = Smartphone; label = "Mobile"; }
+  else if (platform === "controller") { Icon = Gamepad2; label = "Controller"; }
+  return (
+    <span
+      className="inline-flex items-center justify-center border-pow-thin bg-white text-black"
+      style={{ width: 22, height: 22 }}
+      title={label}
+      data-testid={`platform-${platform || "pc"}`}
+    >
+      <Icon size={13} strokeWidth={3} />
     </span>
   );
 }
@@ -350,9 +368,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
                       <Bot size={12} strokeWidth={3} /> BOT
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 bg-[#0055FF] text-white border-pow-thin px-2 text-xs font-anton uppercase">
-                      <User size={12} strokeWidth={3} /> P
-                    </span>
+                    <PlatformIcon platform={p.platform} />
                   )}
                 </div>
                 <div className="col-span-6 font-anton uppercase">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>

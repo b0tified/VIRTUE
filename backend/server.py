@@ -622,6 +622,8 @@ class Player:
         self.reload_until_ms: Dict[str, int] = {"ak47": 0, "laser": 0}
         self.spread: float = 0.0  # current cone radius in radians
         self.is_ads: bool = False
+        # Input platform — "pc", "mobile", "controller" — set by client after connect.
+        self.platform: str = "bot" if is_bot else "pc"
 
     def cur_ammo(self) -> int:
         return self.ammo.get(self.weapon, 0)
@@ -680,6 +682,7 @@ class Player:
             "reloading": self.is_reloading(),
             "reload_progress": round(self.reload_progress(), 3),
             "spread": round(self.spread, 4),
+            "platform": self.platform,
         }
 
 
@@ -1075,6 +1078,10 @@ class GameRoom:
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
             await self._apply_melee(player)
+        elif mtype == "set_platform":
+            plat = str(msg.get("platform", "pc")).lower()
+            if plat in ("pc", "mobile", "controller"):
+                player.platform = plat
         elif mtype == "chat":
             text = (msg.get("text") or "").strip()
             if not text:

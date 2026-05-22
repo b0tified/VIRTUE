@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Clock, Settings as SettingsIcon } from "lucide-react";
+import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon } from "lucide-react";
 import InstallButton from "@/components/InstallButton";
 import SettingsModal from "@/components/SettingsModal";
 
@@ -171,7 +171,7 @@ export default function Lobby() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
+    <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-80"
         style={{ backgroundImage: `url(${LOBBY_BG})` }}
@@ -189,7 +189,7 @@ export default function Lobby() {
           </div>
           <button
             onClick={toggleMusic}
-            className={`btn-pow ${musicMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
+            className={`btn-pow !hidden sm:!inline-block ${musicMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
             data-testid="lobby-music-toggle"
             title={musicMuted ? "Unmute music" : "Mute music"}
           >
@@ -197,37 +197,37 @@ export default function Lobby() {
           </button>
           <button
             onClick={toggleSfx}
-            className={`btn-pow ${sfxMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
+            className={`btn-pow !hidden sm:!inline-block ${sfxMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
             data-testid="lobby-sfx-toggle"
             title={sfxMuted ? "Unmute SFX" : "Mute SFX"}
           >
             <span className="flex items-center gap-2">{sfxMuted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
           </button>
-          <InstallButton variant="secondary" />
+          <div className="hidden sm:inline-block"><InstallButton variant="secondary" /></div>
           <button
             onClick={() => setShowSettings(true)}
-            className="btn-pow bg-white text-black"
+            className="btn-pow bg-white text-black [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
             data-testid="lobby-settings-button"
             title="Graphics, FPS cap, touch controls"
           >
             <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
           </button>
-          <button onClick={doLogout} className="btn-pow bg-white text-black" data-testid="lobby-logout-button">
-            <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> LOGOUT</span>
+          <button onClick={doLogout} className="btn-pow bg-white text-black [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3" data-testid="lobby-logout-button">
+            <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /><span className="hidden sm:inline">LOGOUT</span></span>
           </button>
         </div>
       </header>
 
-      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-2 sm:mt-4">
+      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-1 sm:mt-4">
         <div className="lg:col-span-7">
-          <div className="inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
+          <div className="hidden sm:inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
             <span className="font-anton uppercase tracking-widest">Free-For-All · Online</span>
           </div>
-          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl uppercase text-white text-pow-shadow-lg">
+          <h1 className="font-display text-3xl sm:text-5xl md:text-7xl uppercase text-white text-pow-shadow-lg leading-tight">
             READY UP, <span className="text-[#E62429]">{user?.username}</span>!
           </h1>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="rank-badge-row">
+          <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
             {user?.in_placements && (
               <div
@@ -235,62 +235,64 @@ export default function Lobby() {
                 data-testid="placement-streak-badge"
                 title="Placement streak: 2x RP gains, no losses for your first 5 ranked matches."
               >
-                <div className="px-3 py-2 flex items-center gap-2">
+                <div className="px-2 sm:px-3 py-1.5 sm:py-2 flex items-center gap-1.5 sm:gap-2">
                   <Star size={14} strokeWidth={3} className="text-[#FFD700]" />
-                  <span className="font-anton uppercase text-xs tracking-widest">PLACEMENTS</span>
-                  <span className="font-display text-xl leading-none">
+                  <span className="font-anton uppercase text-[10px] sm:text-xs tracking-widest">
+                    <span className="sm:hidden">P</span><span className="hidden sm:inline">PLACEMENTS</span>
+                  </span>
+                  <span className="font-display text-base sm:text-xl leading-none">
                     {user?.placement_matches_played ?? 0}/{user?.placement_matches_total ?? 5}
                   </span>
                 </div>
-                <div className="bg-[#FFD700] text-black font-anton uppercase tracking-widest text-xs px-2 py-2">
-                  2x RP
+                <div className="bg-[#FFD700] text-black font-anton uppercase tracking-widest text-[10px] sm:text-xs px-2 py-1.5 sm:py-2">
+                  2x<span className="hidden sm:inline"> RP</span>
                 </div>
               </div>
             )}
             <button
               onClick={() => setShowTiers(true)}
-              className="btn-pow bg-white text-black"
+              className="btn-pow bg-white text-black !hidden sm:!inline-block"
               data-testid="show-tiers-button"
             >
               <span className="flex items-center gap-2"><Award size={16} strokeWidth={3} /> SHOW TIERS</span>
             </button>
           </div>
 
-          <div className="mt-6 sm:mt-8 space-y-3 sm:space-y-4 max-w-md">
+          <div className="mt-3 sm:mt-8 space-y-2 sm:space-y-4 max-w-md">
             <button
               onClick={quickQueueSec !== null ? undefined : startQuickQueue}
               disabled={quickQueueSec !== null}
-              className="btn-pow bg-[#E62429] text-white w-full text-xl sm:text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
             >
               <span className="flex items-center gap-3">
-                {quickQueueSec !== null ? <Loader2 size={26} strokeWidth={3} className="animate-spin" /> : <Play size={26} strokeWidth={3} />}
-                {quickQueueSec !== null ? `MATCHING... ${quickQueueSec}s` : "QUICK MATCH"}
+                {quickQueueSec !== null ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
+                {quickQueueSec !== null ? `MATCHING...` : "QUICK MATCH"}
               </span>
             </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
               disabled={!!queueState}
-              className="btn-pow bg-[#0055FF] text-white w-full text-xl sm:text-3xl disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
             >
               <span className="flex items-center gap-3">
-                {queueState && !queueState.matched ? <Loader2 size={24} strokeWidth={3} className="animate-spin" /> : <Trophy size={24} strokeWidth={3} />}
+                {queueState && !queueState.matched ? <Loader2 size={20} strokeWidth={3} className="animate-spin" /> : <Trophy size={20} strokeWidth={3} />}
                 {queueState ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...") : "RANKED MATCH"}
               </span>
             </button>
-            <Link to="/play?mode=practice" className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg" data-testid="lobby-practice-button">
-              <span className="flex items-center gap-3"><Mouse size={20} strokeWidth={3} /> PRACTICE RANGE</span>
+            <Link to="/play?mode=practice" className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-practice-button">
+              <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE RANGE</span>
             </Link>
-            <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg" data-testid="lobby-leaderboard-button">
-              <span className="flex items-center gap-3"><Trophy size={20} strokeWidth={3} /> LEADERBOARD</span>
+            <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-leaderboard-button">
+              <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
-            <Link to="/profile" className="btn-pow bg-white text-black w-full text-base sm:text-lg" data-testid="lobby-profile-button">
-              <span className="flex items-center gap-3"><User size={20} strokeWidth={3} /> PROFILE</span>
+            <Link to="/profile" className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-profile-button">
+              <span className="flex items-center gap-3"><User size={18} strokeWidth={3} /> PROFILE</span>
             </Link>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3" data-testid="active-players-row">
+          <div className="mt-6 hidden sm:flex flex-wrap gap-3" data-testid="active-players-row">
             <div className="border-pow shadow-pow-sm px-4 py-2 -rotate-1" style={{ background: "#E62429", color: "#fff" }} data-testid="active-casual">
               <div className="font-anton text-xs uppercase tracking-widest opacity-90 flex items-center gap-1">
                 <Users size={12} strokeWidth={3} /> Casual online
@@ -306,7 +308,7 @@ export default function Lobby() {
           </div>
 
           {/* Stat strip */}
-          <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl">
+          <div className="mt-10 hidden sm:grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl">
             <StatChip label="KILLS" value={stats.kills} color="#E62429" testid="stat-kills" />
             <StatChip label="DEATHS" value={stats.deaths} color="#0055FF" testid="stat-deaths" />
             <StatChip label="MATCHES" value={stats.matches} color="#FFD700" textColor="#0A0A0A" testid="stat-matches" />
@@ -319,7 +321,7 @@ export default function Lobby() {
         </div>
       </main>
 
-      <div className="relative z-10 px-3 sm:px-6 md:px-12 lg:px-20 mt-8 sm:mt-12 pb-12 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-5xl">
+      <div className="relative z-10 px-3 sm:px-6 md:px-12 lg:px-20 mt-8 sm:mt-12 pb-12 hidden md:grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-5xl">
         <div className="card-pow p-5">
           <div className="font-anton uppercase tracking-widest text-sm text-neutral-500">Controls</div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2">
@@ -396,18 +398,8 @@ export default function Lobby() {
                 <X size={16} strokeWidth={3} />
               </button>
             </div>
-            <div className="px-4 py-4 bg-white text-center">
-              <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">
-                <Clock size={12} strokeWidth={3} className="inline -mt-0.5 mr-1" />
-                Filling with bots in
-              </div>
-              <div
-                className="font-display text-6xl text-[#E62429] leading-none tabular-nums"
-                data-testid="quick-queue-timer"
-              >
-                {fmtMS(quickQueueSec)}
-              </div>
-              <div className="mt-3 flex items-center justify-center gap-2">
+            <div className="px-4 py-3 bg-white text-center">
+              <div className="flex items-center justify-center gap-2">
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#E62429] text-white">
                   CASUAL · FFA
                 </div>
@@ -460,8 +452,9 @@ export default function Lobby() {
                 </button>
               )}
             </div>
-            <div className="px-4 py-4 bg-white text-center">
-              {/* BIG timer / match-found countdown */}
+            <div className="px-4 py-3 bg-white text-center">
+              {/* Match-found 3-2-1 countdown (kept — it tells the player when the match starts).
+                  Wait-time progress is hidden per UX request. */}
               {queueState.matched ? (
                 <div data-testid="queue-match-found">
                   <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">Starting in</div>
@@ -472,18 +465,8 @@ export default function Lobby() {
                     {matchFoundSec ?? 3}
                   </div>
                 </div>
-              ) : (
-                <div>
-                  <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-1">
-                    <Clock size={12} strokeWidth={3} className="inline -mt-0.5 mr-1" />
-                    Wait time
-                  </div>
-                  <div className="font-display text-6xl text-[#0055FF] leading-none tabular-nums" data-testid="queue-wait-timer">
-                    {fmtMS(queueState.wait_seconds || 0)}
-                  </div>
-                </div>
-              )}
-              <div className="mt-3 flex items-center justify-center gap-2">
+              ) : null}
+              <div className="mt-2 flex items-center justify-center gap-2">
                 <div
                   className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5"
                   style={{ background: RANK_COLORS[queueState.tier ?? 0], color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A" }}
@@ -514,11 +497,14 @@ function StatChip({ label, value, color, textColor = "#fff", testid }) {
 }
 
 function fmtMS(totalSec) {
+  // eslint-disable-next-line no-unused-vars
   const s = Math.max(0, Math.floor(totalSec));
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
+// eslint-disable-next-line no-unused-vars
+const _fmtMSExport = fmtMS;
 
 const RANK_TIERS = [
   { name: "BRONZE", min: 0, color: "#CD7F32" },

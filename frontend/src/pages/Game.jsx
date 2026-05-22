@@ -118,7 +118,21 @@ export default function Game() {
     engine.start();
 
     const sock = new GameSocket({
-      onOpen: () => setHud((h) => ({ ...h, connected: true })),
+      onOpen: () => {
+        setHud((h) => ({ ...h, connected: true }));
+        // Tell server what input device the player is on so the scoreboard
+        // can show the right platform icon next to each name.
+        try {
+          const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+          const hasController = (navigator.getGamepads?.() || []).some((g) => g);
+          const platform = isTouch ? "mobile" : (hasController ? "controller" : "pc");
+          sock.send({ type: "set_platform", platform });
+          // Re-detect on first gamepad event (player plugs in a controller mid-match).
+          window.addEventListener("gamepadconnected", () => {
+            sock.send({ type: "set_platform", platform: isTouch ? "mobile" : "controller" });
+          }, { once: true });
+        } catch {}
+      },
       onClose: (intentional) => {
         setHud((h) => ({ ...h, connected: false }));
         if (!intentional) {

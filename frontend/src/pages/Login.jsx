@@ -24,12 +24,12 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center bg-neutral-950 p-6"
+      className="min-h-[100dvh] flex items-center justify-center bg-neutral-950 p-4 sm:p-6"
       data-testid="login-page"
     >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-lg p-6 space-y-4"
+        className="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-lg p-5 sm:p-6 space-y-3 sm:space-y-4"
         data-testid="login-form"
       >
         <div className="text-center mb-2">
@@ -84,7 +84,7 @@ export default function Login() {
           {loading ? "Signing in..." : "Sign in"}
         </button>
 
-        <div className="flex items-center gap-3 my-1">
+        <div className="flex items-center gap-3 my-1 short:hidden">
           <div className="flex-1 h-px bg-neutral-800" />
           <span className="text-[10px] text-neutral-600 uppercase tracking-widest">Or</span>
           <div className="flex-1 h-px bg-neutral-800" />
@@ -96,7 +96,7 @@ export default function Login() {
             const redirect = encodeURIComponent(window.location.origin + "/auth/callback");
             window.location.href = `https://auth.emergentagent.com/?redirect=${redirect}`;
           }}
-          className="w-full bg-white hover:bg-neutral-100 text-black font-anton uppercase tracking-widest py-2.5 rounded flex items-center justify-center gap-2 transition-colors"
+          className="w-full bg-white hover:bg-neutral-100 text-black font-anton uppercase tracking-widest py-2.5 rounded flex items-center justify-center gap-2 transition-colors short:hidden"
           data-testid="login-google-button"
         >
           <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
