@@ -329,10 +329,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
               <h2 className="font-display text-5xl uppercase text-[#E62429] text-pow-shadow">
                 {hud.connected ? "READY!" : "CONNECTING..."}
               </h2>
-              <p className="font-body mt-2 text-black">
-                Click PLAY to lock your cursor and enter the arena. You'll spawn with a 3-second shield. Press <span className="font-anton">ESC</span> to release the cursor.
-              </p>
-              <ul className="font-body text-sm mt-3 text-neutral-700 space-y-1">
+              <ul className="font-body text-sm mt-4 text-neutral-700 space-y-1">
                 <li><span className="font-anton">WASD</span> — Move</li>
                 <li><span className="font-anton">MOUSE</span> — Aim · <span className="font-anton">CLICK</span> — Shoot/Slash</li>
                 <li><span className="font-anton">1</span> AK-47 · <span className="font-anton">2/V</span> Katana · <span className="font-anton">3</span> Laser</li>
