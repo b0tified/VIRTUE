@@ -1044,7 +1044,8 @@ export class GameEngine {
     const oy    = isLocal ? this.position.y : ev.y;
     const oz    = isLocal ? this.position.z : ev.z;
     const cp = Math.cos(pitch);
-    const dir = new THREE.Vector3(Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+    // Match Three.js camera forward (rotation.y=yaw, default look -Z).
+    const dir = new THREE.Vector3(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
     // Local: push origin a bit ahead of the camera so the near-clip doesn't
     // chop the start. Remote: tracer should leave the head/eye visually.
     const eyeY = oy + (isLocal ? 0 : 0.05);
@@ -1377,7 +1378,9 @@ export class GameEngine {
     // Wider cone on touch (autolock feel) — ~32°. Controller stays at ~20°.
     let bestAngle = this.touchActive ? 0.56 : 0.35;
     const cp = Math.cos(this.pitch);
-    const fwd = new THREE.Vector3(Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+    // Match Three.js camera forward exactly (rotation.y=yaw on a camera that
+    // looks at -Z by default → effective forward is (-sin(yaw)*cp, sin(pitch), -cos(yaw)*cp)).
+    const fwd = new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
     const eye = new THREE.Vector3(this.position.x, this.position.y, this.position.z);
     if (!this.players) return;
     this.players.forEach((p, id) => {
@@ -1400,7 +1403,9 @@ export class GameEngine {
     const dy = best.tgt.y - this.position.y;
     const dz = best.tgt.z - this.position.z;
     const horiz = Math.hypot(dx, dz);
-    const desiredYaw = Math.atan2(dx, -dz);
+    // Three.js camera convention: yaw=0 → look -Z, yaw=-π/2 → look +X.
+    // Flip dx sign so the desired yaw matches what the camera will actually face.
+    const desiredYaw = Math.atan2(-dx, -dz);
     const desiredPitch = Math.atan2(dy, horiz);
     // Touch users get a near-autolock (rate 14); controller a soft snap (6).
     const lerpRate = (this.touchActive ? 14 : 6) * intensity;

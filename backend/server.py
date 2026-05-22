@@ -875,7 +875,12 @@ class GameRoom:
         yaw = shooter.yaw if yaw_override is None else yaw_override
         pitch = shooter.pitch if pitch_override is None else pitch_override
         cp = math.cos(pitch)
-        dx = math.sin(yaw) * cp
+        # NOTE: client uses Three.js camera Euler with rotation.y = yaw and
+        # default forward (0,0,-1). After Ry(yaw) the effective forward is
+        # (-sin(yaw)*cp, sin(pitch), -cos(yaw)*cp) — so the X sign is
+        # *opposite* to the naive `sin(yaw)*cp`. Always use -sin to match
+        # the camera convention or shots will fly sideways/backwards.
+        dx = -math.sin(yaw) * cp
         dy = math.sin(pitch)
         dz = -math.cos(yaw) * cp
         ox, oy, oz = shooter.x, shooter.y, shooter.z
@@ -950,7 +955,8 @@ class GameRoom:
     async def _apply_melee(self, attacker: Player):
         """Resolve a melee swing: cone in front of attacker, range MELEE_RANGE."""
         cp = math.cos(attacker.pitch)
-        dx = math.sin(attacker.yaw) * cp
+        # Same Three.js camera convention as raycast_hit above — X sign flipped.
+        dx = -math.sin(attacker.yaw) * cp
         dz = -math.cos(attacker.yaw) * cp
         self.events.append({
             "type": "melee",
@@ -1240,7 +1246,8 @@ class GameRoom:
             dz = tz - bot.z
             dist = math.hypot(dx, dz)
             if dist > 0.01:
-                bot.yaw = math.atan2(dx, -dz)
+                # Match Three.js camera convention used by the raycast — yaw=0 → look -Z, yaw=-π/2 → look +X.
+                bot.yaw = math.atan2(-dx, -dz)
             dy = ty - bot.y
             bot.pitch = max(-1.0, min(1.0, math.atan2(dy, dist) if dist > 0.01 else 0))
 
