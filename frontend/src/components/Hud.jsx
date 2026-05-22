@@ -315,40 +315,17 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
         </div>
       )}
 
-      {/* Click-to-play overlay */}
+      {/* Click-to-play overlay removed — clicking the canvas now requests
+          pointer lock directly. (See Game.jsx canvas onClick wiring.) A small
+          EXIT button stays in the top-left so users can leave before locking. */}
       {!pointerLocked && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" data-testid="game-start-overlay">
-          <div className="relative">
-            <div className="absolute -top-6 -left-6 bg-[#FFD700] border-pow shadow-pow-sm px-4 py-1 -rotate-6 z-10">
-              <span className="font-display text-2xl uppercase">VIRTUE</span>
-            </div>
-            <div className="card-pow p-8 max-w-lg w-full">
-              <div className="inline-block bg-[#E62429] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
-                <span className="font-anton uppercase tracking-widest">{hud.isRanked ? "Ranked · FFA" : "Arena · FFA"}</span>
-              </div>
-              <h2 className="font-display text-5xl uppercase text-[#E62429] text-pow-shadow">
-                {hud.connected ? "READY!" : "CONNECTING..."}
-              </h2>
-              <ul className="font-body text-sm mt-4 text-neutral-700 space-y-1">
-                <li><span className="font-anton">WASD</span> — Move</li>
-                <li><span className="font-anton">MOUSE</span> — Aim · <span className="font-anton">CLICK</span> — Shoot/Slash</li>
-                <li><span className="font-anton">1</span> AK-47 · <span className="font-anton">2/V</span> Katana · <span className="font-anton">3</span> Laser</li>
-                <li><span className="font-anton">RIGHT-CLICK</span> — Aim Down Sights</li>
-                <li><span className="font-anton">SPACE</span> — Jump · <span className="font-anton">R</span> — Reload</li>
-                <li><span className="font-anton">SHIFT</span> — Sprint · <span className="font-anton">TAB</span> — Scoreboard</li>
-                <li className="text-neutral-500 text-xs">Controller supported · LS move · RS look · RT fire · A jump</li>
-              </ul>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button onClick={onStart} className="btn-pow bg-[#E62429] text-white text-2xl" data-testid="game-start-button">
-                  <span className="flex items-center gap-2"><Play size={20} strokeWidth={3} /> PLAY</span>
-                </button>
-                <button onClick={onExit} className="btn-pow bg-white text-black" data-testid="game-exit-button">
-                  <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> EXIT</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={onExit}
+          className="absolute top-4 left-4 z-30 btn-pow bg-white text-black [&]:px-3 [&]:py-2 [&]:text-xs"
+          data-testid="game-exit-button"
+        >
+          <span className="flex items-center gap-2"><LogOut size={16} strokeWidth={3} /> EXIT</span>
+        </button>
       )}
 
       {/* Scoreboard (Tab) */}

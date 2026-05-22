@@ -313,7 +313,16 @@ export default function Game() {
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
-      <canvas ref={canvasRef} className="w-full h-full" data-testid="game-canvas" />
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full"
+        data-testid="game-canvas"
+        onClick={() => {
+          // Replaces the removed click-to-play overlay: clicking anywhere
+          // on the canvas locks the pointer (must be a real user gesture).
+          if (!pointerLocked) handleStart();
+        }}
+      />
       {pointerLockBlocked && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 max-w-md px-4">
           <div className="card-pow p-0 overflow-hidden">
