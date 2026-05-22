@@ -70,8 +70,8 @@ export default function PublicProfileModal({ username, onClose }) {
             <div className="px-5 py-5 flex items-center gap-4">
               <Avatar idx={data.avatar} size={64} online={data.online} testid="public-profile-avatar" />
               <div className="flex flex-col gap-1">
-                <RankPill label="Current" tier={data.rank_tier} name={data.rank_name} points={data.rank_points} testid="public-current-rank" />
-                <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} points={data.peak_rank_points} crown testid="public-peak-rank" />
+                <RankPill label="Current" tier={data.rank_tier} name={data.rank_name} points={data.rank_points} testid="public-profile-current-rank" />
+                <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} points={data.peak_rank_points} crown testid="public-profile-peak-rank" />
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 pb-4">
