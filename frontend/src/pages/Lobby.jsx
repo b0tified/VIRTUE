@@ -4,7 +4,6 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
 import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus } from "lucide-react";
-import InstallButton from "@/components/InstallButton";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -229,12 +228,11 @@ export default function Lobby() {
           >
             <span className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} /><span className="hidden sm:inline">FRIENDS</span></span>
           </button>
-          <div className="hidden sm:inline-block"><InstallButton variant="secondary" /></div>
           <button
             onClick={() => setShowSettings(true)}
             className="btn-pow bg-white text-black [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
             data-testid="lobby-settings-button"
-            title="Audio, mouse sensitivity, graphics, logout"
+            title="Audio, sensitivity, install, logout"
           >
             <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
           </button>
