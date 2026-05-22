@@ -227,7 +227,7 @@ export default function Lobby() {
             READY UP, <span className="text-[#E62429]">{user?.username}</span>!
           </h1>
 
-          <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
+          <div className="mt-2 sm:mt-4 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
             {user?.in_placements && (
               <div
@@ -258,7 +258,7 @@ export default function Lobby() {
             </button>
           </div>
 
-          <div className="mt-3 sm:mt-8 space-y-2 sm:space-y-4 max-w-md">
+          <div className="mt-2 sm:mt-8 space-y-1.5 sm:space-y-4 max-w-md">
             <button
               onClick={quickQueueSec !== null ? undefined : startQuickQueue}
               disabled={quickQueueSec !== null}
