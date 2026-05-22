@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import InstallButton from "@/components/InstallButton";
 
 const HERO_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/8b081fa1209a187bd002c4c2742fa0fa5a8482ace16352fe59e7f8325721f8f8.png";
 
@@ -67,6 +68,7 @@ export default function Landing() {
             <Link to="/leaderboard" className="btn-pow bg-white text-black" data-testid="cta-leaderboard">
               <span>LEADERBOARD</span>
             </Link>
+            <InstallButton />
           </div>
 
           {/* Stat badges */}
@@ -89,7 +91,7 @@ export default function Landing() {
         <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6 pb-16">
           {[
             { t: "Online Servers", d: "Real-time WebSocket gameplay at 20Hz. No bots." },
-            { t: "Single Arena", d: "Tight FFA combat with cover, choke points, and rooftops." },
+            { t: "Install & Play", d: "Tap Install — VIRTUE drops a desktop icon and launches in its own fullscreen window." },
             { t: "Persistent Stats", d: "Kills, deaths and K/D tracked across every match." },
           ].map((f, i) => (
             <div key={f.t} className={`card-pow p-6 ${i % 2 ? "-rotate-1" : "rotate-1"}`} data-testid={`feature-${i}`}>

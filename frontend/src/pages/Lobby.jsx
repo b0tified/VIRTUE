@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
 import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Clock } from "lucide-react";
+import InstallButton from "@/components/InstallButton";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -165,6 +166,7 @@ export default function Lobby() {
           >
             <span className="flex items-center gap-2">{sfxMuted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
           </button>
+          <InstallButton variant="secondary" />
           <button onClick={doLogout} className="btn-pow bg-white text-black" data-testid="lobby-logout-button">
             <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /> LOGOUT</span>
           </button>
