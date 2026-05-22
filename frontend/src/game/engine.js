@@ -128,7 +128,21 @@ export class GameEngine {
     this.renderer.dispose();
   }
 
-  requestPointerLock() { this.canvas.requestPointerLock?.(); }
+  requestPointerLock() {
+    // Wrapped in try/catch because some preview iframes (Emergent dev) are
+    // sandboxed without `allow-pointer-lock` and would otherwise throw a
+    // SecurityError that surfaces in the red runtime overlay. On the
+    // production app (not in an iframe) this works fine.
+    try {
+      const p = this.canvas.requestPointerLock?.();
+      // Newer browsers return a Promise; swallow its rejection too.
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch (err) {
+      try {
+        window.dispatchEvent(new CustomEvent("virtue-pointerlock-blocked", { detail: { message: String(err?.message || err) } }));
+      } catch {}
+    }
+  }
   _onPointerLockChange() { this.locked = document.pointerLockElement === this.canvas; }
   _onMouseMove(e) {
     if (!this.locked) return;

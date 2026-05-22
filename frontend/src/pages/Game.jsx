@@ -294,6 +294,14 @@ export default function Game() {
     }
   }, []);
 
+  const [pointerLockBlocked, setPointerLockBlocked] = useState(false);
+
+  useEffect(() => {
+    const onBlocked = () => setPointerLockBlocked(true);
+    window.addEventListener("virtue-pointerlock-blocked", onBlocked);
+    return () => window.removeEventListener("virtue-pointerlock-blocked", onBlocked);
+  }, []);
+
   const handleStart = useCallback(() => {
     audioBus.stopLobbyMusic();
     engineRef.current?.requestPointerLock();
@@ -306,6 +314,32 @@ export default function Game() {
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
       <canvas ref={canvasRef} className="w-full h-full" data-testid="game-canvas" />
+      {pointerLockBlocked && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 max-w-md px-4">
+          <div className="card-pow p-0 overflow-hidden">
+            <div className="bg-[#FFD700] text-black px-4 py-2 font-anton uppercase tracking-widest text-sm">
+              Mouse capture blocked
+            </div>
+            <div className="bg-white px-4 py-3 text-sm">
+              <p className="font-body mb-2">
+                This preview is running inside a sandboxed iframe that disallows pointer lock.
+              </p>
+              <a
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-pow bg-[#E62429] text-white inline-block [&]:px-3 [&]:py-1.5 [&]:text-xs"
+                data-testid="open-in-new-tab"
+              >
+                <span>OPEN IN NEW TAB</span>
+              </a>
+              <p className="font-body text-xs text-neutral-500 mt-2">
+                The deployed app at blast-arena-servers.emergent.host works without this restriction.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       <Hud
         hud={hud}
         username={user?.username}
