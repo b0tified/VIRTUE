@@ -1,0 +1,41 @@
+{
+  "summary": "Tested the entire recent feature batch (Google OAuth invalid-session, PC chat, Practice range, Offline-vs-AI, Match History, Goonmaster real-vs-real, set_platform/scoreboard icons, mobile lobby/login fit, queue toasts). Backend: 15/15 new tests + 3/3 existing platform tests pass (18/18 = 100%). Frontend: 10/11 UI assertions pass; the single 'fail' is a Playwright-only limitation pressing TAB on desktop (cannot get pointer-lock + keydown to dispatch properly). The same scoreboard works perfectly via touch-scoreboard button on mobile and renders all platform icons + BOT badges + 3 -O bots correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Lobby /lobby on 390x700 viewport", "issues": ["Page scrollHeight slightly exceeds innerHeight (vertical scroll detected). All required action buttons (Quick/Ranked/Practice/Offline/Leaderboard/Profile) are visible — the requirement is functionally met — but a few extra pixels of overflow cause scroll. Consider tightening top padding or hud-panel margin to truly fit in 700px."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_recent_features.py",
+    "/app/backend/tests/test_platform_field.py",
+    "/app/test_reports/pytest/recent_features_results.xml"
+  ],
+  "action_items": [
+    "Optional: trim Lobby spacing so mobile (390x700) page does not need scroll (currently ~a few px overflow). All key buttons already visible."
+  ],
+  "critical_code_review_comments": [
+    "server.py:599-610 — Goonmaster (tier>=7) returns float('inf') from internal fn and -1 from API. Matchmaker loop at server.py:1502 iterates timeouts and the inf comparison correctly skips bot-fill for tier 7. Verified via test_goonmaster_tier7_bot_fill_neg1_and_no_fill.",
+    "server.py:1380 — match_history mode discriminator uses chain: ranked → offline → casual. Correctly derived from self.is_ranked and self.is_offline. /api/profile/me/history sorts by ended_at desc and limits to 50 max.",
+    "server.py:1119-1141 — set_platform whitelists {pc,mobile,controller} (unknown silently ignored, keeping default 'pc' — confirmed in test_set_platform_rejects_unknown_value). chat enforces 1.2s per-player throttle, 140 char cap, strips empty — confirmed in test_chat_broadcasts_and_rate_limits (3 sends → 1 broadcast).",
+    "server.py:1449-1476 — Offline rooms are per-user; 3 combat bots spawned with `-O` suffix. cleanup_offline_room_if_empty cancels asyncio task when last real player disconnects. No leak.",
+    "Hud.jsx:28-43 — PlatformIcon component renders data-testid=`platform-${platform}`. Verified live: touch device sends set_platform='mobile' from Game.jsx:134, scoreboard shows platform-mobile testid + Smartphone icon.",
+    "Login.jsx:99 — short:hidden Tailwind class on Google button correctly hides it when viewport short. Verified on 390x700 (hidden) and 1920x800 (visible).",
+    "TouchControls.jsx:235-237 — SCORE button uses onTouchStart/End handlers (not onClick) — works correctly with real touch events; needs TouchEvent dispatch in Playwright (regular click does nothing). This is by design (no mouse fallback intentional)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_recent_features.py (NEW — 15 tests covering auth/profile-history/queue/season/leaderboard/WS-modes/chat)"
+  ],
+  "success_rate": {"backend": "100% (18/18 — 15 new + 3 existing platform tests)", "frontend": "91% (10/11 — only failure is Playwright TAB-on-desktop limitation, not a real product bug; scoreboard verified working via touch path)"},
+  "test_credentials": "player1@shooter.com / player123 (existing user). New users created with TEST_recent_<uuid>@shooter.com prefix (cleaned-up via match_history.delete_many in the sort test; user docs left in DB harmlessly with TEST_ prefix).",
+  "seed_data_creation": "Direct mongo writes: (a) set rank_points=2500 on a test user for Goonmaster tier test (reset to 0 in finally), (b) insert_many 3 match_history docs at staggered timestamps for sort-desc test (deleted in finally).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run all backend tests: `python -m pytest backend/tests/ -v --tb=short`. The 'TestKillEventWeapon::test_shoot_kill_event_has_weapon_ak47' test in test_shooter_new_features.py is known timing-flaky on bot AI — main agent flagged this. For frontend, the only reliable way to test the in-game scoreboard via Playwright is using touch event dispatch on mobile viewport (390x844) with Emulation.setTouchEmulationEnabled. Desktop TAB-keydown does NOT fire because the Game.jsx listener attaches to window and pointer-lock click is required first. Login flow: email/password live in /app/memory/test_credentials.md. Backend public URL: https://blast-arena-servers.preview.emergentagent.com (used for FE Playwright). Backend direct: http://localhost:8001 (used for pytest curl/ws — faster, no proxy).",
+  "rca of the issue": "N/A — no real bugs found. Single 'failed' frontend assertion is a Playwright/test-harness limitation, not a product defect. Lobby mobile scroll is a minor design polish item."
+}

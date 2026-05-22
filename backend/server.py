@@ -245,6 +245,7 @@ class LoginIn(BaseModel):
 async def on_startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("username")
+    await db.match_history.create_index([("user_id", 1), ("ended_at", -1)])
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@shooter.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
@@ -443,6 +444,33 @@ async def leaderboard():
 @api.get("/profile/me")
 async def profile_me(user: dict = Depends(get_current_user)):
     return public_user(user)
+
+
+@api.get("/profile/me/history")
+async def profile_history(user: dict = Depends(get_current_user), limit: int = 10):
+    """Last N matches for the current user (newest first). Includes mode, placement, kills/deaths, RP delta."""
+    limit = max(1, min(50, int(limit)))
+    user_id = str(user["_id"])
+    cursor = db.match_history.find(
+        {"user_id": user_id},
+        {"_id": 0},
+    ).sort([("ended_at", -1)]).limit(limit)
+    rows = []
+    async for m in cursor:
+        ts = m.get("ended_at")
+        rows.append({
+            "mode": m.get("mode", "casual"),
+            "kills": int(m.get("kills", 0)),
+            "deaths": int(m.get("deaths", 0)),
+            "placement": int(m.get("placement", 0)),
+            "total_players": int(m.get("total_players", 0)),
+            "rp_delta": int(m.get("rp_delta", 0)),
+            "rank_points_after": int(m.get("rank_points_after", 0)),
+            "rank_name_after": m.get("rank_name_after", "BRONZE"),
+            "is_placement": bool(m.get("is_placement", False)),
+            "ended_at": ts.isoformat() if isinstance(ts, datetime) else ts,
+        })
+    return rows
 
 
 # -------------------------------------------------------------------
@@ -1343,6 +1371,34 @@ class GameRoom:
             "is_ranked": self.is_ranked,
         }
         self.last_match_end_payload = payload
+
+        # Persist per-player match history (newest first via index on ended_at desc).
+        # Offline rooms set self.is_offline=True; we tag those for filtering.
+        try:
+            if real_players:
+                now = datetime.now(timezone.utc)
+                mode = "ranked" if self.is_ranked else ("offline" if getattr(self, "is_offline", False) else "casual")
+                docs = []
+                for entry, pl in zip(placements, real_players):
+                    docs.append({
+                        "user_id": pl.user_id,
+                        "username": pl.username,
+                        "mode": mode,
+                        "kills": entry["kills"],
+                        "deaths": entry["deaths"],
+                        "placement": placements.index(entry) + 1,
+                        "total_players": len(placements),
+                        "rp_delta": entry["delta"],
+                        "rank_points_after": entry["new_points"],
+                        "rank_name_after": entry["rank_name"],
+                        "is_placement": entry.get("is_placement", False),
+                        "ended_at": now,
+                    })
+                if docs:
+                    await db.match_history.insert_many(docs)
+        except Exception as e:
+            logger.warning("match_history insert failed: %s", e)
+
         await self.broadcast(payload)
 
         # Intermission: 10s
@@ -1384,6 +1440,40 @@ game_room = GameRoom(is_ranked=False, match_duration=300.0)  # 5 minute Quick Ma
 ranked_room = GameRoom(is_ranked=True, match_duration=50.0)
 practice_room = GameRoom(is_ranked=False, match_duration=99999.0)  # Practice never ends
 practice_room.is_practice = True
+
+# Offline-vs-AI: one private room per user, spawned on demand.
+OFFLINE_ROOMS: Dict[str, "GameRoom"] = {}
+OFFLINE_ROOM_TASKS: Dict[str, asyncio.Task] = {}
+
+
+async def get_or_create_offline_room(user_id: str) -> "GameRoom":
+    """Returns a private 5-min FFA room for the user, with 3 combat bots."""
+    room = OFFLINE_ROOMS.get(user_id)
+    if room is not None:
+        return room
+    room = GameRoom(is_ranked=False, match_duration=300.0)
+    room.is_offline = True
+    # Spawn 3 combat bots (same names as casual; suffix makes them unique per room).
+    for name in BOT_NAMES[:NUM_BOTS]:
+        room.spawn_bot(f"{name}-O")
+    OFFLINE_ROOMS[user_id] = room
+    OFFLINE_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
+    logger.info("Offline room spawned for user=%s", user_id)
+    return room
+
+
+async def cleanup_offline_room_if_empty(user_id: str):
+    """If no real players remain, destroy the room and cancel its task."""
+    room = OFFLINE_ROOMS.get(user_id)
+    if room is None:
+        return
+    if any(not p.is_bot for p in room.players.values()):
+        return
+    task = OFFLINE_ROOM_TASKS.pop(user_id, None)
+    if task and not task.done():
+        task.cancel()
+    OFFLINE_ROOMS.pop(user_id, None)
+    logger.info("Offline room destroyed for user=%s", user_id)
 
 # -------------------------------------------------------------------
 # Ranked Matchmaking Queue
@@ -1518,6 +1608,8 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         room = ranked_room
     elif mode == "practice":
         room = practice_room
+    elif mode == "offline":
+        room = await get_or_create_offline_room(str(user["_id"]))
     else:
         room = game_room
     await websocket.accept()
@@ -1538,6 +1630,8 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         logger.warning("ws error: %s", e)
     finally:
         await room.remove(player)
+        if mode == "offline":
+            await cleanup_offline_room_if_empty(str(user["_id"]))
 
 
 @api.get("/")

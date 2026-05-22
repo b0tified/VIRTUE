@@ -17,7 +17,13 @@ export default function Game() {
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
   const rawMode = searchParams.get("mode");
-  const mode = rawMode === "ranked" ? "ranked" : (rawMode === "practice" ? "practice" : "casual");
+  const mode = rawMode === "ranked"
+    ? "ranked"
+    : rawMode === "practice"
+    ? "practice"
+    : rawMode === "offline"
+    ? "offline"
+    : "casual";
 
   const [hud, setHud] = useState({
     hp: 100,

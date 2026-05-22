@@ -284,6 +284,9 @@ export default function Lobby() {
             <Link to="/play?mode=practice" className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-practice-button">
               <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE RANGE</span>
             </Link>
+            <Link to="/play?mode=offline" className="btn-pow bg-[#06A35F] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-offline-button">
+              <span className="flex items-center gap-3"><WifiOff size={18} strokeWidth={3} /> OFFLINE VS AI</span>
+            </Link>
             <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
