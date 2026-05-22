@@ -17,12 +17,15 @@ export default function Game() {
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
   const rawMode = searchParams.get("mode");
+  const partyId = searchParams.get("party_id") || null;
   const mode = rawMode === "ranked"
     ? "ranked"
     : rawMode === "practice"
     ? "practice"
     : rawMode === "offline"
     ? "offline"
+    : rawMode === "party" && partyId
+    ? "party"
     : "casual";
 
   const [hud, setHud] = useState({
@@ -193,7 +196,7 @@ export default function Game() {
       },
     });
     sockRef.current = sock;
-    sock.connect(accessToken, mode);
+    sock.connect(accessToken, mode, mode === "party" && partyId ? { party_id: partyId } : null);
 
     // Network send loop @ 20Hz
     const intervalId = setInterval(() => {

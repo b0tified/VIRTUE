@@ -3,9 +3,11 @@
 // Tabs: Friends · Incoming (badge) · Outgoing · Blocked · Search.
 // Each row uses the Avatar component + per-action buttons.
 import { useCallback, useEffect, useState } from "react";
-import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
+import PublicProfileModal from "@/components/PublicProfileModal";
 
 const TABS = [
   { id: "friends",  label: "FRIENDS" },
@@ -22,6 +24,8 @@ export default function FriendsModal({ open, onClose }) {
   const [data, setData] = useState({ friends: [], incoming: [], outgoing: [], blocked: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [profileUsername, setProfileUsername] = useState(null);
+  const nav = useNavigate();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -86,18 +90,22 @@ export default function FriendsModal({ open, onClose }) {
             </div>
           )}
 
-          {!loading && tab === "friends" && <FriendList list={data.friends} mode="friend" onChange={refresh} />}
-          {!loading && tab === "incoming" && <FriendList list={data.incoming} mode="incoming" onChange={refresh} />}
-          {!loading && tab === "outgoing" && <FriendList list={data.outgoing} mode="outgoing" onChange={refresh} />}
-          {!loading && tab === "blocked" && <FriendList list={data.blocked} mode="blocked" onChange={refresh} />}
-          {!loading && tab === "search" && <SearchPanel onChange={refresh} />}
+          {!loading && tab === "friends" && <FriendList list={data.friends} mode="friend" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
+          {!loading && tab === "incoming" && <FriendList list={data.incoming} mode="incoming" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
+          {!loading && tab === "outgoing" && <FriendList list={data.outgoing} mode="outgoing" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
+          {!loading && tab === "blocked" && <FriendList list={data.blocked} mode="blocked" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
+          {!loading && tab === "search" && <SearchPanel onChange={refresh} onInspect={setProfileUsername} />}
         </div>
       </div>
+      <PublicProfileModal
+        username={profileUsername}
+        onClose={() => setProfileUsername(null)}
+      />
     </div>
   );
 }
 
-function FriendList({ list, mode, onChange }) {
+function FriendList({ list, mode, onChange, nav, onInspect }) {
   if (!list || list.length === 0) {
     return (
       <div className="px-5 py-8 text-center" data-testid={`friends-empty-${mode}`}>
@@ -113,13 +121,13 @@ function FriendList({ list, mode, onChange }) {
   return (
     <div className="divide-y-2 divide-black/10">
       {list.map((u, i) => (
-        <FriendRow key={u.id} idx={i} u={u} mode={mode} onChange={onChange} />
+        <FriendRow key={u.id} idx={i} u={u} mode={mode} onChange={onChange} nav={nav} onInspect={onInspect} />
       ))}
     </div>
   );
 }
 
-function FriendRow({ idx, u, mode, onChange }) {
+function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
   const [busy, setBusy] = useState(false);
 
   const act = async (path, body) => {
@@ -179,6 +187,33 @@ function FriendRow({ idx, u, mode, onChange }) {
         )}
         {mode === "friend" && (
           <>
+            {u.online && (
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const { data } = await api.post("/party/invite", { username: u.username });
+                    nav(`/play?mode=party&party_id=${data.party_id}`);
+                  } catch (e) {
+                    alert(e.response?.data?.detail || e.message);
+                  } finally { setBusy(false); }
+                }}
+                className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs"
+                data-testid={`friend-invite-${idx}`}
+                title="Invite to party"
+              >
+                <span className="flex items-center gap-1"><Send size={14} strokeWidth={3} /> INVITE</span>
+              </button>
+            )}
+            <button
+              onClick={() => onInspect?.(u.username)}
+              className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
+              data-testid={`friend-inspect-${idx}`}
+              title="View profile"
+            >
+              <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /></span>
+            </button>
             <button disabled={busy} onClick={() => act(`DELETE /friends/${u.username}`)} className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`friend-remove-${idx}`}>
               <span className="flex items-center gap-1"><UserMinus size={14} strokeWidth={3} /></span>
             </button>
@@ -197,7 +232,7 @@ function FriendRow({ idx, u, mode, onChange }) {
   );
 }
 
-function SearchPanel({ onChange }) {
+function SearchPanel({ onChange, onInspect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -268,6 +303,14 @@ function SearchPanel({ onChange }) {
                   <span className="text-[10px] font-anton text-neutral-500">{u.rank_points} RP</span>
                 </div>
               </div>
+              <button
+                onClick={() => onInspect?.(u.username)}
+                className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
+                data-testid={`friends-search-inspect-${i}`}
+                title="View profile"
+              >
+                <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /></span>
+              </button>
               <button onClick={() => sendRequest(u.username)} className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`friends-search-add-${i}`}>
                 <span className="flex items-center gap-1"><UserPlus size={14} strokeWidth={3} /> ADD</span>
               </button>

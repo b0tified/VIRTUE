@@ -1159,6 +1159,15 @@ export class GameEngine {
     // Weapon sway + recoil + ADS
     if (this._weapon) {
       const adsActive = !!this.ads && this.currentWeapon !== "secondary";
+      // While ADS: hide the gun model entirely so it doesn't block vision —
+      // the HUD scope overlay replaces the iron-sights pose. Katana (secondary)
+      // is always visible.
+      if (this.currentWeapon === "primary" && this._primaryGroup) {
+        this._primaryGroup.visible = !adsActive;
+      }
+      if (this.currentWeapon === "tertiary" && this._tertiaryGroup) {
+        this._tertiaryGroup.visible = !adsActive;
+      }
       const baseX = adsActive ? 0.0 : 0.22;
       const baseY = adsActive ? -0.07 : -0.18;
       const baseZ = adsActive ? -0.15 : -0.05;

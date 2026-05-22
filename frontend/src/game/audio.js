@@ -49,6 +49,47 @@ class AudioBus {
     if (this.sfxGain) this.sfxGain.gain.value = m ? 0 : this._sfxVol;
   }
 
+  /* -------- UI cue: triumphant "match found" fanfare --------
+     3-note ascending chord (perfect 4th → 5th → octave) over a soft sub thump,
+     ~700ms total. Mixed through sfxGain so the Mute SFX toggle silences it. */
+  matchFound() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const root = 440;
+    const intervals = [1.0, 4 / 3, 3 / 2, 2.0]; // root, P4, P5, octave
+    const out = this.sfxGain;
+
+    intervals.forEach((mult, i) => {
+      const t0 = now + i * 0.12;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = i === intervals.length - 1 ? "triangle" : "square";
+      osc.frequency.value = root * mult;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
+      osc.connect(g);
+      g.connect(out);
+      osc.start(t0);
+      osc.stop(t0 + 0.5);
+    });
+
+    // Sub-bass thump under the chord
+    const sub = ctx.createOscillator();
+    const sg = ctx.createGain();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(80, now);
+    sub.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+    sg.gain.setValueAtTime(0.0001, now);
+    sg.gain.exponentialRampToValueAtTime(0.24, now + 0.05);
+    sg.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+    sub.connect(sg);
+    sg.connect(out);
+    sub.start(now);
+    sub.stop(now + 0.75);
+  }
+
   _hashId(id) {
     if (!id) return 0;
     let h = 0;

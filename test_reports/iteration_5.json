@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration-5 testing of VIRTUE 3D FPS Jan-2026 batch: party invites (invite/list/accept/decline), shared party WS room with 3 disguised bots, public_profile endpoint with email-leak guard, disguised casual bots, non-disguised practice/offline/ranked bots, Lobby header cleanup, Settings modal with audio/sens/logout, Quick Match 'Searching' toast, FriendsModal INSPECT/INVITE buttons, PublicProfileModal contents, end-to-end party-invite flow across two browser contexts.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PublicProfileModal", "issue": "Rank pill testids are 'public-current-rank' and 'public-peak-rank' but the iteration spec asks for 'public-profile-current-rank' and 'public-profile-peak-rank'. Modal renders correctly; only the testid names differ from spec.", "selector": "PublicProfileModal.jsx:73-74", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_party_publicprofile_disguise.py",
+    "/app/test_reports/pytest/iter5_party_results.xml"
+  ],
+  "action_items": [
+    "Optional: rename PublicProfileModal rank-pill testids to 'public-profile-current-rank' and 'public-profile-peak-rank' to match spec exactly (currently 'public-current-rank' / 'public-peak-rank').",
+    "Optional: when no online friends are present, the INVITE button is invisible (testid friend-invite-{i} not rendered). Could not be exercised via Playwright because player2 was not WS-connected during tests. End-to-end party flow was verified via API + polling toast in the second browser context, so functionally the integration works."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1979-2014 POST /party/invite — friendship check is bidirectional via $or on (from,to), 403 on non-friend, 400 on self, 404 on unknown user. Reuses existing party_id if caller already owns one (idempotent across re-invites). Invite TTL 60s with _gc_invites; per-target dedup by from_user_id (replaces existing entry).",
+    "server.py:2017-2022 GET /party/invites — returns full invite dicts including expires_at; client-side stale filtering would be a nice-to-have but server _gc_invites is called on every read, so list is fresh.",
+    "server.py:2025-2050 accept/decline — accept returns the original party_id and consumes the entry. 404 on missing invite is correct semantic (lets the UI know the invite expired or was retracted).",
+    "server.py:2053-2097 GET /users/{username}/profile — Email is NOT included in the response. Verified by JSON serialization scan: '@shooter.com' absent from body, no 'email' key. Returns 404 for unknown user. Returns history with up to 10 entries; peak_rank is monotonic (max(stored, current)).",
+    "server.py:1948-1962 get_or_create_party_room — Spawns exactly 3 disguised bots via random.sample(DISGUISED_BOT_NAMES, 3). Confirmed both clients see the same set of 5 player IDs.",
+    "server.py:273-274 startup — Casual game_room bots are disguised (is_bot=False in to_state, platform pc/mobile, human-style names from DISGUISED_BOT_NAMES). Practice DUMMY-A/B and offline -O bots and ranked-room -R bot remain is_bot=True (verified live).",
+    "Lobby.jsx — header has PlayerCard + FRIENDS + INSTALL + Settings cog only; no music/sfx/logout. Controls and Mouse Sensitivity cards removed; both moved to SettingsModal which exposes settings-music-toggle, settings-sfx-toggle, settings-sensitivity-slider, settings-sensitivity-value, settings-logout. Music toggle text flips 'MUSIC · ON' ↔ 'MUSIC · OFF' as expected.",
+    "Quick Match toast — header testid 'quick-queue-header' renders source-text 'Searching' (visually uppercased via CSS), timer counts UP from 0 (saw '2' at ~2.5s).",
+    "FriendsModal — INSPECT button per friend (testid friend-inspect-0) opens PublicProfileModal (testid public-profile-modal). Search panel renders friends-search-inspect-{i} alongside friends-search-add-{i}. PublicProfileModal text does NOT contain '@shooter.com'. Closes on X (public-profile-close) and on backdrop click (modal is wrapped by onClick=onClose).",
+    "Party invite e2e — In a 2-context test, POST /api/party/invite by P1 caused P2's lobby to render party-invite-stack with party-invite-{id} within ~3s (poll interval 3s). Decline removes the tile. Accept navigates P2 to /play?mode=party&party_id={id}. Both clients then receive 5-player state from WS (2 humans + 3 disguised bots) with matching player IDs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_party_publicprofile_disguise.py (NEW — 17 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 — party invite/list/accept/decline, public_profile, disguised casual bots, non-disguised practice/offline/ranked bots, party WS room with 3 bots and shared state, smoke regression on friends/profile-history/leaderboard)",
+    "frontend": "100% (lobby header cleanup, controls/sens cards removed, settings modal exposes audio+sens+logout with music toggle flipping ON↔OFF, Quick Match 'Searching' header + UP timer, FriendsModal INSPECT + PublicProfileModal w/ no email leak + close behavior, search panel INSPECT, party invite e2e across two browser contexts with decline + accept-navigation flows)"
+  },
+  "test_credentials": "player1@shooter.com / player123, player2@shooter.com / player123 (already mutual friends; ensure_friends fixture auto-repairs the link if missing).",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run iteration-5 suite: `python -m pytest /app/backend/tests/test_party_publicprofile_disguise.py -v -c /app/backend/tests/pytest.ini --tb=short`. The Party WS test takes ~5-6s due to state collection. Public REACT_APP_BACKEND_URL is auto-loaded from /app/frontend/.env when running pytest outside a shell that exported it. Two test users are already friends. Audio cue (matchFound) and engine.js ADS gun-hiding were NOT exercised — per the review-request note these are not Playwright-testable; no console errors observed during lobby/queue/friends-modal flows.",
+  "rca of the issue": "N/A — no real bugs. The only deviation is cosmetic testid naming on PublicProfileModal rank pills ('public-current-rank' vs spec 'public-profile-current-rank')."
+}

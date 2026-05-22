@@ -3,31 +3,24 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, LogOut, Play, Volume2, VolumeX, Music, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus } from "lucide-react";
 import InstallButton from "@/components/InstallButton";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 
-const SENS_KEY = "virtue.mouseSensitivity";
-
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
 
 export default function Lobby() {
-  const { user, logout } = useAuth();
+  // logout still available via Settings modal — it pulls its own useAuth().
+  const { user } = useAuth();
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
-  const [musicMuted, setMusicMuted] = useState(false);
-  const [sfxMuted, setSfxMuted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
-  const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 10..0
+  const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..10
   const [matchFoundSec, setMatchFoundSec] = useState(null); // null | 3..0 — countdown after queue match
-  const [sensitivity, setSensitivity] = useState(() => {
-    const v = parseFloat(localStorage.getItem(SENS_KEY));
-    return Number.isFinite(v) && v > 0 ? v : 1.0;
-  });
   const [showTiers, setShowTiers] = useState(false);
   const [counts, setCounts] = useState({ casual: 0, ranked: 0 });
   const [queueState, setQueueState] = useState(null); // null | {tier, tier_name, position, tier_size, matched, match_id}
@@ -45,6 +38,7 @@ export default function Lobby() {
             clearInterval(queueTimerRef.id);
             queueTimerRef.id = null;
             try { await api.post("/queue/ranked/ack"); } catch {}
+            audioBus.matchFound();
             // Start a 3-2-1 countdown before launching into the arena.
             setMatchFoundSec(3);
           }
@@ -73,11 +67,15 @@ export default function Lobby() {
   }, []);
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
-  const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
 
+  // Initialise audio mute states from localStorage so the bus reflects user prefs
+  // immediately on mount.
   useEffect(() => {
-    localStorage.setItem(SENS_KEY, String(sensitivity));
-  }, [sensitivity]);
+    try {
+      audioBus.setMusicMuted(localStorage.getItem("lobby_music_muted") === "1");
+      audioBus.setSfxMuted(localStorage.getItem("sfx_muted") === "1");
+    } catch {}
+  }, []);
 
   // Auto-clear ?disconnected=1 from URL after 5s, hide the toast.
   useEffect(() => {
@@ -130,6 +128,44 @@ export default function Lobby() {
 
   const cancelQuickQueue = () => setQuickQueueSec(null);
 
+  // Party invite polling — refresh every 5s while the lobby is open.
+  const [partyInvites, setPartyInvites] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const fetchInvites = async () => {
+      try {
+        const { data } = await api.get("/party/invites");
+        if (alive) {
+          // Detect newly-arrived invites and ding the match-found cue.
+          setPartyInvites((prev) => {
+            const newOnes = data.filter((d) => !prev.some((p) => p.party_id === d.party_id));
+            if (newOnes.length > 0) {
+              try { audioBus.matchFound(); } catch {}
+            }
+            return data;
+          });
+        }
+      } catch {}
+    };
+    fetchInvites();
+    const id = setInterval(fetchInvites, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  const acceptInvite = async (invite) => {
+    try {
+      const { data } = await api.post("/party/accept", { username: invite.from_username });
+      setPartyInvites((p) => p.filter((i) => i.party_id !== invite.party_id));
+      nav(`/play?mode=party&party_id=${data.party_id}`);
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message);
+    }
+  };
+  const declineInvite = async (invite) => {
+    try { await api.post("/party/decline", { username: invite.from_username }); } catch {}
+    setPartyInvites((p) => p.filter((i) => i.party_id !== invite.party_id));
+  };
+
   // Quick-match queue ticker: count UP from 0 → 10 (10s grace window so the
   // casual "matchmaking" feels intentional). After 10s we navigate to
   // /play?mode=casual (the room is shared + bot-filled by the backend).
@@ -155,23 +191,8 @@ export default function Lobby() {
     return () => clearTimeout(id);
   }, [matchFoundSec, nav]);
 
-  const toggleMusic = () => {
-    const next = !musicMuted;
-    setMusicMuted(next);
-    audioBus.setMusicMuted(next);
-  };
-
-  const toggleSfx = () => {
-    const next = !sfxMuted;
-    setSfxMuted(next);
-    audioBus.setSfxMuted(next);
-  };
-
-  const doLogout = async () => {
-    audioBus.stopLobbyMusic();
-    await logout();
-    nav("/login");
-  };
+  // Audio/sensitivity/logout moved into Settings modal. We still need to
+  // initialise the audio bus mute state from localStorage on first load.
 
   return (
     <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
@@ -208,33 +229,14 @@ export default function Lobby() {
           >
             <span className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} /><span className="hidden sm:inline">FRIENDS</span></span>
           </button>
-          <button
-            onClick={toggleMusic}
-            className={`btn-pow !hidden sm:!inline-block ${musicMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
-            data-testid="lobby-music-toggle"
-            title={musicMuted ? "Unmute music" : "Mute music"}
-          >
-            <span className="flex items-center gap-2"><Music size={18} strokeWidth={3} /></span>
-          </button>
-          <button
-            onClick={toggleSfx}
-            className={`btn-pow !hidden sm:!inline-block ${sfxMuted ? "bg-neutral-300 text-black opacity-60" : "bg-[#FFD700] text-black"}`}
-            data-testid="lobby-sfx-toggle"
-            title={sfxMuted ? "Unmute SFX" : "Mute SFX"}
-          >
-            <span className="flex items-center gap-2">{sfxMuted ? <VolumeX size={18} strokeWidth={3} /> : <Volume2 size={18} strokeWidth={3} />}</span>
-          </button>
           <div className="hidden sm:inline-block"><InstallButton variant="secondary" /></div>
           <button
             onClick={() => setShowSettings(true)}
             className="btn-pow bg-white text-black [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
             data-testid="lobby-settings-button"
-            title="Graphics, FPS cap, touch controls"
+            title="Audio, mouse sensitivity, graphics, logout"
           >
             <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
-          </button>
-          <button onClick={doLogout} className="btn-pow bg-white text-black [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3" data-testid="lobby-logout-button">
-            <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /><span className="hidden sm:inline">LOGOUT</span></span>
           </button>
         </div>
       </header>
@@ -336,7 +338,7 @@ export default function Lobby() {
             <StatChip label="KILLS" value={stats.kills} color="#E62429" testid="stat-kills" />
             <StatChip label="DEATHS" value={stats.deaths} color="#0055FF" testid="stat-deaths" />
             <StatChip label="MATCHES" value={stats.matches} color="#FFD700" textColor="#0A0A0A" testid="stat-matches" />
-            <StatChip label="K/D" value={kd} color="#0A0A0A" testid="stat-kd" />
+            <StatChip label="K/D" value={stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills)} color="#0A0A0A" testid="stat-kd" />
           </div>
         </div>
 
@@ -345,41 +347,7 @@ export default function Lobby() {
         </div>
       </main>
 
-      <div className="relative z-10 px-3 sm:px-6 md:px-12 lg:px-20 mt-8 sm:mt-12 pb-12 hidden md:grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-5xl">
-        <div className="card-pow p-5">
-          <div className="font-anton uppercase tracking-widest text-sm text-neutral-500">Controls</div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2">
-            <ControlKey k="WASD" d="Move" />
-            <ControlKey k="MOUSE" d="Aim" />
-            <ControlKey k="CLICK" d="Shoot" />
-            <ControlKey k="SHIFT" d="Sprint" />
-            <ControlKey k="TAB" d="Score" />
-          </div>
-        </div>
-        <div className="card-pow p-5" data-testid="settings-card">
-          <div className="font-anton uppercase tracking-widest text-sm text-neutral-500 flex items-center gap-2">
-            <Mouse size={16} strokeWidth={3} /> Mouse Sensitivity
-          </div>
-          <div className="mt-3 flex items-center gap-3">
-            <span className="font-anton text-xs">0.3</span>
-            <input
-              type="range"
-              min="0.3"
-              max="3.0"
-              step="0.05"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(parseFloat(e.target.value))}
-              className="flex-1 accent-[#E62429]"
-              data-testid="sensitivity-slider"
-            />
-            <span className="font-anton text-xs">3.0</span>
-            <div className="border-pow-thin bg-[#FFD700] px-3 py-1 font-anton text-lg min-w-[60px] text-center" data-testid="sensitivity-value">
-              {sensitivity.toFixed(2)}x
-            </div>
-          </div>
-          <p className="font-body text-xs text-neutral-500 mt-2">Saved automatically. Applies on next match.</p>
-        </div>
-      </div>
+      {/* Controls + Sensitivity cards removed — moved to Settings modal. */}
 
       {/* Tiers modal */}
       {showTiers && (
@@ -412,14 +380,38 @@ export default function Lobby() {
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
 
-      {/* Quick-match (casual) queue toast — uses same UI as ranked.
-          No header text per UX: just spinner + cancel + countdown. */}
+      {/* Party invite toasts (top-right) */}
+      {partyInvites.length > 0 && (
+        <div className="fixed top-6 right-4 z-50 w-full max-w-xs space-y-2" data-testid="party-invite-stack">
+          {partyInvites.map((inv) => (
+            <div key={inv.party_id} className="card-pow p-0 overflow-hidden" data-testid={`party-invite-${inv.party_id}`}>
+              <div className="bg-[#0055FF] text-white px-3 py-1.5 font-anton uppercase tracking-widest text-xs flex items-center gap-2">
+                <Users size={14} strokeWidth={3} /> PARTY INVITE
+              </div>
+              <div className="bg-white px-3 py-3">
+                <div className="font-anton uppercase">{inv.from_username}</div>
+                <div className="text-xs text-neutral-500 font-anton uppercase tracking-widest mt-0.5">wants to squad up</div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => acceptInvite(inv)} className="btn-pow bg-[#06A35F] text-white flex-1 [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`party-accept-${inv.party_id}`}>
+                    <span>JOIN</span>
+                  </button>
+                  <button onClick={() => declineInvite(inv)} className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`party-decline-${inv.party_id}`}>
+                    <span><X size={14} strokeWidth={3} /></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Quick-match (casual) queue toast — count UP from 0; "Searching" header. */}
       {quickQueueSec !== null && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="quick-queue-toast">
           <div className="card-pow p-0 overflow-hidden">
             <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
               <Loader2 size={18} strokeWidth={3} className="animate-spin" />
-              <span className="flex-1" />
+              <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="quick-queue-header">Searching</span>
               <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
                 <X size={16} strokeWidth={3} />
               </button>
@@ -566,11 +558,6 @@ function RankBadge({ tier, name, points }) {
   );
 }
 
-function ControlKey({ k, d }) {
-  return (
-    <div className="border-pow-thin p-2">
-      <div className="font-anton uppercase tracking-widest text-base">{k}</div>
-      <div className="font-body text-xs text-neutral-500 uppercase">{d}</div>
-    </div>
-  );
-}
+function ControlKey() { return null; }
+// eslint-disable-next-line no-unused-vars
+const _CK = ControlKey;

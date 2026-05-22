@@ -12,6 +12,7 @@ const DEFAULTS = Object.freeze({
   touchControls: "auto",    // "auto" | "on" | "off"
   fovDegrees: 75,
   aimAssist: true,
+  mouseSensitivity: 1.0,    // 0.25 - 2.5
 });
 
 function read() {

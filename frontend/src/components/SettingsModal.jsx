@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { X, RotateCcw, Settings as SettingsIcon } from "lucide-react";
+import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse } from "lucide-react";
 import settingsStore from "@/game/settings";
+import audioBus from "@/game/audio";
+import { useAuth } from "@/context/AuthContext";
 
 const GRAPHICS_OPTIONS = [
   { value: "low",    label: "Low",    note: "Best FPS. Lower render resolution." },
@@ -24,6 +26,15 @@ const TOUCH_OPTIONS = [
 
 export default function SettingsModal({ open, onClose }) {
   const [s, setS] = useState(settingsStore.get());
+  const [musicMuted, setMusicMuted] = useState(false);
+  const [sfxMuted, setSfxMuted] = useState(false);
+  const { logout } = useAuth();
+
+  useEffect(() => {
+    if (!open) return;
+    setMusicMuted(audioBus.musicMuted);
+    setSfxMuted(audioBus.sfxMuted);
+  }, [open]);
 
   // Stay synced if anything else changes the store mid-open.
   useEffect(() => {
@@ -33,6 +44,19 @@ export default function SettingsModal({ open, onClose }) {
   if (!open) return null;
 
   const patch = (p) => settingsStore.set(p);
+
+  const toggleMusic = () => {
+    const next = !audioBus.musicMuted;
+    audioBus.setMusicMuted(next);
+    setMusicMuted(next);
+    try { localStorage.setItem("lobby_music_muted", next ? "1" : "0"); } catch {}
+  };
+  const toggleSfx = () => {
+    const next = !audioBus.sfxMuted;
+    audioBus.setSfxMuted(next);
+    setSfxMuted(next);
+    try { localStorage.setItem("sfx_muted", next ? "1" : "0"); } catch {}
+  };
 
   return (
     <div
@@ -62,6 +86,58 @@ export default function SettingsModal({ open, onClose }) {
         </div>
 
         <div className="px-5 py-4 space-y-5 max-h-[70vh] overflow-y-auto">
+          {/* Audio toggles */}
+          <section>
+            <div className="font-anton uppercase tracking-widest text-sm mb-2">Audio</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={toggleMusic}
+                className={`flex items-center justify-center gap-2 rounded border px-3 py-2 transition-colors ${musicMuted ? "border-neutral-800 text-neutral-500" : "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"}`}
+                data-testid="settings-music-toggle"
+              >
+                <Music size={16} strokeWidth={3} />
+                <span className="font-anton uppercase tracking-widest text-sm">{musicMuted ? "Music · Off" : "Music · On"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={toggleSfx}
+                className={`flex items-center justify-center gap-2 rounded border px-3 py-2 transition-colors ${sfxMuted ? "border-neutral-800 text-neutral-500" : "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"}`}
+                data-testid="settings-sfx-toggle"
+              >
+                {sfxMuted ? <VolumeX size={16} strokeWidth={3} /> : <Volume2 size={16} strokeWidth={3} />}
+                <span className="font-anton uppercase tracking-widest text-sm">{sfxMuted ? "SFX · Off" : "SFX · On"}</span>
+              </button>
+            </div>
+          </section>
+
+          {/* Mouse sensitivity */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm flex items-center gap-2">
+                <Mouse size={14} strokeWidth={3} /> Mouse Sensitivity
+              </div>
+              <div className="text-sm tabular-nums" data-testid="settings-sensitivity-value">
+                {Number(s.mouseSensitivity ?? 1.0).toFixed(2)}×
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.25"
+              max="2.5"
+              step="0.05"
+              value={s.mouseSensitivity ?? 1.0}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                patch({ mouseSensitivity: v });
+                // Mirror to the engine's SENS_KEY so live games see the new value.
+                try { localStorage.setItem("virtue.mouseSensitivity", String(v)); } catch {}
+              }}
+              className="w-full accent-[#E62429]"
+              data-testid="settings-sensitivity-slider"
+            />
+          </section>
+
           {/* Graphics quality */}
           <section>
             <div className="font-anton uppercase tracking-widest text-sm mb-2">Graphics Quality</div>
@@ -183,6 +259,18 @@ export default function SettingsModal({ open, onClose }) {
           <p className="text-[11px] text-neutral-500 pt-1">
             Settings save to this device only.
           </p>
+
+          {/* Logout — at the bottom of the modal */}
+          <section className="border-t border-neutral-800 pt-4">
+            <button
+              type="button"
+              onClick={() => { onClose?.(); logout?.(); }}
+              className="w-full flex items-center justify-center gap-2 rounded border border-[#E62429] bg-[#E62429]/20 hover:bg-[#E62429]/30 text-white font-anton uppercase tracking-widest px-3 py-2 transition-colors"
+              data-testid="settings-logout"
+            >
+              <LogOut size={16} strokeWidth={3} /> Logout
+            </button>
+          </section>
         </div>
       </div>
     </div>

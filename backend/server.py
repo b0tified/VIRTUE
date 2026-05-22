@@ -268,9 +268,10 @@ async def on_startup():
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
 
-    # Spawn bots in casual room. Ranked room gets exactly 1 permanent bot.
-    for name in BOT_NAMES[:NUM_BOTS]:
-        game_room.spawn_bot(name)
+    # Casual / quick-match bots wear human-looking names and disguise as real
+    # players (no BOT badge, no -bot platform). Pick a stable random set.
+    for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
+        game_room.spawn_bot(name, disguised=True)
     ranked_room.spawn_bot(BOT_NAMES[0] + "-R")
     # Practice room: 2 docile dummy bots that don't shoot back (max_hp low).
     for name in ["DUMMY-A", "DUMMY-B"]:
@@ -626,6 +627,12 @@ def bot_fill_seconds_for_tier_api(tier_idx: int) -> int:
     v = bot_fill_seconds_for_tier(tier_idx)
     return -1 if v == float("inf") else int(v)
 BOT_NAMES = ["BLAZE-7", "VORTEX", "RAVEN-X", "GHOST-9", "TITAN", "CYPHER"]
+# Casual-mode bots wear these human-looking names so they blend in.
+DISGUISED_BOT_NAMES = [
+    "n3onGhost42", "ShadowKnife", "BlitzReaper", "x_zenith_x", "PixelPunk",
+    "Krypt0nite", "0verkill", "RogueByte", "FlareStorm", "VoltKid", "Mute_Echo",
+    "QwiKshot", "redhatcat", "vp1r3lord", "TheSarcophagus",
+]
 PLACEMENT_MATCHES = 5
 PLACEMENT_MULTIPLIER = 2
 
@@ -727,6 +734,10 @@ class Player:
                 self.reload_until_ms[w] = 0
 
     def to_state(self):
+        # `disguised` bots (casual quick-match) appear as real players in the
+        # state payload so the scoreboard's BOT badge doesn't give them away.
+        # The flag is set at spawn-time by GameRoom.spawn_bot in casual mode.
+        disguised = bool(getattr(self, "disguised", False)) and self.is_bot
         return {
             "id": self.id,
             "username": self.username,
@@ -739,7 +750,7 @@ class Player:
             "kills": self.kills,
             "deaths": self.deaths,
             "alive": self.alive,
-            "is_bot": self.is_bot,
+            "is_bot": False if disguised else self.is_bot,
             "invuln": time.time() < self.invuln_until,
             "weapon": self.weapon,
             "ammo": self.cur_ammo(),
@@ -747,7 +758,11 @@ class Player:
             "reloading": self.is_reloading(),
             "reload_progress": round(self.reload_progress(), 3),
             "spread": round(self.spread, 4),
-            "platform": self.platform,
+            "platform": self.platform if not disguised else getattr(self, "disguise_platform", "pc"),
+            "avatar": int(getattr(self, "avatar", 0) or 0),
+            "rank_tier": int(getattr(self, "rank_tier", 0) or 0),
+            "rank_name": getattr(self, "rank_name", "BRONZE") if not disguised else getattr(self, "disguise_rank_name", "BRONZE"),
+            "rank_points": int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
         }
 
 
@@ -763,11 +778,22 @@ class GameRoom:
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
 
-    def spawn_bot(self, name: str):
+    def spawn_bot(self, name: str, *, disguised: bool = False):
         bot = Player(ws=None, is_bot=True, bot_name=name)
         bot.is_dummy = False
+        if disguised:
+            bot.disguised = True
+            # Match a real-player-looking platform + avatar + low rank.
+            bot.disguise_platform = random.choice(["pc", "mobile", "pc", "pc"])
+            bot.avatar = random.randint(0, 4)
+            # Give them a low-tier rank to blend with new players.
+            pts = random.randint(0, 850)
+            t_idx, t_name = rank_for_points(pts)
+            bot.disguise_rank_points = pts
+            bot.disguise_rank_name = t_name
+            bot.rank_tier = t_idx
         self.players[bot.id] = bot
-        logger.info("Bot spawned: %s (%s)", name, bot.id)
+        logger.info("Bot spawned: %s (%s)%s", name, bot.id, " [disguised]" if disguised else "")
         return bot
 
     async def add(self, player: Player):
@@ -1668,6 +1694,28 @@ async def queue_ranked_ack(user: dict = Depends(get_current_user)):
 
 
 # -------------------------------------------------------------------
+# Party invites — in-memory ephemeral state. A "party" is a 4-person
+# private casual room (mode=party) with bot-fill to keep matches lively.
+# Invites expire after 60 seconds.
+# -------------------------------------------------------------------
+PARTY_INVITES: Dict[str, List[dict]] = {}  # to_user_id -> [{from_user_id, from_username, party_id, expires_at, ...}]
+PARTY_ROOMS: Dict[str, "GameRoom"] = {}  # party_id -> room
+PARTY_ROOM_TASKS: Dict[str, asyncio.Task] = {}
+PARTY_OWNERS: Dict[str, str] = {}  # party_id -> owner_user_id
+
+
+def _gc_invites():
+    """Drop expired invites from PARTY_INVITES."""
+    now = time.time()
+    for to_id in list(PARTY_INVITES.keys()):
+        kept = [inv for inv in PARTY_INVITES[to_id] if inv["expires_at"] > now]
+        if kept:
+            PARTY_INVITES[to_id] = kept
+        else:
+            PARTY_INVITES.pop(to_id, None)
+
+
+# -------------------------------------------------------------------
 # Friends list — send / accept / decline / block / unfriend, + online status
 # Schema: db.friendships = { from_user_id, to_user_id, status, created_at }
 #   status ∈ {"pending","accepted","blocked"}
@@ -1892,11 +1940,166 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
     return rows
 
 
+# Party endpoints (require friendship; backed by in-memory PARTY_* state above).
+class PartyInviteIn(BaseModel):
+    username: str = Field(min_length=2, max_length=30)
+
+
+async def get_or_create_party_room(party_id: str) -> "GameRoom":
+    room = PARTY_ROOMS.get(party_id)
+    if room is not None:
+        return room
+    # 5-minute private FFA, bot-filled to ~4 players (we always start with 3
+    # disguised bots; if both friends are present + 3 bots = 5, which is fine).
+    room = GameRoom(is_ranked=False, match_duration=300.0)
+    room.is_party = True
+    room.party_id = party_id
+    for name in random.sample(DISGUISED_BOT_NAMES, 3):
+        room.spawn_bot(name, disguised=True)
+    PARTY_ROOMS[party_id] = room
+    PARTY_ROOM_TASKS[party_id] = asyncio.create_task(room.run())
+    logger.info("Party room spawned id=%s", party_id)
+    return room
+
+
+async def cleanup_party_room_if_empty(party_id: str):
+    room = PARTY_ROOMS.get(party_id)
+    if room is None:
+        return
+    if any(not p.is_bot for p in room.players.values()):
+        return
+    task = PARTY_ROOM_TASKS.pop(party_id, None)
+    if task and not task.done():
+        task.cancel()
+    PARTY_ROOMS.pop(party_id, None)
+    PARTY_OWNERS.pop(party_id, None)
+    logger.info("Party room destroyed id=%s", party_id)
+
+
+@api.post("/party/invite")
+async def party_invite(payload: PartyInviteIn, user: dict = Depends(get_current_user)):
+    """Send a party invite to a friend. Creates a party_id (the inviter
+    should immediately navigate to /play?mode=party&party_id=...)."""
+    me_id = str(user["_id"])
+    target = await _find_user_by_username(payload.username)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    t_id = str(target["_id"])
+    if t_id == me_id:
+        raise HTTPException(status_code=400, detail="Cannot invite yourself")
+    friend = await db.friendships.find_one({
+        "status": "accepted",
+        "$or": [
+            {"from_user_id": me_id, "to_user_id": t_id},
+            {"from_user_id": t_id, "to_user_id": me_id},
+        ],
+    })
+    if not friend:
+        raise HTTPException(status_code=403, detail="Only friends can be invited")
+    # Reuse existing party if owner=me.
+    party_id = next((pid for pid, owner in PARTY_OWNERS.items() if owner == me_id), None)
+    if party_id is None:
+        party_id = uuid.uuid4().hex[:10]
+        PARTY_OWNERS[party_id] = me_id
+    _gc_invites()
+    arr = PARTY_INVITES.setdefault(t_id, [])
+    arr[:] = [inv for inv in arr if inv["from_user_id"] != me_id]
+    arr.append({
+        "from_user_id": me_id,
+        "from_username": user.get("username", ""),
+        "from_avatar": int(user.get("avatar", 0) or 0),
+        "party_id": party_id,
+        "expires_at": time.time() + 60.0,
+    })
+    return {"party_id": party_id}
+
+
+@api.get("/party/invites")
+async def party_invites_list(user: dict = Depends(get_current_user)):
+    """Poll endpoint: returns invites pending for the calling user."""
+    _gc_invites()
+    me_id = str(user["_id"])
+    return PARTY_INVITES.get(me_id, [])
+
+
+@api.post("/party/accept")
+async def party_accept(payload: PartyInviteIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    sender = await _find_user_by_username(payload.username)
+    if not sender:
+        raise HTTPException(status_code=404, detail="User not found")
+    s_id = str(sender["_id"])
+    _gc_invites()
+    arr = PARTY_INVITES.get(me_id, [])
+    inv = next((i for i in arr if i["from_user_id"] == s_id), None)
+    if not inv:
+        raise HTTPException(status_code=404, detail="No active invite from that user")
+    PARTY_INVITES[me_id] = [i for i in arr if i["from_user_id"] != s_id]
+    return {"party_id": inv["party_id"]}
+
+
+@api.post("/party/decline")
+async def party_decline(payload: PartyInviteIn, user: dict = Depends(get_current_user)):
+    me_id = str(user["_id"])
+    sender = await _find_user_by_username(payload.username)
+    if not sender:
+        raise HTTPException(status_code=404, detail="User not found")
+    s_id = str(sender["_id"])
+    arr = PARTY_INVITES.get(me_id, [])
+    PARTY_INVITES[me_id] = [i for i in arr if i["from_user_id"] != s_id]
+    return {"ok": True}
+
+
+@api.get("/users/{username}/profile")
+async def public_profile(username: str, _user: dict = Depends(get_current_user)):
+    """Public view of any user's profile — username, avatar, stats, rank,
+    peak rank, last 10 matches. Email is intentionally excluded."""
+    u = await _find_user_by_username(username)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    pts = int(u.get("rank_points", 0) or 0)
+    peak = int(u.get("peak_rank_points", pts) or pts)
+    if pts > peak:
+        peak = pts
+    t_idx, t_name = rank_for_points(pts)
+    p_idx, p_name = rank_for_points(peak)
+    user_id = str(u["_id"])
+    cursor = db.match_history.find(
+        {"user_id": user_id}, {"_id": 0}
+    ).sort([("ended_at", -1)]).limit(10)
+    history = []
+    async for m in cursor:
+        ts = m.get("ended_at")
+        history.append({
+            "mode": m.get("mode", "casual"),
+            "kills": int(m.get("kills", 0)),
+            "deaths": int(m.get("deaths", 0)),
+            "placement": int(m.get("placement", 0)),
+            "total_players": int(m.get("total_players", 0)),
+            "rp_delta": int(m.get("rp_delta", 0)),
+            "rank_name_after": m.get("rank_name_after", "BRONZE"),
+            "is_placement": bool(m.get("is_placement", False)),
+            "ended_at": ts.isoformat() if isinstance(ts, datetime) else ts,
+        })
+    return {
+        "id": user_id,
+        "username": u.get("username", ""),
+        "avatar": int(u.get("avatar", 0) or 0),
+        "stats": u.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
+        "rank_points": pts,
+        "rank_tier": t_idx,
+        "rank_name": t_name,
+        "peak_rank_points": peak,
+        "peak_rank_tier": p_idx,
+        "peak_rank_name": p_name,
+        "online": is_online(user_id),
+        "history": history,
+    }
+
+
 # -------------------------------------------------------------------
-
-
 @api.websocket("/ws/game")
-async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual")):
+async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None)):
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -1922,6 +2125,11 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         room = practice_room
     elif mode == "offline":
         room = await get_or_create_offline_room(str(user["_id"]))
+    elif mode == "party":
+        if not party_id:
+            await websocket.close(code=4400)
+            return
+        room = await get_or_create_party_room(party_id)
     else:
         room = game_room
     await websocket.accept()
@@ -1949,6 +2157,8 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             ONLINE_USERS.pop(u_id_str, None)
         if mode == "offline":
             await cleanup_offline_room_if_empty(str(user["_id"]))
+        elif mode == "party" and party_id:
+            await cleanup_party_room_if_empty(party_id)
         elif mode == "ranked" and getattr(room, "is_ranked_bot", False):
             await cleanup_ranked_bot_room_if_empty(str(user["_id"]))
 
