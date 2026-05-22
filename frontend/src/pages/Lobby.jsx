@@ -279,6 +279,9 @@ export default function Lobby() {
                 {queueState ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...") : "RANKED MATCH"}
               </span>
             </button>
+            <Link to="/play?mode=practice" className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg" data-testid="lobby-practice-button">
+              <span className="flex items-center gap-3"><Mouse size={20} strokeWidth={3} /> PRACTICE RANGE</span>
+            </Link>
             <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={20} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
@@ -382,13 +385,13 @@ export default function Lobby() {
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
 
-      {/* Quick-match (casual) queue toast — 10s countdown */}
+      {/* Quick-match (casual) queue toast — uses same UI as ranked */}
       {quickQueueSec !== null && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="quick-queue-toast">
           <div className="card-pow p-0 overflow-hidden">
             <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
               <Loader2 size={18} strokeWidth={3} className="animate-spin" />
-              <span className="font-anton uppercase tracking-widest text-sm flex-1">Searching for Players</span>
+              <span className="font-anton uppercase tracking-widest text-sm flex-1">Quick Match — Searching</span>
               <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
                 <X size={16} strokeWidth={3} />
               </button>
@@ -399,10 +402,18 @@ export default function Lobby() {
                 Filling with bots in
               </div>
               <div
-                className="font-display text-8xl text-[#E62429] leading-none tabular-nums"
+                className="font-display text-6xl text-[#E62429] leading-none tabular-nums"
                 data-testid="quick-queue-timer"
               >
-                {quickQueueSec}
+                {fmtMS(quickQueueSec)}
+              </div>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#E62429] text-white">
+                  CASUAL · FFA
+                </div>
+                <div className="font-anton uppercase text-xs text-neutral-500">
+                  5-min match
+                </div>
               </div>
             </div>
           </div>

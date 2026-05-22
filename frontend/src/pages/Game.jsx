@@ -7,6 +7,7 @@ import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import Hud from "@/components/Hud";
 import TouchControls from "@/components/TouchControls";
+import Chat from "@/components/Chat";
 
 export default function Game() {
   const canvasRef = useRef(null);
@@ -15,7 +16,8 @@ export default function Game() {
   const { user, accessToken } = useAuth();
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
-  const mode = searchParams.get("mode") === "ranked" ? "ranked" : "casual";
+  const rawMode = searchParams.get("mode");
+  const mode = rawMode === "ranked" ? "ranked" : (rawMode === "practice" ? "practice" : "casual");
 
   const [hud, setHud] = useState({
     hp: 100,
@@ -39,6 +41,7 @@ export default function Game() {
     weapon: "primary",
   });
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
   const pingRef = useRef({ lastSent: 0, value: 0 });
 
   // Setup engine + socket
@@ -139,6 +142,13 @@ export default function Game() {
           }, 8000);
           return;
         }
+        if (msg.type === "chat") {
+          setChatMessages((prev) => [
+            ...prev.slice(-30),
+            { id: `${msg.id}-${msg.ts}-${Math.random().toString(36).slice(2,6)}`, username: msg.username, is_bot: !!msg.is_bot, text: msg.text },
+          ]);
+          return;
+        }
         if (msg.type === "match_start") {
           setHud((h) => ({ ...h, matchEnd: null }));
           return;
@@ -172,6 +182,8 @@ export default function Game() {
         pitch: snap.pitch,
         ads: !!snap.ads,
       });
+      // Mirror ADS into hud for the scope overlay.
+      setHud((h) => (h.ads === !!snap.ads ? h : { ...h, ads: !!snap.ads }));
       if (snap.shoot) {
         const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
         sock.send({ type: "shoot", yaw: snap.yaw, pitch: snap.pitch, weapon });
@@ -285,6 +297,11 @@ export default function Game() {
           engineRef.current?.setWeapon(w);
           setHud((h) => ({ ...h, weapon: w }));
         }}
+      />
+      <Chat
+        messages={chatMessages}
+        onSend={(text) => sockRef.current?.send({ type: "chat", text })}
+        hidden={"ontouchstart" in window || navigator.maxTouchPoints > 0}
       />
     </div>
   );

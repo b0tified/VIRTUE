@@ -265,6 +265,13 @@ async def on_startup():
     for name in BOT_NAMES[:NUM_BOTS]:
         game_room.spawn_bot(name)
     ranked_room.spawn_bot(BOT_NAMES[0] + "-R")
+    # Practice room: 2 docile dummy bots that don't shoot back (max_hp low).
+    for name in ["DUMMY-A", "DUMMY-B"]:
+        b = practice_room.spawn_bot(name)
+        if b is not None:
+            b.is_dummy = True
+            b.max_hp = 50
+            b.hp = 50
 
     # Initialize season metadata (rank reset every 14 days)
     await get_or_init_season()
@@ -272,6 +279,7 @@ async def on_startup():
 
     asyncio.create_task(game_room.run())
     asyncio.create_task(ranked_room.run())
+    asyncio.create_task(practice_room.run())
     asyncio.create_task(matchmaker_loop())
     asyncio.create_task(season_loop())
 
@@ -323,6 +331,64 @@ async def logout(response: Response):
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     return {"ok": True}
+
+
+class GoogleCallbackIn(BaseModel):
+    session_id: str
+
+
+@api.post("/auth/google/callback")
+async def google_callback(payload: GoogleCallbackIn, response: Response):
+    """Exchanges an Emergent OAuth session_id for our normal JWT.
+    Creates the user if their Google email is new.
+    REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    """
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": payload.session_id},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as r:
+                if r.status != 200:
+                    raise HTTPException(status_code=401, detail="Invalid session")
+                data = await r.json()
+    except aiohttp.ClientError as e:
+        logger.warning("Emergent OAuth fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail="Auth provider unreachable")
+
+    email = (data.get("email") or "").lower()
+    name = data.get("name") or email.split("@")[0]
+    if not email:
+        raise HTTPException(status_code=401, detail="Google profile missing email")
+
+    user = await db.users.find_one({"email": email})
+    if not user:
+        # Use a unique-ish username; if the chosen one collides, append suffix.
+        base_username = (name.split(" ")[0] if name else email.split("@")[0]).strip()[:24] or "Player"
+        username = base_username
+        suffix = 1
+        while await db.users.find_one({"username": username}):
+            suffix += 1
+            username = f"{base_username}{suffix}"
+        doc = {
+            "email": email,
+            "username": username,
+            "password_hash": "",  # Google-only user — no password
+            "role": "user",
+            "google": True,
+            "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0},
+            "rank_points": 0,
+            "created_at": datetime.now(timezone.utc),
+        }
+        res = await db.users.insert_one(doc)
+        user = await db.users.find_one({"_id": res.inserted_id})
+
+    access = create_access_token(str(user["_id"]), user["email"])
+    refresh = create_refresh_token(str(user["_id"]))
+    set_auth_cookies(response, access, refresh)
+    return {"user": public_user(user), "access_token": access}
 
 
 @api.get("/auth/me")
@@ -631,8 +697,10 @@ class GameRoom:
 
     def spawn_bot(self, name: str):
         bot = Player(ws=None, is_bot=True, bot_name=name)
+        bot.is_dummy = False
         self.players[bot.id] = bot
         logger.info("Bot spawned: %s (%s)", name, bot.id)
+        return bot
 
     async def add(self, player: Player):
         async with self.lock:
@@ -1007,11 +1075,33 @@ class GameRoom:
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
             await self._apply_melee(player)
+        elif mtype == "chat":
+            text = (msg.get("text") or "").strip()
+            if not text:
+                return
+            text = text[:140]
+            now_ms = int(time.time() * 1000)
+            # Per-player rate-limit: max 1 message per 1.2s
+            last = getattr(player, "last_chat_ms", 0)
+            if now_ms - last < 1200:
+                return
+            player.last_chat_ms = now_ms
+            await self.broadcast({
+                "type": "chat",
+                "id": player.id,
+                "username": player.username,
+                "is_bot": player.is_bot,
+                "text": text,
+                "ts": now_ms,
+            })
 
     async def _update_bots(self, dt: float):
         now_ms = int(time.time() * 1000)
         for bot in list(self.players.values()):
             if not bot.is_bot or not bot.alive:
+                continue
+            # Practice dummies are stationary targets — no movement.
+            if getattr(bot, "is_dummy", False):
                 continue
             # Find target = closest alive other player
             target: Optional[Player] = None
@@ -1083,6 +1173,9 @@ class GameRoom:
                     bot.bot_strafe_t += 0.3
 
             # Shoot when ready & LoS — with small aim noise (bots are less accurate)
+            # Dummy bots (practice range) never shoot back.
+            if getattr(bot, "is_dummy", False):
+                continue
             if now_ms - bot.last_shot_ms >= BOT_SHOT_COOLDOWN_MS:
                 if self._has_los(bot, target):
                     bot.last_shot_ms = now_ms
@@ -1272,6 +1365,8 @@ class GameRoom:
 
 game_room = GameRoom(is_ranked=False, match_duration=300.0)  # 5 minute Quick Match
 ranked_room = GameRoom(is_ranked=True, match_duration=50.0)
+practice_room = GameRoom(is_ranked=False, match_duration=99999.0)  # Practice never ends
+practice_room.is_practice = True
 
 # -------------------------------------------------------------------
 # Ranked Matchmaking Queue
@@ -1399,7 +1494,12 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         await websocket.close(code=4401)
         return
 
-    room = ranked_room if mode == "ranked" else game_room
+    if mode == "ranked":
+        room = ranked_room
+    elif mode == "practice":
+        room = practice_room
+    else:
+        room = game_room
     await websocket.accept()
     player = Player(websocket, user=user, is_bot=False)
     await room.add(player)

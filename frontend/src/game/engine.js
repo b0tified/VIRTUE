@@ -1066,9 +1066,14 @@ export class GameEngine {
     this._pollGamepad(dt);
 
     // Aim assist: only when gamepad connected OR touch mode active (set
-    // externally by TouchControls or via setAimAssist()).
+    // externally by TouchControls or via setAimAssist()). Mobile gets a much
+    // stronger near-autolock; controller gets a gentle nudge.
     if (this.gamepadConnected || this.touchActive) {
-      this.applyAimAssist(dt, this._aimAssistStrength ?? 0.5);
+      const base = this._aimAssistStrength ?? 0.0;
+      if (base > 0) {
+        const strength = this.touchActive ? Math.min(2.0, base * 2.5) : base;
+        this.applyAimAssist(dt, strength);
+      }
     }
 
     let mx = 0, mz = 0;
@@ -1320,7 +1325,8 @@ export class GameEngine {
     const me = this.players?.get(this.youId);
     if (!me || !me.alive) return;
     let best = null;
-    let bestAngle = 0.35; // ~20° cone
+    // Wider cone on touch (autolock feel) — ~32°. Controller stays at ~20°.
+    let bestAngle = this.touchActive ? 0.56 : 0.35;
     const cp = Math.cos(this.pitch);
     const fwd = new THREE.Vector3(Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
     const eye = new THREE.Vector3(this.position.x, this.position.y, this.position.z);
@@ -1331,7 +1337,7 @@ export class GameEngine {
       const tgt = new THREE.Vector3(p.x, (p.y || 1.8) - 0.6, p.z);
       const to = new THREE.Vector3().subVectors(tgt, eye);
       const dist = to.length();
-      if (dist < 0.5 || dist > 35) return;
+      if (dist < 0.5 || dist > (this.touchActive ? 50 : 35)) return;
       to.normalize();
       const dot = Math.max(-1, Math.min(1, fwd.dot(to)));
       const ang = Math.acos(dot);
@@ -1341,16 +1347,14 @@ export class GameEngine {
       }
     });
     if (!best) return;
-    // Compute desired yaw/pitch toward target
     const dx = best.tgt.x - this.position.x;
     const dy = best.tgt.y - this.position.y;
     const dz = best.tgt.z - this.position.z;
     const horiz = Math.hypot(dx, dz);
     const desiredYaw = Math.atan2(dx, -dz);
     const desiredPitch = Math.atan2(dy, horiz);
-    // Smoothly bias current orientation toward desired
-    const lerpRate = 6.0 * intensity; // higher = stronger snap
-    // Shortest-angle yaw delta
+    // Touch users get a near-autolock (rate 14); controller a soft snap (6).
+    const lerpRate = (this.touchActive ? 14 : 6) * intensity;
     let yd = desiredYaw - this.yaw;
     while (yd >  Math.PI) yd -= Math.PI * 2;
     while (yd < -Math.PI) yd += Math.PI * 2;

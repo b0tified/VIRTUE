@@ -84,6 +84,30 @@ export default function Login() {
           {loading ? "Signing in..." : "Sign in"}
         </button>
 
+        <div className="flex items-center gap-3 my-1">
+          <div className="flex-1 h-px bg-neutral-800" />
+          <span className="text-[10px] text-neutral-600 uppercase tracking-widest">Or</span>
+          <div className="flex-1 h-px bg-neutral-800" />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const redirect = encodeURIComponent(window.location.origin + "/auth/callback");
+            window.location.href = `https://auth.emergentagent.com/?redirect=${redirect}`;
+          }}
+          className="w-full bg-white hover:bg-neutral-100 text-black font-anton uppercase tracking-widest py-2.5 rounded flex items-center justify-center gap-2 transition-colors"
+          data-testid="login-google-button"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.7 4.7-6.2 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.9 6.2 29.7 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8c1.8-4.3 6-7.5 11.1-7.5 3 0 5.8 1.1 7.9 3l5.7-5.7C34.9 6.2 29.7 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
+            <path fill="#4CAF50" d="M24 44c5.4 0 10.3-2.1 14-5.4l-6.5-5.5C29.6 34.6 27 35.5 24 35.5c-5.1 0-9.5-3.3-11.2-7.9l-6.5 5C9.6 39.5 16.3 44 24 44z"/>
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.5 5.5c-.4.4 7.3-5.3 7.3-15 0-1.2-.1-2.4-.4-3.5z"/>
+          </svg>
+          Continue with Google
+        </button>
+
         <div className="text-center text-sm text-neutral-400 pt-1">
           Don&apos;t have an account?{" "}
           <Link to="/register" className="text-white underline hover:text-[#FFD700]" data-testid="login-register-link">

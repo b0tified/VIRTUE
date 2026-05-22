@@ -185,3 +185,52 @@ canvas { outline: none; display: block; }
   animation: dmg-fade 0.45s ease-out forwards;
 }
 @keyframes dmg-fade { from { opacity: 1; } to { opacity: 0; } }
+
+
+/* ADS scope overlay — circular see-through with vignette + crosshair + center dot */
+.ads-scope-wrap {
+  position: fixed; inset: 0; pointer-events: none; z-index: 25;
+  animation: ads-scope-fade 0.12s ease-out forwards;
+}
+@keyframes ads-scope-fade { from { opacity: 0; } to { opacity: 1; } }
+/* Big black mask with a transparent circular hole in the middle.
+   Using a radial-gradient as a knockout gives a feathered edge. */
+.ads-scope-mask {
+  position: absolute; inset: 0;
+  background: radial-gradient(
+    circle at center,
+    transparent 0,
+    transparent calc(min(45vh, 45vw) - 4px),
+    rgba(0,0,0,0.92) min(45vh, 45vw),
+    rgba(0,0,0,0.92) 100%
+  );
+}
+/* Crisp black ring around the lens */
+.ads-scope-ring {
+  position: absolute; top: 50%; left: 50%;
+  width: calc(min(90vh, 90vw)); height: calc(min(90vh, 90vw));
+  transform: translate(-50%, -50%);
+  border: 2px solid #000;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.15) inset, 0 0 10px rgba(0,0,0,0.6);
+}
+/* Mil-dot style crosshair lines inside the scope */
+.ads-scope-cross-h, .ads-scope-cross-v {
+  position: absolute; top: 50%; left: 50%; background: rgba(0,0,0,0.85);
+}
+.ads-scope-cross-h {
+  width: calc(min(85vh, 85vw)); height: 1px;
+  transform: translate(-50%, -50%);
+}
+.ads-scope-cross-v {
+  height: calc(min(85vh, 85vw)); width: 1px;
+  transform: translate(-50%, -50%);
+}
+/* Bright center dot — your point of impact */
+.ads-scope-dot {
+  position: absolute; top: 50%; left: 50%;
+  width: 4px; height: 4px; background: #E62429;
+  border: 1px solid #000;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}

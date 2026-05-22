@@ -7,6 +7,7 @@ import Lobby from "@/pages/Lobby";
 import Game from "@/pages/Game";
 import Profile from "@/pages/Profile";
 import Leaderboard from "@/pages/Leaderboard";
+import AuthCallback from "@/pages/AuthCallback";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/play" element={<ProtectedRoute><Game /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -59,8 +59,20 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
   return (
     <>
-      {/* Crosshair — Overwatch-style: 4 ticks that grow with current spread */}
-      {pointerLocked && hud.alive && (
+      {/* ADS scope overlay — circular reticle you see through, dark vignette outside. */}
+      {hud.ads && hud.weapon !== "secondary" && pointerLocked && hud.alive && (
+        <div className="ads-scope-wrap" data-testid="ads-scope">
+          <div className="ads-scope-mask" />
+          <div className="ads-scope-ring" />
+          <div className="ads-scope-cross-h" />
+          <div className="ads-scope-cross-v" />
+          <div className="ads-scope-dot" />
+        </div>
+      )}
+
+      {/* Crosshair — Overwatch-style: 4 ticks that grow with current spread.
+          Hidden while aiming down sights (the scope reticle replaces it). */}
+      {pointerLocked && hud.alive && !hud.ads && (
         <DynamicCrosshair spread={hud.spread || 0} showHit={showHit} headshot={!!hud.hitHeadshot} />
       )}
 
