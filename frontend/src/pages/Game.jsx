@@ -214,10 +214,10 @@ export default function Game() {
       setHud((h) => (h.ads === !!snap.ads ? h : { ...h, ads: !!snap.ads }));
       if (snap.shoot) {
         const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
-        sock.send({ type: "shoot", yaw: snap.yaw, pitch: snap.pitch, weapon });
+        sock.send({ type: "shoot", yaw: snap.shootYaw, pitch: snap.shootPitch, weapon });
       }
       if (snap.melee) {
-        sock.send({ type: "melee", yaw: snap.yaw, pitch: snap.pitch });
+        sock.send({ type: "melee", yaw: snap.meleeYaw, pitch: snap.meleePitch });
       }
     }, 1000 / 20);
 

@@ -162,8 +162,13 @@ export class GameEngine {
     }
     if (this.currentWeapon === "secondary") {
       this.pendingMelee = true;
+      this.pendingMeleeAim = { yaw: this.yaw, pitch: this.pitch };
     } else {
       this.pendingShoot = true;
+      // Snapshot the EXACT yaw/pitch at the moment of click so the server
+      // hit-scan uses where the crosshair actually pointed when the player
+      // clicked — not where it has rotated to by the next 20Hz input tick.
+      this.pendingShootAim = { yaw: this.yaw, pitch: this.pitch };
     }
   }
 
@@ -1311,10 +1316,14 @@ export class GameEngine {
     // handled by client-side cooldown already.
     if (fireDown && !this._gpPrev.fire) {
       this.pendingShoot = true;
+      this.pendingShootAim = { yaw: this.yaw, pitch: this.pitch };
     }
     // Repeat fire while held: pulse every ~120ms via _shootCooldown if we want
     // full-auto. AK-47 server cooldown is 250ms so we just keep flagging.
-    if (fireDown) this.pendingShoot = true;
+    if (fireDown) {
+      this.pendingShoot = true;
+      this.pendingShootAim = { yaw: this.yaw, pitch: this.pitch };
+    }
     this._gpPrev.fire = fireDown;
     this.ads = adsDown;
 
@@ -1325,7 +1334,10 @@ export class GameEngine {
       setTimeout(() => this.keys.delete("Space"), 60);
     }
     this._gpPrev.jump = aBtn;
-    if (xBtn && !this._gpPrev.melee) this.pendingMelee = true;
+    if (xBtn && !this._gpPrev.melee) {
+      this.pendingMelee = true;
+      this.pendingMeleeAim = { yaw: this.yaw, pitch: this.pitch };
+    }
     this._gpPrev.melee = xBtn;
     if (bBtn && !this._gpPrev.reload) {
       this.onLocalUpdate?.({ type: "reload-pressed" });
@@ -1452,8 +1464,15 @@ export class GameEngine {
   snapshot() {
     const shoot = this.pendingShoot;
     const melee = this.pendingMelee;
+    // Click-time aim — captured at the exact moment the click/press happened
+    // so the server hit-scan ray matches what the crosshair was pointing at,
+    // not where the player has rotated to since.
+    const shootAim = this.pendingShootAim || { yaw: this.yaw, pitch: this.pitch };
+    const meleeAim = this.pendingMeleeAim || { yaw: this.yaw, pitch: this.pitch };
     this.pendingShoot = false;
     this.pendingMelee = false;
+    this.pendingShootAim = null;
+    this.pendingMeleeAim = null;
     if (shoot) {
       this.triggerMuzzleFlash();
       this.onShoot();
@@ -1467,7 +1486,11 @@ export class GameEngine {
       yaw: this.yaw,
       pitch: this.pitch,
       shoot,
+      shootYaw: shootAim.yaw,
+      shootPitch: shootAim.pitch,
       melee,
+      meleeYaw: meleeAim.yaw,
+      meleePitch: meleeAim.pitch,
       ads: !!this.ads,
     };
   }

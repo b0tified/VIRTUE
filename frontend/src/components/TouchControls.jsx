@@ -156,13 +156,19 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
 
   const pressShoot = () => {
     const eng = engineRef.current;
-    if (eng) eng.pendingShoot = true;
+    if (eng) {
+      eng.pendingShoot = true;
+      eng.pendingShootAim = { yaw: eng.yaw, pitch: eng.pitch };
+    }
     onShoot?.();
   };
 
   const pressMelee = () => {
     const eng = engineRef.current;
-    if (eng) eng.pendingMelee = true;
+    if (eng) {
+      eng.pendingMelee = true;
+      eng.pendingMeleeAim = { yaw: eng.yaw, pitch: eng.pitch };
+    }
     onMelee?.();
   };
 
