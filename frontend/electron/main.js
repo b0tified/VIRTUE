@@ -24,7 +24,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     backgroundColor: "#0A0A0A",
-    title: "VIRTUE — Comic FPS Arena",
+    title: "VIRTUE",
     autoHideMenuBar: true,
     fullscreenable: true,
     webPreferences: {
