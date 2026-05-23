@@ -179,7 +179,8 @@ class LocalPlayer {
     // Bot AI state
     this.botDir = Math.random() * Math.PI * 2;
     this.botRepathAt = 0;
-    this.botFireAt = performance.now() + 800 + Math.random() * 1500;
+    // Initial 2-3s delay so bots don't shoot during the player's spawn invuln.
+    this.botFireAt = performance.now() + 2200 + Math.random() * 1600;
   }
   cur_ammo() { return this.ammo[this.weapon] || 0; }
   mag_size() { return WEAPONS[this.weapon]?.mag_size || 0; }
@@ -371,11 +372,15 @@ export class LocalSim {
       weapon,
     });
 
-    // Test against each other player capsule
+    // Test against each other player capsule. Use a slightly TALLER bounding
+    // cylinder (top > eye height) so a horizontal shot from the eye doesn't
+    // graze the edge — and respect spawn invuln so we never deal damage to a
+    // freshly-spawned target.
     let bestT = range, bestHit = null;
     for (const other of this.players.values()) {
       if (other.id === p.id || !other.alive) continue;
-      const r = rayHitCapsule(ox, oy, oz, dx, dy, dz, other.x, other.z, 0.45, 0, PLAYER_HEIGHT);
+      if (now < (other.invuln_until || 0)) continue; // skip invulnerable targets
+      const r = rayHitCapsule(ox, oy, oz, dx, dy, dz, other.x, other.z, 0.55, 0, PLAYER_HEIGHT + 0.25);
       if (r && r.t < bestT) {
         // Line of sight (2D) — block on obstacles
         const hx = ox + dx * r.t, hz = oz + dz * r.t;
@@ -385,9 +390,9 @@ export class LocalSim {
       }
     }
     if (bestHit) {
-      // Head region: bullet hits at y > 1.40 (was 1.45) — slightly larger head
-      // hitbox to mirror the server tweak (sphere radius bump 0.45 → 0.55).
-      const headshot = bestHit.hy > 1.40;
+      // Head region: bullet hits above 1.45 (capsule now spans 0..2.05, so the
+      // head crown is ~1.6-2.0). Matches the slightly-enlarged server head.
+      const headshot = bestHit.hy > 1.45;
       let damage = cfg.damage;
       if (headshot) damage = Math.floor(damage * 1.6);
       bestHit.other.hp -= damage;
@@ -509,10 +514,25 @@ export class LocalSim {
         bot.yaw = Math.atan2(dx, dz);
         bot.pitch = Math.max(-0.3, Math.min(0.3, -Math.atan2(this.me.y - bot.y, dist)));
 
-        // Shoot occasionally if LOS
-        if (this.me.alive && now > bot.botFireAt && !segBlockedByObstacles(bot.x, bot.z, this.me.x, this.me.z)) {
-          bot.botFireAt = now + 700 + Math.random() * 1200;
-          this._handleShoot(bot, "ak47", bot.yaw, bot.pitch, now);
+        // Shoot occasionally if LOS — but never while the player is still in
+        // their spawn-invuln window (otherwise the bullet would be wasted +
+        // feel like spawn-killing the moment invuln ends).
+        const playerInvuln = now < (this.me.invuln_until || 0);
+        if (
+          this.me.alive &&
+          !playerInvuln &&
+          now > bot.botFireAt &&
+          !segBlockedByObstacles(bot.x, bot.z, this.me.x, this.me.z)
+        ) {
+          // Spread out subsequent shots (1.4 - 3.0s) so the player has room to
+          // breathe and react. Total DPS from 3 bots stays balanced.
+          bot.botFireAt = now + 1400 + Math.random() * 1600;
+          // Add intentional aim error so bots aren't laser-accurate.
+          const dist = Math.hypot(this.me.x - bot.x, this.me.z - bot.z);
+          const spread = 0.04 + Math.min(0.14, dist * 0.004);
+          const yawErr = (Math.random() - 0.5) * 2 * spread;
+          const pitchErr = (Math.random() - 0.5) * spread;
+          this._handleShoot(bot, "ak47", bot.yaw + yawErr, bot.pitch + pitchErr, now);
         }
       }
     }
