@@ -691,6 +691,7 @@ WEAPON_CONFIGS = {
     },
     "laser": {
         "damage": LASER_DAMAGE,
+        "dps": 60,                 # continuous beam — damage per second
         "cooldown_ms": LASER_COOLDOWN_MS,
         "mag_size": 60,
         "reload_ms": 1800,
@@ -699,7 +700,7 @@ WEAPON_CONFIGS = {
         "falloff_start": 25.0,
         "falloff_end": 70.0,
         "min_damage_mult": 0.6,
-        "spread_base": 0.0,     # laser stays pinpoint
+        "spread_base": 0.0,
         "spread_per_shot": 0.0,
         "spread_max": 0.0,
         "spread_decay": 1.0,
@@ -802,6 +803,11 @@ class Player:
         self.reload_until_ms: Dict[str, int] = {"ak47": 0, "laser": 0}
         self.spread: float = 0.0  # current cone radius in radians
         self.is_ads: bool = False
+        # Laser beam state — continuous-fire weapon with heat instead of ammo.
+        # heat: 0.0..1.0 (1.0 = overheated, locks fire until full cooldown).
+        self.laser_heat: float = 0.0
+        self.laser_overheated: bool = False
+        self.laser_firing: bool = False
         # Input platform — "pc", "mobile", "controller" — set by client after connect.
         self.platform: str = "bot" if is_bot else "pc"
 
@@ -866,6 +872,9 @@ class Player:
             "reloading": self.is_reloading(),
             "reload_progress": round(self.reload_progress(), 3),
             "spread": round(self.spread, 4),
+            "laser_heat": round(self.laser_heat, 3),
+            "laser_overheated": bool(self.laser_overheated),
+            "laser_firing": bool(self.laser_firing),
             "platform": self.platform if not disguised else getattr(self, "disguise_platform", "pc"),
             "avatar": int(getattr(self, "avatar", 0) or 0),
             "rank_tier": int(getattr(self, "rank_tier", 0) or 0),
@@ -1257,6 +1266,94 @@ class GameRoom:
                     except Exception:
                         pass
 
+    async def _apply_laser_beam(self, shooter: Player, dt: float):
+        """Continuous laser beam — applies damage per tick while firing.
+        No recoil/spread; one persistent beam-event broadcast at start, hits
+        per tick produce 'hit' events. Heat ramps up while firing; overheat
+        triggers a forced cooldown."""
+        # Damage per second for laser. cfg["damage"] is per-shot in legacy
+        # mode (9 dmg @ 14 fps ≈ 126 dps); keep a similar feel: 60 dps clean.
+        cfg = weapon_cfg("laser")
+        dps = cfg.get("dps", 60)
+        damage_this_tick = max(1, int(round(dps * dt)))
+        # Heat ramp: 0 → 1 in 3 s of continuous firing, cool: 1 → 0 in 4 s.
+        shooter.laser_heat = min(1.0, shooter.laser_heat + dt / 3.0)
+        # Raycast (no spread)
+        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=shooter.yaw, pitch_override=shooter.pitch)
+        # Emit a continuous beam event so clients can render the beam tracer.
+        # The 'beam' type is throttled to once per ~6 ticks (300ms) to keep
+        # bandwidth down — the client extrapolates between updates.
+        last = getattr(shooter, "_last_beam_emit_ms", 0)
+        now_ms = int(time.time() * 1000)
+        if now_ms - last >= 250:
+            shooter._last_beam_emit_ms = now_ms
+            self.events.append({
+                "type": "beam",
+                "shooter_id": shooter.id,
+                "x": shooter.x, "y": shooter.y, "z": shooter.z,
+                "yaw": shooter.yaw, "pitch": shooter.pitch,
+                "weapon": "laser",
+                "hit_dist": dist,
+            })
+        if not hit or not hit.alive:
+            return
+        if time.time() < hit.invuln_until:
+            return
+        damage = damage_this_tick
+        if body_part == "head":
+            damage = int(round(damage * cfg.get("headshot_mult", 1.5)))
+        hit.hp -= damage
+        hit.last_attacker = shooter.id
+        # Throttle hit events for the beam too — only emit when victim drops a
+        # noticeable chunk OR died (else we'd flood the wire at 20 Hz).
+        emit_hit = (hit.hp <= 0) or ((int(hit.hp) // 10) != ((int(hit.hp) + damage) // 10))
+        if emit_hit:
+            self.events.append({
+                "type": "hit",
+                "shooter_id": shooter.id,
+                "victim_id": hit.id,
+                "hp": max(0, hit.hp),
+                "body_part": body_part,
+                "damage": damage,
+                "headshot": body_part == "head",
+                "weapon": "laser",
+            })
+        if hit.hp <= 0:
+            hit.alive = False
+            hit.hp = 0
+            hit.deaths += 1
+            shooter.kills += 1
+            hit.respawn_at = time.time() + 3.0
+            self.events.append({
+                "type": "kill",
+                "shooter_id": shooter.id,
+                "shooter_name": shooter.username,
+                "shooter_avatar": shooter.avatar,
+                "shooter_rank_tier": shooter.rank_tier,
+                "shooter_rank_name": shooter.rank_name,
+                "shooter_rank_points": shooter.rank_points,
+                "shooter_peak_rank_tier": getattr(shooter, "peak_rank_tier", shooter.rank_tier),
+                "shooter_banner_icon": getattr(shooter, "banner_icon", 0),
+                "shooter_banner_color": getattr(shooter, "banner_color", 0),
+                "shooter_banner_animated": getattr(shooter, "banner_animated", False),
+                "shooter_level": getattr(shooter, "level", 1),
+                "shooter_is_bot": shooter.is_bot,
+                "victim_id": hit.id,
+                "victim_name": hit.username,
+                "weapon": "laser",
+                "headshot": body_part == "head",
+            })
+            if not shooter.is_bot and shooter.user_id:
+                try:
+                    await db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}})
+                except Exception:
+                    pass
+            if not hit.is_bot and hit.user_id:
+                try:
+                    await db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}})
+                except Exception:
+                    pass
+
     async def handle_message(self, player: Player, msg: dict):
         # Spectators are read-only — ignore all gameplay messages.
         if getattr(player, "is_spectator", False):
@@ -1287,11 +1384,19 @@ class GameRoom:
             player.pitch = max(-1.5, min(1.5, pitch))
             if "ads" in msg:
                 player.is_ads = bool(msg["ads"])
+            if "laser_firing" in msg:
+                # Stop the beam server-side if the client lets go; tick() handles
+                # the per-tick damage + heat ramp when firing == True.
+                player.laser_firing = bool(msg["laser_firing"]) and player.weapon == "laser" and not player.laser_overheated
         elif mtype == "shoot":
             now_ms = int(time.time() * 1000)
             if not player.alive:
                 return
             weapon = msg.get("weapon", "ak47")
+            # Laser is continuous-fire — discrete shoot messages are ignored
+            # (client sends 'laser_firing' on input instead).
+            if weapon == "laser":
+                return
             cfg = weapon_cfg(weapon)
             cooldown = cfg["cooldown_ms"]
             if now_ms - player.last_shot_ms < cooldown:
@@ -1492,6 +1597,20 @@ class GameRoom:
                 if p.spread < cfg["spread_base"]:
                     p.spread = cfg["spread_base"]
                 p.finish_reload_if_due()
+            # Laser beam tick — apply continuous damage + heat ramp, or cool off.
+            if p.alive and not p.is_bot:
+                if p.laser_firing and p.weapon == "laser" and not p.laser_overheated:
+                    await self._apply_laser_beam(p, dt)
+                    if p.laser_heat >= 1.0:
+                        # Forced overheat — must fully cool down before firing again.
+                        p.laser_firing = False
+                        p.laser_overheated = True
+                        self.events.append({"type": "overheat", "shooter_id": p.id})
+                else:
+                    # Cool down (1.0 → 0 over 4 s while not firing).
+                    p.laser_heat = max(0.0, p.laser_heat - dt / 4.0)
+                    if p.laser_overheated and p.laser_heat <= 0.0:
+                        p.laser_overheated = False
 
         # Bot AI (still runs during queue, just for atmosphere)
         await self._update_bots(dt)

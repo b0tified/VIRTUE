@@ -66,6 +66,10 @@ export class GameEngine {
     // flash + gunshot SFX while reloading or empty.
     this.localAmmo = { ak47: 25, laser: 60 };
     this.localReloading = false;
+    this.localLaserHeat = 0;
+    this.localLaserOverheated = false;
+    this._laserFireHeld = false;
+    this._remoteBeams = new Map(); // shooterId -> {ts, x,y,z,yaw,pitch,hitDist}
     // Jump / vertical physics
     this.vy = 0;
     this.onGround = true;
@@ -213,8 +217,14 @@ export class GameEngine {
       this.pendingMeleeAim = { yaw: aimYaw, pitch: aimPitch };
       return;
     }
+    if (this.currentWeapon === "tertiary") {
+      // Laser is continuous fire — begin the beam (gated server-side by
+      // overheat). The mouse-up handler clears _laserFireHeld.
+      this._laserFireHeld = true;
+      return;
+    }
     if (this.localReloading) return;
-    const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+    const w = "ak47";
     if ((this.localAmmo[w] ?? 0) <= 0) {
       // Empty — kick off a reload locally and tell the server.
       this.localReloading = true;
@@ -246,6 +256,7 @@ export class GameEngine {
 
   _onMouseUp(e) {
     if (e.button === 2) this.setADS(false);
+    if (e.button === 0) this._laserFireHeld = false; // stop continuous beam
   }
 
   _onContextMenu(e) {
@@ -954,6 +965,10 @@ export class GameEngine {
 
   setWeapon(name) {
     if (name !== "primary" && name !== "secondary" && name !== "tertiary") return;
+    // Stop the laser beam if we switch away from tertiary.
+    if (this.currentWeapon === "tertiary" && name !== "tertiary") {
+      this._laserFireHeld = false;
+    }
     this.currentWeapon = name;
     if (this._primaryGroup) this._primaryGroup.visible = name === "primary";
     if (this._secondaryGroup) this._secondaryGroup.visible = name === "secondary";
@@ -1196,6 +1211,9 @@ export class GameEngine {
             this.localAmmo[w] = p.ammo;
           }
           this.localReloading = !!p.reloading;
+          // Laser beam state (heat % + overheat lockout).
+          this.localLaserHeat = Number.isFinite(p.laser_heat) ? p.laser_heat : (this.localLaserHeat || 0);
+          this.localLaserOverheated = !!p.laser_overheated;
           continue;
         }
         let entry = this.players.get(p.id);
@@ -1238,7 +1256,23 @@ export class GameEngine {
         }
       }
       for (const ev of msg.events || []) {
-        if (ev.type === "shot") {
+        } else if (ev.type === "beam") {
+          // Continuous laser beam — server emits ~4/sec while a player fires
+          // so other clients can render the beam from them. The local
+          // shooter's beam is rendered every frame from current camera yaw.
+          if (ev.shooter_id !== this.youId) {
+            this._remoteBeams.set(ev.shooter_id, {
+              ts: performance.now(),
+              x: ev.x, y: ev.y, z: ev.z,
+              yaw: ev.yaw, pitch: ev.pitch,
+              hitDist: ev.hit_dist ?? 80,
+            });
+          }
+        } else if (ev.type === "overheat") {
+          if (ev.shooter_id === this.youId) {
+            this.onLocalUpdate?.({ type: "laser-overheat" });
+          }
+        } else if (ev.type === "shot") {
           this._spawnTracer(ev);
           if (ev.shooter_id !== this.youId) {
             const dist = Math.hypot(ev.x - this.position.x, ev.z - this.position.z);
@@ -1779,6 +1813,10 @@ export class GameEngine {
       meleeYaw: meleeAim.yaw,
       meleePitch: meleeAim.pitch,
       ads: !!this.ads,
+      // Laser beam — continuous-fire request flag. Server applies damage
+      // per-tick while true (subject to overheat). Only meaningful when the
+      // tertiary (laser) weapon is selected.
+      laser_firing: this.currentWeapon === "tertiary" && !!this._laserFireHeld,
     };
   }
 }
