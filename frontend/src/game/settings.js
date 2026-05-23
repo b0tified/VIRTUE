@@ -28,6 +28,10 @@ const DEFAULTS = Object.freeze({
   hudScale: 1.0,            // 0.75 - 1.25
   showDamageNumbers: true,  // floating damage numbers on hits
   showKillFeed: true,       // top-right kill feed
+  // Network — server region. Currently cosmetic (single-region deployment),
+  // but persists the user's choice so we can route matchmaking to the
+  // chosen region once additional gameservers come online.
+  serverRegion: "auto",     // "auto" | "na-east" | "na-west" | "eu" | "sa" | "asia" | "oce"
   // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
   keybinds: {
     forward: "KeyW",

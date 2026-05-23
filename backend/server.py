@@ -328,7 +328,7 @@ async def on_startup():
     # players (no BOT badge, no -bot platform). Pick a stable random set.
     for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
         game_room.spawn_bot(name, disguised=True, difficulty=1.1)
-    ranked_room.spawn_bot(BOT_NAMES[0] + "-R", difficulty=1.4)
+    ranked_room.spawn_bot(BOT_NAMES[0] + "-R", disguised=True, difficulty=1.4)
     # Practice room: 2 docile dummy bots that don't shoot back (max_hp low).
     for name in ["DUMMY-A", "DUMMY-B"]:
         b = practice_room.spawn_bot(name)
@@ -908,6 +908,34 @@ class Player:
             "banner_animated": bool(getattr(self, "banner_animated", False)),
         }
 
+    def shooter_payload(self) -> dict:
+        """Fields embedded in `kill` events for the killer's PlayerCard. Hides
+        bot identity when disguised (no BOT badge after killing a player)."""
+        disguised = bool(getattr(self, "disguised", False)) and self.is_bot
+        return {
+            "shooter_id": self.id,
+            "shooter_name": self.username,
+            "shooter_avatar": int(getattr(self, "avatar", 0) or 0),
+            "shooter_rank_tier": int(getattr(self, "rank_tier", 0) or 0),
+            "shooter_rank_name": (
+                getattr(self, "rank_name", "BRONZE")
+                if not disguised
+                else getattr(self, "disguise_rank_name", "BRONZE")
+            ),
+            "shooter_rank_points": (
+                int(getattr(self, "rank_points", 0) or 0)
+                if not disguised
+                else int(getattr(self, "disguise_rank_points", 0) or 0)
+            ),
+            "shooter_peak_rank_tier": int(getattr(self, "peak_rank_tier", getattr(self, "rank_tier", 0)) or 0),
+            "shooter_banner_icon": int(getattr(self, "banner_icon", 0) or 0),
+            "shooter_banner_color": int(getattr(self, "banner_color", 0) or 0),
+            "shooter_banner_animated": bool(getattr(self, "banner_animated", False)),
+            "shooter_level": int(getattr(self, "level", 1) or 1),
+            # Disguised bots report as human in the kill banner.
+            "shooter_is_bot": False if disguised else bool(self.is_bot),
+        }
+
 
 class GameRoom:
     def __init__(self, is_ranked: bool = False, match_duration: float = 300.0):
@@ -1171,18 +1199,7 @@ class GameRoom:
                 best.respawn_at = time.time() + 3.0
                 self.events.append({
                     "type": "kill",
-                    "shooter_id": attacker.id,
-                    "shooter_name": attacker.username,
-                    "shooter_avatar": attacker.avatar,
-                    "shooter_rank_tier": attacker.rank_tier,
-                    "shooter_rank_name": attacker.rank_name,
-                    "shooter_rank_points": attacker.rank_points,
-                    "shooter_peak_rank_tier": getattr(attacker, "peak_rank_tier", attacker.rank_tier),
-                    "shooter_banner_icon": getattr(attacker, "banner_icon", 0),
-                    "shooter_banner_color": getattr(attacker, "banner_color", 0),
-                    "shooter_banner_animated": getattr(attacker, "banner_animated", False),
-                    "shooter_level": getattr(attacker, "level", 1),
-                    "shooter_is_bot": attacker.is_bot,
+                    **attacker.shooter_payload(),
                     "victim_id": best.id,
                     "victim_name": best.username,
                     "melee": True,
@@ -1259,18 +1276,7 @@ class GameRoom:
                 hit.respawn_at = time.time() + 3.0
                 self.events.append({
                     "type": "kill",
-                    "shooter_id": shooter.id,
-                    "shooter_name": shooter.username,
-                    "shooter_avatar": shooter.avatar,
-                    "shooter_rank_tier": shooter.rank_tier,
-                    "shooter_rank_name": shooter.rank_name,
-                    "shooter_rank_points": shooter.rank_points,
-                    "shooter_peak_rank_tier": getattr(shooter, "peak_rank_tier", shooter.rank_tier),
-                    "shooter_banner_icon": getattr(shooter, "banner_icon", 0),
-                    "shooter_banner_color": getattr(shooter, "banner_color", 0),
-                    "shooter_banner_animated": getattr(shooter, "banner_animated", False),
-                    "shooter_level": getattr(shooter, "level", 1),
-                    "shooter_is_bot": shooter.is_bot,
+                    **shooter.shooter_payload(),
                     "victim_id": hit.id,
                     "victim_name": hit.username,
                     "weapon": getattr(shooter, "weapon", "ak47"),
@@ -1341,18 +1347,7 @@ class GameRoom:
             hit.respawn_at = time.time() + 3.0
             self.events.append({
                 "type": "kill",
-                "shooter_id": shooter.id,
-                "shooter_name": shooter.username,
-                "shooter_avatar": shooter.avatar,
-                "shooter_rank_tier": shooter.rank_tier,
-                "shooter_rank_name": shooter.rank_name,
-                "shooter_rank_points": shooter.rank_points,
-                "shooter_peak_rank_tier": getattr(shooter, "peak_rank_tier", shooter.rank_tier),
-                "shooter_banner_icon": getattr(shooter, "banner_icon", 0),
-                "shooter_banner_color": getattr(shooter, "banner_color", 0),
-                "shooter_banner_animated": getattr(shooter, "banner_animated", False),
-                "shooter_level": getattr(shooter, "level", 1),
-                "shooter_is_bot": shooter.is_bot,
+                **shooter.shooter_payload(),
                 "victim_id": hit.id,
                 "victim_name": hit.username,
                 "weapon": "laser",
@@ -1874,11 +1869,16 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
     room = GameRoom(is_ranked=True, match_duration=120.0)
     room.is_ranked_bot = True
     bot_count = ranked_bot_count_for_tier(tier_idx)
-    # Ranked bot difficulty scales with tier: 1.3 (Bronze) → 2.2 (Grandmaster).
-    # Goonmaster never bot-fills so it's not handled here.
-    ranked_difficulty = 1.3 + min(6, tier_idx) * 0.15
+    # Ranked bot difficulty scales aggressively with the player's tier so the
+    # ladder actually feels harder as you climb: Bronze 1.4 → Grandmaster 2.6.
+    # (Higher diff = faster reactions, better aim, more accurate fire — see
+    # the bot tick in GameRoom.tick().)
+    ranked_difficulty = 1.4 + min(6, tier_idx) * 0.2
     for name in BOT_NAMES[:bot_count]:
-        room.spawn_bot(f"{name}-RB", difficulty=ranked_difficulty)
+        # `disguised=True` makes ranked bots appear as real players in the
+        # scoreboard, kill-feed, and the death overlay's "killed by" card — no
+        # BOT badge after they kill you. They keep their bot AI internally.
+        room.spawn_bot(f"{name}-RB", disguised=True, difficulty=ranked_difficulty)
     RANKED_BOT_ROOMS[user_id] = room
     RANKED_BOT_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
     logger.info("Ranked-bot room spawned for user=%s tier=%d bots=%d", user_id, tier_idx, bot_count)
