@@ -19,6 +19,22 @@ const TABS = [
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
+// Format a unix timestamp (seconds) as a short relative-time string.
+// Used to show "LAST SEEN 5m AGO" / "2H AGO" / "3D AGO" / "JUST NOW" on offline friends.
+function formatRelativeTime(unixSeconds) {
+  if (!unixSeconds) return "OFFLINE";
+  const diff = Math.max(0, Date.now() / 1000 - unixSeconds);
+  if (diff < 45) return "JUST NOW";
+  if (diff < 90) return "1M AGO";
+  if (diff < 3600) return `${Math.round(diff / 60)}M AGO`;
+  if (diff < 5400) return "1H AGO";
+  if (diff < 86400) return `${Math.round(diff / 3600)}H AGO`;
+  if (diff < 86400 * 2) return "1D AGO";
+  if (diff < 86400 * 7) return `${Math.round(diff / 86400)}D AGO`;
+  if (diff < 86400 * 30) return `${Math.round(diff / (86400 * 7))}W AGO`;
+  return "LONG AGO";
+}
+
 export default function FriendsModal({ open, onClose }) {
   const [tab, setTab] = useState("friends");
   const [data, setData] = useState({ friends: [], incoming: [], outgoing: [], blocked: [] });
@@ -165,7 +181,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
           </span>
           <span className="text-[10px] font-anton uppercase tracking-widest text-neutral-500">{u.rank_points} RP</span>
           <span className={`text-[10px] font-anton uppercase tracking-widest ${u.online ? "text-[#06A35F]" : "text-neutral-400"}`}>
-            {u.online ? "● ONLINE" : "OFFLINE"}
+            {u.online ? "● ONLINE" : (u.last_seen_at ? `LAST SEEN ${formatRelativeTime(u.last_seen_at)}` : "OFFLINE")}
           </span>
         </div>
       </div>

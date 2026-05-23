@@ -1889,10 +1889,11 @@ class FriendActionIn(BaseModel):
 
 
 def _friend_card(u: dict) -> dict:
-    """Compact public view for friend rows (with online + location status)."""
+    """Compact public view for friend rows (with online + location + last-seen)."""
     pts = int(u.get("rank_points", 0) or 0)
     t_idx, t_name = rank_for_points(pts)
     loc = player_location(str(u["_id"]))
+    last_seen = u.get("last_seen_at")
     return {
         "id": str(u["_id"]),
         "username": u.get("username", ""),
@@ -1903,6 +1904,7 @@ def _friend_card(u: dict) -> dict:
         "online": is_online(str(u["_id"])),
         "in_match": loc is not None and loc.get("kind") in ("casual", "ranked", "party", "offline"),
         "match_kind": loc.get("kind") if loc else None,
+        "last_seen_at": float(last_seen) if last_seen else None,
     }
 
 
@@ -1913,8 +1915,12 @@ async def _find_user_by_username(username: str) -> Optional[dict]:
 @api.post("/presence/heartbeat")
 async def presence_heartbeat(user: dict = Depends(get_current_user)):
     """Lobby clients ping this every ~20s so they show as online to friends.
+    Also stamps `last_seen_at` in the user doc so offline friends can show a
+    'last seen N min ago' label.
     Returns the current online state for the caller (sanity)."""
-    PRESENCE_HEARTBEAT[str(user["_id"])] = time.time()
+    uid = str(user["_id"])
+    PRESENCE_HEARTBEAT[uid] = time.time()
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
     return {"online": True, "ttl": HEARTBEAT_TTL}
 
 
@@ -2426,6 +2432,12 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
     await websocket.accept()
     u_id_str = str(user["_id"])
     ONLINE_USERS[u_id_str] = ONLINE_USERS.get(u_id_str, 0) + 1
+    # Stamp last_seen on connect — also covered on disconnect below — so the
+    # friends-list "last seen N min ago" stays accurate without heartbeat.
+    try:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
+    except Exception:
+        pass
     player = Player(websocket, user=user, is_bot=False)
     if mode == "spectate":
         player.is_spectator = True
@@ -2453,6 +2465,11 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         ONLINE_USERS[u_id_str] = max(0, ONLINE_USERS.get(u_id_str, 1) - 1)
         if ONLINE_USERS.get(u_id_str, 0) == 0:
             ONLINE_USERS.pop(u_id_str, None)
+        # Stamp last_seen on disconnect so "last seen" timer starts from now.
+        try:
+            await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
+        except Exception:
+            pass
         if mode == "offline":
             await cleanup_offline_room_if_empty(str(user["_id"]))
         elif mode == "party" and party_id:
