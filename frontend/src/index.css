@@ -234,3 +234,114 @@ canvas { outline: none; display: block; }
   transform: translate(-50%, -50%);
   border-radius: 50%;
 }
+
+/* =============================================================
+   Lobby animated background
+   ============================================================= */
+.lobby-bg-zoom {
+  animation: lobby-zoom 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes lobby-zoom {
+  0%   { transform: scale(1.0)  translate3d(0, 0, 0); }
+  100% { transform: scale(1.12) translate3d(-2%, 1%, 0); }
+}
+
+/* Halftone dot field — drifts diagonally */
+.lobby-bg-halftone {
+  background-image:
+    radial-gradient(rgba(255, 215, 0, 0.18) 1.5px, transparent 1.5px),
+    radial-gradient(rgba(230, 36, 41, 0.12) 1.5px, transparent 1.5px);
+  background-size: 22px 22px, 36px 36px;
+  background-position: 0 0, 11px 11px;
+  animation: lobby-halftone-drift 18s linear infinite;
+  mix-blend-mode: screen;
+  opacity: 0.55;
+  will-change: background-position;
+}
+@keyframes lobby-halftone-drift {
+  0%   { background-position: 0 0, 11px 11px; }
+  100% { background-position: 44px 44px, 55px 55px; }
+}
+
+/* Diagonal speed-line streaks (subtle) */
+.lobby-bg-streaks {
+  background-image: repeating-linear-gradient(
+    115deg,
+    transparent 0,
+    transparent 60px,
+    rgba(255, 255, 255, 0.04) 60px,
+    rgba(255, 255, 255, 0.04) 62px,
+    transparent 62px,
+    transparent 140px,
+    rgba(255, 215, 0, 0.05) 140px,
+    rgba(255, 215, 0, 0.05) 143px,
+    transparent 143px,
+    transparent 240px
+  );
+  animation: lobby-streaks-slide 16s linear infinite;
+  opacity: 0.7;
+  will-change: background-position;
+}
+@keyframes lobby-streaks-slide {
+  0%   { background-position: 0 0; }
+  100% { background-position: 480px -240px; }
+}
+
+/* Floating comic onomatopoeia words */
+.lobby-bg-word {
+  position: absolute;
+  font-family: "Bangers", "Anton", "Impact", sans-serif;
+  font-size: clamp(48px, 8vw, 110px);
+  letter-spacing: 0.04em;
+  -webkit-text-stroke: 2px #0a0a0a;
+  text-shadow: 4px 4px 0 rgba(0, 0, 0, 0.85);
+  opacity: 0.45;
+  transform-origin: center;
+  animation: lobby-word-float 9s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.lobby-bg-word.word-red    { color: #E62429; animation-duration: 8.5s; }
+.lobby-bg-word.word-blue   { color: #0055FF; animation-duration: 10.2s; animation-delay: -1.6s; }
+.lobby-bg-word.word-gold   { color: #FFD700; animation-duration: 9.4s;  animation-delay: -2.8s; }
+.lobby-bg-word.word-purple { color: #9B59B6; animation-duration: 11s;   animation-delay: -3.4s; }
+.lobby-bg-word.word-green  { color: #06A35F; animation-duration: 12.5s; animation-delay: -4.7s; }
+@keyframes lobby-word-float {
+  0%   { transform: translate3d(0, 0, 0)     rotate(-6deg) scale(1.0); opacity: 0.35; }
+  40%  { transform: translate3d(8px, -14px, 0) rotate(-3deg) scale(1.08); opacity: 0.55; }
+  70%  { transform: translate3d(-6px, 10px, 0) rotate(-9deg) scale(0.95); opacity: 0.45; }
+  100% { transform: translate3d(0, 0, 0)     rotate(-6deg) scale(1.0); opacity: 0.35; }
+}
+
+/* Drifting color blobs (glowing comic spots) */
+.lobby-bg-blob {
+  position: absolute;
+  width: 320px; height: 320px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+  animation: lobby-blob-drift 18s ease-in-out infinite;
+  will-change: transform;
+}
+.lobby-bg-blob.blob-red  { background: #E62429; animation-duration: 17s; }
+.lobby-bg-blob.blob-blue { background: #0055FF; animation-duration: 22s; animation-delay: -6s; }
+.lobby-bg-blob.blob-gold { background: #FFD700; animation-duration: 25s; animation-delay: -11s; opacity: 0.25; }
+@keyframes lobby-blob-drift {
+  0%   { transform: translate3d(0, 0, 0)        scale(1.0); }
+  33%  { transform: translate3d(60px, -40px, 0) scale(1.15); }
+  66%  { transform: translate3d(-50px, 50px, 0) scale(0.9); }
+  100% { transform: translate3d(0, 0, 0)        scale(1.0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby-bg-zoom,
+  .lobby-bg-halftone,
+  .lobby-bg-streaks,
+  .lobby-bg-word,
+  .lobby-bg-blob { animation: none !important; }
+}
+

@@ -8,6 +8,7 @@ import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
+import LobbyBackground from "@/components/LobbyBackground";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
 
@@ -219,12 +220,7 @@ export default function Lobby() {
 
   return (
     <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
-      <div
-        className="absolute inset-0 bg-cover bg-center opacity-80"
-        style={{ backgroundImage: `url(${LOBBY_BG})` }}
-        aria-hidden
-      />
-      <div className="absolute inset-0 bg-black/40" />
+      <LobbyBackground imageUrl={LOBBY_BG} />
 
       <header className="relative z-10 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-3 md:py-5">
         <div className="font-display text-2xl sm:text-3xl md:text-4xl text-[#FFD700] text-pow-shadow">
