@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
@@ -7,6 +7,7 @@ import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Set
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
+import PartyPanel from "@/components/PartyPanel";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
 
@@ -129,13 +130,19 @@ export default function Lobby() {
 
   // Party invite polling — refresh every 5s while the lobby is open.
   const [partyInvites, setPartyInvites] = useState([]);
+  const [party, setParty] = useState(null);
+  const refreshParty = useCallback(async () => {
+    try {
+      const { data } = await api.get("/party/me");
+      setParty(data.party_id ? data : null);
+    } catch { setParty(null); }
+  }, []);
   useEffect(() => {
     let alive = true;
-    const fetchInvites = async () => {
+    const fetchAll = async () => {
       try {
         const { data } = await api.get("/party/invites");
         if (alive) {
-          // Detect newly-arrived invites and ding the match-found cue.
           setPartyInvites((prev) => {
             const newOnes = data.filter((d) => !prev.some((p) => p.party_id === d.party_id));
             if (newOnes.length > 0) {
@@ -145,17 +152,18 @@ export default function Lobby() {
           });
         }
       } catch {}
+      refreshParty();
     };
-    fetchInvites();
-    const id = setInterval(fetchInvites, 5000);
+    fetchAll();
+    const id = setInterval(fetchAll, 5000);
     return () => { alive = false; clearInterval(id); };
-  }, []);
+  }, [refreshParty]);
 
   const acceptInvite = async (invite) => {
     try {
-      const { data } = await api.post("/party/accept", { username: invite.from_username });
+      await api.post("/party/accept", { username: invite.from_username });
       setPartyInvites((p) => p.filter((i) => i.party_id !== invite.party_id));
-      nav(`/play?mode=party&party_id=${data.party_id}`);
+      await refreshParty();
     } catch (e) {
       alert(e.response?.data?.detail || e.message);
     }
@@ -280,9 +288,12 @@ export default function Lobby() {
           </div>
 
           <div className="mt-2 sm:mt-8 space-y-1.5 sm:space-y-4 max-w-md">
+            {party && (
+              <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
+            )}
             <button
               onClick={quickQueueSec !== null ? undefined : startQuickQueue}
-              disabled={quickQueueSec !== null}
+              disabled={quickQueueSec !== null || (party && party.leader_id !== user?.id)}
               className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
             >

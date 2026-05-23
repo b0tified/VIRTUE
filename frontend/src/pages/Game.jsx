@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GameEngine } from "@/game/engine";
 import { GameSocket } from "@/game/network";
@@ -16,9 +16,12 @@ export default function Game() {
   const { user, accessToken } = useAuth();
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
-  const rawMode = searchParams.get("mode");
+  const { username: spectateTarget } = useParams();
+  const rawMode = spectateTarget ? "spectate" : searchParams.get("mode");
   const partyId = searchParams.get("party_id") || null;
-  const mode = rawMode === "ranked"
+  const mode = spectateTarget
+    ? "spectate"
+    : rawMode === "ranked"
     ? "ranked"
     : rawMode === "practice"
     ? "practice"
@@ -27,6 +30,7 @@ export default function Game() {
     : rawMode === "party" && partyId
     ? "party"
     : "casual";
+  const isSpectator = mode === "spectate";
 
   const [hud, setHud] = useState({
     hp: 100,
@@ -196,11 +200,21 @@ export default function Game() {
       },
     });
     sockRef.current = sock;
-    sock.connect(accessToken, mode, mode === "party" && partyId ? { party_id: partyId } : null);
+    sock.connect(
+      accessToken,
+      mode,
+      mode === "party" && partyId
+        ? { party_id: partyId }
+        : mode === "spectate" && spectateTarget
+        ? { target: spectateTarget }
+        : null
+    );
 
     // Network send loop @ 20Hz
     const intervalId = setInterval(() => {
       if (!engineRef.current) return;
+      // Spectators don't send any input — server ignores it anyway.
+      if (engineRef.current.isSpectator) return;
       const snap = engineRef.current.snapshot();
       sock.send({
         type: "input",
@@ -320,9 +334,15 @@ export default function Game() {
         onClick={() => {
           // Replaces the removed click-to-play overlay: clicking anywhere
           // on the canvas locks the pointer (must be a real user gesture).
-          if (!pointerLocked) handleStart();
+          // Spectators don't need pointer lock — they just watch.
+          if (!pointerLocked && !isSpectator) handleStart();
         }}
       />
+      {isSpectator && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 bg-[#FFD700] text-black border-pow shadow-pow-sm px-4 py-1 font-anton uppercase tracking-widest text-sm" data-testid="spectate-banner">
+          SPECTATING · {spectateTarget}
+        </div>
+      )}
       {pointerLockBlocked && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 max-w-md px-4">
           <div className="card-pow p-0 overflow-hidden">

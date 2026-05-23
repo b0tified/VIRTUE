@@ -46,6 +46,7 @@ export default function App() {
           <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
           <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
           <Route path="/play" element={<ProtectedRoute><Game /></ProtectedRoute>} />
+          <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
           <Route path="/auth/callback" element={<AuthCallback />} />

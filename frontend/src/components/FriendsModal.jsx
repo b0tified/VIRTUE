@@ -4,7 +4,7 @@
 // Each row uses the Avatar component + per-action buttons.
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye } from "lucide-react";
+import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye, User } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
 import PublicProfileModal from "@/components/PublicProfileModal";
@@ -187,14 +187,15 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
         )}
         {mode === "friend" && (
           <>
-            {u.online && (
+            {u.online && !u.in_match && (
               <button
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true);
                   try {
-                    const { data } = await api.post("/party/invite", { username: u.username });
-                    nav(`/play?mode=party&party_id=${data.party_id}`);
+                    await api.post("/party/invite", { username: u.username });
+                    alert(`Party invite sent to ${u.username}`);
+                    await onChange();
                   } catch (e) {
                     alert(e.response?.data?.detail || e.message);
                   } finally { setBusy(false); }
@@ -206,13 +207,23 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
                 <span className="flex items-center gap-1"><Send size={14} strokeWidth={3} /> INVITE</span>
               </button>
             )}
+            {u.online && u.in_match && (
+              <button
+                onClick={() => nav(`/spectate/${encodeURIComponent(u.username)}`)}
+                className="btn-pow bg-[#FFD700] text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
+                data-testid={`friend-spectate-${idx}`}
+                title="Spectate match"
+              >
+                <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /> SPECTATE</span>
+              </button>
+            )}
             <button
               onClick={() => onInspect?.(u.username)}
               className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
               data-testid={`friend-inspect-${idx}`}
               title="View profile"
             >
-              <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /></span>
+              <span className="flex items-center gap-1"><User size={14} strokeWidth={3} /></span>
             </button>
             <button disabled={busy} onClick={() => act(`DELETE /friends/${u.username}`)} className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`friend-remove-${idx}`}>
               <span className="flex items-center gap-1"><UserMinus size={14} strokeWidth={3} /></span>

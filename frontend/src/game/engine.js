@@ -942,7 +942,23 @@ export class GameEngine {
       this.position.set(msg.you.x, msg.you.y, msg.you.z);
       this.yaw = msg.you.yaw;
       this.pitch = msg.you.pitch;
+      this.isSpectator = !!msg.spectator;
+      this.spectateTargetId = msg.spectate_target_id || null;
       return;
+    }
+    if (msg.type === "state" && this.isSpectator && this.spectateTargetId) {
+      // Lock camera to follow the spectate target (3rd-person above their head).
+      const t = msg.players.find((p) => p.id === this.spectateTargetId);
+      if (t) {
+        // Offset camera ~4m behind & ~2m above target's head.
+        const cp = Math.cos(t.pitch || 0);
+        const back = new THREE.Vector3(Math.sin(t.yaw) * cp, 0, Math.cos(t.yaw) * cp);
+        back.multiplyScalar(4);
+        this.position.set(t.x + back.x, t.y + 2.0, t.z + back.z);
+        // Look toward target's eyes.
+        this.yaw = t.yaw;
+        this.pitch = t.pitch - 0.25;
+      }
     }
     if (msg.type === "leave") {
       const e = this.players.get(msg.id);
