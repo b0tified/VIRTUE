@@ -61,6 +61,11 @@ export class GameEngine {
     this.locked = false;
     this.pendingShoot = false;
     this.recoil = 0;
+    // Local ammo/reload mirror (updated from server state).
+    // Used to gate client-side fire prediction so we don't play a muzzle
+    // flash + gunshot SFX while reloading or empty.
+    this.localAmmo = { ak47: 25, laser: 60 };
+    this.localReloading = false;
     // Jump / vertical physics
     this.vy = 0;
     this.onGround = true;
@@ -177,6 +182,7 @@ export class GameEngine {
     else if (e.code === _bind("weapon2", "Digit2")) this.setWeapon("secondary");
     else if (e.code === _bind("weapon3", "Digit3")) this.setWeapon("tertiary");
     else if (e.code === _bind("reload", "KeyR")) {
+      this.localReloading = true;
       this.onLocalUpdate?.({ type: "reload-pressed" });
     } else if (e.code === _bind("melee", "KeyV") && this.alive && this.locked) {
       this.pendingMelee = true;
@@ -188,6 +194,46 @@ export class GameEngine {
     void order;
   }
   _onKeyUp(e) { this.keys.delete(e.code); }
+
+  // True iff a ranged shot is currently allowed (alive + not reloading + has ammo).
+  // Katana (secondary) is never gated by ammo/reload.
+  _canFireRanged() {
+    if (!this.alive) return false;
+    if (this.currentWeapon === "secondary") return true;
+    if (this.localReloading) return false;
+    const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+    return (this.localAmmo[w] ?? 0) > 0;
+  }
+
+  // Try to trigger a shot; if empty, auto-request a reload from the network layer.
+  _tryShoot(aimYaw, aimPitch) {
+    if (this.currentWeapon === "secondary") {
+      // melee path
+      this.pendingMelee = true;
+      this.pendingMeleeAim = { yaw: aimYaw, pitch: aimPitch };
+      return;
+    }
+    if (this.localReloading) return;
+    const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+    if ((this.localAmmo[w] ?? 0) <= 0) {
+      // Empty — kick off a reload locally and tell the server.
+      this.localReloading = true;
+      this.onLocalUpdate?.({ type: "reload-pressed" });
+      return;
+    }
+    this.pendingShoot = true;
+    this.pendingShootAim = { yaw: aimYaw, pitch: aimPitch };
+    // Optimistically decrement local ammo so back-to-back clicks within one
+    // 20Hz tick still see an updated value. Server is authoritative.
+    this.localAmmo[w] = Math.max(0, (this.localAmmo[w] ?? 0) - 1);
+    if (this.localAmmo[w] === 0) {
+      // Auto-trigger reload after the last bullet — server will confirm.
+      this.localReloading = true;
+      // Defer the reload-pressed event so the shot fires first.
+      setTimeout(() => this.onLocalUpdate?.({ type: "reload-pressed" }), 40);
+    }
+  }
+
   _onMouseDown(e) {
     if (!this.locked || !this.alive) return;
     if (e.button === 2) {
@@ -195,16 +241,7 @@ export class GameEngine {
       if (this.currentWeapon !== "secondary") this.setADS(true);
       return;
     }
-    if (this.currentWeapon === "secondary") {
-      this.pendingMelee = true;
-      this.pendingMeleeAim = { yaw: this.yaw, pitch: this.pitch };
-    } else {
-      this.pendingShoot = true;
-      // Snapshot the EXACT yaw/pitch at the moment of click so the server
-      // hit-scan uses where the crosshair actually pointed when the player
-      // clicked — not where it has rotated to by the next 20Hz input tick.
-      this.pendingShootAim = { yaw: this.yaw, pitch: this.pitch };
-    }
+    this._tryShoot(this.yaw, this.pitch);
   }
 
   _onMouseUp(e) {
@@ -601,8 +638,8 @@ export class GameEngine {
     ];
     driveways.forEach(([x1, z1, x2, z2]) => buildDrive(x1, z1, x2, z2));
 
-    // ===== Extra decorative buildings (non-collidable, visual only) =====
-    // Place safely away from existing obstacles
+    // ===== Extra perimeter / corner buildings — now collidable (server has
+    // matching entries in ARENA.obstacles so bots & shot raycasts agree). =====
     const extras = [
       { x: 42, z: 42, w: 5, h: 6, d: 5, color: 0xc94a4f },
       { x: -42, z: 42, w: 5, h: 7, d: 5, color: 0x386bbf },
@@ -617,9 +654,10 @@ export class GameEngine {
       { x: -38, z: 12, w: 6, h: 4, d: 3, color: 0xc94a4f },
       { x: -38, z: -12, w: 6, h: 6, d: 3, color: 0x386bbf },
     ];
-    // Add these as visual-only buildings (skipped in obstacles list → no server sync needed,
-    // and the player can pass through them; positioned outside main play area)
-    extras.forEach((ob) => this._buildBuilding(ob));
+    extras.forEach((ob) => {
+      this._buildBuilding(ob);
+      this.obstacles.push(ob); // ensure client collision matches server
+    });
 
     // Fire hydrants on roads (just decorative)
     [[8, 24], [-8, 24], [8, -24], [-8, -24], [24, 8], [-24, 8]].forEach(([x, z]) => {
@@ -1152,6 +1190,12 @@ export class GameEngine {
         if (p.id === this.youId) {
           this.hp = p.hp;
           this.alive = p.alive;
+          // Mirror ammo + reloading from server so we can gate local fire prediction.
+          if (typeof p.ammo === "number") {
+            const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+            this.localAmmo[w] = p.ammo;
+          }
+          this.localReloading = !!p.reloading;
           continue;
         }
         let entry = this.players.get(p.id);
@@ -1534,17 +1578,11 @@ export class GameEngine {
     const lt = gp.buttons && gp.buttons[adsIdx] ? gp.buttons[adsIdx].value : 0;
     const fireDown = rt > 0.4;
     const adsDown = lt > 0.4;
-    // Fire on rising edge (single-shot) — auto fire for current weapon is
-    // handled by client-side cooldown already.
-    if (fireDown && !this._gpPrev.fire) {
-      this.pendingShoot = true;
-      this.pendingShootAim = { yaw: this.yaw, pitch: this.pitch };
-    }
-    // Repeat fire while held: pulse every ~120ms via _shootCooldown if we want
-    // full-auto. AK-47 server cooldown is 250ms so we just keep flagging.
+    // Fire on rising edge or held (server cooldown gates auto-fire).
     if (fireDown) {
-      this.pendingShoot = true;
-      this.pendingShootAim = { yaw: this.yaw, pitch: this.pitch };
+      if (!this._gpPrev.fire || this._canFireRanged()) {
+        this._tryShoot(this.yaw, this.pitch);
+      }
     }
     this._gpPrev.fire = fireDown;
     this.ads = adsDown;
@@ -1691,7 +1729,14 @@ export class GameEngine {
   }
 
   snapshot() {
-    const shoot = this.pendingShoot;
+    // Final safety gate: if the player started a reload between input pump
+    // and the 20Hz network tick, suppress any queued shoot so we don't play
+    // a phantom muzzle/SFX or send a doomed shoot message.
+    let shoot = this.pendingShoot;
+    if (shoot && this.currentWeapon !== "secondary") {
+      const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+      if (this.localReloading || (this.localAmmo[w] ?? 0) < 0) shoot = false;
+    }
     const melee = this.pendingMelee;
     // Click-time aim — captured at the exact moment the click/press happened
     // so the server hit-scan ray matches what the crosshair was pointing at,

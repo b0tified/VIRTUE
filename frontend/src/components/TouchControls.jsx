@@ -159,8 +159,8 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
   const pressShoot = () => {
     const eng = engineRef.current;
     if (eng) {
-      eng.pendingShoot = true;
-      eng.pendingShootAim = { yaw: eng.yaw, pitch: eng.pitch };
+      // Use the gated path so ammo/reload state is respected on touch too.
+      eng._tryShoot?.(eng.yaw, eng.pitch);
     }
     onShoot?.();
   };
