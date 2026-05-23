@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import InstallButton from "@/components/InstallButton";
 
 const HERO_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/8b081fa1209a187bd002c4c2742fa0fa5a8482ace16352fe59e7f8325721f8f8.png";
 
@@ -68,7 +67,6 @@ export default function Landing() {
             <Link to="/leaderboard" className="btn-pow bg-white text-black" data-testid="cta-leaderboard">
               <span>LEADERBOARD</span>
             </Link>
-            <InstallButton />
           </div>
 
           {/* Stat badges */}

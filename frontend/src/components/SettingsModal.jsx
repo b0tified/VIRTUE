@@ -3,7 +3,6 @@ import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut
 import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
-import InstallButton from "@/components/InstallButton";
 import AdvancedControls from "@/components/AdvancedControls";
 
 const GRAPHICS_OPTIONS = [
@@ -267,11 +266,8 @@ export default function SettingsModal({ open, onClose }) {
             Settings save to this device only.
           </p>
 
-          {/* Install + Logout — at the bottom of the modal */}
+          {/* Logout — at the bottom of the modal */}
           <section className="border-t border-neutral-800 pt-4 space-y-2">
-            <div data-testid="settings-install">
-              <InstallButton variant="primary" className="w-full" />
-            </div>
             <button
               type="button"
               onClick={() => { onClose?.(); logout?.(); }}
