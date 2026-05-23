@@ -385,7 +385,9 @@ export class LocalSim {
       }
     }
     if (bestHit) {
-      const headshot = bestHit.hy > 1.45;
+      // Head region: bullet hits at y > 1.40 (was 1.45) — slightly larger head
+      // hitbox to mirror the server tweak (sphere radius bump 0.45 → 0.55).
+      const headshot = bestHit.hy > 1.40;
       let damage = cfg.damage;
       if (headshot) damage = Math.floor(damage * 1.6);
       bestHit.other.hp -= damage;

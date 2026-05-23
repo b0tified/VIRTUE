@@ -1008,7 +1008,7 @@ class GameRoom:
             # 3-sphere capsule hitbox: head, torso, legs (each with its own label)
             base = p.y - PLAYER_HEIGHT
             spheres = [
-                ("head",  p.x, base + 1.65, p.z, 0.45),
+                ("head",  p.x, base + 1.65, p.z, 0.55),
                 ("torso", p.x, base + 1.05, p.z, 0.65),
                 ("legs",  p.x, base + 0.45, p.z, 0.55),
             ]
