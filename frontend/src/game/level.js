@@ -14,7 +14,10 @@ export function xpFromStats(stats = {}) {
   const k = stats.kills | 0;
   const w = stats.wins | 0;
   const m = stats.matches | 0;
-  return k * XP_PER_KILL + w * XP_PER_WIN + m * XP_PER_MATCH;
+  // Bonus XP granted by redeem codes / promotions. Server stores this in
+  // stats.bonus_xp and surfaces it through the same /profile endpoint.
+  const bonus = stats.bonus_xp | 0;
+  return k * XP_PER_KILL + w * XP_PER_WIN + m * XP_PER_MATCH + bonus;
 }
 
 export function xpRequiredFor(level) {

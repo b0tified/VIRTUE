@@ -114,11 +114,13 @@ def set_auth_cookies(response: Response, access: str, refresh: str, remember: bo
 
 
 def compute_level(stats: dict) -> dict:
-    """XP + level from kills/wins/matches. Mirrors /app/frontend/src/game/level.js."""
+    """XP + level from kills/wins/matches. Mirrors /app/frontend/src/game/level.js.
+    `stats.bonus_xp` is added on top — granted by redeemed promo codes etc."""
     k = int(stats.get("kills", 0) or 0)
     w = int(stats.get("wins", 0) or 0)
     m = int(stats.get("matches", 0) or 0)
-    xp = k * 10 + w * 50 + m * 25
+    bonus = int(stats.get("bonus_xp", 0) or 0)
+    xp = k * 10 + w * 50 + m * 25 + bonus
     level = 1
     accumulated = 0
     while level < 100:
@@ -594,6 +596,71 @@ async def profile_history(user: dict = Depends(get_current_user), limit: int = 1
             "ended_at": ts.isoformat() if isinstance(ts, datetime) else ts,
         })
     return rows
+
+
+# -------------------------------------------------------------------
+# Redeem Codes — promotional codes that grant XP / RP / cosmetics.
+# Each code is one-time-per-user (tracked via user.redeemed_codes).
+# -------------------------------------------------------------------
+class RedeemIn(BaseModel):
+    code: str
+
+# Reward shape: {"xp": int, "rp": int, "banner_color": int, "banner_icon": int,
+#                "banner_animated": bool, "label": "..."}.
+# Codes are case-insensitive; matched against the uppercased value.
+REDEEM_CODES: Dict[str, dict] = {
+    "VIRTUE2026":  {"xp": 500,                       "label": "+500 XP — Launch Bonus"},
+    "BLASTOFF":    {"rp": 75,                        "label": "+75 RP — Welcome Boost"},
+    "COMICFAN":    {"xp": 250,                       "label": "+250 XP — Comic Fan"},
+    "WELCOME":     {"xp": 150,                       "label": "+150 XP — Welcome to Virtue"},
+    "RAINBOW":     {"banner_animated": True,         "label": "Animated Banner Unlock"},
+    "FIRSTBLOOD":  {"xp": 100,                       "label": "+100 XP — First Blood"},
+    "POW":         {"xp": 50,                        "label": "+50 XP — POW!"},
+    "ZAP":         {"xp": 50,                        "label": "+50 XP — ZAP!"},
+    "BOOM":        {"rp": 25,                        "label": "+25 RP — BOOM!"},
+}
+
+
+@api.post("/codes/redeem")
+async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user)):
+    # Normalize: codes are case-insensitive, whitespace-trimmed.
+    code = (payload.code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Enter a code.")
+    reward = REDEEM_CODES.get(code)
+    if not reward:
+        raise HTTPException(status_code=404, detail="Invalid code.")
+    redeemed = list(user.get("redeemed_codes", []) or [])
+    if code in redeemed:
+        raise HTTPException(status_code=409, detail="Code already redeemed.")
+    # Apply the reward atomically. XP goes into stats.bonus_xp; RP into the
+    # ranked-points pool (clamped to 7500 so a code can't shortcut someone
+    # into Goonmaster — that tier is earned only).
+    update_ops: Dict[str, dict] = {"$push": {"redeemed_codes": code}}
+    if reward.get("xp"):
+        update_ops.setdefault("$inc", {})["stats.bonus_xp"] = int(reward["xp"])
+    if reward.get("rp"):
+        cur_pts = int(user.get("rank_points", 0) or 0)
+        rp_grant = min(int(reward["rp"]), max(0, 7500 - cur_pts))
+        if rp_grant > 0:
+            update_ops.setdefault("$inc", {})["rank_points"] = rp_grant
+    sets: Dict[str, object] = {}
+    if reward.get("banner_animated"):
+        sets["banner_animated"] = True
+    if reward.get("banner_color") is not None:
+        sets["banner_color"] = int(reward["banner_color"])
+    if reward.get("banner_icon") is not None:
+        sets["banner_icon"] = int(reward["banner_icon"])
+    if sets:
+        update_ops.setdefault("$set", {}).update(sets)
+    await db.users.update_one({"_id": user["_id"]}, update_ops)
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    return {
+        "ok": True,
+        "reward": reward,
+        "label": reward.get("label", "Reward granted"),
+        "user": public_user(fresh) if fresh else None,
+    }
 
 
 # -------------------------------------------------------------------

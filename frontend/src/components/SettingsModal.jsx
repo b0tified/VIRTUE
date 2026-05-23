@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, User as UserIcon, Globe } from "lucide-react";
+import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, User as UserIcon, Globe, Gift, Check } from "lucide-react";
 import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
 import AdvancedControls from "@/components/AdvancedControls";
+import api from "@/api";
 
 // Matchmaking regions exposed in Account → Server Region. `basePing` seeds a
 // fake-but-stable latency so the list looks alive. Once the gameserver runs
@@ -43,7 +44,11 @@ export default function SettingsModal({ open, onClose }) {
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
   const [tab, setTab] = useState("video");
-  const { logout } = useAuth();
+  const { logout, refreshMe } = useAuth();
+  // Redeem-code form state — `redeemMsg` doubles as both success + error UI.
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeemBusy, setRedeemBusy] = useState(false);
+  const [redeemMsg, setRedeemMsg] = useState(null); // { kind: "ok"|"err", text }
 
   // Per-region pings — each region's basePing ± a small jitter so the list
   // doesn't look statically hard-coded. Recomputed once per modal open.
@@ -533,6 +538,76 @@ export default function SettingsModal({ open, onClose }) {
 
           {tab === "account" && (
           <>
+          {/* Redeem promo code. Codes are one-time per account, validated +
+              applied server-side; success refreshes the auth context so the
+              new XP / RP / cosmetic shows up everywhere (PlayerCard banner,
+              profile level, etc.) without a page reload. */}
+          <section data-testid="settings-redeem-section">
+            <div className="font-anton uppercase tracking-widest text-sm mb-2 flex items-center gap-2">
+              <Gift size={14} strokeWidth={3} /> Redeem Code
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const code = (redeemCode || "").trim();
+                if (!code || redeemBusy) return;
+                setRedeemBusy(true);
+                setRedeemMsg(null);
+                try {
+                  const { data } = await api.post("/codes/redeem", { code });
+                  setRedeemMsg({ kind: "ok", text: data?.label || "Reward granted!" });
+                  setRedeemCode("");
+                  try { await refreshMe?.(); } catch {}
+                } catch (err) {
+                  setRedeemMsg({
+                    kind: "err",
+                    text: err?.response?.data?.detail || "Could not redeem code.",
+                  });
+                } finally {
+                  setRedeemBusy(false);
+                }
+              }}
+              className="flex gap-2"
+              data-testid="settings-redeem-form"
+            >
+              <input
+                type="text"
+                value={redeemCode}
+                onChange={(e) => setRedeemCode(e.target.value.toUpperCase().replace(/\s+/g, ""))}
+                placeholder="ENTER CODE"
+                maxLength={32}
+                className="flex-1 rounded border border-neutral-800 bg-neutral-950 text-white px-3 py-2 font-anton uppercase tracking-widest text-sm focus:border-[#FFD700] focus:outline-none"
+                data-testid="settings-redeem-input"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="submit"
+                disabled={redeemBusy || !redeemCode}
+                className="px-4 py-2 rounded border border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700] font-anton uppercase tracking-widest text-sm disabled:opacity-40 hover:bg-[#FFD700]/25"
+                data-testid="settings-redeem-submit"
+              >
+                {redeemBusy ? "..." : "Redeem"}
+              </button>
+            </form>
+            {redeemMsg && (
+              <div
+                className={`mt-2 text-xs font-anton uppercase tracking-widest flex items-center gap-1.5 ${
+                  redeemMsg.kind === "ok" ? "text-emerald-400" : "text-red-400"
+                }`}
+                data-testid="settings-redeem-msg"
+                data-msg-kind={redeemMsg.kind}
+              >
+                {redeemMsg.kind === "ok" && <Check size={12} strokeWidth={3} />}
+                {redeemMsg.text}
+              </div>
+            )}
+            <p className="text-[10px] text-neutral-500 mt-2">
+              Got a promo code from a livestream or event? Redeem it here for
+              XP, RP, or cosmetic unlocks. One use per account.
+            </p>
+          </section>
+
           {/* Server / region selector. The "ping" values are seeded per-region
               so the list looks alive; in this deployment all regions route to
               the same gameserver. Once additional regions come online the
