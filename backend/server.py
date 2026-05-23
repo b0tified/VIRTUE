@@ -1664,7 +1664,7 @@ class GameRoom:
 
 
 game_room = GameRoom(is_ranked=False, match_duration=300.0)  # 5 minute Quick Match
-ranked_room = GameRoom(is_ranked=True, match_duration=50.0)
+ranked_room = GameRoom(is_ranked=True, match_duration=120.0)  # 2 minute Ranked
 practice_room = GameRoom(is_ranked=False, match_duration=99999.0)  # Practice never ends
 practice_room.is_practice = True
 
@@ -1721,7 +1721,7 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
     room = RANKED_BOT_ROOMS.get(user_id)
     if room is not None:
         return room
-    room = GameRoom(is_ranked=True, match_duration=50.0)
+    room = GameRoom(is_ranked=True, match_duration=120.0)
     room.is_ranked_bot = True
     bot_count = ranked_bot_count_for_tier(tier_idx)
     # Ranked bot difficulty scales with tier: 1.3 (Bronze) → 2.2 (Grandmaster).
