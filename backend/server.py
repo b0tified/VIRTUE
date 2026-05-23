@@ -100,6 +100,8 @@ def public_user(user: dict) -> dict:
         "username": user.get("username", user["email"].split("@")[0]),
         "role": user.get("role", "user"),
         "avatar": int(user.get("avatar", 0) or 0),
+        "banner_icon": int(user.get("banner_icon", 0) or 0),
+        "banner_color": int(user.get("banner_color", 0) or 0),
         "stats": user.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
         "rank_points": points,
         "rank_tier": tier_idx,
@@ -461,6 +463,23 @@ class AvatarIn(BaseModel):
 async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"avatar": payload.avatar}})
     user["avatar"] = payload.avatar
+    return public_user(user)
+
+
+# Banner customization — 8 icons × 8 colors, displayed on the profile card.
+class BannerIn(BaseModel):
+    banner_icon: int = Field(ge=0, le=7)
+    banner_color: int = Field(ge=0, le=7)
+
+
+@api.post("/profile/me/banner")
+async def set_banner(payload: BannerIn, user: dict = Depends(get_current_user)):
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"banner_icon": payload.banner_icon, "banner_color": payload.banner_color}},
+    )
+    user["banner_icon"] = payload.banner_icon
+    user["banner_color"] = payload.banner_color
     return public_user(user)
 
 

@@ -2,9 +2,44 @@ import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/api";
-import { ArrowLeft, Crown, Trophy, Bot, Swords, History, WifiOff } from "lucide-react";
+import {
+  ArrowLeft, Crown, Trophy, Bot, Swords, History, WifiOff,
+  Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
+  Check,
+} from "lucide-react";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+
+// 8 banner icons + 8 banner colors, customizable from the profile.
+const BANNER_ICONS = [
+  { Icon: Trophy,  label: "Trophy" },
+  { Icon: Crown,   label: "Crown" },
+  { Icon: Flame,   label: "Flame" },
+  { Icon: Star,    label: "Star" },
+  { Icon: Zap,     label: "Bolt" },
+  { Icon: Bomb,    label: "Bomb" },
+  { Icon: Target,  label: "Target" },
+  { Icon: Skull,   label: "Skull" },
+];
+const BANNER_COLORS = [
+  { name: "RED",     bg: "#E62429", fg: "#FFFFFF" },
+  { name: "BLUE",    bg: "#0055FF", fg: "#FFFFFF" },
+  { name: "GOLD",    bg: "#FFD700", fg: "#0A0A0A" },
+  { name: "GREEN",   bg: "#06A35F", fg: "#FFFFFF" },
+  { name: "PURPLE",  bg: "#9B59B6", fg: "#FFFFFF" },
+  { name: "CYAN",    bg: "#5BC0EB", fg: "#0A0A0A" },
+  { name: "ORANGE",  bg: "#FF7B00", fg: "#FFFFFF" },
+  { name: "BLACK",   bg: "#0A0A0A", fg: "#FFD700" },
+];
+
+export function bannerIconMeta(idx) {
+  const i = Math.max(0, Math.min(BANNER_ICONS.length - 1, Number.isFinite(idx) ? idx : 0));
+  return BANNER_ICONS[i];
+}
+export function bannerColorMeta(idx) {
+  const i = Math.max(0, Math.min(BANNER_COLORS.length - 1, Number.isFinite(idx) ? idx : 0));
+  return BANNER_COLORS[i];
+}
 
 const MODE_META = {
   ranked:  { label: "RANKED",   color: "#0055FF", Icon: Trophy },
@@ -13,7 +48,7 @@ const MODE_META = {
 };
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, refreshMe } = useAuth();
   const s = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
   const kd = s.deaths > 0 ? (s.kills / s.deaths).toFixed(2) : String(s.kills);
 
@@ -23,6 +58,22 @@ export default function Profile() {
   const peakRP = user?.peak_rank_points ?? currentRP;
   const peakTier = Math.max(0, Math.min(7, user?.peak_rank_tier ?? currentTier));
   const peakName = user?.peak_rank_name || currentName;
+
+  const bannerIcon = user?.banner_icon ?? 0;
+  const bannerColor = user?.banner_color ?? 0;
+  const [savingBanner, setSavingBanner] = useState(false);
+
+  const updateBanner = async (nextIcon, nextColor) => {
+    setSavingBanner(true);
+    try {
+      await api.post("/profile/me/banner", {
+        banner_icon: nextIcon,
+        banner_color: nextColor,
+      });
+      await refreshMe();
+    } catch {}
+    setSavingBanner(false);
+  };
 
   const [history, setHistory] = useState(null); // null = loading, [] = empty
   const [historyError, setHistoryError] = useState(null);
@@ -46,15 +97,27 @@ export default function Profile() {
       </Link>
 
       <div className="max-w-4xl mx-auto mt-8">
-        <div className="card-pow p-8 -rotate-1">
-          <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
-            <span className="font-anton uppercase tracking-widest">Profile</span>
+        <div className="card-pow p-0 -rotate-1 overflow-hidden">
+          {/* User banner (icon + color) */}
+          <ProfileBanner iconIdx={bannerIcon} colorIdx={bannerColor} />
+          <div className="p-8">
+            <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
+              <span className="font-anton uppercase tracking-widest">Profile</span>
+            </div>
+            <h1 className="font-display text-6xl uppercase text-pow-shadow" data-testid="profile-username">
+              {user?.username}
+            </h1>
           </div>
-          <h1 className="font-display text-6xl uppercase text-pow-shadow" data-testid="profile-username">
-            {user?.username}
-          </h1>
-          <p className="font-body text-neutral-600 mt-1" data-testid="profile-email">{user?.email}</p>
         </div>
+
+        {/* Banner customization */}
+        <BannerCustomizer
+          iconIdx={bannerIcon}
+          colorIdx={bannerColor}
+          saving={savingBanner}
+          onPickIcon={(i) => updateBanner(i, bannerColor)}
+          onPickColor={(c) => updateBanner(bannerIcon, c)}
+        />
 
         {/* Rank cards: current + peak */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8">
@@ -209,6 +272,112 @@ function Stat({ label, value, color, textColor = "#fff", testid }) {
     <div className="card-pow p-6" style={{ background: color, color: textColor }} data-testid={testid}>
       <div className="font-anton uppercase tracking-widest text-sm opacity-80">{label}</div>
       <div className="font-display text-5xl mt-2">{value}</div>
+    </div>
+  );
+}
+
+// Wide banner strip rendered above the username — shows the chosen icon over
+// a diagonal-striped band of the chosen color.
+function ProfileBanner({ iconIdx, colorIdx }) {
+  const c = bannerColorMeta(colorIdx);
+  const I = bannerIconMeta(iconIdx).Icon;
+  return (
+    <div
+      className="relative h-24 md:h-28 border-b-4 border-black flex items-center justify-end px-6 overflow-hidden"
+      style={{
+        background: c.bg,
+        backgroundImage:
+          "repeating-linear-gradient(45deg, rgba(255,255,255,0.10) 0 14px, transparent 14px 28px)",
+      }}
+      data-testid="profile-banner"
+    >
+      <I
+        size={88}
+        strokeWidth={3}
+        style={{ color: c.fg }}
+        className="drop-shadow-[3px_3px_0_rgba(0,0,0,0.85)]"
+        data-testid="profile-banner-icon"
+      />
+      <Sparkles
+        size={22}
+        strokeWidth={3}
+        style={{ color: c.fg, opacity: 0.7 }}
+        className="absolute top-4 left-6"
+      />
+      <Award
+        size={28}
+        strokeWidth={3}
+        style={{ color: c.fg, opacity: 0.55 }}
+        className="absolute bottom-3 left-14"
+      />
+    </div>
+  );
+}
+
+function BannerCustomizer({ iconIdx, colorIdx, saving, onPickIcon, onPickColor }) {
+  return (
+    <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="banner-customizer">
+      <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+        <Sparkles size={18} strokeWidth={3} className="text-[#FFD700]" />
+        <span className="font-anton uppercase tracking-widest">Customize Banner</span>
+        {saving && (
+          <span className="ml-auto font-anton uppercase text-xs text-[#FFD700]" data-testid="banner-saving">
+            Saving...
+          </span>
+        )}
+      </div>
+      <div className="p-5 bg-white">
+        <div className="font-anton uppercase tracking-widest text-sm text-neutral-700 mb-2">Icon</div>
+        <div className="flex flex-wrap gap-2 mb-5" data-testid="banner-icon-grid">
+          {BANNER_ICONS.map((b, i) => {
+            const I = b.Icon;
+            const active = i === iconIdx;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => !saving && onPickIcon(i)}
+                className={`w-14 h-14 border-2 border-black shadow-pow-sm flex items-center justify-center transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"}`}
+                style={{ background: active ? bannerColorMeta(colorIdx).bg : "#F4F4F5" }}
+                title={b.label}
+                data-testid={`banner-icon-${i}`}
+                aria-pressed={active}
+              >
+                <I size={28} strokeWidth={3} style={{ color: active ? bannerColorMeta(colorIdx).fg : "#0A0A0A" }} />
+                {active && (
+                  <Check
+                    size={14}
+                    strokeWidth={4}
+                    className="absolute"
+                    style={{ color: bannerColorMeta(colorIdx).fg, transform: "translate(16px,-16px)" }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="font-anton uppercase tracking-widest text-sm text-neutral-700 mb-2">Color</div>
+        <div className="flex flex-wrap gap-2" data-testid="banner-color-grid">
+          {BANNER_COLORS.map((c, i) => {
+            const active = i === colorIdx;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => !saving && onPickColor(i)}
+                className={`w-14 h-14 border-2 border-black shadow-pow-sm flex items-center justify-center transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"}`}
+                style={{ background: c.bg }}
+                title={c.name}
+                data-testid={`banner-color-${i}`}
+                aria-pressed={active}
+              >
+                {active && <Check size={22} strokeWidth={4} style={{ color: c.fg }} />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
