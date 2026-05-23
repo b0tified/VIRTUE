@@ -79,6 +79,14 @@ export default function QueueOverlay() {
               </div>
             )}
           </div>
+          {!queueState.matched && Number.isFinite(queueState.estimated_wait_seconds) && (
+            <div
+              className="mt-2 font-anton uppercase text-[11px] tracking-widest text-neutral-500"
+              data-testid="queue-eta"
+            >
+              Est. wait <span className="text-[#0055FF] tabular-nums">~{fmtMS(queueState.estimated_wait_seconds)}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

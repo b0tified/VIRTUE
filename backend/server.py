@@ -1904,6 +1904,31 @@ QUEUE_LOCK = asyncio.Lock()
 RANKED_QUEUE: Dict[int, List[dict]] = {i: [] for i in range(len(RANK_TIERS))}
 MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 
+# Rolling window (last 10) of how long each match took to fill, per tier.
+# Used by the queue API to give players an estimated wait time. Empty until
+# the matchmaker has seen at least one match in a tier.
+from collections import deque
+RECENT_MATCH_WAITS: Dict[int, "deque[float]"] = {i: deque(maxlen=10) for i in range(len(RANK_TIERS))}
+
+
+def estimate_wait_seconds(tier_idx: int, current_wait: float) -> int:
+    """Return a friendly "ETA to match" in seconds for the queue overlay.
+
+    Priority: rolling avg of recent matches in this tier → bot-fill timeout
+    minus already-elapsed seconds → 30s sane default. Always clamped to
+    a positive integer (the UI shows "<1s" for 0)."""
+    waits = RECENT_MATCH_WAITS.get(tier_idx)
+    if waits and len(waits) > 0:
+        avg = sum(waits) / len(waits)
+        # Players already partway through their wait shouldn't see a static
+        # number — subtract elapsed so the ETA visibly counts down.
+        eta = max(1.0, avg - current_wait)
+        return int(round(eta))
+    fill = bot_fill_seconds_for_tier(tier_idx)
+    if fill == float("inf"):
+        return 30  # Goonmaster never bot-fills; show a placeholder.
+    return max(1, int(round(fill - current_wait)))
+
 
 async def matchmaker_loop():
     while True:
@@ -1918,6 +1943,10 @@ async def matchmaker_loop():
                         mid = uuid.uuid4().hex[:10]
                         MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
                         MATCHED_USERS[b["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
+                        # Record wait-to-match for the ETA estimator. Using max
+                        # of both players' waits = the longer wait, which is
+                        # what new entrants will most likely experience.
+                        RECENT_MATCH_WAITS[tier_idx].append(max(now - a["joined_at"], now - b["joined_at"]))
                         logger.info("Matched tier=%d %s vs %s (mid=%s)", tier_idx, a["username"], b["username"], mid)
                 # Bot-fill: any player queued for > tier-specific timeout gets matched against bots.
                 # Goonmaster (tier 7) has timeout=inf — the loop body is unreachable for that tier.
@@ -1929,6 +1958,7 @@ async def matchmaker_loop():
                         a = q.pop(0)
                         mid = uuid.uuid4().hex[:10]
                         MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True}
+                        RECENT_MATCH_WAITS[tier_idx].append(now - a["joined_at"])
                         logger.info("Bot-filled %s after %ds queue (tier=%d)", a["username"], int(tier_timeout), tier_idx)
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
@@ -1975,13 +2005,14 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
         for q in RANKED_QUEUE.values():
             for e in q:
                 if e["user_id"] == user_id:
-                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q), "wait_seconds": int(now_ts - e["joined_at"]), "bot_fill_seconds": fill}
+                    elapsed = now_ts - e["joined_at"]
+                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q), "wait_seconds": int(elapsed), "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, elapsed)}
         RANKED_QUEUE[tier_idx].append({
             "user_id": user_id,
             "username": user.get("username", ""),
             "joined_at": now_ts,
         })
-    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx]), "wait_seconds": 0, "bot_fill_seconds": fill}
+    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx]), "wait_seconds": 0, "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, 0.0)}
 
 
 @api.get("/queue/ranked")
@@ -1997,7 +2028,8 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
     for ti, q in RANKED_QUEUE.items():
         for i, e in enumerate(q):
             if e["user_id"] == user_id:
-                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q), "wait_seconds": int(now_ts - e["joined_at"]), "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti)}
+                elapsed = now_ts - e["joined_at"]
+                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q), "wait_seconds": int(elapsed), "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti), "estimated_wait_seconds": estimate_wait_seconds(ti, elapsed)}
     return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
 
 
