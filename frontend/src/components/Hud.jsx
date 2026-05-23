@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2 } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import PlayerCard from "@/components/PlayerCard";
+import settingsStore from "@/game/settings";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -55,6 +56,10 @@ function formatTime(seconds) {
 export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
+  const [gfx, setGfx] = useState(() => settingsStore.get());
+
+  // React to live graphics settings (HUD scale, crosshair, toggles).
+  useEffect(() => settingsStore.subscribe(setGfx), []);
 
   useEffect(() => {
     if (!hud.damaged) return;
@@ -77,8 +82,23 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
   const fpsColor = hud.fps >= 50 ? "#34C759" : hud.fps >= 30 ? "#FFD700" : "#E62429";
   const pingColor = hud.ping > 0 && hud.ping <= 80 ? "#34C759" : hud.ping <= 200 ? "#FFD700" : "#E62429";
 
+  const hudScale = Math.max(0.6, Math.min(1.4, gfx.hudScale ?? 1.0));
+  const showFlash = gfx.showDamageFlash !== false;
+  const showKf = gfx.showKillFeed !== false;
+  const xhairStyle = gfx.crosshairStyle || "cross";
+  const xhairColor = gfx.crosshairColor || "#FFD700";
+
   return (
-    <>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        transform: hudScale !== 1 ? `scale(${hudScale})` : undefined,
+        transformOrigin: "top left",
+      }}
+      data-testid="hud-root"
+    >
       {/* ADS scope overlay — circular reticle you see through, dark vignette outside. */}
       {hud.ads && hud.weapon !== "secondary" && pointerLocked && hud.alive && (
         <div className="ads-scope-wrap" data-testid="ads-scope">
@@ -93,11 +113,11 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       {/* Crosshair — Overwatch-style: 4 ticks that grow with current spread.
           Hidden while aiming down sights (the scope reticle replaces it). */}
       {pointerLocked && hud.alive && !hud.ads && (
-        <DynamicCrosshair spread={hud.spread || 0} showHit={showHit} headshot={!!hud.hitHeadshot} />
+        <DynamicCrosshair spread={hud.spread || 0} showHit={showHit} headshot={!!hud.hitHeadshot} style={xhairStyle} color={xhairColor} />
       )}
 
       {/* Damage vignette */}
-      {showDmg && <div className="dmg-vignette" />}
+      {showDmg && showFlash && <div className="dmg-vignette" />}
 
       {/* Hit confirm pop near crosshair */}
       {showHit && pointerLocked && (
@@ -157,6 +177,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       )}
 
       {/* Top-right: kill feed */}
+      {showKf && (
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end max-w-[420px]" data-testid="hud-kill-feed">
         {hud.killFeed.slice(0, 6).map((k) => (
           <div key={k.id} className="hud-panel kf-row" style={{ background: "rgba(10,10,10,0.88)" }} data-testid={`kf-row-${k.weapon || "ak47"}`}>
@@ -168,6 +189,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
           </div>
         ))}
       </div>
+      )}
 
       {/* Bottom-left: HP */}
       <div className="absolute bottom-6 left-6 z-20" data-testid="hud-health">
@@ -377,7 +399,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -385,14 +407,17 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 // shooter's accumulated recoil (spread) grows. Server reports `spread` in
 // radians; we map it linearly to a pixel gap. Heads-up: hit confirmation
 // briefly recolors the ticks (gold on body, red on headshot).
-function DynamicCrosshair({ spread, showHit, headshot }) {
+function DynamicCrosshair({ spread, showHit, headshot, style = "cross", color = "#FFD700" }) {
   // 0 rad → 4px gap, 0.16 rad (max) → 22px gap
   const gap = 4 + Math.min(22, Math.round((spread / 0.16) * 18));
   const len = 8;
   const thickness = 2;
-  const color = showHit ? (headshot ? "#FFD700" : "#FFFFFF") : "#FFFFFF";
+  const liveColor = showHit ? (headshot ? "#FFD700" : "#FFFFFF") : color;
   const shadow = "0 0 0 1px #000";
-  const common = { position: "absolute", background: color, boxShadow: shadow, pointerEvents: "none" };
+  const common = { position: "absolute", background: liveColor, boxShadow: shadow, pointerEvents: "none" };
+  const dotOnly = style === "dot";
+  const plusOnly = style === "plus"; // no center dot, 4 ticks
+  const circle = style === "circle";
   return (
     <div
       className="pointer-events-none"
@@ -406,17 +431,33 @@ function DynamicCrosshair({ spread, showHit, headshot }) {
         zIndex: 20,
       }}
       data-testid="crosshair"
+      data-crosshair-style={style}
     >
-      {/* center dot */}
-      <div style={{ ...common, width: 3, height: 3, left: -1.5, top: -1.5 }} />
-      {/* top */}
-      <div style={{ ...common, width: thickness, height: len, left: -thickness / 2, top: -(gap + len) }} />
-      {/* bottom */}
-      <div style={{ ...common, width: thickness, height: len, left: -thickness / 2, top: gap }} />
-      {/* left */}
-      <div style={{ ...common, width: len, height: thickness, left: -(gap + len), top: -thickness / 2 }} />
-      {/* right */}
-      <div style={{ ...common, width: len, height: thickness, left: gap, top: -thickness / 2 }} />
+      {!plusOnly && !circle && (
+        <div style={{ ...common, width: 3, height: 3, left: -1.5, top: -1.5 }} />
+      )}
+      {circle && (
+        <div
+          style={{
+            position: "absolute",
+            width: 22,
+            height: 22,
+            left: -11,
+            top: -11,
+            border: `2px solid ${liveColor}`,
+            borderRadius: "50%",
+            boxShadow: shadow,
+          }}
+        />
+      )}
+      {!dotOnly && !circle && (
+        <>
+          <div style={{ ...common, width: thickness, height: len, left: -thickness / 2, top: -(gap + len) }} />
+          <div style={{ ...common, width: thickness, height: len, left: -thickness / 2, top: gap }} />
+          <div style={{ ...common, width: len, height: thickness, left: -(gap + len), top: -thickness / 2 }} />
+          <div style={{ ...common, width: len, height: thickness, left: gap, top: -thickness / 2 }} />
+        </>
+      )}
     </div>
   );
 }

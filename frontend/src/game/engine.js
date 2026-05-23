@@ -1453,7 +1453,8 @@ export class GameEngine {
       const baseX = adsActive ? 0.0 : 0.22;
       const baseY = adsActive ? -0.07 : -0.18;
       const baseZ = adsActive ? -0.15 : -0.05;
-      const bob = moving ? Math.sin(performance.now() / (sprint ? 70 : 100)) * (adsActive ? 0.006 : 0.018) : 0;
+      const bobOn = this._bobEnabled !== false;
+      const bob = (moving && bobOn) ? Math.sin(performance.now() / (sprint ? 70 : 100)) * (adsActive ? 0.006 : 0.018) : 0;
       if (this.currentWeapon !== "secondary") {
         this._weapon.position.set(baseX, baseY + bob + this.recoil * 0.04, baseZ + this.recoil * 0.12);
         this._weapon.rotation.x = -this.recoil * 0.22;
@@ -1708,13 +1709,14 @@ export class GameEngine {
   applySettings(s) {
     if (!s) return;
     this._settings = { ...(this._settings || {}), ...s };
-    if (s.graphics !== undefined) {
+    if (s.graphics !== undefined || s.renderScale !== undefined) {
       const dpr = window.devicePixelRatio || 1;
-      const ratio =
-        s.graphics === "low" ? 0.55 :
-        s.graphics === "medium" ? Math.min(1.0, dpr) :
+      const base =
+        this._settings.graphics === "low" ? 0.55 :
+        this._settings.graphics === "medium" ? Math.min(1.0, dpr) :
         Math.min(dpr, 2);
-      try { this.renderer.setPixelRatio(ratio); } catch {}
+      const scale = Math.max(0.5, Math.min(1.5, this._settings.renderScale ?? 1.0));
+      try { this.renderer.setPixelRatio(base * scale); } catch {}
     }
     if (s.fpsCap !== undefined) {
       this._frameMinMs = s.fpsCap > 0 ? (1000 / s.fpsCap) : 0;
@@ -1723,8 +1725,15 @@ export class GameEngine {
       this.camera.fov = Math.max(50, Math.min(110, s.fovDegrees));
       this.camera.updateProjectionMatrix();
     }
+    if (s.viewDistance !== undefined && this.camera) {
+      this.camera.far = Math.max(60, Math.min(200, s.viewDistance));
+      this.camera.updateProjectionMatrix();
+    }
     if (s.aimAssist !== undefined) {
       this._aimAssistStrength = s.aimAssist ? 0.6 : 0.0;
+    }
+    if (s.cameraBob !== undefined) {
+      this._bobEnabled = !!s.cameraBob;
     }
   }
 

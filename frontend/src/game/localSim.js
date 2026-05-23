@@ -355,10 +355,13 @@ export class LocalSim {
     p.ammo[weapon] = Math.max(0, p.ammo[weapon] - 1);
     p.yaw = yaw; p.pitch = pitch;
 
-    // Hitscan ray
-    const dx = Math.sin(yaw) * Math.cos(pitch);
-    const dy = -Math.sin(pitch);
-    const dz = Math.cos(yaw) * Math.cos(pitch);
+    // Hitscan ray — must match the engine's camera-forward convention:
+    //   forward = (-sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+    // (Three.js camera looks down -Z by default; rotation.x=+pitch tilts up.)
+    const cp = Math.cos(pitch);
+    const dx = -Math.sin(yaw) * cp;
+    const dy = Math.sin(pitch);
+    const dz = -Math.cos(yaw) * cp;
     const ox = p.x, oy = p.y, oz = p.z;
     const range = cfg.range;
 
@@ -420,7 +423,8 @@ export class LocalSim {
     p.last_melee_ms = now;
     p.yaw = yaw; p.pitch = pitch;
     this.pendingEvents.push({ type: "melee", shooter_id: p.id, yaw, pitch });
-    const vx = Math.sin(yaw), vz = Math.cos(yaw);
+    // Melee cone direction — same convention as the engine (camera-forward).
+    const vx = -Math.sin(yaw), vz = -Math.cos(yaw);
     let best = null, bestD = MELEE_RANGE + 0.1;
     for (const other of this.players.values()) {
       if (other.id === p.id || !other.alive) continue;
@@ -492,7 +496,7 @@ export class LocalSim {
         if (bot.passive) {
           // Practice dummies: face the player, never move/shoot.
           const dx = this.me.x - bot.x, dz = this.me.z - bot.z;
-          bot.yaw = Math.atan2(dx, dz);
+          bot.yaw = Math.atan2(-dx, -dz);
           continue;
         }
         // Move toward player (1 step every tick if possible)
@@ -511,8 +515,10 @@ export class LocalSim {
           bot.botDir = Math.random() * Math.PI * 2;
           bot.botRepathAt = now + 800 + Math.random() * 1200;
         }
-        bot.yaw = Math.atan2(dx, dz);
-        bot.pitch = Math.max(-0.3, Math.min(0.3, -Math.atan2(this.me.y - bot.y, dist)));
+        // Bot facing — engine convention: yaw such that forward = -sin(yaw), -cos(yaw).
+        // So to face (dirX, dirZ), yaw = atan2(-dirX, -dirZ).
+        bot.yaw = Math.atan2(-dx, -dz);
+        bot.pitch = Math.max(-0.3, Math.min(0.3, Math.atan2(this.me.y - bot.y, dist)));
 
         // Shoot occasionally if LOS — but never while the player is still in
         // their spawn-invuln window (otherwise the bullet would be wasted +

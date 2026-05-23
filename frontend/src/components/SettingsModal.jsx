@@ -187,6 +187,106 @@ export default function SettingsModal({ open, onClose }) {
             </p>
           </section>
 
+          {/* Render scale */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm">Render Scale</div>
+              <div className="text-sm tabular-nums" data-testid="settings-render-scale-value">
+                {Math.round((s.renderScale ?? 1.0) * 100)}%
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="1.5"
+              step="0.05"
+              value={s.renderScale ?? 1.0}
+              onChange={(e) => patch({ renderScale: parseFloat(e.target.value) })}
+              className="w-full accent-[#E62429]"
+              data-testid="settings-render-scale-slider"
+            />
+            <p className="text-[11px] text-neutral-500 mt-1">
+              Below 100% boosts FPS dramatically on weak GPUs. Above 100% sharpens edges.
+            </p>
+          </section>
+
+          {/* View distance */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm">View Distance</div>
+              <div className="text-sm tabular-nums" data-testid="settings-view-distance-value">{s.viewDistance ?? 140}m</div>
+            </div>
+            <input
+              type="range"
+              min="60"
+              max="200"
+              step="5"
+              value={s.viewDistance ?? 140}
+              onChange={(e) => patch({ viewDistance: parseInt(e.target.value, 10) })}
+              className="w-full accent-[#E62429]"
+              data-testid="settings-view-distance-slider"
+            />
+          </section>
+
+          {/* HUD scale */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm">HUD Scale</div>
+              <div className="text-sm tabular-nums" data-testid="settings-hud-scale-value">
+                {Math.round((s.hudScale ?? 1.0) * 100)}%
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.7"
+              max="1.3"
+              step="0.05"
+              value={s.hudScale ?? 1.0}
+              onChange={(e) => patch({ hudScale: parseFloat(e.target.value) })}
+              className="w-full accent-[#FFD700]"
+              data-testid="settings-hud-scale-slider"
+            />
+          </section>
+
+          {/* Crosshair style */}
+          <section>
+            <div className="font-anton uppercase tracking-widest text-sm mb-2">Crosshair Style</div>
+            <div className="grid grid-cols-4 gap-2" data-testid="settings-crosshair-style">
+              {["dot", "cross", "plus", "circle"].map((cs) => (
+                <button
+                  key={cs}
+                  type="button"
+                  onClick={() => patch({ crosshairStyle: cs })}
+                  className={`rounded border px-3 py-2 text-xs font-anton uppercase tracking-widest transition-colors ${
+                    (s.crosshairStyle || "cross") === cs
+                      ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
+                      : "border-neutral-800 hover:border-neutral-700"
+                  }`}
+                  data-testid={`settings-crosshair-style-${cs}`}
+                >
+                  {cs}
+                </button>
+              ))}
+            </div>
+            <div className="font-anton uppercase tracking-widest text-xs mt-3 mb-1 text-neutral-400">Color</div>
+            <div className="grid grid-cols-6 gap-2" data-testid="settings-crosshair-color">
+              {["#FFD700", "#FFFFFF", "#E62429", "#06D6A0", "#0055FF", "#9B59B6"].map((hex) => {
+                const active = (s.crosshairColor || "#FFD700").toUpperCase() === hex;
+                return (
+                  <button
+                    key={hex}
+                    type="button"
+                    onClick={() => patch({ crosshairColor: hex })}
+                    className={`h-8 rounded border-2 transition-transform ${active ? "border-white scale-110" : "border-black/40 hover:border-white/60"}`}
+                    style={{ background: hex }}
+                    data-testid={`settings-crosshair-color-${hex.replace("#", "")}`}
+                    aria-label={`Crosshair ${hex}`}
+                  />
+                );
+              })}
+            </div>
+          </section>
+
           {/* FOV */}
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -254,6 +354,62 @@ export default function SettingsModal({ open, onClose }) {
               checked={!!s.antialias}
               onChange={(v) => patch({ antialias: v })}
               testid="settings-antialias"
+            />
+            <ToggleRow
+              label="Camera Bob"
+              note="Subtle head-bob while moving/sprinting. Turn off for less motion."
+              checked={s.cameraBob !== false}
+              onChange={(v) => patch({ cameraBob: v })}
+              testid="settings-camera-bob"
+            />
+            <ToggleRow
+              label="Screen Shake"
+              note="Camera shake on hits, kills, and explosions."
+              checked={s.screenShake !== false}
+              onChange={(v) => patch({ screenShake: v })}
+              testid="settings-screen-shake"
+            />
+            <ToggleRow
+              label="Damage Flash"
+              note="Red vignette when you take damage."
+              checked={s.showDamageFlash !== false}
+              onChange={(v) => patch({ showDamageFlash: v })}
+              testid="settings-damage-flash"
+            />
+            <ToggleRow
+              label="Damage Numbers"
+              note="Floating numbers pop up when you hit an enemy."
+              checked={s.showDamageNumbers !== false}
+              onChange={(v) => patch({ showDamageNumbers: v })}
+              testid="settings-damage-numbers"
+            />
+            <ToggleRow
+              label="Kill Feed"
+              note="Show recent eliminations in the top-right corner."
+              checked={s.showKillFeed !== false}
+              onChange={(v) => patch({ showKillFeed: v })}
+              testid="settings-kill-feed"
+            />
+            <ToggleRow
+              label="High-Contrast Outlines"
+              note="Thicker comic outlines for better enemy visibility."
+              checked={!!s.highContrastOutlines}
+              onChange={(v) => patch({ highContrastOutlines: v })}
+              testid="settings-high-contrast"
+            />
+            <ToggleRow
+              label="Bloom"
+              note="Light glow on bright highlights. Cinematic but heavier."
+              checked={!!s.bloom}
+              onChange={(v) => patch({ bloom: v })}
+              testid="settings-bloom"
+            />
+            <ToggleRow
+              label="Motion Blur"
+              note="Subtle blur on rapid camera turns."
+              checked={!!s.motionBlur}
+              onChange={(v) => patch({ motionBlur: v })}
+              testid="settings-motion-blur"
             />
           </section>
 

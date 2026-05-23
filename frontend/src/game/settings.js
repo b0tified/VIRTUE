@@ -13,6 +13,20 @@ const DEFAULTS = Object.freeze({
   fovDegrees: 75,
   aimAssist: true,
   mouseSensitivity: 1.0,    // 0.25 - 2.5
+  // Extended graphics options ------------------------------------------------
+  renderScale: 1.0,         // 0.5 - 1.5 (renderer pixel ratio multiplier)
+  viewDistance: 140,        // 60 - 200 meters (camera far plane)
+  bloom: false,             // toggle screen-space bloom (cheap canvas blur)
+  motionBlur: false,        // toggle motion blur on rapid camera turns
+  cameraBob: true,          // viewmodel + camera bob while sprinting
+  screenShake: true,        // hit / kill screen-shake feedback
+  showDamageFlash: true,    // red border flash when taking damage
+  highContrastOutlines: false, // thicker comic outlines for accessibility
+  crosshairStyle: "cross",  // "dot" | "cross" | "plus" | "circle"
+  crosshairColor: "#FFD700",
+  hudScale: 1.0,            // 0.75 - 1.25
+  showDamageNumbers: true,  // floating damage numbers on hits
+  showKillFeed: true,       // top-right kill feed
   // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
   keybinds: {
     forward: "KeyW",
