@@ -56,6 +56,7 @@ export default function Game() {
   });
   const [pointerLocked, setPointerLocked] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
+  const [showPause, setShowPause] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
 
   // Setup engine + socket
@@ -278,7 +279,9 @@ export default function Game() {
     }, 250);
 
     const onLockChange = () => {
-      setPointerLocked(document.pointerLockElement === canvas);
+      const locked = document.pointerLockElement === canvas;
+      setPointerLocked(locked);
+      if (locked) setShowPause(false); // resume → dismiss pause overlay
     };
     document.addEventListener("pointerlockchange", onLockChange);
 
@@ -305,7 +308,10 @@ export default function Game() {
         sock.send({ type: "reload", weapon: w });
       }
       if (e.code === "Escape") {
-        // pointer lock auto-released
+        // pointer lock auto-released by the browser. Surface a pause overlay
+        // with a prominent LEAVE MATCH button — the tiny corner EXIT used to
+        // get missed.
+        setShowPause(true);
       }
     };
     const onKeyUp = (e) => {
@@ -368,7 +374,7 @@ export default function Game() {
           // Replaces the removed click-to-play overlay: clicking anywhere
           // on the canvas locks the pointer (must be a real user gesture).
           // Spectators don't need pointer lock — they just watch.
-          if (!pointerLocked && !isSpectator) handleStart();
+          if (!pointerLocked && !isSpectator && !showPause) handleStart();
         }}
       />
       {isSpectator && (
@@ -409,6 +415,41 @@ export default function Game() {
         onStart={handleStart}
         onExit={handleExit}
       />
+      {showPause && !isSpectator && (
+        <div
+          className="absolute inset-0 z-40 bg-black/70 flex items-center justify-center"
+          data-testid="pause-overlay"
+        >
+          <div className="card-pow p-0 w-[min(420px,92vw)]">
+            <div className="bg-black text-white px-6 py-4 font-display text-4xl text-pow-shadow-lg flex items-center justify-between">
+              <span>PAUSED</span>
+              <span className="text-[#FFD700] text-xl">ESC</span>
+            </div>
+            <div className="bg-white p-5 space-y-3">
+              <button
+                onClick={() => {
+                  setShowPause(false);
+                  handleStart();
+                }}
+                className="btn-pow bg-[#06A35F] text-white w-full text-xl [&]:py-3"
+                data-testid="pause-resume-button"
+              >
+                <span className="flex items-center justify-center gap-2">RESUME</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowPause(false);
+                  handleExit();
+                }}
+                className="btn-pow bg-[#E62429] text-white w-full text-xl [&]:py-3"
+                data-testid="pause-leave-button"
+              >
+                <span className="flex items-center justify-center gap-2">LEAVE MATCH</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <TouchControls
         engineRef={engineRef}
         onShoot={() => {}}

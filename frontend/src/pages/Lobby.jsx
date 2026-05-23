@@ -202,9 +202,8 @@ export default function Lobby() {
       <LobbyBackground imageUrl={LOBBY_BG} />
 
       <header className="relative z-10 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-3 md:py-5">
-        <div className="font-display text-2xl sm:text-3xl md:text-4xl text-[#FFD700] text-pow-shadow">
-          VIR<span className="text-[#E62429]">TUE</span>
-        </div>
+        {/* Logo moved into the main column below — header now hosts only the
+            user card + utility buttons + a server-driven Players-online chip. */}
         <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
           {user && (
             <PlayerCard
@@ -224,6 +223,19 @@ export default function Lobby() {
               testid="lobby-user-card"
             />
           )}
+        </div>
+        <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
+          {/* Server-driven Players Online chip — same value for every signed-
+              in client; drifts every ~10s via /api/. */}
+          <div
+            className="border-pow shadow-pow-sm px-3 py-2 hidden sm:flex items-center gap-2"
+            style={{ background: "#E62429", color: "#fff" }}
+            data-testid="active-players-online"
+          >
+            <Users size={14} strokeWidth={3} />
+            <span className="font-anton uppercase text-[10px] tracking-widest opacity-90">Online</span>
+            <span className="font-display text-2xl leading-none">{displayOnline}</span>
+          </div>
           <button
             onClick={() => setShowFriends(true)}
             className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
@@ -245,11 +257,12 @@ export default function Lobby() {
 
       <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-1 sm:mt-4">
         <div className="lg:col-span-7">
-          <div className="hidden sm:inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
-            <span className="font-anton uppercase tracking-widest">Free-For-All · Online</span>
-          </div>
-          <h1 className="font-display text-3xl sm:text-5xl md:text-7xl uppercase text-white text-pow-shadow-lg leading-tight">
-            READY UP, <span className="text-[#E62429]">{user?.username}</span>!
+          {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
+          <h1
+            className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none"
+            data-testid="lobby-hero-logo"
+          >
+            <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>
           </h1>
 
           <div className="mt-2 sm:mt-4 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
@@ -334,22 +347,9 @@ export default function Lobby() {
             </Link>
           </div>
 
-          <div className="mt-6 hidden sm:flex flex-wrap gap-3" data-testid="active-players-row">
-            <div className="border-pow shadow-pow-sm px-4 py-2 -rotate-1" style={{ background: "#E62429", color: "#fff" }} data-testid="active-players-online">
-              <div className="font-anton text-xs uppercase tracking-widest opacity-90 flex items-center gap-1">
-                <Users size={12} strokeWidth={3} /> Players online
-              </div>
-              <div className="font-display text-3xl">{displayOnline}</div>
-            </div>
-          </div>
-
-          {/* Stat strip */}
-          <div className="mt-10 hidden sm:grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl">
-            <StatChip label="KILLS" value={stats.kills} color="#E62429" testid="stat-kills" />
-            <StatChip label="DEATHS" value={stats.deaths} color="#0055FF" testid="stat-deaths" />
-            <StatChip label="MATCHES" value={stats.matches} color="#FFD700" textColor="#0A0A0A" testid="stat-matches" />
-            <StatChip label="K/D" value={stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills)} color="#0A0A0A" testid="stat-kd" />
-          </div>
+          {/* Players-online widget moved to the header (top-right). The old
+              KILLS/DEATHS/MATCHES/K-D stat strip was removed per request — the
+              same stats are still surfaced inside the Profile page. */}
         </div>
 
         <div className="lg:col-span-5 relative hidden lg:flex items-center justify-center">

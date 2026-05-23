@@ -82,12 +82,12 @@ export function Avatar({ idx = 0, peakTier = null, size = 40, online = false, te
   );
 }
 
-function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false }) {
+function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false, level = null }) {
   const c = BANNER_COLORS[Math.max(0, Math.min(BANNER_COLORS.length - 1, colorIdx | 0))];
   const I = BANNER_ICONS[Math.max(0, Math.min(BANNER_ICONS.length - 1, iconIdx | 0))];
   return (
     <div
-      className={`relative w-full border-b-2 border-black flex items-center justify-end pr-1.5 overflow-hidden ${animated ? "banner-anim" : ""}`}
+      className={`relative w-full border-b-2 border-black flex items-center justify-between px-1.5 overflow-hidden ${animated ? "banner-anim" : ""}`}
       style={{
         height,
         background: c.bg,
@@ -97,13 +97,24 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false 
       data-testid="player-card-banner"
       data-animated={animated || undefined}
     >
+      {/* Left side: sparkle + level chip */}
+      <div className="flex items-center gap-1">
+        <Sparkles size={Math.max(8, height - 6)} strokeWidth={3} style={{ color: c.fg, opacity: 0.85 }} />
+        {Number.isFinite(level) && (
+          <span
+            className="font-anton uppercase tracking-widest leading-none"
+            style={{
+              color: c.fg,
+              fontSize: Math.max(8, height - 4),
+              textShadow: "0 1px 0 rgba(0,0,0,0.55)",
+            }}
+            data-testid="player-card-banner-level"
+          >
+            LV {level}
+          </span>
+        )}
+      </div>
       <I size={Math.max(10, height - 4)} strokeWidth={3} style={{ color: c.fg }} />
-      <Sparkles
-        size={Math.max(8, height - 6)}
-        strokeWidth={3}
-        style={{ color: c.fg, opacity: 0.7 }}
-        className="absolute left-1.5 top-1/2 -translate-y-1/2"
-      />
     </div>
   );
 }
@@ -145,7 +156,7 @@ export default function PlayerCard({
       className={`card-pow p-0 bg-white flex flex-col ${className}`}
       data-testid={testid}
     >
-      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} />}
+      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} />}
       <div className="flex items-stretch">
         <div className="flex items-center justify-center px-2" style={{ background: avatarMeta(avatar, peakRankTier).bg }}>
           <Avatar idx={avatar} peakTier={peakRankTier} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />

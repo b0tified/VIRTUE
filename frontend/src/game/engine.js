@@ -946,6 +946,21 @@ export class GameEngine {
     lTip.rotation.x = -Math.PI / 2;
     lTip.position.set(0, 0.02, -1.3);
     laser.add(lTip);
+    // Track tintable parts so we can flash them red when overheated.
+    this._laserGlowParts = [lCore, ring, lTip];
+    // Heat-vent puff — a small additive sprite that pulses when overheated.
+    const heatGeom = new THREE.SphereGeometry(0.12, 10, 8);
+    const heatMat = new THREE.MeshBasicMaterial({
+      color: 0xff4422,
+      transparent: true,
+      opacity: 0.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const heatPuff = new THREE.Mesh(heatGeom, heatMat);
+    heatPuff.position.set(0.0, 0.12, -0.55);
+    laser.add(heatPuff);
+    this._laserHeatPuff = heatPuff;
     // Grip
     const lGrip = this._outlined(new THREE.BoxGeometry(0.1, 0.22, 0.13), 0x1a1a1a);
     lGrip.position.set(0, -0.18, 0.02);
@@ -1725,6 +1740,35 @@ export class GameEngine {
     // damage + heat ramp are independent (driven by `laser_firing` in the
     // 20Hz input message); this is purely cosmetic.
     this._updateLaserBeamVisual();
+
+    // Laser viewmodel heat overlay — tint glow parts from cyan → orange/red
+    // as heat climbs to 1.0, pulse + puff angrily once overheated.
+    if (this._laserGlowParts && this.currentWeapon === "tertiary") {
+      const heat = Math.max(0, Math.min(1, this.localLaserHeat || 0));
+      const overheat = !!this.localLaserOverheated;
+      // Color lerp: 0x00cfff (cyan) → 0xff4422 (red-orange)
+      const r = Math.round(0x00 + (0xff - 0x00) * heat);
+      const g = Math.round(0xcf + (0x44 - 0xcf) * heat);
+      const b = Math.round(0xff + (0x22 - 0xff) * heat);
+      const tint = (r << 16) | (g << 8) | b;
+      for (const part of this._laserGlowParts) {
+        if (part?.material?.color) part.material.color.setHex(tint);
+      }
+      if (this._laserHeatPuff) {
+        const t = performance.now() * 0.012;
+        // Heat puff opacity: ramps in over heat > 0.6, throbs while overheated.
+        let opacity = 0;
+        if (overheat) opacity = 0.55 + 0.35 * Math.sin(t * 1.6);
+        else if (heat > 0.55) opacity = (heat - 0.55) / 0.45 * 0.6;
+        this._laserHeatPuff.material.opacity = opacity;
+        // Slight scale pulse on overheat.
+        const s = overheat ? (1.0 + 0.18 * Math.sin(t * 2.2)) : 1.0;
+        this._laserHeatPuff.scale.set(s, s, s);
+        this._laserHeatPuff.visible = opacity > 0.02;
+      }
+    } else if (this._laserHeatPuff) {
+      this._laserHeatPuff.visible = false;
+    }
 
     // Remote players: hit flash + running animation + death anim
     const nowMs = performance.now();

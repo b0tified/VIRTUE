@@ -2595,6 +2595,12 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "peak_rank_points": peak,
         "peak_rank_tier": p_idx,
         "peak_rank_name": p_name,
+        # Level + banner cosmetics so the public profile modal can render the
+        # same card visuals (with LV chip) as the lobby header.
+        "level": compute_level(u.get("stats", {}))["level"],
+        "banner_icon": int(u.get("banner_icon", 0) or 0),
+        "banner_color": int(u.get("banner_color", 0) or 0),
+        "banner_animated": bool(u.get("banner_animated", False)),
         "online": is_online(user_id),
         "history": history,
     }

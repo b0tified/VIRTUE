@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse } from "lucide-react";
+import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, Sliders, User as UserIcon } from "lucide-react";
 import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
@@ -29,6 +29,7 @@ export default function SettingsModal({ open, onClose }) {
   const [s, setS] = useState(settingsStore.get());
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
+  const [tab, setTab] = useState("video");
   const { logout } = useAuth();
 
   useEffect(() => {
@@ -86,7 +87,35 @@ export default function SettingsModal({ open, onClose }) {
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-5 max-h-[70vh] overflow-y-auto">
+        {/* Tab bar — groups settings into Video / Audio / Controls / HUD /
+            Account so the modal stays scannable. */}
+        <div className="flex border-b border-neutral-800 overflow-x-auto" data-testid="settings-tabs">
+          {[
+            { id: "video",    label: "Video",    Icon: Monitor },
+            { id: "audio",    label: "Audio",    Icon: Music },
+            { id: "controls", label: "Controls", Icon: Mouse },
+            { id: "hud",      label: "HUD",      Icon: Crosshair },
+            { id: "account",  label: "Account",  Icon: UserIcon },
+          ].map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`flex items-center gap-1.5 px-4 py-2 font-anton uppercase tracking-widest text-xs whitespace-nowrap border-b-2 transition-colors ${
+                tab === id
+                  ? "border-[#E62429] text-white bg-neutral-900"
+                  : "border-transparent text-neutral-400 hover:text-white hover:bg-neutral-900/50"
+              }`}
+              data-testid={`settings-tab-${id}`}
+            >
+              <Icon size={14} strokeWidth={3} /> {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="px-5 py-4 space-y-5 max-h-[65vh] overflow-y-auto" data-testid={`settings-tab-content-${tab}`}>
+          {tab === "audio" && (
+          <>
           {/* Audio toggles */}
           <section>
             <div className="font-anton uppercase tracking-widest text-sm mb-2">Audio</div>
@@ -111,7 +140,11 @@ export default function SettingsModal({ open, onClose }) {
               </button>
             </div>
           </section>
+          </>
+          )}
 
+          {tab === "controls" && (
+          <>
           {/* Mouse sensitivity */}
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -138,7 +171,11 @@ export default function SettingsModal({ open, onClose }) {
               data-testid="settings-sensitivity-slider"
             />
           </section>
+          </>
+          )}
 
+          {tab === "video" && (
+          <>
           {/* Graphics quality */}
           <section>
             <div className="font-anton uppercase tracking-widest text-sm mb-2">Graphics Quality</div>
@@ -227,7 +264,11 @@ export default function SettingsModal({ open, onClose }) {
               data-testid="settings-view-distance-slider"
             />
           </section>
+          </>
+          )}
 
+          {tab === "hud" && (
+          <>
           {/* HUD scale */}
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -286,7 +327,11 @@ export default function SettingsModal({ open, onClose }) {
               })}
             </div>
           </section>
+          </>
+          )}
 
+          {tab === "video" && (
+          <>
           {/* FOV */}
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -304,7 +349,11 @@ export default function SettingsModal({ open, onClose }) {
               data-testid="settings-fov-slider"
             />
           </section>
+          </>
+          )}
 
+          {tab === "controls" && (
+          <>
           {/* Touch controls */}
           <section>
             <div className="font-anton uppercase tracking-widest text-sm mb-2">Touch Controls</div>
@@ -332,7 +381,7 @@ export default function SettingsModal({ open, onClose }) {
             </div>
           </section>
 
-          {/* Visual toggles */}
+          {/* Aim assist (controller / touch) */}
           <section className="space-y-2">
             <ToggleRow
               label="Aim Assist (controller / touch)"
@@ -365,6 +414,26 @@ export default function SettingsModal({ open, onClose }) {
               </div>
             )}
             <ToggleRow
+              label="Camera Bob"
+              note="Subtle head-bob while moving/sprinting. Turn off for less motion."
+              checked={s.cameraBob !== false}
+              onChange={(v) => patch({ cameraBob: v })}
+              testid="settings-camera-bob"
+            />
+          </section>
+
+          {/* Advanced controls — keybinds, controller, mobile HUD editor */}
+          <section className="border-t border-neutral-800 pt-4">
+            <AdvancedControls s={s} patch={patch} />
+          </section>
+          </>
+          )}
+
+          {tab === "video" && (
+          <>
+          {/* Video-only toggles */}
+          <section className="space-y-2">
+            <ToggleRow
               label="Shadows"
               note="Soft shadows under players and props."
               checked={!!s.shadows}
@@ -379,12 +448,34 @@ export default function SettingsModal({ open, onClose }) {
               testid="settings-antialias"
             />
             <ToggleRow
-              label="Camera Bob"
-              note="Subtle head-bob while moving/sprinting. Turn off for less motion."
-              checked={s.cameraBob !== false}
-              onChange={(v) => patch({ cameraBob: v })}
-              testid="settings-camera-bob"
+              label="High-Contrast Outlines"
+              note="Thicker comic outlines for better enemy visibility."
+              checked={!!s.highContrastOutlines}
+              onChange={(v) => patch({ highContrastOutlines: v })}
+              testid="settings-high-contrast"
             />
+            <ToggleRow
+              label="Bloom"
+              note="Light glow on bright highlights. Cinematic but heavier."
+              checked={!!s.bloom}
+              onChange={(v) => patch({ bloom: v })}
+              testid="settings-bloom"
+            />
+            <ToggleRow
+              label="Motion Blur"
+              note="Subtle blur on rapid camera turns."
+              checked={!!s.motionBlur}
+              onChange={(v) => patch({ motionBlur: v })}
+              testid="settings-motion-blur"
+            />
+          </section>
+          </>
+          )}
+
+          {tab === "hud" && (
+          <>
+          {/* HUD-only toggles */}
+          <section className="space-y-2">
             <ToggleRow
               label="Screen Shake"
               note="Camera shake on hits, kills, and explosions."
@@ -413,34 +504,12 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(v) => patch({ showKillFeed: v })}
               testid="settings-kill-feed"
             />
-            <ToggleRow
-              label="High-Contrast Outlines"
-              note="Thicker comic outlines for better enemy visibility."
-              checked={!!s.highContrastOutlines}
-              onChange={(v) => patch({ highContrastOutlines: v })}
-              testid="settings-high-contrast"
-            />
-            <ToggleRow
-              label="Bloom"
-              note="Light glow on bright highlights. Cinematic but heavier."
-              checked={!!s.bloom}
-              onChange={(v) => patch({ bloom: v })}
-              testid="settings-bloom"
-            />
-            <ToggleRow
-              label="Motion Blur"
-              note="Subtle blur on rapid camera turns."
-              checked={!!s.motionBlur}
-              onChange={(v) => patch({ motionBlur: v })}
-              testid="settings-motion-blur"
-            />
           </section>
+          </>
+          )}
 
-          {/* Advanced controls — keybinds, controller, mobile HUD editor */}
-          <section className="border-t border-neutral-800 pt-4">
-            <AdvancedControls s={s} patch={patch} />
-          </section>
-
+          {tab === "account" && (
+          <>
           <p className="text-[11px] text-neutral-500 pt-1">
             Settings save to this device only.
           </p>
@@ -456,6 +525,8 @@ export default function SettingsModal({ open, onClose }) {
               <LogOut size={16} strokeWidth={3} /> Logout
             </button>
           </section>
+          </>
+          )}
         </div>
       </div>
     </div>
