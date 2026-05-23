@@ -177,6 +177,11 @@ class LocalPlayer {
     this.is_ads = false;
     this.ammo = { ak47: WEAPONS.ak47.mag_size, laser: WEAPONS.laser.mag_size };
     this.reload_until_ms = { ak47: 0, laser: 0 };
+    // Laser beam state (continuous-fire weapon)
+    this.laser_heat = 0;
+    this.laser_overheated = false;
+    this.laser_firing = false;
+    this._lastBeamTickMs = 0;
     this.platform = opts.is_bot ? "pc" : "pc";
     // Bot AI state
     this.botDir = Math.random() * Math.PI * 2;
@@ -235,6 +240,9 @@ class LocalPlayer {
       reload_progress: Number(this.reload_progress(now).toFixed(3)),
       spread: 0,
       weapon: this.weapon,
+      laser_heat: Number((this.laser_heat || 0).toFixed(3)),
+      laser_overheated: !!this.laser_overheated,
+      laser_firing: !!this.laser_firing,
     };
   }
 }
@@ -316,6 +324,14 @@ export class LocalSim {
         this.me.z = msg.z;
       }
       if ("ads" in msg) this.me.is_ads = !!msg.ads;
+      // Track currently-equipped weapon + continuous laser fire request so
+      // the offline tick loop can apply per-tick laser damage and heat ramp
+      // (mirrors the server's behaviour for online play).
+      if (msg.weapon && WEAPONS[msg.weapon]) this.me.weapon = msg.weapon;
+      if ("laser_firing" in msg) {
+        this.me.laser_firing =
+          !!msg.laser_firing && this.me.weapon === "laser" && !this.me.laser_overheated;
+      }
     } else if (type === "shoot") {
       this._handleShoot(this.me, msg.weapon || "ak47", msg.yaw ?? this.me.yaw, msg.pitch ?? this.me.pitch, now);
     } else if (type === "melee") {
@@ -423,6 +439,57 @@ export class LocalSim {
     if (p.ammo[weapon] === 0) p.start_reload(now);
   }
 
+  /* Per-tick continuous laser damage. ~12 dmg per 200ms = 60 dps. */
+  _applyLaserBeam(p, now) {
+    const yaw = p.yaw, pitch = p.pitch;
+    const cp = Math.cos(pitch);
+    const dx = -Math.sin(yaw) * cp;
+    const dy = Math.sin(pitch);
+    const dz = -Math.cos(yaw) * cp;
+    const ox = p.x, oy = p.y, oz = p.z;
+    const range = WEAPONS.laser?.range || 80;
+    let bestT = range, bestHit = null;
+    for (const other of this.players.values()) {
+      if (other.id === p.id || !other.alive) continue;
+      if (now < (other.invuln_until || 0)) continue;
+      const r = rayHitCapsule(ox, oy, oz, dx, dy, dz, other.x, other.z, 0.55, 0, PLAYER_HEIGHT + 0.25);
+      if (r && r.t < bestT) {
+        const hx = ox + dx * r.t, hz = oz + dz * r.t;
+        if (segBlockedByObstacles(ox, oz, hx, hz)) continue;
+        bestT = r.t;
+        bestHit = { other, hy: r.y, t: r.t };
+      }
+    }
+    // Periodic beam event so the offline render can interpolate remote beams
+    // (none in offline, but engine.js's `beam` handler is safe to call).
+    this.pendingEvents.push({
+      type: "beam",
+      shooter_id: p.id,
+      x: ox, y: oy, z: oz,
+      yaw, pitch,
+      weapon: "laser",
+      hit_dist: bestT,
+    });
+    if (!bestHit) return;
+    const headshot = bestHit.hy > 1.45;
+    let damage = 12; // ~60 dps at 5 Hz cadence
+    if (headshot) damage = Math.floor(damage * 1.5);
+    bestHit.other.hp -= damage;
+    this.pendingEvents.push({
+      type: "hit",
+      shooter_id: p.id,
+      victim_id: bestHit.other.id,
+      hp: Math.max(0, bestHit.other.hp),
+      damage,
+      body_part: headshot ? "head" : "body",
+      headshot,
+      weapon: "laser",
+    });
+    if (bestHit.other.hp <= 0) {
+      this._handleKill(p, bestHit.other, "laser", headshot, false);
+    }
+  }
+
   _handleMelee(p, yaw, pitch, now) {
     if (!p.alive) return;
     if (now - p.last_melee_ms < MELEE_COOLDOWN_MS) return;
@@ -494,8 +561,35 @@ export class LocalSim {
         p.invuln_until = now + 3000;
         p.ammo = { ak47: WEAPONS.ak47.mag_size, laser: WEAPONS.laser.mag_size };
         p.reload_until_ms = { ak47: 0, laser: 0 };
+        // Reset laser state so a death-while-overheated doesn't lock the
+        // weapon after respawn.
+        p.laser_heat = 0;
+        p.laser_overheated = false;
+        p.laser_firing = false;
       }
       p.finish_reload_if_due(now);
+    }
+    // Local laser beam — apply per-tick damage + heat ramp while held.
+    if (this.me && this.me.alive && this.me.weapon === "laser") {
+      const dt = 0.05; // 20Hz tick
+      if (this.me.laser_firing && !this.me.laser_overheated) {
+        this.me.laser_heat = Math.min(1.0, this.me.laser_heat + dt / 3.0);
+        // ~4 damage events per second feels close to 60 dps with quantized hits
+        if (now - this.me._lastBeamTickMs >= 200) {
+          this.me._lastBeamTickMs = now;
+          this._applyLaserBeam(this.me, now);
+        }
+        if (this.me.laser_heat >= 1.0) {
+          this.me.laser_firing = false;
+          this.me.laser_overheated = true;
+          this.pendingEvents.push({ type: "overheat", shooter_id: this.me.id });
+        }
+      } else {
+        this.me.laser_heat = Math.max(0, this.me.laser_heat - dt / 4.0);
+        if (this.me.laser_overheated && this.me.laser_heat <= 0) {
+          this.me.laser_overheated = false;
+        }
+      }
     }
     // Bot AI
     if (this.me) {

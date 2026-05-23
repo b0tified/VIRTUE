@@ -42,6 +42,27 @@ app = FastAPI()
 api = APIRouter(prefix="/api")
 
 
+# Track fire-and-forget background tasks (DB stat updates etc.) so they aren't
+# garbage-collected mid-await. asyncio holds only weak refs to tasks created
+# via create_task — without this, occasional `Task was destroyed` warnings can
+# silently drop kill/death increments.
+_BG_TASKS: set = set()
+
+
+def _bg(coro):
+    """Schedule a coroutine in the background without blocking the caller.
+    Used for non-critical DB writes (kill/death stat increments) that would
+    otherwise stall the 20Hz tick loop or WebSocket receive coroutine when
+    Mongo is slow."""
+    try:
+        t = asyncio.create_task(coro)
+        _BG_TASKS.add(t)
+        t.add_done_callback(_BG_TASKS.discard)
+    except RuntimeError:
+        # No running event loop (shouldn't happen in normal flow).
+        pass
+
+
 # -------------------------------------------------------------------
 # Helpers - Auth
 # -------------------------------------------------------------------
@@ -969,16 +990,21 @@ class GameRoom:
 
     async def broadcast(self, msg: dict):
         data = json.dumps(msg)
-        dead = []
-        for p in list(self.players.values()):
-            if p.is_bot or p.ws is None:
-                continue
-            try:
-                await p.ws.send_text(data)
-            except Exception:
-                dead.append(p)
-        for p in dead:
-            self.players.pop(p.id, None)
+        # Fan out concurrently — a single slow client used to block the entire
+        # 20Hz tick because each send_text was awaited sequentially. Using
+        # gather() lets fast clients receive their state while slow ones are
+        # still flushing. return_exceptions=True so one failure doesn't cancel
+        # the whole group.
+        targets = [p for p in list(self.players.values()) if not p.is_bot and p.ws is not None]
+        if not targets:
+            return
+        results = await asyncio.gather(
+            *[p.ws.send_text(data) for p in targets],
+            return_exceptions=True,
+        )
+        for p, res in zip(targets, results):
+            if isinstance(res, Exception):
+                self.players.pop(p.id, None)
 
     def collides_obstacle(self, x: float, z: float) -> bool:
         s = ARENA["size"]
@@ -1162,15 +1188,9 @@ class GameRoom:
                     "weapon": "katana",
                 })
                 if not attacker.is_bot and attacker.user_id:
-                    try:
-                        await db.users.update_one({"_id": ObjectId(attacker.user_id)}, {"$inc": {"stats.kills": 1}})
-                    except Exception:
-                        pass
+                    _bg(db.users.update_one({"_id": ObjectId(attacker.user_id)}, {"$inc": {"stats.kills": 1}}))
                 if not best.is_bot and best.user_id:
-                    try:
-                        await db.users.update_one({"_id": ObjectId(best.user_id)}, {"$inc": {"stats.deaths": 1}})
-                    except Exception:
-                        pass
+                    _bg(db.users.update_one({"_id": ObjectId(best.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
     async def _apply_shoot(self, shooter: Player, base_damage: int):
         """Overwatch-style shot resolution: spread cone + falloff + headshot multiplier.
@@ -1256,15 +1276,9 @@ class GameRoom:
                     "headshot": body_part == "head" and not shooter.is_bot,
                 })
                 if not shooter.is_bot and shooter.user_id:
-                    try:
-                        await db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}})
-                    except Exception:
-                        pass
+                    _bg(db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}}))
                 if not hit.is_bot and hit.user_id:
-                    try:
-                        await db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}})
-                    except Exception:
-                        pass
+                    _bg(db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
     async def _apply_laser_beam(self, shooter: Player, dt: float):
         """Continuous laser beam — applies damage per tick while firing.
@@ -1344,15 +1358,9 @@ class GameRoom:
                 "headshot": body_part == "head",
             })
             if not shooter.is_bot and shooter.user_id:
-                try:
-                    await db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}})
-                except Exception:
-                    pass
+                _bg(db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}}))
             if not hit.is_bot and hit.user_id:
-                try:
-                    await db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}})
-                except Exception:
-                    pass
+                _bg(db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
     async def handle_message(self, player: Player, msg: dict):
         # Spectators are read-only — ignore all gameplay messages.
@@ -1384,10 +1392,25 @@ class GameRoom:
             player.pitch = max(-1.5, min(1.5, pitch))
             if "ads" in msg:
                 player.is_ads = bool(msg["ads"])
+            # Client tells us its currently-equipped weapon every input tick
+            # so we can correctly resolve continuous-fire (laser) and hit-scan.
+            # Without this the server never sees a weapon switch from the
+            # client (discrete 'shoot' messages set it, but laser fire is
+            # continuous and goes via 'input' only).
+            if "weapon" in msg:
+                w = msg.get("weapon")
+                if w in WEAPON_CONFIGS:
+                    player.weapon = w
             if "laser_firing" in msg:
-                # Stop the beam server-side if the client lets go; tick() handles
-                # the per-tick damage + heat ramp when firing == True.
-                player.laser_firing = bool(msg["laser_firing"]) and player.weapon == "laser" and not player.laser_overheated
+                # Stop the beam server-side if the client lets go; tick()
+                # handles the per-tick damage + heat ramp when firing == True.
+                # We only require player.weapon == "laser" *after* the weapon
+                # field above has been processed.
+                player.laser_firing = (
+                    bool(msg["laser_firing"])
+                    and player.weapon == "laser"
+                    and not player.laser_overheated
+                )
         elif mtype == "shoot":
             now_ms = int(time.time() * 1000)
             if not player.alive:
@@ -1588,6 +1611,13 @@ class GameRoom:
                     p.reload_until_ms[w] = 0
                 p.spread = 0.0
                 p.is_ads = False
+                # Reset laser beam state on respawn — otherwise a player who
+                # died while overheated stays unable to fire on respawn, and a
+                # client that died mid-beam-hold can keep `laser_firing=True`
+                # on the server forever.
+                p.laser_heat = 0.0
+                p.laser_overheated = False
+                p.laser_firing = False
                 self.events.append({"type": "respawn", "id": p.id})
             if not p.is_bot and p.alive:
                 # Decay spread when not firing (Overwatch-style recoil recovery)

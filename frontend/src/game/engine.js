@@ -95,6 +95,7 @@ export class GameEngine {
     // World
     this._buildArena();
     this._buildWeapon();
+    this._buildLaserBeam();
 
     // Listeners
     this._onMouseMove = this._onMouseMove.bind(this);
@@ -963,6 +964,129 @@ export class GameEngine {
     this.scene.add(this.camera);
   }
 
+  /* Persistent laser-beam mesh — one shared cylinder is positioned/scaled
+     every frame from the camera to the first obstacle/player. Cheaper than
+     spawning a new tracer each tick + lets us animate a smooth core. */
+  _buildLaserBeam() {
+    // Use a unit cylinder (height=1, radius=1) and scale per-frame.
+    const geom = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+    geom.translate(0, 0.5, 0); // base at origin, extends along +Y
+    const outer = new THREE.MeshBasicMaterial({
+      color: 0x00e8ff,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const core = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this._beamOuter = new THREE.Mesh(geom, outer);
+    this._beamCore = new THREE.Mesh(geom, core);
+    this._beamOuter.visible = false;
+    this._beamCore.visible = false;
+    // Beams aren't camera-children — we position them in world space so they
+    // start from the muzzle and end at the impact point. Adding to scene
+    // means they're rendered after camera-attached weapon view-model too.
+    this.scene.add(this._beamOuter);
+    this.scene.add(this._beamCore);
+  }
+
+  /* Cast a ray against arena obstacles + other players (capsule approx) and
+     return [endPoint, distance]. Mirrors the server's hit-scan distance so
+     the beam visually terminates where the damage would land. */
+  _laserCastEnd(originVec, dirVec) {
+    const MAX = 80;
+    let bestT = MAX;
+    // Obstacles (AABB) — reuse arena data if available.
+    const arena = this._arena;
+    if (arena && arena.obstacles) {
+      for (const ob of arena.obstacles) {
+        const minx = ob.x - ob.w / 2, maxx = ob.x + ob.w / 2;
+        const miny = 0, maxy = ob.h;
+        const minz = ob.z - ob.d / 2, maxz = ob.z + ob.d / 2;
+        let tmin = 0, tmax = bestT;
+        const slabs = [
+          [originVec.x, dirVec.x, minx, maxx],
+          [originVec.y, dirVec.y, miny, maxy],
+          [originVec.z, dirVec.z, minz, maxz],
+        ];
+        let hit = true;
+        for (const [o, d, lo, hi] of slabs) {
+          if (Math.abs(d) < 1e-6) {
+            if (o < lo || o > hi) { hit = false; break; }
+          } else {
+            let t1 = (lo - o) / d, t2 = (hi - o) / d;
+            if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+            if (t1 > tmin) tmin = t1;
+            if (t2 < tmax) tmax = t2;
+            if (tmin > tmax) { hit = false; break; }
+          }
+        }
+        if (hit && tmin >= 0 && tmin < bestT) bestT = tmin;
+      }
+    }
+    // Players (sphere approximation around torso)
+    for (const entry of this.players.values()) {
+      if (!entry || !entry.mesh) continue;
+      const m = new THREE.Vector3(
+        originVec.x - entry.mesh.position.x,
+        originVec.y - (entry.mesh.position.y + 1.05),
+        originVec.z - entry.mesh.position.z,
+      );
+      const b = m.x * dirVec.x + m.y * dirVec.y + m.z * dirVec.z;
+      const c = m.x * m.x + m.y * m.y + m.z * m.z - 0.85 * 0.85;
+      const disc = b * b - c;
+      if (disc < 0) continue;
+      let t = -b - Math.sqrt(disc);
+      if (t < 0) t = -b + Math.sqrt(disc);
+      if (t >= 0 && t < bestT) bestT = t;
+    }
+    return bestT;
+  }
+
+  /* Position the persistent laser-beam cylinders for this frame.
+     Returns true if the beam is active and visible. */
+  _updateLaserBeamVisual() {
+    const active = this.currentWeapon === "tertiary"
+      && this._laserFireHeld
+      && this.alive
+      && !this.localLaserOverheated
+      && !this.isSpectator;
+    if (!this._beamOuter || !this._beamCore) return false;
+    if (!active) {
+      this._beamOuter.visible = false;
+      this._beamCore.visible = false;
+      return false;
+    }
+    // Origin: a bit forward of the camera so it appears to leave the gun barrel
+    const forward = new THREE.Vector3(0, 0, -1).applyEuler(
+      new THREE.Euler(this.pitch, this.yaw, 0, "YXZ")
+    );
+    const origin = new THREE.Vector3().copy(this.position).add(forward.clone().multiplyScalar(0.6));
+    const dist = this._laserCastEnd(origin, forward);
+    // Orient cylinder along +Y by default, so rotate to match `forward`.
+    const up = new THREE.Vector3(0, 1, 0);
+    const quat = new THREE.Quaternion().setFromUnitVectors(up, forward);
+    const t = performance.now() * 0.012;
+    const pulse = 0.85 + 0.15 * Math.sin(t);
+    for (const m of [this._beamOuter, this._beamCore]) {
+      m.position.copy(origin);
+      m.quaternion.copy(quat);
+      m.visible = true;
+    }
+    // Outer glow radius pulses; core stays thin.
+    this._beamOuter.scale.set(0.13 * pulse, dist, 0.13 * pulse);
+    this._beamCore.scale.set(0.045, dist, 0.045);
+    return true;
+  }
+
   setWeapon(name) {
     if (name !== "primary" && name !== "secondary" && name !== "tertiary") return;
     // Stop the laser beam if we switch away from tertiary.
@@ -1177,6 +1301,10 @@ export class GameEngine {
       this.pitch = msg.you.pitch;
       this.isSpectator = !!msg.spectator;
       this.spectateTargetId = msg.spectate_target_id || null;
+      // Cache the arena so client-side beam raycasts can clip against
+      // obstacles (mirrors server occlusion so the beam visually terminates
+      // at the wall, not 80m beyond it).
+      if (msg.arena) this._arena = msg.arena;
       return;
     }
     if (msg.type === "state" && this.isSpectator && this.spectateTargetId) {
@@ -1521,6 +1649,12 @@ export class GameEngine {
         this.bullets.splice(i, 1);
       }
     }
+
+    // Continuous laser beam — render as a glowing cylinder from the camera
+    // each frame while the player is holding fire on the laser. Server-side
+    // damage + heat ramp are independent (driven by `laser_firing` in the
+    // 20Hz input message); this is purely cosmetic.
+    this._updateLaserBeamVisual();
 
     // Remote players: hit flash + running animation + death anim
     const nowMs = performance.now();

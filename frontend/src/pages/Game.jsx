@@ -225,6 +225,8 @@ export default function Game() {
       // Spectators don't send any input — server ignores it anyway.
       if (engineRef.current.isSpectator) return;
       const snap = engineRef.current.snapshot();
+      const curWeapon =
+        engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
       sock.send({
         type: "input",
         x: snap.x,
@@ -232,6 +234,14 @@ export default function Game() {
         yaw: snap.yaw,
         pitch: snap.pitch,
         ads: !!snap.ads,
+        // Tell the server which weapon we currently have equipped so it can
+        // gate continuous-fire (laser) and resolve hit-scan shots against the
+        // correct config. Without this the server never sees "laser" and the
+        // beam tick is silently skipped.
+        weapon: curWeapon,
+        // Continuous laser fire — server applies per-tick damage + heat while
+        // this is true (subject to overheat lockout).
+        laser_firing: !!snap.laser_firing,
       });
       // Mirror ADS into hud for the scope overlay.
       setHud((h) => (h.ads === !!snap.ads ? h : { ...h, ads: !!snap.ads }));
