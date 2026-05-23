@@ -66,6 +66,12 @@ export class GameEngine {
     // flash + gunshot SFX while reloading or empty.
     this.localAmmo = { ak47: 25, laser: 60 };
     this.localReloading = false;
+    // AK reload animation state. _reloadT animates 0→1 across the reload
+    // duration; the viewmodel + magazine sub-group are transformed each
+    // frame in _update().
+    this._reloadT = 0;
+    this._reloadDurMs = 1500;
+    this._reloadWeapon = null;
     this.localLaserHeat = 0;
     this.localLaserOverheated = false;
     this._laserFireHeld = false;
@@ -827,14 +833,20 @@ export class GameEngine {
     muzzle.rotation.x = Math.PI / 2;
     muzzle.position.set(0, 0.03, -1.25);
     ak.add(muzzle);
-    // Banana magazine (curved → approximate w/ two angled boxes)
+    // Banana magazine (curved → approximate w/ two angled boxes).
+    // Grouped so it can be animated separately during reload.
+    const akMag = new THREE.Group();
     const magTop = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.16), 0x3a2510);
     magTop.position.set(0, -0.18, -0.18);
-    ak.add(magTop);
+    akMag.add(magTop);
     const magBot = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.14), 0x3a2510);
     magBot.position.set(0, -0.34, -0.08);
     magBot.rotation.x = -0.5;
-    ak.add(magBot);
+    akMag.add(magBot);
+    ak.add(akMag);
+    this._akMagGroup = akMag;
+    this._akMagBaseY = 0;
+    this._akMagBaseZ = 0;
     // Grip (angled)
     const grip = this._outlined(new THREE.BoxGeometry(0.1, 0.22, 0.13), 0x3a2510);
     grip.position.set(0, -0.18, 0.02);
@@ -1344,6 +1356,14 @@ export class GameEngine {
             this.localAmmo[w] = p.ammo;
           }
           this.localReloading = !!p.reloading;
+          // Edge-detect: when server says we just entered a reload, kick off
+          // the viewmodel animation + reload SFX (idempotent — won't restart
+          // mid-reload because we only fire the edge once).
+          if (this.localReloading && this._reloadT <= 0) {
+            this._reloadT = 0.001;
+            this._reloadWeapon = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+            this.onLocalUpdate?.({ type: "reload-start", weapon: this._reloadWeapon });
+          }
           // Laser beam state (heat % + overheat lockout).
           this.localLaserHeat = Number.isFinite(p.laser_heat) ? p.laser_heat : (this.localLaserHeat || 0);
           this.localLaserOverheated = !!p.laser_overheated;
@@ -1625,9 +1645,54 @@ export class GameEngine {
       const bobOn = this._bobEnabled !== false;
       const bob = (moving && bobOn) ? Math.sin(performance.now() / (sprint ? 70 : 100)) * (adsActive ? 0.006 : 0.018) : 0;
       if (this.currentWeapon !== "secondary") {
-        this._weapon.position.set(baseX, baseY + bob + this.recoil * 0.04, baseZ + this.recoil * 0.12);
-        this._weapon.rotation.x = -this.recoil * 0.22;
+        // Reload animation overlay — drop the gun + tilt, animate the mag.
+        // 3 phases: 0..0.3 drop-mag, 0.3..0.7 hold, 0.7..1.0 slap-mag.
+        let reloadX = 0, reloadY = 0, reloadZ = 0, reloadRotX = 0, reloadRotZ = 0;
+        let magDy = 0, magDz = 0, magRotX = 0;
+        if (this._reloadT > 0 && this._reloadT < 1) {
+          // Advance timer.
+          this._reloadT = Math.min(1, this._reloadT + dt * 1000 / this._reloadDurMs);
+          const t = this._reloadT;
+          // Smooth ease-in-out envelope for gun dip (peaks mid-reload).
+          const dip = Math.sin(t * Math.PI); // 0→1→0
+          reloadY = -0.16 * dip;
+          reloadZ = 0.05 * dip;
+          reloadRotX = 0.55 * dip; // tilt muzzle down
+          reloadRotZ = -0.18 * dip;
+          // Magazine: 0..0.3 drop out, 0.3..0.7 invisible-ish (held off-screen),
+          // 0.7..1.0 slap back in.
+          if (t < 0.3) {
+            const k = t / 0.3; // 0..1
+            magDy = -0.55 * k;
+            magDz = 0.05 * k;
+            magRotX = 0.35 * k;
+          } else if (t < 0.7) {
+            magDy = -0.55;
+            magDz = 0.05;
+            magRotX = 0.35;
+          } else {
+            const k = (1 - t) / 0.3; // 1..0
+            magDy = -0.55 * k;
+            magDz = 0.05 * k;
+            magRotX = 0.35 * k;
+          }
+          if (t >= 1) {
+            this._reloadT = 0;
+            this._reloadWeapon = null;
+          }
+        }
+        this._weapon.position.set(baseX + reloadX, baseY + bob + this.recoil * 0.04 + reloadY, baseZ + this.recoil * 0.12 + reloadZ);
+        this._weapon.rotation.x = -this.recoil * 0.22 + reloadRotX;
         this._weapon.rotation.y = adsActive ? 0 : -0.05;
+        this._weapon.rotation.z = reloadRotZ;
+        // Apply magazine offset (only on AK — laser viewmodel has no mag group).
+        if (this._akMagGroup && this.currentWeapon === "primary") {
+          this._akMagGroup.position.set(0, magDy, magDz);
+          this._akMagGroup.rotation.x = magRotX;
+        } else if (this._akMagGroup) {
+          this._akMagGroup.position.set(0, 0, 0);
+          this._akMagGroup.rotation.x = 0;
+        }
         this.recoil = Math.max(0, this.recoil - dt * 5);
         if (this._muzzleFlash) {
           this._muzzleFlash.material.opacity = Math.max(0, this._muzzleFlash.material.opacity - dt * 14);

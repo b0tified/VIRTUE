@@ -346,6 +346,7 @@ async def on_startup():
     asyncio.create_task(practice_room.run())
     asyncio.create_task(matchmaker_loop())
     asyncio.create_task(season_loop())
+    asyncio.create_task(synthetic_online_loop())
 
 
 @app.on_event("shutdown")
@@ -2721,7 +2722,37 @@ async def root():
         "message": "Shooter PvP API",
         "casual_players": len(game_room.players),
         "ranked_players": len(ranked_room.players),
+        # Single, server-driven "Players online" value — all clients see the
+        # same number, and it drifts slowly server-side (see
+        # synthetic_online_loop). Keeps a believable sense of activity even
+        # when real session counts are low.
+        "players_online": SYNTHETIC_ONLINE["value"],
     }
+
+
+# Server-authoritative synthetic player-count. Drifts every ~10s in [3, 35]
+# so every connected client sees the same value.
+SYNTHETIC_ONLINE: Dict[str, int] = {"value": 12}
+
+
+async def synthetic_online_loop():
+    while True:
+        try:
+            cur = SYNTHETIC_ONLINE["value"]
+            big = random.random() < 0.10
+            if big:
+                step = random.choice([-1, 1]) * random.randint(3, 6)
+            else:
+                step = random.randint(-2, 2)
+            nxt = cur + step
+            if nxt < 3:
+                nxt = 3 + random.randint(0, 1)
+            elif nxt > 35:
+                nxt = 35 - random.randint(0, 1)
+            SYNTHETIC_ONLINE["value"] = nxt
+        except Exception as e:
+            logger.warning("synthetic_online_loop error: %s", e)
+        await asyncio.sleep(10.0)
 
 
 @api.get("/leaderboard/ranked")

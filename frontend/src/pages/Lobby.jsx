@@ -91,28 +91,23 @@ export default function Lobby() {
   // single fluctuating "Players online" widget driven client-side; real per-
   // room counts are no longer surfaced in the UI.
 
-  // Combined "Players online" counter. We don't expose raw room counts in the
-  // UI anymore — a single fluctuating value (3..35) drives a more believable
-  // sense of an active community. Drifts each tick instead of jumping so it
-  // doesn't feel obviously random.
-  const [displayOnline, setDisplayOnline] = useState(() => 8 + Math.floor(Math.random() * 18));
+  // Combined "Players online" counter — server-driven so every client sees
+  // the same number. The backend drifts the value slowly (~10s cadence) in
+  // [3, 35]; we poll every 6s and update locally.
+  const [displayOnline, setDisplayOnline] = useState(12);
   useEffect(() => {
     let alive = true;
-    const id = setInterval(() => {
-      if (!alive) return;
-      setDisplayOnline((cur) => {
-        // Step: -2 .. +2 each tick, clamped to [3, 35]. Occasionally a bigger
-        // jump (someone joining a room).
-        const big = Math.random() < 0.12;
-        const step = big
-          ? (Math.random() < 0.5 ? -1 : 1) * (3 + Math.floor(Math.random() * 4))
-          : Math.floor(Math.random() * 5) - 2;
-        const next = cur + step;
-        if (next < 3) return 3 + Math.floor(Math.random() * 2);
-        if (next > 35) return 35 - Math.floor(Math.random() * 2);
-        return next;
-      });
-    }, 2200);
+    const fetchOnline = async () => {
+      try {
+        const { data } = await api.get("/");
+        if (!alive) return;
+        if (typeof data?.players_online === "number") {
+          setDisplayOnline(data.players_online);
+        }
+      } catch {}
+    };
+    fetchOnline();
+    const id = setInterval(fetchOnline, 6000);
     return () => { alive = false; clearInterval(id); };
   }, []);
 

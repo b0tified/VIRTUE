@@ -129,6 +129,8 @@ export default function Game() {
         } else if (ev.type === "laser-overheat") {
           audioBus.laserOverheat();
           setHud((h) => ({ ...h, laserOverheat: Date.now() }));
+        } else if (ev.type === "reload-start") {
+          audioBus.reload(ev.weapon || "ak47");
         }
       },
     });

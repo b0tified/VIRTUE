@@ -224,6 +224,60 @@ class AudioBus {
     src.start(t0);
   }
 
+  /* -------- Reload SFX (AK-style mag drop + slap) --------
+     Three quick beats: mag click-out (high tick), drop (low thud), slap-in
+     (sharper thud). Cheap envelope-driven white-noise + sine combo. */
+  reload(weapon = "ak47") {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime;
+
+    const tick = (t, freq, dur, vol, type = "triangle") => {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(g); g.connect(this.sfxGain);
+      osc.start(t); osc.stop(t + dur + 0.02);
+    };
+    const thud = (t, dur, vol, hp = 80, lp = 700) => {
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.6);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const hpF = ctx.createBiquadFilter();
+      hpF.type = "highpass"; hpF.frequency.value = hp;
+      const lpF = ctx.createBiquadFilter();
+      lpF.type = "lowpass"; lpF.frequency.value = lp;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(hpF); hpF.connect(lpF); lpF.connect(g); g.connect(this.sfxGain);
+      src.start(t);
+    };
+
+    if (weapon === "laser") {
+      // Sci-fi "energy cell swap" — two ascending blips + soft whoosh
+      tick(t0,        660, 0.07, 0.28, "square");
+      tick(t0 + 0.12, 990, 0.09, 0.30, "square");
+      thud(t0 + 0.22, 0.18, 0.35, 800, 4000);
+      tick(t0 + 0.45, 1320, 0.10, 0.32, "sine");
+    } else {
+      // AK-style: mag click-out → drop → slap-in
+      tick(t0,        1100, 0.05, 0.32);       // metallic click-out
+      thud(t0 + 0.08, 0.12, 0.55, 100, 900);   // mag hits palm/floor
+      thud(t0 + 0.55, 0.10, 0.65, 120, 1200);  // fresh mag slap-in
+      tick(t0 + 0.65, 600, 0.08, 0.45);        // bolt thunk
+      tick(t0 + 0.85, 1800, 0.04, 0.25);       // charging-handle click
+    }
+  }
+
   /* -------- Continuous laser beam (looping hum) --------
      Two detuned saw oscillators + a high sine "whine" through a slow LFO
      band-pass for a sci-fi sustained beam tone. _beam holds the active node
