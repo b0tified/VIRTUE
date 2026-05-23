@@ -156,7 +156,11 @@ export default function Game() {
         if (!intentional) {
           // Lost connection — kick back to lobby.
           try { document.exitPointerLock?.(); } catch {}
-          nav("/lobby?disconnected=1", { replace: true });
+          if (isSpectator && spectateTarget) {
+            nav(`/lobby?spectate_ended=1&target=${encodeURIComponent(spectateTarget)}`, { replace: true });
+          } else {
+            nav("/lobby?disconnected=1", { replace: true });
+          }
         }
       },
       onMessage: (msg) => {

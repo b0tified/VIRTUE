@@ -17,6 +17,8 @@ export default function Lobby() {
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
+  const [spectateEnded, setSpectateEnded] = useState(searchParams.get("spectate_ended") === "1");
+  const spectateEndedTarget = searchParams.get("target") || "";
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..10
@@ -89,6 +91,20 @@ export default function Lobby() {
     }, 5000);
     return () => clearTimeout(t);
   }, [disconnected, searchParams, setSearchParams]);
+
+  // Auto-clear ?spectate_ended=1 from URL after 5s.
+  useEffect(() => {
+    if (!spectateEnded) return;
+    const t = setTimeout(() => {
+      setSpectateEnded(false);
+      if (searchParams.get("spectate_ended")) {
+        searchParams.delete("spectate_ended");
+        searchParams.delete("target");
+        setSearchParams(searchParams, { replace: true });
+      }
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [spectateEnded, searchParams, setSearchParams]);
 
   // Poll active player counts every 3s
   useEffect(() => {
@@ -437,6 +453,26 @@ export default function Lobby() {
                   CASUAL · FFA
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Spectate ended toast — target no longer in a match */}
+      {spectateEnded && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="spectate-ended-toast">
+          <div className="card-pow p-0 overflow-hidden">
+            <div className="px-4 py-2 flex items-center gap-2 bg-[#FFD700] text-black">
+              <WifiOff size={18} strokeWidth={3} />
+              <span className="font-anton uppercase tracking-widest text-sm flex-1">Spectate Ended</span>
+              <button onClick={() => setSpectateEnded(false)} className="font-anton hover:opacity-80" data-testid="spectate-ended-toast-close" title="Dismiss">
+                <X size={16} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="px-4 py-3 bg-white">
+              <p className="font-body text-xs text-neutral-700">
+                {spectateEndedTarget ? <><span className="font-anton uppercase">{spectateEndedTarget}</span> is no longer in a match.</> : "That player is no longer in a match."}
+              </p>
             </div>
           </div>
         </div>

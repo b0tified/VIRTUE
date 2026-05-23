@@ -1194,6 +1194,11 @@ export class GameEngine {
 
     // Weapon sway + recoil + ADS
     if (this._weapon) {
+      // Spectators don't have a viewmodel — hide the entire weapon group.
+      if (this.isSpectator) {
+        this._weapon.visible = false;
+      } else {
+        this._weapon.visible = true;
       const adsActive = !!this.ads && this.currentWeapon !== "secondary";
       // While ADS: hide the gun model entirely so it doesn't block vision —
       // the HUD scope overlay replaces the iron-sights pose. Katana (secondary)
@@ -1223,6 +1228,7 @@ export class GameEngine {
         this._weapon.position.set(baseX - sw * 0.15, baseY + bob + sw * 0.05, baseZ - sw * 0.15);
         this._weapon.rotation.set(-sw * 0.6, 0.6 + sw * 0.9, sw * 0.5);
       }
+      } // end !isSpectator
     }
 
     // Bullets fade
