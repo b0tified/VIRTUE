@@ -52,10 +52,16 @@ export function QueueProvider({ children }) {
         try {
           const { data: s } = await api.get("/queue/ranked");
           // Sync local clock to the server's authoritative elapsed value, but
-          // ONLY if they differ by more than 1s (avoid visible snaps).
-          if (typeof s.wait_seconds === "number") {
+          // ONLY while still queueing (server is in_queue=true & not matched).
+          // Once matched, `wait_seconds` means "seconds since match" — applying
+          // it here would yank the local timer back to ~0 and create the
+          // jumping behaviour the user reported. Same after a cancel: the
+          // server returns in_queue=false / wait_seconds=0, which we ignore.
+          if (s && s.in_queue && !s.matched && typeof s.wait_seconds === "number") {
             const localSec = Math.floor((Date.now() - joinedAtRef.current) / 1000);
-            if (Math.abs(s.wait_seconds - localSec) > 1) {
+            // Only resync when the drift is meaningful (>2s) so micro-jitter
+            // from poll latency doesn't push the displayed second back/forth.
+            if (Math.abs(s.wait_seconds - localSec) > 2) {
               joinedAtRef.current = Date.now() - (s.wait_seconds * 1000);
               setWaitSec(s.wait_seconds);
             }
