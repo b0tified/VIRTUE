@@ -1804,13 +1804,26 @@ async def _party_payload(party_id: str) -> dict:
 #   when listing.
 # -------------------------------------------------------------------
 ONLINE_USERS: Dict[str, int] = {}  # user_id -> open WS connection count
+# Lobby presence — user_id -> last heartbeat unix ts. Users in the lobby (no WS)
+# ping POST /api/presence/heartbeat every ~20s; we treat them as online for the
+# next HEARTBEAT_TTL seconds.
+PRESENCE_HEARTBEAT: Dict[str, float] = {}
+HEARTBEAT_TTL = 45.0
 # Where each player currently is (lobby/match). Set by GameRoom.add/remove.
 # Value example: {"kind": "casual"} | {"kind": "party", "party_id": "..."}
 PLAYER_LOCATION: Dict[str, dict] = {}
 
 
 def is_online(user_id: str) -> bool:
-    return ONLINE_USERS.get(user_id, 0) > 0
+    if ONLINE_USERS.get(user_id, 0) > 0:
+        return True
+    ts = PRESENCE_HEARTBEAT.get(user_id)
+    if ts is None:
+        return False
+    if (time.time() - ts) > HEARTBEAT_TTL:
+        PRESENCE_HEARTBEAT.pop(user_id, None)
+        return False
+    return True
 
 
 def player_location(user_id: str) -> Optional[dict]:
@@ -1842,6 +1855,14 @@ def _friend_card(u: dict) -> dict:
 
 async def _find_user_by_username(username: str) -> Optional[dict]:
     return await db.users.find_one({"username": {"$regex": f"^{username}$", "$options": "i"}})
+
+
+@api.post("/presence/heartbeat")
+async def presence_heartbeat(user: dict = Depends(get_current_user)):
+    """Lobby clients ping this every ~20s so they show as online to friends.
+    Returns the current online state for the caller (sanity)."""
+    PRESENCE_HEARTBEAT[str(user["_id"])] = time.time()
+    return {"online": True, "ttl": HEARTBEAT_TTL}
 
 
 @api.get("/friends")

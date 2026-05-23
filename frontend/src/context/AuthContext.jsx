@@ -22,6 +22,18 @@ export function AuthProvider({ children }) {
     refreshMe();
   }, [refreshMe]);
 
+  // Presence heartbeat — pings backend every 20s so friends see this user as
+  // online from any authenticated page (Lobby, Profile, Leaderboard, etc.).
+  // The game WebSocket already counts presence while in a match.
+  useEffect(() => {
+    if (!user || user === false) return;
+    let alive = true;
+    const ping = () => { if (alive) api.post("/presence/heartbeat").catch(() => {}); };
+    ping();
+    const id = setInterval(ping, 20000);
+    return () => { alive = false; clearInterval(id); };
+  }, [user]);
+
   const login = async (email, password) => {
     try {
       const { data } = await api.post("/auth/login", { email, password });
