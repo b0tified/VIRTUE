@@ -44,6 +44,7 @@ export default function Game() {
     killFeed: [],
     showScoreboard: false,
     damaged: 0,
+    damageMarkers: [],
     hitConfirm: 0,
     connected: false,
     fps: 0,
@@ -110,7 +111,35 @@ export default function Game() {
       },
       onLocalUpdate: (ev) => {
         if (ev.type === "damaged") {
-          setHud((h) => ({ ...h, damaged: Date.now() }));
+          // Build a damage-indicator marker so the HUD can show an arc pointing
+          // toward the shooter. We also compute the angle relative to the
+          // player's current facing here so the engine snapshot used in the
+          // HUD doesn't have to know world coords.
+          let angleRad = null;
+          if (ev.from) {
+            const you = engineRef.current;
+            if (you) {
+              const dx = ev.from.x - you.position.x;
+              const dz = ev.from.z - you.position.z;
+              // World yaw=0 points along -Z (see engine input math). Compute
+              // angle in world XY plane → atan2(dx, -dz). Subtracting the
+              // player's yaw rotates it into HUD/screen space (0 = forward,
+              // π/2 = right, ±π = behind).
+              const worldAngle = Math.atan2(dx, -dz);
+              angleRad = worldAngle - (ev.yaw ?? 0);
+              // Normalize to [-π, π]
+              while (angleRad > Math.PI) angleRad -= 2 * Math.PI;
+              while (angleRad < -Math.PI) angleRad += 2 * Math.PI;
+            }
+          }
+          setHud((h) => ({
+            ...h,
+            damaged: Date.now(),
+            damageMarkers: [
+              ...(h.damageMarkers || []).filter((m) => Date.now() - m.ts < 1500),
+              { ts: Date.now(), angle: angleRad },
+            ].slice(-5),
+          }));
           audioBus.hurt();
         } else if (ev.type === "remote-shot") {
           audioBus.gunshot(ev.shooterId, ev.distance, ev.weapon || "ak47");

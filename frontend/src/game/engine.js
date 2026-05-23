@@ -1449,8 +1449,21 @@ export class GameEngine {
         } else if (ev.type === "melee") {
           this._spawnMeleeArc(ev);
         } else if (ev.type === "hit") {
-          if (ev.victim_id === this.youId) this.onLocalUpdate({ type: "damaged" });
-          else if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-hit", headshot: !!ev.headshot, damage: ev.damage, bodyPart: ev.body_part });
+          if (ev.victim_id === this.youId) {
+            // Damage-direction indicator — bubble up the shooter's last known
+            // world position so the HUD can render an arc pointing toward
+            // where the shot came from. Players we haven't seen yet (or who
+            // already despawned) fall back to omni-directional flash.
+            let from = null;
+            const shooterEntry = this.players.get(ev.shooter_id);
+            const shooterMesh = shooterEntry?.mesh;
+            if (shooterMesh) {
+              from = { x: shooterMesh.position.x, z: shooterMesh.position.z };
+            }
+            this.onLocalUpdate({ type: "damaged", from, yaw: this.yaw });
+          } else if (ev.shooter_id === this.youId) {
+            this.onLocalUpdate({ type: "you-hit", headshot: !!ev.headshot, damage: ev.damage, bodyPart: ev.body_part });
+          }
         } else if (ev.type === "kill") {
           if (ev.shooter_id === this.youId) this.onLocalUpdate({ type: "you-killed", victim: ev.victim_name, headshot: !!ev.headshot });
           else if (ev.victim_id === this.youId) {

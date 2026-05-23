@@ -119,6 +119,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
       {/* Damage vignette */}
       {showDmg && showFlash && <div className="dmg-vignette" />}
 
+      {/* Damage-direction indicators — red arcs around the screen edge
+          pointing toward whoever shot you. Each marker fades over 1.5s. */}
+      <DamageDirectionLayer markers={hud.damageMarkers || []} enabled={showFlash} />
+
       {/* Hit confirm pop near crosshair */}
       {showHit && pointerLocked && (
         <div className="hit-pop" data-testid="hit-pop" style={hud.hitHeadshot ? { color: "#FFD700" } : undefined}>
@@ -463,3 +467,126 @@ function DynamicCrosshair({ spread, showHit, headshot, style = "cross", color = 
     </div>
   );
 }
+
+/* Damage-direction indicator layer.
+
+   For each recent damage marker, render a red arc on the inside edge of the
+   screen rotated to point toward the shooter. Markers without a known
+   angle (shooter despawned / not in our state) render as a centered ring
+   pulse so the player still gets some feedback.
+
+   The arc is drawn with a wide partial border on a square element rotated
+   into position. Opacity fades over the 1500ms marker lifetime. */
+function DamageDirectionLayer({ markers, enabled }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!markers || markers.length === 0) return;
+    // Tick at 30 Hz so the fade is smooth. Stop once all markers are stale.
+    const id = setInterval(() => {
+      force((n) => (n + 1) & 1023);
+    }, 33);
+    return () => clearInterval(id);
+  }, [markers]);
+  if (!enabled || !markers || markers.length === 0) return null;
+  const now = Date.now();
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+      data-testid="damage-direction-layer"
+    >
+      {markers.map((m, i) => {
+        const age = now - m.ts;
+        if (age > 1500) return null;
+        const t = age / 1500;       // 0 -> 1 over lifetime
+        const opacity = (1 - t) * 0.85;
+        const scale = 0.92 + 0.12 * t; // grows slightly as it fades
+        // If no angle known, render a centered ring pulse.
+        if (m.angle == null || !Number.isFinite(m.angle)) {
+          return (
+            <div
+              key={`${m.ts}-${i}`}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: 220 * scale,
+                height: 220 * scale,
+                transform: "translate(-50%, -50%)",
+                border: "6px solid #ff3a3a",
+                borderRadius: "50%",
+                opacity: opacity * 0.5,
+                boxShadow: "0 0 28px rgba(255,58,58,0.45)",
+              }}
+              data-testid="damage-direction-omni"
+            />
+          );
+        }
+        // Convert angle (0=forward, π/2=right, π=behind, -π/2=left) to
+        // CSS rotation. CSS rotation is clockwise from the top, which
+        // matches our convention (0 = up = forward) directly.
+        const deg = (m.angle * 180) / Math.PI;
+        // The arc element sits in the screen center and we rotate it; its
+        // visual is a 70°-wide arc that lives near the top of a square.
+        return (
+          <div
+            key={`${m.ts}-${i}`}
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "min(560px, 60vmin)",
+              height: "min(560px, 60vmin)",
+              transform: `translate(-50%, -50%) rotate(${deg}deg) scale(${scale})`,
+              transformOrigin: "center center",
+              opacity,
+              pointerEvents: "none",
+            }}
+            data-testid="damage-direction-arc"
+            data-angle-deg={Math.round(deg)}
+          >
+            {/* The arc itself — a 70°-wide wedge of a circle, drawn with an
+                SVG path so we can taper its ends. Sits at the top of the
+                square (i.e. straight ahead of the player). */}
+            <svg
+              viewBox="0 0 100 100"
+              width="100%"
+              height="100%"
+              preserveAspectRatio="xMidYMid meet"
+              style={{ display: "block" }}
+            >
+              <defs>
+                <linearGradient id="dmgArcGrad" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#ff3a3a" stopOpacity="0.05" />
+                  <stop offset="50%" stopColor="#ff3a3a" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#ff3a3a" stopOpacity="0.05" />
+                </linearGradient>
+              </defs>
+              {/* Arc: center (50,50), radius 44, from -35deg to +35deg
+                  measured from straight up. Using polar conversion:
+                  x = 50 + 44 * sin(theta), y = 50 - 44 * cos(theta). */}
+              <path
+                d="M 24.76 14.74 A 44 44 0 0 1 75.24 14.74"
+                fill="none"
+                stroke="url(#dmgArcGrad)"
+                strokeWidth="6"
+                strokeLinecap="round"
+                style={{ filter: "drop-shadow(0 0 6px rgba(255,58,58,0.6))" }}
+              />
+              {/* Smaller inner tick — a chevron pointing inward for clarity. */}
+              <path
+                d="M 45 6 L 50 1 L 55 6"
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.9"
+              />
+            </svg>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
