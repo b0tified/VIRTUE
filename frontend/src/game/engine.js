@@ -246,14 +246,20 @@ export class GameEngine {
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
 
-    // A few "grass blade" sprite-decals (just small green spikes)
-    const bladeGeo = new THREE.ConeGeometry(0.08, 0.35, 4);
+    // A few "grass blade" sprite-decals (taller, with wind sway in update())
+    const bladeGeo = new THREE.ConeGeometry(0.07, 0.85, 4);
     const bladeMat = this._toonMat(0x4caf50);
-    for (let i = 0; i < 220; i++) {
+    this._grassBlades = [];
+    for (let i = 0; i < 280; i++) {
       const b = new THREE.Mesh(bladeGeo, bladeMat);
-      b.position.set((Math.random() - 0.5) * SIZE * 2, 0.15, (Math.random() - 0.5) * SIZE * 2);
+      b.position.set((Math.random() - 0.5) * SIZE * 2, 0.42, (Math.random() - 0.5) * SIZE * 2);
       b.rotation.y = Math.random() * Math.PI;
+      // Per-blade wind data: base lean (Z-rotation), phase offset, sway amount.
+      b.userData.windPhase = Math.random() * Math.PI * 2;
+      b.userData.windAmount = 0.12 + Math.random() * 0.10;  // radians
+      b.userData.baseY = b.position.y;
       this.scene.add(b);
+      this._grassBlades.push(b);
     }
 
     // Outer walls — themed comic-style brick walls with yellow/red trim,
@@ -1291,6 +1297,19 @@ export class GameEngine {
   _update(dt) {
     // Drive virtual inputs from a connected gamepad (Xbox / PS-style).
     this._pollGamepad(dt);
+
+    // Wind sway on grass blades — gentle, low-cost.
+    if (this._grassBlades && this._grassBlades.length) {
+      const t = performance.now() * 0.001;
+      // Global gust factor (slow oscillation) layered with per-blade phase.
+      const gust = 0.6 + 0.4 * Math.sin(t * 0.55);
+      for (let i = 0; i < this._grassBlades.length; i++) {
+        const b = this._grassBlades[i];
+        const sway = Math.sin(t * 1.6 + b.userData.windPhase) * b.userData.windAmount * gust;
+        b.rotation.z = sway;
+        b.rotation.x = sway * 0.35;
+      }
+    }
 
     // Aim assist: only when gamepad connected OR touch mode active (set
     // externally by TouchControls or via setAimAssist()). Mobile gets a much
