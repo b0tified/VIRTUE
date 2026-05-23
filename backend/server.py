@@ -618,7 +618,20 @@ REDEEM_CODES: Dict[str, dict] = {
     "POW":         {"xp": 50,                        "label": "+50 XP — POW!"},
     "ZAP":         {"xp": 50,                        "label": "+50 XP — ZAP!"},
     "BOOM":        {"rp": 25,                        "label": "+25 RP — BOOM!"},
+    # Instant level-5 skip — primarily exists to let players unlock Ranked
+    # right away without grinding. `min_level` is a special reward type
+    # handled below: it tops up bonus_xp so the player's total XP is at
+    # least the threshold for that level.
+    "RANKEDREADY": {"min_level": 5,                  "label": "Level 5 Unlocked — Ranked Ready!"},
 }
+
+
+def _xp_required_to_reach(target_level: int) -> int:
+    """Accumulated XP needed to be exactly at the start of `target_level`.
+    Mirrors the curve in compute_level/level.js: each rank N→N+1 costs
+    50*N*(N+1)."""
+    n = max(1, min(100, int(target_level)))
+    return sum(50 * lv * (lv + 1) for lv in range(1, n))
 
 
 @api.post("/codes/redeem")
@@ -639,6 +652,23 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     update_ops: Dict[str, dict] = {"$push": {"redeemed_codes": code}}
     if reward.get("xp"):
         update_ops.setdefault("$inc", {})["stats.bonus_xp"] = int(reward["xp"])
+    # min_level: top up bonus_xp so the player's total XP reaches the start
+    # of the requested level. No-op if they already qualify naturally.
+    if reward.get("min_level"):
+        stats = user.get("stats", {}) or {}
+        cur_xp = (
+            int(stats.get("kills", 0) or 0) * 10
+            + int(stats.get("wins", 0) or 0) * 50
+            + int(stats.get("matches", 0) or 0) * 25
+            + int(stats.get("bonus_xp", 0) or 0)
+        )
+        target_xp = _xp_required_to_reach(int(reward["min_level"]))
+        deficit = max(0, target_xp - cur_xp)
+        if deficit > 0:
+            update_ops.setdefault("$inc", {}).setdefault("stats.bonus_xp", 0)
+            update_ops["$inc"]["stats.bonus_xp"] = (
+                int(update_ops["$inc"].get("stats.bonus_xp", 0)) + deficit
+            )
     if reward.get("rp"):
         cur_pts = int(user.get("rank_points", 0) or 0)
         rp_grant = min(int(reward["rp"]), max(0, 7500 - cur_pts))
