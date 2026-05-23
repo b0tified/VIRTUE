@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -31,7 +31,16 @@ export default function Lobby() {
   const queueCtx = useQueue();
   const queueState = queueCtx?.queueState ?? null;
 
+  // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
+  const RANKED_MIN_LEVEL = 5;
+  const userLevel = user?.level ?? 1;
+  const rankedLocked = userLevel < RANKED_MIN_LEVEL;
+
   const joinRankedQueue = async () => {
+    if (rankedLocked) {
+      alert(`Ranked unlocks at Level ${RANKED_MIN_LEVEL}. You are Level ${userLevel}.`);
+      return;
+    }
     const r = await queueCtx?.joinRanked();
     if (r && !r.ok) alert("Failed to join queue: " + r.error);
   };
@@ -282,13 +291,24 @@ export default function Lobby() {
             </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
-              disabled={!!queueState}
+              disabled={!!queueState || rankedLocked}
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
+              title={rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}` : undefined}
             >
               <span className="flex items-center gap-3">
-                {queueState && !queueState.matched ? <Loader2 size={20} strokeWidth={3} className="animate-spin" /> : <Trophy size={20} strokeWidth={3} />}
-                {queueState ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...") : "RANKED MATCH"}
+                {rankedLocked ? (
+                  <Lock size={20} strokeWidth={3} />
+                ) : queueState && !queueState.matched ? (
+                  <Loader2 size={20} strokeWidth={3} className="animate-spin" />
+                ) : (
+                  <Trophy size={20} strokeWidth={3} />
+                )}
+                {rankedLocked
+                  ? `RANKED · LV ${RANKED_MIN_LEVEL}`
+                  : queueState
+                  ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...")
+                  : "RANKED MATCH"}
               </span>
             </button>
             <Link to="/play?mode=practice" className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-practice-button">

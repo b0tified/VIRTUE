@@ -1801,9 +1801,19 @@ async def season_status():
     return season_payload(doc)
 
 
+RANKED_MIN_LEVEL = 5
+
+
 @api.post("/queue/ranked")
 async def queue_ranked_join(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
+    # Gate: Ranked locks until Level 5 — protects new players + their MMR.
+    user_level = compute_level(user.get("stats", {}))["level"]
+    if user_level < RANKED_MIN_LEVEL:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Ranked unlocks at Level {RANKED_MIN_LEVEL}. You are Level {user_level}.",
+        )
     points = int(user.get("rank_points", 0) or 0)
     tier_idx, tier_name = rank_for_points(points)
     fill = bot_fill_seconds_for_tier_api(tier_idx)
@@ -2455,6 +2465,10 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         return
 
     if mode == "ranked":
+        # Block under-leveled players from joining ranked games entirely.
+        if compute_level(user.get("stats", {}))["level"] < RANKED_MIN_LEVEL:
+            await websocket.close(code=4403)
+            return
         # If the user was bot-filled by the matchmaker, spawn a private ranked-bot
         # room sized by their tier (3 bots for <Master, 1 for Master/GM).
         # Goonmaster never bot-fills, so it always goes through the shared real-vs-real room.
