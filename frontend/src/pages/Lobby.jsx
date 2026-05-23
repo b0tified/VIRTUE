@@ -199,6 +199,8 @@ export default function Lobby() {
               peakRankTier={user.peak_rank_tier ?? user.rank_tier ?? 0}
               bannerIcon={user.banner_icon ?? null}
               bannerColor={user.banner_color ?? null}
+              bannerAnimated={!!user.banner_animated}
+              level={user.level ?? 1}
               online
               className="hidden sm:inline-flex"
               testid="lobby-user-card"

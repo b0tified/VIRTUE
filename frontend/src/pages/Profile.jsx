@@ -5,10 +5,27 @@ import api from "@/api";
 import {
   ArrowLeft, Crown, Trophy, Bot, Swords, History, WifiOff,
   Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
-  Check,
+  Check, Lock,
 } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
+import { levelFromStats } from "@/game/level";
+
+// Avatar unlock gates — must mirror server.py set_avatar gating.
+const AVATAR_LOCKS = {
+  6: { level: 5,  tier: 0, label: "Flaming Skull" },        // tier 0 = no rank gate, level-only
+  7: { level: 15, tier: 4, label: "Pulsing Diamond" },
+  8: { level: 25, tier: 5, label: "Swirling Lightning" },
+};
+const BANNER_ANIM_UNLOCK = { level: 10, tier: 2, label: "Animated Banner" };
+
+function isAvatarUnlocked(idx, level, peakTier) {
+  const g = AVATAR_LOCKS[idx];
+  if (!g) return true;
+  if (level >= g.level) return true;
+  if (g.tier > 0 && peakTier >= g.tier) return true;
+  return false;
+}
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -63,19 +80,28 @@ export default function Profile() {
 
   const bannerIcon = user?.banner_icon ?? 0;
   const bannerColor = user?.banner_color ?? 0;
+  const bannerAnimated = !!user?.banner_animated;
   const avatarIdx = user?.avatar ?? 0;
+  const lvl = user?.level
+    ? { level: user.level, xpIntoLevel: user.xp_into_level ?? 0, xpForNext: user.xp_for_next ?? 100, totalXp: user.xp ?? 0 }
+    : levelFromStats(user?.stats || {});
+  const animatedBannerUnlocked =
+    lvl.level >= BANNER_ANIM_UNLOCK.level || peakTier >= BANNER_ANIM_UNLOCK.tier;
   const [savingBanner, setSavingBanner] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
 
-  const updateBanner = async (nextIcon, nextColor) => {
+  const updateBanner = async (nextIcon, nextColor, nextAnimated = bannerAnimated) => {
     setSavingBanner(true);
     try {
       await api.post("/profile/me/banner", {
         banner_icon: nextIcon,
         banner_color: nextColor,
+        banner_animated: nextAnimated,
       });
       await refreshMe();
-    } catch {}
+    } catch (e) {
+      alert(e.response?.data?.detail || "Could not save banner");
+    }
     setSavingBanner(false);
   };
 
@@ -84,7 +110,9 @@ export default function Profile() {
     try {
       await api.post("/profile/me/avatar", { avatar: nextIdx });
       await refreshMe();
-    } catch {}
+    } catch (e) {
+      alert(e.response?.data?.detail || "Could not save avatar");
+    }
     setSavingAvatar(false);
   };
 
@@ -112,7 +140,7 @@ export default function Profile() {
       <div className="max-w-4xl mx-auto mt-8">
         <div className="card-pow p-0 -rotate-1 overflow-hidden">
           {/* User banner (icon + color) */}
-          <ProfileBanner iconIdx={bannerIcon} colorIdx={bannerColor} />
+          <ProfileBanner iconIdx={bannerIcon} colorIdx={bannerColor} animated={bannerAnimated} />
           <div className="p-8">
             <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
               <span className="font-anton uppercase tracking-widest">Profile</span>
@@ -123,19 +151,27 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* Level + XP progress */}
+        <LevelCard level={lvl.level} xpInto={lvl.xpIntoLevel} xpForNext={lvl.xpForNext} totalXp={lvl.totalXp} />
+
         {/* Banner customization */}
         <BannerCustomizer
           iconIdx={bannerIcon}
           colorIdx={bannerColor}
+          animated={bannerAnimated}
+          animatedUnlocked={animatedBannerUnlocked}
           saving={savingBanner}
           onPickIcon={(i) => updateBanner(i, bannerColor)}
           onPickColor={(c) => updateBanner(bannerIcon, c)}
+          onToggleAnimated={(v) => updateBanner(bannerIcon, bannerColor, v)}
         />
 
-        {/* Avatar (profile photo) picker — idx 5 is the dynamic Peak Rank Crest */}
+        {/* Avatar (profile photo) picker — idx 5 is the dynamic Peak Rank Crest,
+            idx 6-8 are unlockable animated specials. */}
         <AvatarPicker
           avatarIdx={avatarIdx}
           peakTier={peakTier}
+          playerLevel={lvl.level}
           saving={savingAvatar}
           onPick={updateAvatar}
         />
@@ -299,7 +335,7 @@ function Stat({ label, value, color, textColor = "#fff", testid }) {
   );
 }
 
-function AvatarPicker({ avatarIdx, peakTier, saving, onPick }) {
+function AvatarPicker({ avatarIdx, peakTier, playerLevel, saving, onPick }) {
   return (
     <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="avatar-picker">
       <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
@@ -315,26 +351,47 @@ function AvatarPicker({ avatarIdx, peakTier, saving, onPick }) {
         <div className="flex flex-wrap gap-3">
           {Array.from({ length: AVATAR_COUNT }).map((_, i) => {
             const active = i === avatarIdx;
-            const isPeak = i === AVATAR_COUNT - 1; // idx 5 = Peak Rank Crest
+            const isPeak = i === 5;
+            const lockMeta = AVATAR_LOCKS[i];
+            const unlocked = !lockMeta || isAvatarUnlocked(i, playerLevel, peakTier);
+            const sublabel =
+              isPeak ? "Peak Crest" :
+              lockMeta && !unlocked ? (
+                lockMeta.tier > 0
+                  ? `LV ${lockMeta.level} OR T${lockMeta.tier}+`
+                  : `LV ${lockMeta.level}`
+              ) :
+              lockMeta ? lockMeta.label.toUpperCase() :
+              null;
             return (
               <button
                 key={i}
                 type="button"
-                onClick={() => !saving && onPick(i)}
-                className={`relative flex flex-col items-center gap-1 p-1 transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"}`}
+                onClick={() => !saving && unlocked && onPick(i)}
+                disabled={!unlocked || saving}
+                className={`relative flex flex-col items-center gap-1 p-1 transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"} ${!unlocked ? "opacity-60 cursor-not-allowed" : ""}`}
                 data-testid={`avatar-option-${i}`}
                 aria-pressed={active}
-                title={isPeak ? "Peak Rank Crest" : `Avatar ${i + 1}`}
+                aria-disabled={!unlocked}
+                title={unlocked ? (lockMeta?.label || (isPeak ? "Peak Rank Crest" : `Avatar ${i + 1}`)) : `Locked — ${sublabel}`}
               >
-                <div className={`p-1 ${active ? "ring-4 ring-[#FFD700] rounded-sm" : ""}`}>
+                <div className={`relative p-1 ${active ? "ring-4 ring-[#FFD700] rounded-sm" : ""}`}>
                   <Avatar idx={i} peakTier={peakTier} size={56} testid={`avatar-option-${i}-avatar`} />
+                  {!unlocked && (
+                    <span
+                      className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-sm"
+                      data-testid={`avatar-option-${i}-locked`}
+                    >
+                      <Lock size={22} strokeWidth={3} className="text-white" />
+                    </span>
+                  )}
                 </div>
-                {isPeak && (
-                  <span className="font-anton uppercase text-[10px] tracking-widest text-neutral-700">
-                    Peak Crest
+                {sublabel && (
+                  <span className={`font-anton uppercase text-[10px] tracking-widest ${unlocked ? "text-neutral-700" : "text-neutral-500"}`}>
+                    {sublabel}
                   </span>
                 )}
-                {active && (
+                {active && unlocked && (
                   <Check size={14} strokeWidth={4} className="absolute -top-1 -right-1 text-[#06A35F] bg-white border-2 border-black rounded-full p-0.5" />
                 )}
               </button>
@@ -342,7 +399,7 @@ function AvatarPicker({ avatarIdx, peakTier, saving, onPick }) {
           })}
         </div>
         <p className="font-body text-xs text-neutral-500 mt-3">
-          The <span className="font-anton uppercase">Peak Crest</span> dynamically shows your highest rank icon — climb to upgrade it.
+          The <span className="font-anton uppercase">Peak Crest</span> dynamically shows your highest rank icon. Animated specials unlock at higher levels or peak ranks.
         </p>
       </div>
     </div>
@@ -350,19 +407,21 @@ function AvatarPicker({ avatarIdx, peakTier, saving, onPick }) {
 }
 
 // Wide banner strip rendered above the username — shows the chosen icon over
-// a diagonal-striped band of the chosen color.
-function ProfileBanner({ iconIdx, colorIdx }) {
+// a diagonal-striped band of the chosen color. When `animated` is true, a
+// CSS shimmer overlay sweeps across.
+function ProfileBanner({ iconIdx, colorIdx, animated = false }) {
   const c = bannerColorMeta(colorIdx);
   const I = bannerIconMeta(iconIdx).Icon;
   return (
     <div
-      className="relative h-24 md:h-28 border-b-4 border-black flex items-center justify-end px-6 overflow-hidden"
+      className={`relative h-24 md:h-28 border-b-4 border-black flex items-center justify-end px-6 overflow-hidden ${animated ? "banner-anim" : ""}`}
       style={{
         background: c.bg,
         backgroundImage:
           "repeating-linear-gradient(45deg, rgba(255,255,255,0.10) 0 14px, transparent 14px 28px)",
       }}
       data-testid="profile-banner"
+      data-animated={animated || undefined}
     >
       <I
         size={88}
@@ -387,7 +446,51 @@ function ProfileBanner({ iconIdx, colorIdx }) {
   );
 }
 
-function BannerCustomizer({ iconIdx, colorIdx, saving, onPickIcon, onPickColor }) {
+// Level + XP progress bar.
+function LevelCard({ level, xpInto, xpForNext, totalXp }) {
+  const pct = Math.max(0, Math.min(100, Math.round((xpInto / Math.max(1, xpForNext)) * 100)));
+  return (
+    <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="profile-level-card">
+      <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+        <Star size={18} strokeWidth={3} className="text-[#FFD700]" />
+        <span className="font-anton uppercase tracking-widest">Level</span>
+        <span className="ml-auto font-anton uppercase tracking-widest text-xs text-neutral-400" data-testid="profile-level-total-xp">
+          {totalXp} XP TOTAL
+        </span>
+      </div>
+      <div className="p-5 bg-white">
+        <div className="flex items-end gap-4 mb-3">
+          <div
+            className="font-display text-6xl text-[#0055FF] leading-none tabular-nums"
+            data-testid="profile-level-number"
+          >
+            {level}
+          </div>
+          <div className="flex-1 pb-2">
+            <div className="flex items-center justify-between font-anton uppercase tracking-widest text-xs text-neutral-700 mb-1">
+              <span>NEXT: LV {level + 1}</span>
+              <span data-testid="profile-level-progress-text">
+                {xpInto} / {xpForNext} XP
+              </span>
+            </div>
+            <div className="h-3 border-2 border-black bg-neutral-200 overflow-hidden">
+              <div
+                className="h-full bg-[#FFD700]"
+                style={{ width: `${pct}%`, transition: "width 0.4s ease" }}
+                data-testid="profile-level-progress-bar"
+              />
+            </div>
+          </div>
+        </div>
+        <p className="font-body text-xs text-neutral-500">
+          +10 XP per kill · +50 XP per win · +25 XP per match completed.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function BannerCustomizer({ iconIdx, colorIdx, animated, animatedUnlocked, saving, onPickIcon, onPickColor, onToggleAnimated }) {
   return (
     <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="banner-customizer">
       <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
@@ -431,7 +534,7 @@ function BannerCustomizer({ iconIdx, colorIdx, saving, onPickIcon, onPickColor }
         </div>
 
         <div className="font-anton uppercase tracking-widest text-sm text-neutral-700 mb-2">Color</div>
-        <div className="flex flex-wrap gap-2" data-testid="banner-color-grid">
+        <div className="flex flex-wrap gap-2 mb-5" data-testid="banner-color-grid">
           {BANNER_COLORS.map((c, i) => {
             const active = i === colorIdx;
             return (
@@ -449,6 +552,41 @@ function BannerCustomizer({ iconIdx, colorIdx, saving, onPickIcon, onPickColor }
               </button>
             );
           })}
+        </div>
+
+        {/* Animated banner toggle */}
+        <div className="border-t border-neutral-200 pt-4">
+          <button
+            type="button"
+            disabled={!animatedUnlocked || saving}
+            onClick={() => onToggleAnimated(!animated)}
+            className={`w-full flex items-center justify-between gap-3 rounded border-2 border-black px-4 py-2 transition-colors ${
+              !animatedUnlocked
+                ? "bg-neutral-100 text-neutral-400 cursor-not-allowed"
+                : animated
+                ? "bg-[#FFD700] text-black"
+                : "bg-white hover:bg-neutral-50"
+            }`}
+            data-testid="banner-animated-toggle"
+            aria-pressed={animated}
+          >
+            <div className="flex items-center gap-2">
+              {animatedUnlocked ? (
+                <Sparkles size={16} strokeWidth={3} />
+              ) : (
+                <Lock size={16} strokeWidth={3} />
+              )}
+              <span className="font-anton uppercase tracking-widest text-sm">Animated Banner</span>
+            </div>
+            <span className="font-anton uppercase tracking-widest text-xs">
+              {animatedUnlocked ? (animated ? "ON" : "OFF") : `LV ${BANNER_ANIM_UNLOCK.level} OR GOLD+`}
+            </span>
+          </button>
+          {animatedUnlocked && (
+            <p className="font-body text-[11px] text-neutral-500 mt-1">
+              Adds a sparkling shimmer sweep across your banner.
+            </p>
+          )}
         </div>
       </div>
     </div>

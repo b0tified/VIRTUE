@@ -1263,6 +1263,8 @@ export class GameEngine {
                 peakRankTier: ev.shooter_peak_rank_tier ?? ev.shooter_rank_tier ?? 0,
                 bannerIcon: ev.shooter_banner_icon ?? null,
                 bannerColor: ev.shooter_banner_color ?? null,
+                bannerAnimated: !!ev.shooter_banner_animated,
+                level: ev.shooter_level ?? 1,
                 isBot: !!ev.shooter_is_bot,
                 weapon: ev.weapon || "ak47",
               },

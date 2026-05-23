@@ -277,6 +277,8 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
                 peakRankTier={hud.lastKiller.peakRankTier ?? hud.lastKiller.rankTier}
                 bannerIcon={hud.lastKiller.bannerIcon ?? null}
                 bannerColor={hud.lastKiller.bannerColor ?? null}
+                bannerAnimated={!!hud.lastKiller.bannerAnimated}
+                level={hud.lastKiller.level ?? 1}
                 isBot={!!hud.lastKiller.isBot}
                 testid="killer-card"
               />

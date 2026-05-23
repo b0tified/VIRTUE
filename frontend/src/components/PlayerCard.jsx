@@ -2,11 +2,12 @@
 // Used in: lobby header (your own card), death overlay (killer's card),
 // friends list (each friend), friend search.
 //
-// Avatar pool: 5 themed lucide icons + a 6th "Peak Rank Crest" slot that
-// dynamically renders the user's current peak rank icon over the rank color.
+// Avatar pool: 5 themed icons + Peak Rank Crest (dynamic) + 3 animated specials
+// (Flaming Skull / Pulsing Diamond / Swirling Lightning) — opt-in unlockables.
 import {
   VenetianMask, Skull, Shield, Swords, Ghost,
   Trophy, Crown, Flame, Star, Zap, Bomb, Target, Skull as SkullIcon, Sparkles,
+  Gem,
 } from "lucide-react";
 import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor } from "@/game/rankIcons";
 
@@ -20,6 +21,12 @@ const AVATARS = [
   { Icon: Ghost,        bg: "#06A35F", iconColor: "#FFFFFF", label: "Ghost" },
   // idx 5 — "Peak Rank Crest" (dynamic). Resolved per-user in avatarMeta().
   { Icon: Crown,        bg: "#FFD700", iconColor: "#0A0A0A", label: "Peak Crest", isPeakCrest: true },
+  // idx 6 — Flaming Skull (animated, unlock: Level 5)
+  { Icon: Flame,        bg: "#E62429", iconColor: "#FFD700", label: "Flaming Skull", anim: "flame" },
+  // idx 7 — Pulsing Diamond (animated, unlock: Level 15 or Diamond peak)
+  { Icon: Gem,          bg: "#5BC0EB", iconColor: "#FFFFFF", label: "Pulsing Diamond", anim: "diamond" },
+  // idx 8 — Swirling Lightning (animated, unlock: Level 25 or Master peak)
+  { Icon: Zap,          bg: "#FFD700", iconColor: "#0A0A0A", label: "Swirling Lightning", anim: "lightning" },
 ];
 
 // 8 banner icons + 8 banner colors — must mirror Profile.jsx ordering.
@@ -54,12 +61,14 @@ export const AVATAR_COUNT = AVATARS.length;
 export function Avatar({ idx = 0, peakTier = null, size = 40, online = false, testid }) {
   const meta = avatarMeta(idx, peakTier);
   const I = meta.Icon;
+  const animClass = meta.anim ? `avatar-anim-${meta.anim}` : "";
   return (
     <span
-      className="relative inline-flex items-center justify-center border-2 border-black shadow-pow-sm flex-shrink-0"
+      className={`relative inline-flex items-center justify-center border-2 border-black shadow-pow-sm flex-shrink-0 ${animClass}`}
       style={{ width: size, height: size, background: meta.bg }}
       title={meta.label}
       data-testid={testid}
+      data-anim={meta.anim || undefined}
     >
       <I size={Math.round(size * 0.55)} strokeWidth={3} style={{ color: meta.iconColor }} />
       {online && (
@@ -73,12 +82,12 @@ export function Avatar({ idx = 0, peakTier = null, size = 40, online = false, te
   );
 }
 
-function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14 }) {
+function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false }) {
   const c = BANNER_COLORS[Math.max(0, Math.min(BANNER_COLORS.length - 1, colorIdx | 0))];
   const I = BANNER_ICONS[Math.max(0, Math.min(BANNER_ICONS.length - 1, iconIdx | 0))];
   return (
     <div
-      className="relative w-full border-b-2 border-black flex items-center justify-end pr-1.5 overflow-hidden"
+      className={`relative w-full border-b-2 border-black flex items-center justify-end pr-1.5 overflow-hidden ${animated ? "banner-anim" : ""}`}
       style={{
         height,
         background: c.bg,
@@ -86,6 +95,7 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14 }) {
           "repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 6px, transparent 6px 12px)",
       }}
       data-testid="player-card-banner"
+      data-animated={animated || undefined}
     >
       <I size={Math.max(10, height - 4)} strokeWidth={3} style={{ color: c.fg }} />
       <Sparkles
@@ -109,6 +119,8 @@ export default function PlayerCard({
   peakRankTier = null,
   bannerIcon = null,
   bannerColor = null,
+  bannerAnimated = false,
+  level = null,
   isBot = false,
   online = false,
   size = "md",
@@ -133,14 +145,25 @@ export default function PlayerCard({
       className={`card-pow p-0 bg-white flex flex-col ${className}`}
       data-testid={testid}
     >
-      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} />}
+      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} />}
       <div className="flex items-stretch">
         <div className="flex items-center justify-center px-2" style={{ background: avatarMeta(avatar, peakRankTier).bg }}>
           <Avatar idx={avatar} peakTier={peakRankTier} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />
         </div>
         <div className="flex flex-col px-3 py-1.5 justify-center min-w-0">
-          <div className={`font-display uppercase ${dims.name} leading-tight truncate`} data-testid={`${testid}-username`}>
-            {username}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`font-display uppercase ${dims.name} leading-tight truncate`} data-testid={`${testid}-username`}>
+              {username}
+            </div>
+            {!isBot && Number.isFinite(level) && (
+              <span
+                className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border-2 border-black bg-[#FFD700] text-[#0A0A0A] flex-shrink-0"
+                data-testid={`${testid}-level`}
+                title={`Level ${level}`}
+              >
+                LV {level}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
             <span

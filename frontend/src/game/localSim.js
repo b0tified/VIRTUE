@@ -157,7 +157,9 @@ class LocalPlayer {
     this.rank_points = opts.rank_points ?? 0;
     this.banner_icon = opts.banner_icon ?? 0;
     this.banner_color = opts.banner_color ?? 0;
+    this.banner_animated = !!opts.banner_animated;
     this.peak_rank_tier = opts.peak_rank_tier ?? 0;
+    this.level = opts.level ?? 1;
     this.max_hp = opts.is_bot ? BOT_MAX_HP : MAX_HP;
     this.hp = this.max_hp;
     const sp = spawn();
@@ -218,7 +220,9 @@ class LocalPlayer {
       rank_points: this.rank_points,
       banner_icon: this.banner_icon,
       banner_color: this.banner_color,
+      banner_animated: this.banner_animated,
       peak_rank_tier: this.peak_rank_tier,
+      level: this.level,
       platform: this.platform,
       x: this.x, y: this.y, z: this.z,
       yaw: this.yaw, pitch: this.pitch,
@@ -261,7 +265,9 @@ export class LocalSim {
       rank_points: this.user?.rank_points ?? 0,
       banner_icon: this.user?.banner_icon ?? 0,
       banner_color: this.user?.banner_color ?? 0,
+      banner_animated: !!this.user?.banner_animated,
       peak_rank_tier: this.user?.peak_rank_tier ?? 0,
+      level: this.user?.level ?? 1,
     });
     this.me = me;
     this.players.set(me.id, me);
@@ -465,6 +471,8 @@ export class LocalSim {
       shooter_peak_rank_tier: killer.peak_rank_tier,
       shooter_banner_icon: killer.banner_icon,
       shooter_banner_color: killer.banner_color,
+      shooter_banner_animated: killer.banner_animated,
+      shooter_level: killer.level,
       shooter_is_bot: killer.is_bot,
       victim_id: victim.id,
       victim_name: victim.username,

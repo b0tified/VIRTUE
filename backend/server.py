@@ -92,6 +92,25 @@ def set_auth_cookies(response: Response, access: str, refresh: str, remember: bo
                             path="/")
 
 
+def compute_level(stats: dict) -> dict:
+    """XP + level from kills/wins/matches. Mirrors /app/frontend/src/game/level.js."""
+    k = int(stats.get("kills", 0) or 0)
+    w = int(stats.get("wins", 0) or 0)
+    m = int(stats.get("matches", 0) or 0)
+    xp = k * 10 + w * 50 + m * 25
+    level = 1
+    accumulated = 0
+    while level < 100:
+        need = 50 * level * (level + 1)
+        if accumulated + need > xp:
+            break
+        accumulated += need
+        level += 1
+    xp_for_next = 50 * level * (level + 1)
+    xp_into = xp - accumulated
+    return {"xp": xp, "level": level, "xp_into_level": xp_into, "xp_for_next": xp_for_next}
+
+
 def public_user(user: dict) -> dict:
     points = int(user.get("rank_points", 0) or 0)
     peak = int(user.get("peak_rank_points", points) or points)
@@ -100,6 +119,8 @@ def public_user(user: dict) -> dict:
     peak_idx, peak_name = rank_for_points(peak)
     tier_idx, tier_name = rank_for_points(points)
     placement_played = int(user.get("placement_matches_played", 0) or 0)
+    stats = user.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0})
+    lvl = compute_level(stats)
     return {
         "id": str(user["_id"]),
         "email": user["email"],
@@ -108,7 +129,12 @@ def public_user(user: dict) -> dict:
         "avatar": int(user.get("avatar", 0) or 0),
         "banner_icon": int(user.get("banner_icon", 0) or 0),
         "banner_color": int(user.get("banner_color", 0) or 0),
-        "stats": user.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
+        "banner_animated": bool(user.get("banner_animated", False)),
+        "stats": stats,
+        "level": lvl["level"],
+        "xp": lvl["xp"],
+        "xp_into_level": lvl["xp_into_level"],
+        "xp_for_next": lvl["xp_for_next"],
         "rank_points": points,
         "rank_tier": tier_idx,
         "rank_name": tier_name,
@@ -463,30 +489,61 @@ async def profile_me(user: dict = Depends(get_current_user)):
 
 
 class AvatarIn(BaseModel):
-    avatar: int = Field(ge=0, le=5)
-
-
-@api.post("/profile/me/avatar")
-async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
-    await db.users.update_one({"_id": user["_id"]}, {"$set": {"avatar": payload.avatar}})
-    user["avatar"] = payload.avatar
-    return public_user(user)
+    avatar: int = Field(ge=0, le=8)
 
 
 # Banner customization — 8 icons × 8 colors, displayed on the profile card.
 class BannerIn(BaseModel):
     banner_icon: int = Field(ge=0, le=7)
     banner_color: int = Field(ge=0, le=7)
+    banner_animated: bool = False
 
 
 @api.post("/profile/me/banner")
 async def set_banner(payload: BannerIn, user: dict = Depends(get_current_user)):
+    # Animated banner is gated: Level 10+ OR peak rank tier >= 2 (Gold).
+    if payload.banner_animated:
+        stats = user.get("stats", {})
+        lvl = compute_level(stats)["level"]
+        peak_pts = int(user.get("peak_rank_points", user.get("rank_points", 0)) or 0)
+        peak_tier, _ = rank_for_points(peak_pts)
+        if lvl < 10 and peak_tier < 2:
+            raise HTTPException(status_code=403, detail="Animated banner unlocks at Level 10 or Gold peak rank.")
     await db.users.update_one(
         {"_id": user["_id"]},
-        {"$set": {"banner_icon": payload.banner_icon, "banner_color": payload.banner_color}},
+        {"$set": {
+            "banner_icon": payload.banner_icon,
+            "banner_color": payload.banner_color,
+            "banner_animated": payload.banner_animated,
+        }},
     )
     user["banner_icon"] = payload.banner_icon
     user["banner_color"] = payload.banner_color
+    user["banner_animated"] = payload.banner_animated
+    return public_user(user)
+
+
+@api.post("/profile/me/avatar")
+async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
+    # Animated avatars (idx 6, 7, 8) are gated by level OR peak rank.
+    if payload.avatar >= 6:
+        stats = user.get("stats", {})
+        lvl = compute_level(stats)["level"]
+        peak_pts = int(user.get("peak_rank_points", user.get("rank_points", 0)) or 0)
+        peak_tier, _ = rank_for_points(peak_pts)
+        gates = {
+            6: {"level": 5,  "tier": 0},  # Flaming Skull
+            7: {"level": 15, "tier": 4},  # Pulsing Diamond
+            8: {"level": 25, "tier": 5},  # Swirling Lightning
+        }
+        g = gates[payload.avatar]
+        if lvl < g["level"] and peak_tier < g["tier"]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This avatar unlocks at Level {g['level']} or tier {g['tier']}.",
+            )
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"avatar": payload.avatar}})
+    user["avatar"] = payload.avatar
     return public_user(user)
 
 
@@ -700,6 +757,8 @@ class Player:
             self.peak_rank_tier = 0
             self.banner_icon = 0
             self.banner_color = 0
+            self.banner_animated = False
+            self.level = 1
         else:
             self.user_id = str(user["_id"])
             self.username = user.get("username", user["email"].split("@")[0])
@@ -713,6 +772,8 @@ class Player:
             self.peak_rank_tier = int(user.get("peak_rank_tier", t_idx) or t_idx)
             self.banner_icon = int(user.get("banner_icon", 0) or 0)
             self.banner_color = int(user.get("banner_color", 0) or 0)
+            self.banner_animated = bool(user.get("banner_animated", False))
+            self.level = compute_level(user.get("stats", {}))["level"]
         self.id = ("bot_" if is_bot else "p_") + uuid.uuid4().hex[:10]
         x, z = random_spawn()
         self.x = float(x)
@@ -810,6 +871,10 @@ class Player:
             "rank_tier": int(getattr(self, "rank_tier", 0) or 0),
             "rank_name": getattr(self, "rank_name", "BRONZE") if not disguised else getattr(self, "disguise_rank_name", "BRONZE"),
             "rank_points": int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
+            "level": int(getattr(self, "level", 1) or 1),
+            "banner_icon": int(getattr(self, "banner_icon", 0) or 0),
+            "banner_color": int(getattr(self, "banner_color", 0) or 0),
+            "banner_animated": bool(getattr(self, "banner_animated", False)),
         }
 
 
@@ -1079,6 +1144,8 @@ class GameRoom:
                     "shooter_peak_rank_tier": getattr(attacker, "peak_rank_tier", attacker.rank_tier),
                     "shooter_banner_icon": getattr(attacker, "banner_icon", 0),
                     "shooter_banner_color": getattr(attacker, "banner_color", 0),
+                    "shooter_banner_animated": getattr(attacker, "banner_animated", False),
+                    "shooter_level": getattr(attacker, "level", 1),
                     "shooter_is_bot": attacker.is_bot,
                     "victim_id": best.id,
                     "victim_name": best.username,
@@ -1171,6 +1238,8 @@ class GameRoom:
                     "shooter_peak_rank_tier": getattr(shooter, "peak_rank_tier", shooter.rank_tier),
                     "shooter_banner_icon": getattr(shooter, "banner_icon", 0),
                     "shooter_banner_color": getattr(shooter, "banner_color", 0),
+                    "shooter_banner_animated": getattr(shooter, "banner_animated", False),
+                    "shooter_level": getattr(shooter, "level", 1),
                     "shooter_is_bot": shooter.is_bot,
                     "victim_id": hit.id,
                     "victim_name": hit.username,
@@ -1894,6 +1963,7 @@ def _friend_card(u: dict) -> dict:
     t_idx, t_name = rank_for_points(pts)
     loc = player_location(str(u["_id"]))
     last_seen = u.get("last_seen_at")
+    lvl = compute_level(u.get("stats", {}))
     return {
         "id": str(u["_id"]),
         "username": u.get("username", ""),
@@ -1901,6 +1971,10 @@ def _friend_card(u: dict) -> dict:
         "rank_points": pts,
         "rank_tier": t_idx,
         "rank_name": t_name,
+        "level": lvl["level"],
+        "banner_icon": int(u.get("banner_icon", 0) or 0),
+        "banner_color": int(u.get("banner_color", 0) or 0),
+        "banner_animated": bool(u.get("banner_animated", False)),
         "online": is_online(str(u["_id"])),
         "in_match": loc is not None and loc.get("kind") in ("casual", "ranked", "party", "offline"),
         "match_kind": loc.get("kind") if loc else None,
