@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GameEngine } from "@/game/engine";
 import { GameSocket } from "@/game/network";
+import { LocalSim } from "@/game/localSim";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import Hud from "@/components/Hud";
@@ -135,17 +136,15 @@ export default function Game() {
     };
     engine.start();
 
-    const sock = new GameSocket({
+    const offlineCapable = mode === "offline" || mode === "practice";
+    const sockHandlers = {
       onOpen: () => {
         setHud((h) => ({ ...h, connected: true }));
-        // Tell server what input device the player is on so the scoreboard
-        // can show the right platform icon next to each name.
         try {
           const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
           const hasController = (navigator.getGamepads?.() || []).some((g) => g);
           const platform = isTouch ? "mobile" : (hasController ? "controller" : "pc");
           sock.send({ type: "set_platform", platform });
-          // Re-detect on first gamepad event (player plugs in a controller mid-match).
           window.addEventListener("gamepadconnected", () => {
             sock.send({ type: "set_platform", platform: isTouch ? "mobile" : "controller" });
           }, { once: true });
@@ -154,7 +153,6 @@ export default function Game() {
       onClose: (intentional) => {
         setHud((h) => ({ ...h, connected: false }));
         if (!intentional) {
-          // Lost connection — kick back to lobby.
           try { document.exitPointerLock?.(); } catch {}
           if (isSpectator && spectateTarget) {
             nav(`/lobby?spectate_ended=1&target=${encodeURIComponent(spectateTarget)}`, { replace: true });
@@ -171,7 +169,6 @@ export default function Game() {
         }
         if (msg.type === "match_end") {
           setHud((h) => ({ ...h, matchEnd: msg }));
-          // Auto-return to lobby after showing results (both casual + ranked).
           setTimeout(() => {
             try { document.exitPointerLock?.(); } catch {}
             nav("/lobby", { replace: true });
@@ -190,7 +187,6 @@ export default function Game() {
           return;
         }
         if (msg.type === "state") {
-          // Surface ranked timer + queue info into HUD
           setHud((h) => ({
             ...h,
             timeLeft: msg.time_left ?? null,
@@ -202,17 +198,26 @@ export default function Game() {
         }
         engineRef.current?.applyServerState(msg);
       },
-    });
+    };
+    // Offline / Practice → local simulation (no network required).
+    // Everything else → real WebSocket.
+    const sock = offlineCapable
+      ? new LocalSim({ ...sockHandlers, user, mode })
+      : new GameSocket(sockHandlers);
     sockRef.current = sock;
-    sock.connect(
-      accessToken,
-      mode,
-      mode === "party" && partyId
-        ? { party_id: partyId }
-        : mode === "spectate" && spectateTarget
-        ? { target: spectateTarget }
-        : null
-    );
+    if (offlineCapable) {
+      sock.connect();
+    } else {
+      sock.connect(
+        accessToken,
+        mode,
+        mode === "party" && partyId
+          ? { party_id: partyId }
+          : mode === "spectate" && spectateTarget
+          ? { target: spectateTarget }
+          : null
+      );
+    }
 
     // Network send loop @ 20Hz
     const intervalId = setInterval(() => {

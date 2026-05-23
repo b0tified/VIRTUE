@@ -79,11 +79,17 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
-def set_auth_cookies(response: Response, access: str, refresh: str):
+def set_auth_cookies(response: Response, access: str, refresh: str, remember: bool = True):
     response.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax",
                         max_age=ACCESS_TTL_MIN * 60, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
-                        max_age=REFRESH_TTL_DAYS * 86400, path="/")
+    # When remember=False, omit max_age so the refresh cookie becomes a session
+    # cookie (browser clears it when the tab/browser closes).
+    if remember:
+        response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
+                            max_age=REFRESH_TTL_DAYS * 86400, path="/")
+    else:
+        response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
+                            path="/")
 
 
 def public_user(user: dict) -> dict:
@@ -239,6 +245,7 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    remember: bool = True
 
 
 # -------------------------------------------------------------------
@@ -332,7 +339,7 @@ async def login(payload: LoginIn, response: Response):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     access = create_access_token(str(user["_id"]), user["email"])
     refresh = create_refresh_token(str(user["_id"]))
-    set_auth_cookies(response, access, refresh)
+    set_auth_cookies(response, access, refresh, remember=bool(payload.remember))
     return {"user": public_user(user), "access_token": access}
 
 

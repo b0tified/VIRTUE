@@ -2,18 +2,43 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import api, { formatApiErrorDetail } from "../api";
 
 const AuthContext = createContext(null);
+const CACHED_USER_KEY = "virtue.cachedUser";
+
+function loadCachedUser() {
+  try {
+    const raw = localStorage.getItem(CACHED_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveCachedUser(u) {
+  try {
+    if (u && typeof u === "object") localStorage.setItem(CACHED_USER_KEY, JSON.stringify(u));
+    else localStorage.removeItem(CACHED_USER_KEY);
+  } catch {}
+}
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null); // null = checking, false = anon, object = signed-in
+  // null = still checking, false = anon, object = signed-in or cached
+  const [user, setUser] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
 
   const refreshMe = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
+      saveCachedUser(data);
       return data;
-    } catch {
+    } catch (e) {
+      // If we have a cached user AND the failure is a network error (offline),
+      // keep using the cached profile so offline-vs-AI / practice still work.
+      const networkErr = !e?.response;
+      const cached = loadCachedUser();
+      if (networkErr && cached) {
+        setUser(cached);
+        return cached;
+      }
       setUser(false);
+      saveCachedUser(null);
       return null;
     }
   }, []);
@@ -34,11 +59,16 @@ export function AuthProvider({ children }) {
     return () => { alive = false; clearInterval(id); };
   }, [user]);
 
-  const login = async (email, password) => {
+  const login = async (email, password, opts = {}) => {
     try {
-      const { data } = await api.post("/auth/login", { email, password });
+      const { data } = await api.post("/auth/login", {
+        email,
+        password,
+        remember: opts.remember !== false,
+      });
       setUser(data.user);
       setAccessToken(data.access_token);
+      saveCachedUser(data.user);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
@@ -50,6 +80,7 @@ export function AuthProvider({ children }) {
       const { data } = await api.post("/auth/register", { email, password, username });
       setUser(data.user);
       setAccessToken(data.access_token);
+      saveCachedUser(data.user);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
@@ -62,6 +93,7 @@ export function AuthProvider({ children }) {
     } catch {}
     setUser(false);
     setAccessToken(null);
+    saveCachedUser(null);
   };
 
   return (

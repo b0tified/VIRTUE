@@ -9,6 +9,9 @@ export default function Login() {
   const nav = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(() => {
+    try { return localStorage.getItem("virtue.remember") !== "0"; } catch { return true; }
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +19,8 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const r = await login(email, password);
+    try { localStorage.setItem("virtue.remember", remember ? "1" : "0"); } catch {}
+    const r = await login(email, password, { remember });
     setLoading(false);
     if (r.ok) nav("/lobby");
     else setError(r.error || "Login failed");
@@ -74,6 +78,17 @@ export default function Login() {
             {error}
           </div>
         )}
+
+        <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer select-none" data-testid="login-remember-row">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="w-4 h-4 accent-[#E62429] bg-neutral-800 border-neutral-700"
+            data-testid="login-remember-checkbox"
+          />
+          <span>Remember me</span>
+        </label>
 
         <button
           type="submit"
