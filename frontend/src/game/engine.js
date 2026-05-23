@@ -1256,7 +1256,7 @@ export class GameEngine {
         }
       }
       for (const ev of msg.events || []) {
-        } else if (ev.type === "beam") {
+        if (ev.type === "beam") {
           // Continuous laser beam — server emits ~4/sec while a player fires
           // so other clients can render the beam from them. The local
           // shooter's beam is rendered every frame from current camera yaw.
