@@ -279,15 +279,21 @@ export class GameEngine {
       const accent = new THREE.Mesh(accentGeo, this._toonMat(WALL_ACCENT));
       accent.position.set(0, wallH * 0.55, 0);
       group.add(accent);
-      // Posts every ~10m (vertical pillars)
+      // Posts every ~10m (vertical pillars). Post cross-section spans the
+      // wall thickness (NOT its length) so it doesn't blanket the map.
       const span = horizontal ? w : d;
       const numPosts = Math.max(2, Math.floor(span / 10));
       const postMat = this._toonMat(0x0A0A0A);
+      const postSizeX = horizontal ? 0.5 : w + 0.4;  // along wall thickness for vertical walls
+      const postSizeZ = horizontal ? d + 0.4 : 0.5;  // along wall thickness for horizontal walls
       for (let i = 0; i <= numPosts; i++) {
         const t = (i / numPosts) - 0.5;
         const px = horizontal ? t * span : 0;
         const pz = horizontal ? 0 : t * span;
-        const post = new THREE.Mesh(new THREE.BoxGeometry(horizontal ? 0.5 : d + 0.4, wallH + 0.4, horizontal ? d + 0.4 : 0.5), postMat);
+        const post = new THREE.Mesh(
+          new THREE.BoxGeometry(postSizeX, wallH + 0.4, postSizeZ),
+          postMat,
+        );
         post.position.set(px, (wallH + 0.4) / 2, pz);
         group.add(post);
       }
