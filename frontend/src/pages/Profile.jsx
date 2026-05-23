@@ -10,6 +10,7 @@ import {
 import { rankIconFor } from "@/game/rankIcons";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 import { levelFromStats } from "@/game/level";
+import { LEVEL_REWARDS } from "@/game/levelRewards";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -153,6 +154,9 @@ export default function Profile() {
 
         {/* Level + XP progress */}
         <LevelCard level={lvl.level} xpInto={lvl.xpIntoLevel} xpForNext={lvl.xpForNext} totalXp={lvl.totalXp} />
+
+        {/* Level progression rewards (1-10) */}
+        <LevelRewardsCard currentLevel={lvl.level} />
 
         {/* Banner customization */}
         <BannerCustomizer
@@ -484,6 +488,103 @@ function LevelCard({ level, xpInto, xpForNext, totalXp }) {
         </div>
         <p className="font-body text-xs text-neutral-500">
           +10 XP per kill · +50 XP per win · +25 XP per match completed.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// LevelRewardsCard — 10-row progression tab showing what unlocks at each level.
+// Earned rows pop with the accent color; locked rows are dimmed with a padlock.
+function LevelRewardsCard({ currentLevel }) {
+  return (
+    <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="level-rewards-card">
+      <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+        <Trophy size={18} strokeWidth={3} className="text-[#FFD700]" />
+        <span className="font-anton uppercase tracking-widest">Progression Rewards</span>
+        <span
+          className="ml-auto font-anton uppercase tracking-widest text-xs text-neutral-400"
+          data-testid="level-rewards-current"
+        >
+          LV {currentLevel} / 10
+        </span>
+      </div>
+      <div className="p-4 bg-white space-y-2">
+        {LEVEL_REWARDS.map((r) => {
+          const earned = currentLevel >= r.level;
+          const isNext = !earned && currentLevel + 1 === r.level;
+          const I = r.Icon;
+          return (
+            <div
+              key={r.level}
+              className={`relative flex items-stretch border-2 border-black transition-transform ${earned ? "bg-white" : "bg-neutral-100"} ${isNext ? "ring-4 ring-[#FFD700] -translate-y-0.5" : ""}`}
+              data-testid={`reward-row-${r.level}`}
+              data-earned={earned || undefined}
+            >
+              <div
+                className="w-16 sm:w-20 flex items-center justify-center font-display text-3xl sm:text-4xl border-r-2 border-black"
+                style={{
+                  background: earned ? r.accent : "#E5E7EB",
+                  color: earned ? (r.accent === "#FFD700" ? "#0A0A0A" : "#FFFFFF") : "#9CA3AF",
+                }}
+              >
+                {r.level}
+              </div>
+              <div className="flex-1 px-3 py-2 flex items-start gap-2">
+                <I
+                  size={22}
+                  strokeWidth={3}
+                  className="mt-0.5 flex-shrink-0"
+                  style={{ color: earned ? r.accent : "#9CA3AF" }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`font-anton uppercase tracking-widest text-sm ${earned ? "text-black" : "text-neutral-500"} truncate`}
+                    >
+                      {r.title}
+                    </span>
+                    {r.big && (
+                      <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border-2 border-black bg-[#FFD700] text-black">
+                        KEY UNLOCK
+                      </span>
+                    )}
+                  </div>
+                  <p className={`font-body text-xs leading-snug mt-0.5 ${earned ? "text-neutral-700" : "text-neutral-500"}`}>
+                    {r.desc}
+                  </p>
+                  {r.secondary && (
+                    <p className={`font-body text-[11px] mt-0.5 italic ${earned ? "text-neutral-600" : "text-neutral-400"}`}>
+                      {r.secondary}
+                    </p>
+                  )}
+                </div>
+                <div className="flex-shrink-0 self-center pl-1">
+                  {earned ? (
+                    <span
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-black"
+                      style={{ background: "#06A35F" }}
+                      title="Unlocked"
+                      data-testid={`reward-row-${r.level}-unlocked`}
+                    >
+                      <Check size={14} strokeWidth={4} className="text-white" />
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-black bg-neutral-300"
+                      title={`Unlocks at Level ${r.level}`}
+                      data-testid={`reward-row-${r.level}-locked`}
+                    >
+                      <Lock size={14} strokeWidth={3} className="text-neutral-600" />
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <p className="font-body text-[11px] text-neutral-500 mt-2 pt-1">
+          Rewards apply automatically — no claim needed. More tiers coming soon.
         </p>
       </div>
     </div>
