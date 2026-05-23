@@ -456,7 +456,7 @@ async def profile_me(user: dict = Depends(get_current_user)):
 
 
 class AvatarIn(BaseModel):
-    avatar: int = Field(ge=0, le=4)
+    avatar: int = Field(ge=0, le=5)
 
 
 @api.post("/profile/me/avatar")
@@ -675,6 +675,9 @@ class Player:
             self.rank_tier = 0
             self.rank_name = "BOT"
             self.rank_points = 0
+            self.peak_rank_tier = 0
+            self.banner_icon = 0
+            self.banner_color = 0
         else:
             self.user_id = str(user["_id"])
             self.username = user.get("username", user["email"].split("@")[0])
@@ -685,6 +688,9 @@ class Player:
             self.rank_tier = t_idx
             self.rank_name = t_name
             self.rank_points = pts
+            self.peak_rank_tier = int(user.get("peak_rank_tier", t_idx) or t_idx)
+            self.banner_icon = int(user.get("banner_icon", 0) or 0)
+            self.banner_color = int(user.get("banner_color", 0) or 0)
         self.id = ("bot_" if is_bot else "p_") + uuid.uuid4().hex[:10]
         x, z = random_spawn()
         self.x = float(x)
@@ -1048,6 +1054,9 @@ class GameRoom:
                     "shooter_rank_tier": attacker.rank_tier,
                     "shooter_rank_name": attacker.rank_name,
                     "shooter_rank_points": attacker.rank_points,
+                    "shooter_peak_rank_tier": getattr(attacker, "peak_rank_tier", attacker.rank_tier),
+                    "shooter_banner_icon": getattr(attacker, "banner_icon", 0),
+                    "shooter_banner_color": getattr(attacker, "banner_color", 0),
                     "shooter_is_bot": attacker.is_bot,
                     "victim_id": best.id,
                     "victim_name": best.username,
@@ -1137,6 +1146,9 @@ class GameRoom:
                     "shooter_rank_tier": shooter.rank_tier,
                     "shooter_rank_name": shooter.rank_name,
                     "shooter_rank_points": shooter.rank_points,
+                    "shooter_peak_rank_tier": getattr(shooter, "peak_rank_tier", shooter.rank_tier),
+                    "shooter_banner_icon": getattr(shooter, "banner_icon", 0),
+                    "shooter_banner_color": getattr(shooter, "banner_color", 0),
                     "shooter_is_bot": shooter.is_bot,
                     "victim_id": hit.id,
                     "victim_name": hit.username,

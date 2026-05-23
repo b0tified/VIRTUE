@@ -13,6 +13,43 @@ const DEFAULTS = Object.freeze({
   fovDegrees: 75,
   aimAssist: true,
   mouseSensitivity: 1.0,    // 0.25 - 2.5
+  // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
+  keybinds: {
+    forward: "KeyW",
+    back: "KeyS",
+    left: "KeyA",
+    right: "KeyD",
+    jump: "Space",
+    sprint: "ShiftLeft",
+    crouch: "ControlLeft",
+    reload: "KeyR",
+    melee: "KeyV",
+    adsToggle: "KeyZ",   // alt to right-mouse-button hold
+    weapon1: "Digit1",
+    weapon2: "Digit2",
+    weapon3: "Digit3",
+    scoreboard: "Tab",
+  },
+  // Gamepad button mapping (standard layout indices). Override with any index.
+  controllerBinds: {
+    jump: 0,        // A
+    melee: 2,       // X
+    reload: 1,      // B
+    weaponCycle: 3, // Y
+    shoot: 7,       // RT
+    ads: 6,         // LT
+    weaponNext: 5,  // RB
+    weaponPrev: 4,  // LB
+  },
+  // Mobile HUD layout — per-control position (px from container edges) +
+  // size scale + opacity. Position basis: each control has its own anchor
+  // (see TouchControls.jsx); these offsets are applied on top.
+  hudLayout: {
+    move:        { x: 32,  y: 32,  scale: 1.0, opacity: 1.0 },
+    actions:     { x: 32,  y: 32,  scale: 1.0, opacity: 1.0 },
+    weapons:     { x: 16,  y: 16,  scale: 1.0, opacity: 1.0 },
+    scoreboard:  { x: 0,   y: 16,  scale: 1.0, opacity: 1.0 },
+  },
 });
 
 function read() {

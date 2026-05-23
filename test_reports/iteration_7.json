@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration-7 testing for VIRTUE FPS: avatar idx 0-5 (was 0-4), banner persistence, public_user schema (banner_icon/banner_color/peak_rank_tier), kill-event new shooter_* fields, PlayerCard BannerStrip on lobby, AvatarPicker with 6 options + Peak Crest idx 5, RankCard tier icons, SettingsModal advanced sections (keybinds/controller/mobile HUD), keybind rebinding flow + HUD layout persistence to localStorage. Backend: 16/16 pytest passing (incl. live WS kill-event schema). Frontend: end-to-end login + lobby banner + profile picker + settings advanced sections + /play offline map render all working with zero JS errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_banner_avatar_kill.py",
+    "/app/test_reports/pytest/iteration7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:89-116 public_user() correctly exposes banner_icon, banner_color, peak_rank_tier as int-coerced fields with sane defaults (0). peak_rank_points monotonically rises to max(points, peak) which is exactly the right semantic for a 'peak' field.",
+    "server.py:458-466 AvatarIn(ge=0,le=5) Pydantic constraint cleanly upgrades the previous 0..4 range; idx=6 returns 422 with FastAPI's default validation error envelope (verified). No DB migration needed since existing avatar=0..4 docs remain valid.",
+    "server.py:470-483 BannerIn(0..7, 0..7) — both icon and color are independently validated; storage is via $set so no stale fields. public_user re-reads from DB-returned dict so the response always reflects persisted state.",
+    "server.py:684-693 Player.__init__ defensively coerces avatar/banner/peak_rank_tier with `int(... or 0)` and falls back to current rank tier when peak is missing — correctly prevents NoneType crashes for old user docs.",
+    "server.py:1049-1065 (melee kill) and 1141-1157 (ranged kill) — kill event payload now includes shooter_peak_rank_tier, shooter_banner_icon, shooter_banner_color via `getattr(... , default)`. Verified live in TestKillEventSchema (bots fight bots in casual room, event keys+int-types present).",
+    "PlayerCard.jsx:88 BannerStrip with data-testid='player-card-banner' renders only when bannerIcon AND bannerColor are finite numbers (Number.isFinite guard) — verified visible in lobby-user-card. Good defensive null-handling.",
+    "Profile.jsx:302-343 AvatarPicker has 6 options (AVATAR_COUNT=6); idx=5 is the 'Peak Crest' which uses peakTier prop and rankIconFor() for dynamic rendering. Save indicator + check mark + aria-pressed semantics are correct. Note: child `<Avatar testid='avatar-option-N-avatar' />` causes prefix-selector `[data-testid^=\"avatar-option-\"]` to over-match (12 vs 6) — not a bug, but tests should use exact selectors.",
+    "Profile.jsx:269-291 RankCard renders the tier icon via rankIconFor(tier) into <I/> with data-testid={testid}-icon — both 'profile-current-rank-icon' and 'profile-peak-rank-icon' visible in test.",
+    "AdvancedControls.jsx:115-145 KeybindsSection — listening state via local useState, click sets it, key handler updates bind + clears listening, ESC clears. The button text is uppercased via CSS so any case-sensitive selector must account for 'PRESS KEY…'. Suggest adding a separate data-testid for the listening label (e.g., 'settings-keybind-forward-status') if tests want to assert it cleanly.",
+    "AdvancedControls.jsx:250-330 MobileHudSection writes through settingsStore — confirmed localStorage 'virtue-settings-v1' now contains hudLayout.actions.{x,y,scale,opacity} after dragging Offset X to 60. Sliders correctly use independent testids per element (`settings-hud-x-actions`, etc.) so multi-element coverage is testable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7_banner_avatar_kill.py (NEW — 16 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 — 6 avatar range + 2 422 guards + 4 banner range + 1 public_user schema + 1 live kill-event WS + 2 smoke regression)",
+    "frontend": "100% on functional checks (banner strip on lobby PlayerCard, settings modal advanced sections present, keybind listening + key-press rebind + ESC cancel, mobile HUD slider drag + localStorage persistence, profile AvatarPicker with 6 options + click idx=5 fires POST + selected state, rank icons present, /play offline initializes engine with no JS errors)"
+  },
+  "test_credentials": "player1@shooter.com / player123 (used live; avatar pre-set to 5 and banner_icon=3/banner_color=4 to make BannerStrip visible).",
+  "seed_data_creation": "Set player1.avatar=5 + banner_icon=3 + banner_color=4 via /api/profile/me/avatar and /api/profile/me/banner before frontend tests to make BannerStrip visible. Safe to leave (these are profile-level cosmetic fields).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend: `python -m pytest /app/backend/tests/test_iteration7_banner_avatar_kill.py -v -c /app/backend/tests/pytest.ini --tb=short`. Kill-event schema test relies on casual-room bots fighting; if bot AI ever becomes more passive, the test will gracefully pytest.skip rather than fail. Note: profile AvatarPicker uses `data-testid^=\"avatar-option-\"` for both the parent button AND a child <Avatar testid='avatar-option-N-avatar'> — when counting picker options use exact selector `[data-testid=\"avatar-option-N\"]` not prefix. Keybind row text is uppercased via CSS — assert with case-insensitive match or use the text after a key press to verify state transitions.",
+  "rca of the issue": "N/A — no functional bugs found. Two false-negative test lines in the Playwright run were due to overly-greedy CSS prefix selector and case-sensitive text match; underlying features verified correct via follow-up assertions and localStorage inspection."
+}

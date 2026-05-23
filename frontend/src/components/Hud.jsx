@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2 } from "lucide-react";
+import { rankIconFor } from "@/game/rankIcons";
 import PlayerCard from "@/components/PlayerCard";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
@@ -251,6 +252,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
                 rankTier={hud.lastKiller.rankTier}
                 rankName={hud.lastKiller.rankName}
                 rankPoints={hud.lastKiller.rankPoints}
+                peakRankTier={hud.lastKiller.peakRankTier ?? hud.lastKiller.rankTier}
+                bannerIcon={hud.lastKiller.bannerIcon ?? null}
+                bannerColor={hud.lastKiller.bannerColor ?? null}
                 isBot={!!hud.lastKiller.isBot}
                 testid="killer-card"
               />
@@ -301,7 +305,8 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
                     )}
                   </div>
                   <div className="col-span-2 text-right">
-                    <span className="font-anton uppercase text-sm px-2 py-1" style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}>
+                    <span className="inline-flex items-center gap-1 font-anton uppercase text-sm px-2 py-1" style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}>
+                      {(() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={12} strokeWidth={3} />; })()}
                       {p.rank_name}
                     </span>
                   </div>

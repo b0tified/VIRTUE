@@ -7,6 +7,8 @@ import {
   Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
   Check,
 } from "lucide-react";
+import { rankIconFor } from "@/game/rankIcons";
+import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -61,7 +63,9 @@ export default function Profile() {
 
   const bannerIcon = user?.banner_icon ?? 0;
   const bannerColor = user?.banner_color ?? 0;
+  const avatarIdx = user?.avatar ?? 0;
   const [savingBanner, setSavingBanner] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   const updateBanner = async (nextIcon, nextColor) => {
     setSavingBanner(true);
@@ -73,6 +77,15 @@ export default function Profile() {
       await refreshMe();
     } catch {}
     setSavingBanner(false);
+  };
+
+  const updateAvatar = async (nextIdx) => {
+    setSavingAvatar(true);
+    try {
+      await api.post("/profile/me/avatar", { avatar: nextIdx });
+      await refreshMe();
+    } catch {}
+    setSavingAvatar(false);
   };
 
   const [history, setHistory] = useState(null); // null = loading, [] = empty
@@ -117,6 +130,14 @@ export default function Profile() {
           saving={savingBanner}
           onPickIcon={(i) => updateBanner(i, bannerColor)}
           onPickColor={(c) => updateBanner(bannerIcon, c)}
+        />
+
+        {/* Avatar (profile photo) picker — idx 5 is the dynamic Peak Rank Crest */}
+        <AvatarPicker
+          avatarIdx={avatarIdx}
+          peakTier={peakTier}
+          saving={savingAvatar}
+          onPick={updateAvatar}
         />
 
         {/* Rank cards: current + peak */}
@@ -248,6 +269,7 @@ function rankIdxFromName(name) {
 function RankCard({ label, tier, name, points, crown = false, testid }) {
   const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
   const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
+  const I = rankIconFor(tier);
   return (
     <div className="card-pow p-0 overflow-hidden" data-testid={testid}>
       <div className="bg-black text-white px-5 py-2 flex items-center gap-2">
@@ -255,8 +277,9 @@ function RankCard({ label, tier, name, points, crown = false, testid }) {
         <span className="font-anton uppercase tracking-widest text-sm">{label}</span>
       </div>
       <div className="flex items-stretch">
-        <div className="font-display px-6 py-5 text-4xl uppercase flex-1" style={{ background: color, color: textColor }}>
-          {name}
+        <div className="font-display px-5 py-5 text-4xl uppercase flex-1 flex items-center gap-3" style={{ background: color, color: textColor }}>
+          <I size={36} strokeWidth={3} style={{ color: textColor }} data-testid={`${testid}-icon`} />
+          <span>{name}</span>
         </div>
         <div className="bg-white px-5 py-5 font-display text-4xl border-l-2 border-black tabular-nums">
           {points}
@@ -272,6 +295,56 @@ function Stat({ label, value, color, textColor = "#fff", testid }) {
     <div className="card-pow p-6" style={{ background: color, color: textColor }} data-testid={testid}>
       <div className="font-anton uppercase tracking-widest text-sm opacity-80">{label}</div>
       <div className="font-display text-5xl mt-2">{value}</div>
+    </div>
+  );
+}
+
+function AvatarPicker({ avatarIdx, peakTier, saving, onPick }) {
+  return (
+    <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="avatar-picker">
+      <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+        <Crown size={18} strokeWidth={3} className="text-[#FFD700]" />
+        <span className="font-anton uppercase tracking-widest">Profile Photo</span>
+        {saving && (
+          <span className="ml-auto font-anton uppercase text-xs text-[#FFD700]" data-testid="avatar-saving">
+            Saving...
+          </span>
+        )}
+      </div>
+      <div className="p-5 bg-white">
+        <div className="flex flex-wrap gap-3">
+          {Array.from({ length: AVATAR_COUNT }).map((_, i) => {
+            const active = i === avatarIdx;
+            const isPeak = i === AVATAR_COUNT - 1; // idx 5 = Peak Rank Crest
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => !saving && onPick(i)}
+                className={`relative flex flex-col items-center gap-1 p-1 transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"}`}
+                data-testid={`avatar-option-${i}`}
+                aria-pressed={active}
+                title={isPeak ? "Peak Rank Crest" : `Avatar ${i + 1}`}
+              >
+                <div className={`p-1 ${active ? "ring-4 ring-[#FFD700] rounded-sm" : ""}`}>
+                  <Avatar idx={i} peakTier={peakTier} size={56} testid={`avatar-option-${i}-avatar`} />
+                </div>
+                {isPeak && (
+                  <span className="font-anton uppercase text-[10px] tracking-widest text-neutral-700">
+                    Peak Crest
+                  </span>
+                )}
+                {active && (
+                  <Check size={14} strokeWidth={4} className="absolute -top-1 -right-1 text-[#06A35F] bg-white border-2 border-black rounded-full p-0.5" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="font-body text-xs text-neutral-500 mt-3">
+          The <span className="font-anton uppercase">Peak Crest</span> dynamically shows your highest rank icon — climb to upgrade it.
+        </p>
+      </div>
     </div>
   );
 }

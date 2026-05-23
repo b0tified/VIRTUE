@@ -4,6 +4,7 @@ import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
 import InstallButton from "@/components/InstallButton";
+import AdvancedControls from "@/components/AdvancedControls";
 
 const GRAPHICS_OPTIONS = [
   { value: "low",    label: "Low",    note: "Best FPS. Lower render resolution." },
@@ -255,6 +256,11 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(v) => patch({ antialias: v })}
               testid="settings-antialias"
             />
+          </section>
+
+          {/* Advanced controls — keybinds, controller, mobile HUD editor */}
+          <section className="border-t border-neutral-800 pt-4">
+            <AdvancedControls s={s} patch={patch} />
           </section>
 
           <p className="text-[11px] text-neutral-500 pt-1">

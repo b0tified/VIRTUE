@@ -259,23 +259,24 @@ export default function Game() {
     document.addEventListener("pointerlockchange", onLockChange);
 
     const onKeyDown = (e) => {
-      if (e.code === "Tab") {
+      const kb = settingsStore.get()?.keybinds || {};
+      if (e.code === (kb.scoreboard || "Tab")) {
         e.preventDefault();
         setHud((h) => ({ ...h, showScoreboard: true }));
       }
-      if (e.code === "Digit1") {
+      if (e.code === (kb.weapon1 || "Digit1")) {
         engineRef.current?.setWeapon("primary");
         setHud((h) => ({ ...h, weapon: "primary" }));
       }
-      if (e.code === "Digit2" || e.code === "KeyV") {
+      if (e.code === (kb.weapon2 || "Digit2")) {
         engineRef.current?.setWeapon("secondary");
         setHud((h) => ({ ...h, weapon: "secondary" }));
       }
-      if (e.code === "Digit3") {
+      if (e.code === (kb.weapon3 || "Digit3")) {
         engineRef.current?.setWeapon("tertiary");
         setHud((h) => ({ ...h, weapon: "tertiary" }));
       }
-      if (e.code === "KeyR") {
+      if (e.code === (kb.reload || "KeyR")) {
         const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
         sock.send({ type: "reload", weapon: w });
       }
@@ -284,7 +285,8 @@ export default function Game() {
       }
     };
     const onKeyUp = (e) => {
-      if (e.code === "Tab") setHud((h) => ({ ...h, showScoreboard: false }));
+      const kb = settingsStore.get()?.keybinds || {};
+      if (e.code === (kb.scoreboard || "Tab")) setHud((h) => ({ ...h, showScoreboard: false }));
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);

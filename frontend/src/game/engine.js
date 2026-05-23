@@ -1,6 +1,22 @@
 import * as THREE from "three";
+import settingsStore from "@/game/settings";
 
 const SENS_KEY = "virtue.mouseSensitivity";
+
+function _bind(name, fallback) {
+  try {
+    const kb = settingsStore.get()?.keybinds;
+    if (kb && typeof kb[name] === "string" && kb[name]) return kb[name];
+  } catch {}
+  return fallback;
+}
+function _ctrlBind(name, fallback) {
+  try {
+    const cb = settingsStore.get()?.controllerBinds;
+    if (cb && Number.isFinite(cb[name])) return cb[name];
+  } catch {}
+  return fallback;
+}
 
 export class GameEngine {
   constructor(canvas, { onState, onLocalUpdate, onShoot } = {}) {
@@ -151,7 +167,26 @@ export class GameEngine {
     this.pitch -= e.movementY * sens;
     this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch));
   }
-  _onKeyDown(e) { this.keys.add(e.code); if (e.code === "Tab") e.preventDefault(); }
+  _onKeyDown(e) {
+    this.keys.add(e.code);
+    // Prevent default for the scoreboard binding (don't let TAB blur focus).
+    if (e.code === _bind("scoreboard", "Tab")) e.preventDefault();
+    // Weapon-digit hotkeys (bindable).
+    const order = ["primary", "secondary", "tertiary"];
+    if (e.code === _bind("weapon1", "Digit1")) this.setWeapon("primary");
+    else if (e.code === _bind("weapon2", "Digit2")) this.setWeapon("secondary");
+    else if (e.code === _bind("weapon3", "Digit3")) this.setWeapon("tertiary");
+    else if (e.code === _bind("reload", "KeyR")) {
+      this.onLocalUpdate?.({ type: "reload-pressed" });
+    } else if (e.code === _bind("melee", "KeyV") && this.alive && this.locked) {
+      this.pendingMelee = true;
+      this.pendingMeleeAim = { yaw: this.yaw, pitch: this.pitch };
+    } else if (e.code === _bind("adsToggle", "KeyZ")) {
+      if (this.currentWeapon !== "secondary") this.setADS(!this.ads);
+    }
+    // Avoid unused 'order' warning if user never binds digits to existing keys.
+    void order;
+  }
   _onKeyUp(e) { this.keys.delete(e.code); }
   _onMouseDown(e) {
     if (!this.locked || !this.alive) return;
@@ -221,19 +256,48 @@ export class GameEngine {
       this.scene.add(b);
     }
 
-    // Outer walls
-    const wallColors = [0xe62429, 0x0055ff, 0xffd700, 0x0a0a0a];
+    // Outer walls — themed comic-style brick walls with yellow/red trim,
+    // posts at intervals, and a pop-art halftone overlay.
+    const WALL_BG = 0x1A1A2E;        // dark navy panels
+    const WALL_TRIM = 0xFFD700;      // yellow comic trim
+    const WALL_ACCENT = 0xE62429;    // red accent stripe
     const wallH = 6;
-    const wallT = 1;
-    const wall = (x, z, w, d, c) => {
-      const m = this._outlined(new THREE.BoxGeometry(w, wallH, d), c);
-      m.position.set(x, wallH / 2, z);
-      this.scene.add(m);
+    const wallT = 1.2;
+    const buildWall = (x, z, w, d, horizontal) => {
+      const group = new THREE.Group();
+      // Main wall slab
+      const slab = this._outlined(new THREE.BoxGeometry(w, wallH, d), WALL_BG, 1.02);
+      slab.position.set(0, wallH / 2, 0);
+      group.add(slab);
+      // Bright top trim (top 0.45m)
+      const trimGeo = new THREE.BoxGeometry(w + 0.05, 0.5, d + 0.05);
+      const trim = new THREE.Mesh(trimGeo, this._toonMat(WALL_TRIM));
+      trim.position.set(0, wallH - 0.25, 0);
+      group.add(trim);
+      // Mid red accent stripe (at ~head height)
+      const accentGeo = new THREE.BoxGeometry(w + 0.04, 0.25, d + 0.04);
+      const accent = new THREE.Mesh(accentGeo, this._toonMat(WALL_ACCENT));
+      accent.position.set(0, wallH * 0.55, 0);
+      group.add(accent);
+      // Posts every ~10m (vertical pillars)
+      const span = horizontal ? w : d;
+      const numPosts = Math.max(2, Math.floor(span / 10));
+      const postMat = this._toonMat(0x0A0A0A);
+      for (let i = 0; i <= numPosts; i++) {
+        const t = (i / numPosts) - 0.5;
+        const px = horizontal ? t * span : 0;
+        const pz = horizontal ? 0 : t * span;
+        const post = new THREE.Mesh(new THREE.BoxGeometry(horizontal ? 0.5 : d + 0.4, wallH + 0.4, horizontal ? d + 0.4 : 0.5), postMat);
+        post.position.set(px, (wallH + 0.4) / 2, pz);
+        group.add(post);
+      }
+      group.position.set(x, 0, z);
+      this.scene.add(group);
     };
-    wall(0, -SIZE - wallT / 2, SIZE * 2 + wallT * 2, wallT, wallColors[0]);
-    wall(0, SIZE + wallT / 2, SIZE * 2 + wallT * 2, wallT, wallColors[1]);
-    wall(-SIZE - wallT / 2, 0, wallT, SIZE * 2, wallColors[2]);
-    wall(SIZE + wallT / 2, 0, wallT, SIZE * 2, wallColors[3]);
+    buildWall(0, -SIZE - wallT / 2, SIZE * 2 + wallT * 2, wallT, true);
+    buildWall(0, SIZE + wallT / 2, SIZE * 2 + wallT * 2, wallT, true);
+    buildWall(-SIZE - wallT / 2, 0, wallT, SIZE * 2, false);
+    buildWall(SIZE + wallT / 2, 0, wallT, SIZE * 2, false);
 
     // Buildings (matches server obstacle list)
     this.obstacles = [
@@ -295,15 +359,67 @@ export class GameEngine {
     this.scene.add(sign);
     this._sign = sign;
 
-    // Sky dome (slightly cloudy)
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(120, 16, 16), new THREE.MeshBasicMaterial({ color: 0x9ddff6, side: THREE.BackSide }));
+    // Sky dome — vertical gradient texture (deep blue → warm horizon) baked
+    // onto a sphere. Adds depth without breaking the comic flat-shading.
+    const skyCanvas = document.createElement("canvas");
+    skyCanvas.width = 8; skyCanvas.height = 256;
+    const skc = skyCanvas.getContext("2d");
+    const grd = skc.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0.00, "#1E2A6A");   // zenith — deep navy
+    grd.addColorStop(0.35, "#3F6FCC");   // mid sky — comic blue
+    grd.addColorStop(0.68, "#9DDFF6");   // pale blue
+    grd.addColorStop(0.88, "#FFD89C");   // warm horizon
+    grd.addColorStop(1.00, "#FF7B7B");   // sunset glow at the bottom rim
+    skc.fillStyle = grd; skc.fillRect(0, 0, 8, 256);
+    const skyTex = new THREE.CanvasTexture(skyCanvas);
+    skyTex.colorSpace = THREE.SRGBColorSpace;
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(140, 24, 16),
+      new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false }),
+    );
     this.scene.add(sky);
+    // Sun — bright yellow disc with a halo
+    const sun = new THREE.Mesh(
+      new THREE.CircleGeometry(7, 24),
+      new THREE.MeshBasicMaterial({ color: 0xFFE680 }),
+    );
+    sun.position.set(-60, 38, -100);
+    sun.lookAt(0, 30, 0);
+    this.scene.add(sun);
+    const sunHalo = new THREE.Mesh(
+      new THREE.CircleGeometry(10, 24),
+      new THREE.MeshBasicMaterial({ color: 0xFFC857, transparent: true, opacity: 0.45 }),
+    );
+    sunHalo.position.copy(sun.position).multiplyScalar(0.995);
+    sunHalo.lookAt(0, 30, 0);
+    this.scene.add(sunHalo);
+    // Clouds — varied sizes + multi-puff shapes
     const cloudMat = this._toonMat(0xffffff);
-    for (let i = 0; i < 8; i++) {
-      const cg = new THREE.SphereGeometry(2.5 + Math.random() * 1.5, 8, 6);
-      const c = new THREE.Mesh(cg, cloudMat);
-      c.position.set((Math.random() - 0.5) * 100, 18 + Math.random() * 8, (Math.random() - 0.5) * 100);
-      this.scene.add(c);
+    for (let i = 0; i < 22; i++) {
+      const cluster = new THREE.Group();
+      const puffs = 3 + Math.floor(Math.random() * 4);
+      for (let p = 0; p < puffs; p++) {
+        const r = 1.6 + Math.random() * 2.2;
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cloudMat);
+        puff.position.set((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 5);
+        cluster.add(puff);
+      }
+      cluster.position.set((Math.random() - 0.5) * 160, 22 + Math.random() * 14, (Math.random() - 0.5) * 160);
+      this.scene.add(cluster);
+    }
+    // Distant birds — tiny V-shaped sprites for a sense of scale
+    for (let i = 0; i < 6; i++) {
+      const bird = new THREE.Group();
+      const wm = this._toonMat(0x0A0A0A);
+      const lw = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.1), wm);
+      lw.rotation.z = 0.45;
+      lw.position.x = -0.3;
+      const rw = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.1), wm);
+      rw.rotation.z = -0.45;
+      rw.position.x = 0.3;
+      bird.add(lw); bird.add(rw);
+      bird.position.set(-40 + i * 12, 28 + (i % 2) * 3, -50 - (i % 3) * 6);
+      this.scene.add(bird);
     }
 
     // ===== Decorative non-collidable map detail =====
@@ -420,6 +536,58 @@ export class GameEngine {
     buildRoad(0, -25, 4, 50);
     buildRoad(25, 0, 4, 50, Math.PI / 2);
     buildRoad(-25, 0, 4, 50, Math.PI / 2);
+
+    // ===== Driveways — small road segments connecting major buildings to
+    // the main cross-roads, so the streetscape doesn't look stranded. =====
+    const driveMat = this._toonMat(0x3a3d44); // lighter asphalt
+    const buildDrive = (x1, z1, x2, z2, w = 2.4) => {
+      const dx = x2 - x1, dz = z2 - z1;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.1) return;
+      const ang = Math.atan2(dx, dz);
+      const drive = new THREE.Mesh(new THREE.PlaneGeometry(w, len), driveMat);
+      drive.rotation.x = -Math.PI / 2;
+      drive.rotation.z = ang;
+      drive.position.set((x1 + x2) / 2, 0.035, (z1 + z2) / 2);
+      this.scene.add(drive);
+      // Curb stripes on both edges
+      const stripeMat = this._toonMat(0xFFFFFF);
+      for (const side of [-1, 1]) {
+        const s = new THREE.Mesh(new THREE.PlaneGeometry(0.08, len), stripeMat);
+        s.rotation.x = -Math.PI / 2;
+        s.rotation.z = ang;
+        const px = -Math.cos(ang) * (w / 2 - 0.1) * side;
+        const pz = Math.sin(ang) * (w / 2 - 0.1) * side;
+        s.position.set((x1 + x2) / 2 + px, 0.038, (z1 + z2) / 2 + pz);
+        this.scene.add(s);
+      }
+    };
+    // Connect the four cardinal road-spurs (roads run at z = ±25, x = ±25)
+    // to nearby buildings + the corner plazas.
+    const driveways = [
+      // From east road (x=25) to east-side buildings
+      [25, 0, 30, 12],
+      [25, 0, 30, -12],
+      // From west road (x=-25) to west-side
+      [-25, 0, -30, 12],
+      [-25, 0, -30, -12],
+      // From north road (z=25) toward north-east cluster
+      [0, 25, 14, 28],
+      [0, 25, -10, 28],
+      [0, 25, 18, 14],
+      [0, 25, -18, 14],
+      // From south road (z=-25)
+      [0, -25, 14, -28],
+      [0, -25, -10, -28],
+      [0, -25, 20, -18],
+      [0, -25, -18, -14],
+      // Corner plaza driveways
+      [25, 25, 35, 35],
+      [-25, 25, -35, 35],
+      [25, -25, 35, -35],
+      [-25, -25, -35, -35],
+    ];
+    driveways.forEach(([x1, z1, x2, z2]) => buildDrive(x1, z1, x2, z2));
 
     // ===== Extra decorative buildings (non-collidable, visual only) =====
     // Place safely away from existing obstacles
@@ -1036,6 +1204,9 @@ export class GameEngine {
                 rankTier: ev.shooter_rank_tier || 0,
                 rankName: ev.shooter_rank_name || "BRONZE",
                 rankPoints: ev.shooter_rank_points || 0,
+                peakRankTier: ev.shooter_peak_rank_tier ?? ev.shooter_rank_tier ?? 0,
+                bannerIcon: ev.shooter_banner_icon ?? null,
+                bannerColor: ev.shooter_banner_color ?? null,
                 isBot: !!ev.shooter_is_bot,
                 weapon: ev.weapon || "ak47",
               },
@@ -1127,11 +1298,12 @@ export class GameEngine {
     }
 
     let mx = 0, mz = 0;
-    if (this.keys.has("KeyW")) mz -= 1;
-    if (this.keys.has("KeyS")) mz += 1;
-    if (this.keys.has("KeyA")) mx -= 1;
-    if (this.keys.has("KeyD")) mx += 1;
-    const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    if (this.keys.has(_bind("forward", "KeyW"))) mz -= 1;
+    if (this.keys.has(_bind("back", "KeyS"))) mz += 1;
+    if (this.keys.has(_bind("left", "KeyA"))) mx -= 1;
+    if (this.keys.has(_bind("right", "KeyD"))) mx += 1;
+    const sprintKey = _bind("sprint", "ShiftLeft");
+    const sprint = this.keys.has(sprintKey) || (sprintKey === "ShiftLeft" && this.keys.has("ShiftRight"));
     const speed = (sprint ? 8 : 5) * (this.alive ? 1 : 0);
     const moving = (mx !== 0 || mz !== 0) && this.alive;
 
@@ -1151,7 +1323,7 @@ export class GameEngine {
     // Jump + gravity (server is purely 2D, jump is client-visual only — server
     // sees pitch/yaw and clamps Y; we just bob the camera up and back down).
     const GROUND_Y = 1.8;
-    if (this.keys.has("Space") && this.onGround && this.alive) {
+    if (this.keys.has(_bind("jump", "Space")) && this.onGround && this.alive) {
       this.vy = 6.5;
       this.onGround = false;
       this.onLocalUpdate?.({ type: "jump" });
@@ -1330,9 +1502,11 @@ export class GameEngine {
     if (rx) this.yaw -= rx * sens * dt;
     if (ry) this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - ry * sens * dt));
 
-    // ---- Triggers (RT fires, LT holds ADS) ----
-    const rt = gp.buttons && gp.buttons[7] ? gp.buttons[7].value : 0;
-    const lt = gp.buttons && gp.buttons[6] ? gp.buttons[6].value : 0;
+    // ---- Triggers (configurable: shoot + ADS) ----
+    const shootIdx = _ctrlBind("shoot", 7);
+    const adsIdx = _ctrlBind("ads", 6);
+    const rt = gp.buttons && gp.buttons[shootIdx] ? gp.buttons[shootIdx].value : 0;
+    const lt = gp.buttons && gp.buttons[adsIdx] ? gp.buttons[adsIdx].value : 0;
     const fireDown = rt > 0.4;
     const adsDown = lt > 0.4;
     // Fire on rising edge (single-shot) — auto fire for current weapon is
@@ -1350,31 +1524,34 @@ export class GameEngine {
     this._gpPrev.fire = fireDown;
     this.ads = adsDown;
 
-    // ---- Face buttons ----
-    const aBtn = btn(0), bBtn = btn(1), xBtn = btn(2), yBtn = btn(3);
-    if (aBtn && !this._gpPrev.jump) {
+    // ---- Face buttons (configurable) ----
+    const jumpBtn = btn(_ctrlBind("jump", 0));
+    const reloadBtn = btn(_ctrlBind("reload", 1));
+    const meleeBtn = btn(_ctrlBind("melee", 2));
+    const cycleBtn = btn(_ctrlBind("weaponCycle", 3));
+    if (jumpBtn && !this._gpPrev.jump) {
       this.keys.add("Space");
       setTimeout(() => this.keys.delete("Space"), 60);
     }
-    this._gpPrev.jump = aBtn;
-    if (xBtn && !this._gpPrev.melee) {
+    this._gpPrev.jump = jumpBtn;
+    if (meleeBtn && !this._gpPrev.melee) {
       this.pendingMelee = true;
       this.pendingMeleeAim = { yaw: this.yaw, pitch: this.pitch };
     }
-    this._gpPrev.melee = xBtn;
-    if (bBtn && !this._gpPrev.reload) {
+    this._gpPrev.melee = meleeBtn;
+    if (reloadBtn && !this._gpPrev.reload) {
       this.onLocalUpdate?.({ type: "reload-pressed" });
     }
-    this._gpPrev.reload = bBtn;
-    if (yBtn && !this._gpPrev.weapon) {
+    this._gpPrev.reload = reloadBtn;
+    if (cycleBtn && !this._gpPrev.weapon) {
       const order = ["primary", "secondary", "tertiary"];
       const i = order.indexOf(this.currentWeapon || "primary");
       this.setWeapon(order[(i + 1) % order.length]);
     }
-    this._gpPrev.weapon = yBtn;
+    this._gpPrev.weapon = cycleBtn;
 
-    // Shoulder buttons cycle weapons
-    const lb = btn(4), rb = btn(5);
+    // Shoulder buttons cycle weapons (configurable)
+    const lb = btn(_ctrlBind("weaponPrev", 4)), rb = btn(_ctrlBind("weaponNext", 5));
     if (rb && !this._gpPrev.rb) {
       const order = ["primary", "secondary", "tertiary"];
       const i = order.indexOf(this.currentWeapon || "primary");

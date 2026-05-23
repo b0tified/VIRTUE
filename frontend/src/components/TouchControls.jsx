@@ -19,6 +19,7 @@ function isTouchDevice() {
 
 export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon, onToggleScoreboard }) {
   const [enabled, setEnabled] = useState(false);
+  const [hudLayout, setHudLayout] = useState(() => settingsStore.get().hudLayout || settingsStore.DEFAULTS.hudLayout);
   const moveStickRef = useRef(null);
   const lookStickRef = useRef(null);
   // Track active touches so we can drive both sticks simultaneously.
@@ -29,11 +30,12 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     weapon: "primary",
   });
 
-  // React to settings changes (touchControls: auto/on/off).
+  // React to settings changes (touchControls: auto/on/off + HUD layout edits).
   useEffect(() => {
     const unsub = settingsStore.subscribe((s) => {
       const mode = s.touchControls || "auto";
       setEnabled(mode === "on" || (mode === "auto" && isTouchDevice()));
+      setHudLayout(s.hudLayout || settingsStore.DEFAULTS.hudLayout);
     });
     return unsub;
   }, []);
@@ -181,11 +183,23 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     }
   };
 
+  const moveL = hudLayout?.move    || { x: 32, y: 32, scale: 1, opacity: 1 };
+  const actL  = hudLayout?.actions || { x: 32, y: 32, scale: 1, opacity: 1 };
+  const wepL  = hudLayout?.weapons || { x: 16, y: 16, scale: 1, opacity: 1 };
+  const scbL  = hudLayout?.scoreboard || { x: 0, y: 16, scale: 1, opacity: 1 };
+
   return (
     <div className="absolute inset-0 z-30 pointer-events-none select-none" data-testid="touch-controls">
       {/* LEFT: move stick */}
       <div
-        className="pointer-events-auto absolute bottom-8 left-8 w-36 h-36 rounded-full bg-white/10 border-2 border-white/30"
+        className="pointer-events-auto absolute rounded-full bg-white/10 border-2 border-white/30"
+        style={{
+          bottom: moveL.y,
+          left: moveL.x,
+          width: 144 * moveL.scale,
+          height: 144 * moveL.scale,
+          opacity: moveL.opacity,
+        }}
         ref={moveStickRef}
         onTouchStart={onMoveStart}
         onTouchMove={onMoveMove}
@@ -209,7 +223,16 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       />
 
       {/* RIGHT: action buttons (sit above the look pad, in pointer-events-auto bubble) */}
-      <div className="pointer-events-auto absolute bottom-8 right-8 grid grid-cols-2 gap-3 z-40">
+      <div
+        className="pointer-events-auto absolute grid grid-cols-2 gap-3 z-40"
+        style={{
+          bottom: actL.y,
+          right: actL.x,
+          transform: `scale(${actL.scale})`,
+          transformOrigin: "bottom right",
+          opacity: actL.opacity,
+        }}
+      >
         <ActionBtn label="Reload" onPress={() => onReload?.()} color="#FFD700" testid="touch-reload" />
         <ActionBtn label="Melee"  onPress={pressMelee}        color="#9B59B6" testid="touch-melee" />
         <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" />
@@ -217,7 +240,16 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       </div>
 
       {/* Weapon switcher (top-right above look pad) */}
-      <div className="pointer-events-auto absolute top-4 right-4 flex flex-col gap-1 z-40">
+      <div
+        className="pointer-events-auto absolute flex flex-col gap-1 z-40"
+        style={{
+          top: wepL.y,
+          right: wepL.x,
+          transform: `scale(${wepL.scale})`,
+          transformOrigin: "top right",
+          opacity: wepL.opacity,
+        }}
+      >
         {[
           { w: "primary",   k: "1", label: "AK"  },
           { w: "secondary", k: "2", label: "KAT" },
@@ -241,7 +273,13 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         onTouchStart={(e) => { e.preventDefault(); onToggleScoreboard?.(true); }}
         onTouchEnd={(e) => { e.preventDefault(); onToggleScoreboard?.(false); }}
         onTouchCancel={(e) => { e.preventDefault(); onToggleScoreboard?.(false); }}
-        className="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-black/70 border-2 border-white/40 rounded px-3 py-2 text-xs font-anton uppercase tracking-widest text-white active:bg-black/90"
+        className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-40 bg-black/70 border-2 border-white/40 rounded px-3 py-2 text-xs font-anton uppercase tracking-widest text-white active:bg-black/90"
+        style={{
+          top: scbL.y,
+          transform: `translateX(-50%) scale(${scbL.scale})`,
+          transformOrigin: "top center",
+          opacity: scbL.opacity,
+        }}
         data-testid="touch-scoreboard"
         aria-label="Hold to view scoreboard"
       >
