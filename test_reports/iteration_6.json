@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration-6 testing for VIRTUE 3D FPS new features: spectate-friend WS + /spectate/{username}/info, persistent party flow (invite/list/accept/decline/leave/me/start with leader-only guard), and party WS mode with bot-fill. Backend: 19/19 pytest passing (including end-to-end spectate of a live party match — welcome carries spectator=true + spectate_target_id, spectator filtered out of state.players[], spectator's input/shoot/melee silently ignored, target visible in state). Frontend: login → lobby → FRIENDS modal opens, conditional INVITE/SPECTATE buttons render correctly (hidden when friend offline), /spectate/player2 route renders the SPECTATING banner with correct username.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "WS /api/ws/game?mode=spectate&target=<offline_user>", "issue": "Server correctly rejects with `websocket.close(code=4404)` BEFORE accepting handshake, which propagates to the client as HTTP 403 (since the WS upgrade never happens). Functionally correct, but the HTTP-403 response provides no JSON detail. Consider sending a tiny 'reason' in the handshake response or accepting first then closing with 4404 so JS clients can distinguish 'target offline' from generic auth failures."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Game (spectator)", "issue": "When the WS rejects spectator (target not in match), the HUD just shows 'DISCONNECTED' with no user-friendly explanation ('Player is not currently in a match'). Banner still renders correctly with the target's username. First-person gun model also remains visible while spectating disconnected — should verify with a live target.", "selector": "[data-testid='spectate-banner']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_spectate_party.py",
+    "/app/test_reports/pytest/iteration6_results.xml"
+  ],
+  "action_items": [
+    "Optional UX: when spectator WS closes 4404, show a toast/banner like 'Player is no longer in a match' instead of plain DISCONNECTED.",
+    "Optional: verify engine.js lines 938-962 actually hide the first-person gun model when spectator=true (couldn't fully verify because test target was offline; banner+camera-follow path was confirmed only via WS-level spectate of live party match)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:2097-2145 POST /party/invite — Idempotent party creation (uuid.uuid4().hex[:10]). Bidirectional friendship check, self-invite 400, unknown 404, full-party 400, target-already-in-party 400, non-leader trying to invite blocked 400. 60s invite TTL via _gc_invites. Per-target dedup by from_user_id. Correctly returns full party payload.",
+    "server.py:2156-2181 /party/accept — 404 if no invite from sender; if invitee was in another party, _leave_party_internal first. Idempotent — adds to members only if not already present.",
+    "server.py:2213-2224 /party/start — Leader-only (403 for non-leader), 404 if no party. Just flips match_starting flag for clients to poll.",
+    "server.py:2227-2239 /spectate/{username}/info — Returns online/in_match/match_kind via player_location(). Match_kind correctly reflects 'party' in our e2e test.",
+    "server.py:2290-2390 WS /ws/game dispatch — mode=spectate path: resolves target, looks up room via player_location, selects appropriate GameRoom (casual/ranked/party/offline/practice). Sets player.is_spectator=True, finds target's Player.id for client-side camera-follow, sets alive=False/hp=0. Closes 4404 for missing target or no active room. mode=party requires party_id else closes 4400.",
+    "server.py:803-839 GameRoom.add/remove — Spectators do NOT trigger 'join'/'leave' broadcasts, are NOT added to PLAYER_LOCATION (so they can't be discovered/spectated themselves). Welcome payload includes spectator + spectate_target_id flags.",
+    "server.py:1138-1141 handle_message — Spectators silently early-return at the top (verified by sending shoot/input/melee while spectating; no disconnect, state still streams).",
+    "server.py:1380 to_state filter — `players` list excludes is_spectator=True players (verified: welcome.you.id never appears in subsequent state.players[]). Same filter at 1396 in end_match's real_players list — spectator never gets ranked rewards.",
+    "server.py:2039-2057 get_or_create_party_room — Bot count = MAX_PARTY_SIZE(4) - member_count. Duo party with 2 humans -> 2 bots = 4 total slots. Solo party -> 3 bots. Full 4-party -> 0 bots. Different from iteration-5 doc which said 'always 3 bots'.",
+    "Game.jsx:18-33 — Route /spectate/:username correctly forces mode='spectate' (overrides searchParams). isSpectator boolean derived cleanly.",
+    "Game.jsx:208-211 — sock.connect passes {target: spectateTarget} for spectate, {partyId} for party.",
+    "Game.jsx:217 — Spectator path skips network input send (early return).",
+    "Game.jsx:337-344 — No pointer-lock click handler for spectator + SPECTATING banner with target username.",
+    "FriendsModal.jsx:190-219 — INVITE renders ONLY when friend online && !in_match, SPECTATE renders ONLY when online && in_match. Correctly mutually exclusive."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_spectate_party.py (NEW — 19 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 — 5 smoke regression + 8 party-endpoints + 2 spectate-info + 4 WS spectate/party flows)",
+    "frontend": "100% (login → lobby render, FRIENDS modal opens with conditional INVITE/SPECTATE/INSPECT buttons rendered per online/in_match state, /spectate/<username> renders banner with target name; no console errors except the expected WS 403 when target is offline)"
+  },
+  "test_credentials": "player1@shooter.com / player123, player2@shooter.com / player123 (mutual friends; ensure_friends fixture self-repairs).",
+  "seed_data_creation": "None (idempotent fixture also re-registers player2 if missing).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `python -m pytest /app/backend/tests/test_iteration6_spectate_party.py -v -c /app/backend/tests/pytest.ini --tb=short`. The party-WS test takes ~6s because it waits for state messages from the bot-filled room. websockets>=14 throws InvalidStatus (HTTP 403) for FastAPI close-before-accept; tests handle both 4404-via-WS-close and HTTP-403-via-handshake-reject. Party room bot-fill scales with member count (4 - members), NOT a fixed 3. Spectator never appears in state.players[]. The spectate banner testid is `spectate-banner`. To test the live-spectate banner end-to-end you need a live target — player2 must be in a match via WS before /spectate/player2 will produce a working camera; otherwise UI just shows DISCONNECTED HUD under the banner.",
+  "rca of the issue": "N/A — no real bugs. Backend WS-close-before-accept producing HTTP 403 instead of WS-close-4404 is correct FastAPI behavior; tests adjusted accordingly."
+}
