@@ -9,6 +9,7 @@ import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
+import { useQueue } from "@/context/QueueContext";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
 
@@ -23,51 +24,21 @@ export default function Lobby() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..10
-  const [matchFoundSec, setMatchFoundSec] = useState(null); // null | 3..0 — countdown after queue match
   const [showTiers, setShowTiers] = useState(false);
   const [counts, setCounts] = useState({ casual: 0, ranked: 0 });
-  const [queueState, setQueueState] = useState(null); // null | {tier, tier_name, position, tier_size, matched, match_id}
-  const queueTimerRef = useState({ id: null })[0];
+  // Ranked queue state now lives in the global QueueContext so the toast
+  // persists when navigating to Profile/Leaderboard.
+  const queueCtx = useQueue();
+  const queueState = queueCtx?.queueState ?? null;
 
   const joinRankedQueue = async () => {
-    try {
-      const { data } = await api.post("/queue/ranked");
-      setQueueState(data);
-      const id = setInterval(async () => {
-        try {
-          const { data: s } = await api.get("/queue/ranked");
-          setQueueState(s);
-          if (s.matched) {
-            clearInterval(queueTimerRef.id);
-            queueTimerRef.id = null;
-            try { await api.post("/queue/ranked/ack"); } catch {}
-            audioBus.matchFound();
-            // Start a 3-2-1 countdown before launching into the arena.
-            setMatchFoundSec(3);
-          }
-        } catch {}
-      }, 1000);
-      queueTimerRef.id = id;
-    } catch (e) {
-      alert("Failed to join queue: " + (e.response?.data?.detail || e.message));
-    }
+    const r = await queueCtx?.joinRanked();
+    if (r && !r.ok) alert("Failed to join queue: " + r.error);
   };
 
   const cancelRankedQueue = async () => {
-    if (queueTimerRef.id) {
-      clearInterval(queueTimerRef.id);
-      queueTimerRef.id = null;
-    }
-    try { await api.delete("/queue/ranked"); } catch {}
-    setQueueState(null);
+    await queueCtx?.cancelRanked();
   };
-
-  useEffect(() => {
-    return () => {
-      if (queueTimerRef.id) clearInterval(queueTimerRef.id);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
 
@@ -203,17 +174,7 @@ export default function Lobby() {
     return () => clearTimeout(id);
   }, [quickQueueSec, nav]);
 
-  // Ranked match-found 3-2-1 countdown, then go into the arena.
-  useEffect(() => {
-    if (matchFoundSec === null) return;
-    if (matchFoundSec <= 0) {
-      setMatchFoundSec(null);
-      nav("/play?mode=ranked");
-      return;
-    }
-    const id = setTimeout(() => setMatchFoundSec((s) => (s === null ? null : s - 1)), 1000);
-    return () => clearTimeout(id);
-  }, [matchFoundSec, nav]);
+  // Ranked match-found countdown is handled inside QueueContext.
 
   // Audio/sensitivity/logout moved into Settings modal. We still need to
   // initialise the audio bus mute state from localStorage on first load.
@@ -495,65 +456,8 @@ export default function Lobby() {
         </div>
       )}
 
-      {/* Ranked queue toast (top-center, non-blocking — players can roam the lobby) */}
-      {queueState && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="queue-toast">
-          <div className="card-pow p-0 overflow-hidden">
-            <div
-              className="px-4 py-2 flex items-center gap-2 text-white"
-              style={{ background: queueState.matched ? "#06A35F" : "#0055FF" }}
-            >
-              {queueState.matched ? (
-                <Trophy size={18} strokeWidth={3} />
-              ) : (
-                <Loader2 size={18} strokeWidth={3} className="animate-spin" />
-              )}
-              <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="queue-toast-title">
-                {queueState.matched ? "Match Found!" : "Searching"}
-              </span>
-              {!queueState.matched && (
-                <button onClick={cancelRankedQueue} className="font-anton hover:opacity-80 ml-1" data-testid="queue-cancel" title="Leave queue">
-                  <X size={16} strokeWidth={3} />
-                </button>
-              )}
-            </div>
-            <div className="px-4 py-3 bg-white text-center">
-              {/* Match-found 3-2-1 countdown OR elapsed wait timer — both displayed
-                  without labels per UX request. */}
-              {queueState.matched ? (
-                <div data-testid="queue-match-found">
-                  <div
-                    className="font-display text-8xl text-[#06A35F] leading-none tabular-nums animate-pulse"
-                    data-testid="match-found-countdown"
-                  >
-                    {matchFoundSec ?? 3}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  className="font-display text-6xl text-[#0055FF] leading-none tabular-nums"
-                  data-testid="queue-wait-timer"
-                >
-                  {fmtMS(queueState.wait_seconds || 0)}
-                </div>
-              )}
-              <div className="mt-2 flex items-center justify-center gap-2">
-                <div
-                  className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5"
-                  style={{ background: RANK_COLORS[queueState.tier ?? 0], color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A" }}
-                >
-                  {queueState.tier_name || "BRONZE"}
-                </div>
-                {!queueState.matched && (
-                  <div className="font-anton uppercase text-xs text-neutral-500" data-testid="queue-count">
-                    {queueState.tier_size || 1} / 2 same-tier
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Ranked queue toast is rendered globally via <QueueOverlay /> in App.js
+          so it persists across Lobby / Profile / Leaderboard navigations. */}
     </div>
   );
 }

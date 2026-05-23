@@ -1,6 +1,8 @@
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { QueueProvider } from "@/context/QueueContext";
+import QueueOverlay from "@/components/QueueOverlay";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Lobby from "@/pages/Lobby";
@@ -40,18 +42,21 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Root />} />
-          <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
-          <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
-          <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
-          <Route path="/play" element={<ProtectedRoute><Game /></ProtectedRoute>} />
-          <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <QueueProvider>
+          <QueueOverlay />
+          <Routes>
+            <Route path="/" element={<Root />} />
+            <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
+            <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
+            <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
+            <Route path="/play" element={<ProtectedRoute><Game /></ProtectedRoute>} />
+            <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </QueueProvider>
       </BrowserRouter>
     </AuthProvider>
   );

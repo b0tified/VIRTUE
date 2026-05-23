@@ -1729,8 +1729,10 @@ export class GameEngine {
       this.camera.far = Math.max(60, Math.min(200, s.viewDistance));
       this.camera.updateProjectionMatrix();
     }
-    if (s.aimAssist !== undefined) {
-      this._aimAssistStrength = s.aimAssist ? 0.6 : 0.0;
+    if (s.aimAssist !== undefined || s.aimAssistStrength !== undefined) {
+      const enabled = this._settings.aimAssist !== false;
+      const strength = this._settings.aimAssistStrength ?? 0.6;
+      this._aimAssistStrength = enabled ? Math.max(0, Math.min(1, strength)) : 0.0;
     }
     if (s.cameraBob !== undefined) {
       this._bobEnabled = !!s.cameraBob;

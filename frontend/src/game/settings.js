@@ -12,6 +12,7 @@ const DEFAULTS = Object.freeze({
   touchControls: "auto",    // "auto" | "on" | "off"
   fovDegrees: 75,
   aimAssist: true,
+  aimAssistStrength: 0.6,   // 0.0 - 1.0 — applied only when aimAssist is true
   mouseSensitivity: 1.0,    // 0.25 - 2.5
   // Extended graphics options ------------------------------------------------
   renderScale: 1.0,         // 0.5 - 1.5 (renderer pixel ratio multiplier)

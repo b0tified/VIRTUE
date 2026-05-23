@@ -341,6 +341,29 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(v) => patch({ aimAssist: v })}
               testid="settings-aim-assist"
             />
+            {s.aimAssist && (
+              <div className="ml-1 -mt-1 mb-1" data-testid="settings-aim-assist-strength-row">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-anton uppercase tracking-widest text-xs text-neutral-300">Aim Assist Strength</div>
+                  <div className="text-xs tabular-nums" data-testid="settings-aim-assist-strength-value">
+                    {Math.round((s.aimAssistStrength ?? 0.6) * 100)}%
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={s.aimAssistStrength ?? 0.6}
+                  onChange={(e) => patch({ aimAssistStrength: parseFloat(e.target.value) })}
+                  className="w-full accent-[#06A35F]"
+                  data-testid="settings-aim-assist-strength-slider"
+                />
+                <p className="text-[10px] text-neutral-500 mt-0.5">
+                  Higher values pull harder toward enemies in your aim cone.
+                </p>
+              </div>
+            )}
             <ToggleRow
               label="Shadows"
               note="Soft shadows under players and props."
