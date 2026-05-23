@@ -2012,19 +2012,17 @@ def estimate_wait_seconds(tier_idx: int, current_wait: float) -> int:
     """Return a friendly "ETA to match" in seconds for the queue overlay.
 
     Priority: rolling avg of recent matches in this tier → bot-fill timeout
-    minus already-elapsed seconds → 30s sane default. Always clamped to
-    a positive integer (the UI shows "<1s" for 0)."""
+    → 30s sane default. Stays still while the player is queued (`current_wait`
+    is intentionally ignored) — the live timer already counts up next to it,
+    so a second decrementing value made the UI feel jittery."""
     waits = RECENT_MATCH_WAITS.get(tier_idx)
     if waits and len(waits) > 0:
         avg = sum(waits) / len(waits)
-        # Players already partway through their wait shouldn't see a static
-        # number — subtract elapsed so the ETA visibly counts down.
-        eta = max(1.0, avg - current_wait)
-        return int(round(eta))
+        return max(1, int(round(avg)))
     fill = bot_fill_seconds_for_tier(tier_idx)
     if fill == float("inf"):
         return 30  # Goonmaster never bot-fills; show a placeholder.
-    return max(1, int(round(fill - current_wait)))
+    return max(1, int(round(fill)))
 
 
 async def matchmaker_loop():

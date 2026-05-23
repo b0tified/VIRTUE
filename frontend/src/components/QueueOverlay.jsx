@@ -70,14 +70,6 @@ export default function QueueOverlay() {
             >
               {queueState.tier_name || "BRONZE"}
             </div>
-            {!queueState.matched && (
-              <div
-                className="font-anton uppercase text-xs text-neutral-500"
-                data-testid="queue-count"
-              >
-                {queueState.tier_size || 1} / 2 same-tier
-              </div>
-            )}
           </div>
           {!queueState.matched && Number.isFinite(queueState.estimated_wait_seconds) && (
             <div
