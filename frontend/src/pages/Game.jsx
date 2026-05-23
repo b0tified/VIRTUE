@@ -122,6 +122,13 @@ export default function Game() {
         } else if (ev.type === "reload-pressed") {
           const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
           sockRef.current?.send({ type: "reload", weapon: w });
+        } else if (ev.type === "laser-beam-start") {
+          audioBus.laserBeamStart();
+        } else if (ev.type === "laser-beam-stop") {
+          audioBus.laserBeamStop();
+        } else if (ev.type === "laser-overheat") {
+          audioBus.laserOverheat();
+          setHud((h) => ({ ...h, laserOverheat: Date.now() }));
         }
       },
     });
@@ -316,6 +323,9 @@ export default function Game() {
       unsubSettings();
       sock.close();
       engine.dispose();
+      // Safety: cut the continuous laser hum if the player navigates away
+      // mid-beam — otherwise it'd keep playing into the lobby.
+      audioBus.laserBeamStop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

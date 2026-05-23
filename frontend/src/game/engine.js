@@ -1060,6 +1060,11 @@ export class GameEngine {
       && !this.localLaserOverheated
       && !this.isSpectator;
     if (!this._beamOuter || !this._beamCore) return false;
+    // Emit start/stop edge events so audio + HUD react crisply.
+    if (active !== this._beamAudioActive) {
+      this._beamAudioActive = active;
+      this.onLocalUpdate?.({ type: active ? "laser-beam-start" : "laser-beam-stop" });
+    }
     if (!active) {
       this._beamOuter.visible = false;
       this._beamCore.visible = false;

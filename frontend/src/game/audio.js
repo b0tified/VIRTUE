@@ -224,6 +224,125 @@ class AudioBus {
     src.start(t0);
   }
 
+  /* -------- Continuous laser beam (looping hum) --------
+     Two detuned saw oscillators + a high sine "whine" through a slow LFO
+     band-pass for a sci-fi sustained beam tone. _beam holds the active node
+     graph so laserBeamStop() can fade it out cleanly. */
+  laserBeamStart() {
+    if (!this._ensure()) return;
+    if (this._beam) return; // already running
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime;
+    const beam = {};
+    // Low body — detuned saws
+    beam.saw1 = ctx.createOscillator();
+    beam.saw1.type = "sawtooth";
+    beam.saw1.frequency.value = 220;
+    beam.saw2 = ctx.createOscillator();
+    beam.saw2.type = "sawtooth";
+    beam.saw2.frequency.value = 224; // slight detune for chorus
+    // Band-pass filter with slow LFO sweep
+    beam.bp = ctx.createBiquadFilter();
+    beam.bp.type = "bandpass";
+    beam.bp.frequency.value = 900;
+    beam.bp.Q.value = 6;
+    beam.lfo = ctx.createOscillator();
+    beam.lfo.frequency.value = 5.5; // 5.5 Hz wobble
+    beam.lfoG = ctx.createGain();
+    beam.lfoG.gain.value = 280;
+    beam.lfo.connect(beam.lfoG);
+    beam.lfoG.connect(beam.bp.frequency);
+    // High whine sine
+    beam.whine = ctx.createOscillator();
+    beam.whine.type = "sine";
+    beam.whine.frequency.value = 1760;
+    beam.whineG = ctx.createGain();
+    beam.whineG.gain.value = 0.06;
+    // Master beam gain (fade in)
+    beam.g = ctx.createGain();
+    beam.g.gain.setValueAtTime(0.0001, t0);
+    beam.g.gain.linearRampToValueAtTime(0.32, t0 + 0.06);
+    beam.saw1.connect(beam.bp);
+    beam.saw2.connect(beam.bp);
+    beam.bp.connect(beam.g);
+    beam.whine.connect(beam.whineG);
+    beam.whineG.connect(beam.g);
+    beam.g.connect(this.sfxGain);
+    beam.saw1.start(t0);
+    beam.saw2.start(t0);
+    beam.lfo.start(t0);
+    beam.whine.start(t0);
+    this._beam = beam;
+  }
+
+  laserBeamStop() {
+    if (!this._beam || !this.ctx) return;
+    const beam = this._beam;
+    this._beam = null;
+    const t = this.ctx.currentTime;
+    try {
+      beam.g.gain.cancelScheduledValues(t);
+      beam.g.gain.setValueAtTime(beam.g.gain.value, t);
+      beam.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    } catch {}
+    const stopAt = t + 0.12;
+    try { beam.saw1.stop(stopAt); } catch {}
+    try { beam.saw2.stop(stopAt); } catch {}
+    try { beam.lfo.stop(stopAt); } catch {}
+    try { beam.whine.stop(stopAt); } catch {}
+  }
+
+  /* -------- Overheat alarm (sizzle + descending alarm beep) --------
+     Played once when the laser's heat hits 1.0 and the weapon locks. */
+  laserOverheat() {
+    if (!this._ensure()) return;
+    // Always cut the beam first so the overheat is audible.
+    this.laserBeamStop();
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime;
+    // 1) Sizzle: filtered white noise that drops in pitch
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.45), ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 0.6);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 4;
+    bp.frequency.setValueAtTime(3200, t0);
+    bp.frequency.exponentialRampToValueAtTime(420, t0 + 0.4);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.55, t0);
+    ng.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
+    src.connect(bp); bp.connect(ng); ng.connect(this.sfxGain);
+    src.start(t0);
+
+    // 2) Descending warning bleep — square wave 900 → 240 Hz
+    const beep = ctx.createOscillator();
+    beep.type = "square";
+    beep.frequency.setValueAtTime(900, t0);
+    beep.frequency.exponentialRampToValueAtTime(240, t0 + 0.35);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0, t0);
+    bg.gain.linearRampToValueAtTime(0.22, t0 + 0.02);
+    bg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.4);
+    beep.connect(bg); bg.connect(this.sfxGain);
+    beep.start(t0); beep.stop(t0 + 0.42);
+
+    // 3) Sub thump for body
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(110, t0);
+    sub.frequency.exponentialRampToValueAtTime(40, t0 + 0.2);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.4, t0);
+    sg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+    sub.connect(sg); sg.connect(this.sfxGain);
+    sub.start(t0); sub.stop(t0 + 0.24);
+  }
+
   /* -------- Hit marker (you hit someone) -------- */
   hitmark(headshot = false) {
     if (!this._ensure()) return;

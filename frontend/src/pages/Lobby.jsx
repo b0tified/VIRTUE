@@ -25,7 +25,7 @@ export default function Lobby() {
   const [showFriends, setShowFriends] = useState(false);
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..10
   const [showTiers, setShowTiers] = useState(false);
-  const [counts, setCounts] = useState({ casual: 0, ranked: 0 });
+  // (Removed `counts` state — replaced by client-side `displayOnline` below.)
   // Ranked queue state now lives in the global QueueContext so the toast
   // persists when navigating to Profile/Leaderboard.
   const queueCtx = useQueue();
@@ -87,18 +87,32 @@ export default function Lobby() {
     return () => clearTimeout(t);
   }, [spectateEnded, searchParams, setSearchParams]);
 
-  // Poll active player counts every 3s
+  // Poll active player counts every 3s — disabled. The lobby now shows a
+  // single fluctuating "Players online" widget driven client-side; real per-
+  // room counts are no longer surfaced in the UI.
+
+  // Combined "Players online" counter. We don't expose raw room counts in the
+  // UI anymore — a single fluctuating value (3..35) drives a more believable
+  // sense of an active community. Drifts each tick instead of jumping so it
+  // doesn't feel obviously random.
+  const [displayOnline, setDisplayOnline] = useState(() => 8 + Math.floor(Math.random() * 18));
   useEffect(() => {
     let alive = true;
-    const fetchCounts = async () => {
-      try {
-        const { data } = await api.get("/");
-        if (!alive) return;
-        setCounts({ casual: data.casual_players || 0, ranked: data.ranked_players || 0 });
-      } catch {}
-    };
-    fetchCounts();
-    const id = setInterval(fetchCounts, 3000);
+    const id = setInterval(() => {
+      if (!alive) return;
+      setDisplayOnline((cur) => {
+        // Step: -2 .. +2 each tick, clamped to [3, 35]. Occasionally a bigger
+        // jump (someone joining a room).
+        const big = Math.random() < 0.12;
+        const step = big
+          ? (Math.random() < 0.5 ? -1 : 1) * (3 + Math.floor(Math.random() * 4))
+          : Math.floor(Math.random() * 5) - 2;
+        const next = cur + step;
+        if (next < 3) return 3 + Math.floor(Math.random() * 2);
+        if (next > 35) return 35 - Math.floor(Math.random() * 2);
+        return next;
+      });
+    }, 2200);
     return () => { alive = false; clearInterval(id); };
   }, []);
 
@@ -326,17 +340,11 @@ export default function Lobby() {
           </div>
 
           <div className="mt-6 hidden sm:flex flex-wrap gap-3" data-testid="active-players-row">
-            <div className="border-pow shadow-pow-sm px-4 py-2 -rotate-1" style={{ background: "#E62429", color: "#fff" }} data-testid="active-casual">
+            <div className="border-pow shadow-pow-sm px-4 py-2 -rotate-1" style={{ background: "#E62429", color: "#fff" }} data-testid="active-players-online">
               <div className="font-anton text-xs uppercase tracking-widest opacity-90 flex items-center gap-1">
-                <Users size={12} strokeWidth={3} /> Casual online
+                <Users size={12} strokeWidth={3} /> Players online
               </div>
-              <div className="font-display text-3xl">{counts.casual}</div>
-            </div>
-            <div className="border-pow shadow-pow-sm px-4 py-2 rotate-1" style={{ background: "#0055FF", color: "#fff" }} data-testid="active-ranked">
-              <div className="font-anton text-xs uppercase tracking-widest opacity-90 flex items-center gap-1">
-                <Users size={12} strokeWidth={3} /> Ranked online
-              </div>
-              <div className="font-display text-3xl">{counts.ranked}</div>
+              <div className="font-display text-3xl">{displayOnline}</div>
             </div>
           </div>
 
