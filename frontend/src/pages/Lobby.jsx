@@ -201,9 +201,10 @@ export default function Lobby() {
     <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
       <LobbyBackground imageUrl={LOBBY_BG} />
 
-      <header className="relative z-10 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-3 md:py-5">
-        {/* Logo moved into the main column below — header now hosts only the
-            user card + utility buttons + a server-driven Players-online chip. */}
+      <header className="relative z-10 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-2 md:py-3">
+        {/* Left side intentionally empty — the large VIRTUE logo lives in
+            the main column below so the header reads as a thin utility bar. */}
+        <div />
         <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
           {user && (
             <PlayerCard
@@ -223,8 +224,6 @@ export default function Lobby() {
               testid="lobby-user-card"
             />
           )}
-        </div>
-        <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
           {/* Server-driven Players Online chip — same value for every signed-
               in client; drifts every ~10s via /api/. */}
           <div
@@ -255,17 +254,17 @@ export default function Lobby() {
         </div>
       </header>
 
-      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-1 sm:mt-4">
+      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-0 sm:mt-1">
         <div className="lg:col-span-7">
           {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
           <h1
-            className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none"
+            className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none -mt-1"
             data-testid="lobby-hero-logo"
           >
             <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>
           </h1>
 
-          <div className="mt-2 sm:mt-4 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
+          <div className="mt-1 sm:mt-2 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
             {user?.in_placements && (
               <div
@@ -296,7 +295,7 @@ export default function Lobby() {
             </button>
           </div>
 
-          <div className="mt-2 sm:mt-8 space-y-1.5 sm:space-y-4 max-w-md">
+          <div className="mt-2 sm:mt-4 space-y-1.5 sm:space-y-3 max-w-md">
             {party && (
               <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
             )}

@@ -9,6 +9,9 @@ import settingsStore from "@/game/settings";
 import Hud from "@/components/Hud";
 import TouchControls from "@/components/TouchControls";
 import Chat from "@/components/Chat";
+import SettingsModal from "@/components/SettingsModal";
+import FriendsModal from "@/components/FriendsModal";
+import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
 
 export default function Game() {
   const canvasRef = useRef(null);
@@ -57,6 +60,8 @@ export default function Game() {
   const [pointerLocked, setPointerLocked] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [showPause, setShowPause] = useState(false);
+  const [showGameSettings, setShowGameSettings] = useState(false);
+  const [showGameFriends, setShowGameFriends] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
 
   // Setup engine + socket
@@ -360,9 +365,19 @@ export default function Game() {
     engineRef.current?.requestPointerLock();
   }, []);
 
-  const handleExit = () => {
+  const handleExit = useCallback(() => {
+    // Release pointer lock first — the navigate sometimes fired while the
+    // browser was still holding the lock, which made the lobby look frozen.
+    // Closing the WS explicitly here also avoids a race with the useEffect
+    // cleanup on the slower devices.
+    try { document.exitPointerLock?.(); } catch {}
+    try { sockRef.current?.close(); } catch {}
+    setShowPause(false);
+    setShowGameSettings(false);
+    setShowGameFriends(false);
+    audioBus.laserBeamStop();
     nav("/lobby");
-  };
+  }, [nav]);
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
@@ -420,7 +435,7 @@ export default function Game() {
           className="absolute inset-0 z-40 bg-black/70 flex items-center justify-center"
           data-testid="pause-overlay"
         >
-          <div className="card-pow p-0 w-[min(420px,92vw)]">
+          <div className="card-pow p-0 w-[min(440px,92vw)]">
             <div className="bg-black text-white px-6 py-4 font-display text-4xl text-pow-shadow-lg flex items-center justify-between">
               <span>PAUSED</span>
               <span className="text-[#FFD700] text-xl">ESC</span>
@@ -434,22 +449,54 @@ export default function Game() {
                 className="btn-pow bg-[#06A35F] text-white w-full text-xl [&]:py-3"
                 data-testid="pause-resume-button"
               >
-                <span className="flex items-center justify-center gap-2">RESUME</span>
+                <span className="flex items-center justify-center gap-2"><Play size={18} strokeWidth={3} /> RESUME</span>
               </button>
               <button
-                onClick={() => {
-                  setShowPause(false);
-                  handleExit();
-                }}
+                onClick={() => setShowGameSettings(true)}
+                className="btn-pow bg-white text-black w-full text-lg [&]:py-2.5"
+                data-testid="pause-settings-button"
+              >
+                <span className="flex items-center justify-center gap-2"><SettingsIcon size={18} strokeWidth={3} /> SETTINGS</span>
+              </button>
+              <button
+                onClick={() => setShowGameFriends(true)}
+                className="btn-pow bg-[#06A35F] text-white w-full text-lg [&]:py-2.5"
+                data-testid="pause-friends-button"
+              >
+                <span className="flex items-center justify-center gap-2"><UserPlus size={18} strokeWidth={3} /> FRIENDS</span>
+              </button>
+              <button
+                onClick={handleExit}
                 className="btn-pow bg-[#E62429] text-white w-full text-xl [&]:py-3"
                 data-testid="pause-leave-button"
               >
-                <span className="flex items-center justify-center gap-2">LEAVE MATCH</span>
+                <span className="flex items-center justify-center gap-2"><LogOut size={18} strokeWidth={3} /> LEAVE MATCH</span>
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* In-match Menu button — always visible so touch users + players
+          locked in pointer-lock can open the pause overlay (and from there
+          Settings / Friends / Leave Match) without needing ESC. */}
+      {!showPause && (
+        <button
+          onClick={() => {
+            try { document.exitPointerLock?.(); } catch {}
+            setShowPause(true);
+          }}
+          className="absolute top-3 right-3 z-30 btn-pow bg-black text-white [&]:px-3 [&]:py-2 [&]:text-xs"
+          data-testid="game-menu-button"
+          title="Menu (ESC)"
+        >
+          <span className="flex items-center gap-1"><Menu size={16} strokeWidth={3} /></span>
+        </button>
+      )}
+
+      {/* In-match Settings + Friends modals (reuse lobby components). */}
+      <SettingsModal open={showGameSettings} onClose={() => setShowGameSettings(false)} />
+      <FriendsModal open={showGameFriends} onClose={() => setShowGameFriends(false)} />
       <TouchControls
         engineRef={engineRef}
         onShoot={() => {}}
