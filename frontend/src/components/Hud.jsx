@@ -53,7 +53,7 @@ function formatTime(seconds) {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
-export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
+export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef }) {
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
@@ -121,7 +121,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
 
       {/* Damage-direction indicators — red arcs around the screen edge
           pointing toward whoever shot you. Each marker fades over 1.5s. */}
-      <DamageDirectionLayer markers={hud.damageMarkers || []} enabled={showFlash} />
+      <DamageDirectionLayer markers={hud.damageMarkers || []} enabled={showFlash} engineRef={engineRef} />
 
       {/* Spawn-immunity banner — fixed top, only visible while the local
           player is invuln. Pulses to draw attention so the player knows they
@@ -543,11 +543,12 @@ function DynamicCrosshair({ spread, showHit, headshot, style = "cross", color = 
 
    The arc is drawn with a wide partial border on a square element rotated
    into position. Opacity fades over the 1500ms marker lifetime. */
-function DamageDirectionLayer({ markers, enabled }) {
+function DamageDirectionLayer({ markers, enabled, engineRef }) {
   const [, force] = useState(0);
   useEffect(() => {
     if (!markers || markers.length === 0) return;
-    // Tick at 30 Hz so the fade is smooth. Stop once all markers are stale.
+    // Tick at 30 Hz so the fade is smooth and any live-tracked shooter's
+    // arc follows them as they move. Stop once all markers are stale.
     const id = setInterval(() => {
       force((n) => (n + 1) & 1023);
     }, 33);
@@ -555,6 +556,31 @@ function DamageDirectionLayer({ markers, enabled }) {
   }, [markers]);
   if (!enabled || !markers || markers.length === 0) return null;
   const now = Date.now();
+  // Live-resolve the current angle for a marker using the shooter's latest
+  // known world position (so the arc follows them as they reposition).
+  // Falls back to the snapshot angle captured when the shot landed.
+  const resolveAngle = (m) => {
+    const eng = engineRef?.current;
+    if (!eng) return m.angle;
+    // Prefer a live lookup by shooterId — server pushes positions every
+    // tick, so entry.mesh.position stays current.
+    let sx = null, sz = null;
+    if (m.shooterId) {
+      const entry = eng.players?.get?.(m.shooterId);
+      if (entry?.mesh) { sx = entry.mesh.position.x; sz = entry.mesh.position.z; }
+    }
+    if (sx == null && m.from) { sx = m.from.x; sz = m.from.z; }
+    if (sx == null) return m.angle;
+    const dx = sx - eng.position.x;
+    const dz = sz - eng.position.z;
+    // Screen-space bearing of the shooter: atan2(dx, -dz) is world bearing
+    // (0=+forward = -Z), and player facing bearing is -yaw, so:
+    //   screen = world - facingBearing = atan2(dx, -dz) + yaw.
+    let a = Math.atan2(dx, -dz) + (eng.yaw || 0);
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a < -Math.PI) a += 2 * Math.PI;
+    return a;
+  };
   return (
     <div
       className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
@@ -566,8 +592,9 @@ function DamageDirectionLayer({ markers, enabled }) {
         const t = age / 1500;       // 0 -> 1 over lifetime
         const opacity = (1 - t) * 0.85;
         const scale = 0.92 + 0.12 * t; // grows slightly as it fades
+        const liveAngle = resolveAngle(m);
         // If no angle known, render a centered ring pulse.
-        if (m.angle == null || !Number.isFinite(m.angle)) {
+        if (liveAngle == null || !Number.isFinite(liveAngle)) {
           return (
             <div
               key={`${m.ts}-${i}`}
@@ -590,7 +617,7 @@ function DamageDirectionLayer({ markers, enabled }) {
         // Convert angle (0=forward, π/2=right, π=behind, -π/2=left) to
         // CSS rotation. CSS rotation is clockwise from the top, which
         // matches our convention (0 = up = forward) directly.
-        const deg = (m.angle * 180) / Math.PI;
+        const deg = (liveAngle * 180) / Math.PI;
         // The arc element sits in the screen center and we rotate it; its
         // visual is a 70°-wide arc that lives near the top of a square.
         return (

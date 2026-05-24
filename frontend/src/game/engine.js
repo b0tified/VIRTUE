@@ -1449,6 +1449,10 @@ export class GameEngine {
             // play the comic-style respawn animation + SFX. Edge-triggered
             // on the !alive → alive transition.
             this.onLocalUpdate?.({ type: "respawn" });
+          } else if (!p.alive && this.alive) {
+            // Edge-triggered death event — used by Game.jsx to play the
+            // comic K.O. overlay + camera fall.
+            this.onLocalUpdate?.({ type: "died" });
           }
           this.hp = p.hp;
           this.alive = p.alive;
@@ -1566,7 +1570,7 @@ export class GameEngine {
             if (shooterMesh) {
               from = { x: shooterMesh.position.x, z: shooterMesh.position.z };
             }
-            this.onLocalUpdate({ type: "damaged", from, yaw: this.yaw });
+            this.onLocalUpdate({ type: "damaged", from, shooterId: ev.shooter_id, yaw: this.yaw });
           } else if (ev.shooter_id === this.youId) {
             this.onLocalUpdate({ type: "you-hit", headshot: !!ev.headshot, damage: ev.damage, bodyPart: ev.body_part });
           }

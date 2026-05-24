@@ -476,6 +476,40 @@ class AudioBus {
     });
   }
 
+  /* -------- Death -------- */
+  deathSfx() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    // Downward "WAH-WAH" — saw that sweeps down from 320 → 80 Hz with a
+    // soft low-pass + a thump at the tail. Heavy, somber.
+    const sweep = ctx.createOscillator();
+    sweep.type = "sawtooth";
+    sweep.frequency.setValueAtTime(320, now);
+    sweep.frequency.exponentialRampToValueAtTime(80, now + 0.55);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(1800, now);
+    lp.frequency.linearRampToValueAtTime(400, now + 0.55);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0, now);
+    sg.gain.linearRampToValueAtTime(0.32, now + 0.04);
+    sg.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    sweep.connect(lp); lp.connect(sg); sg.connect(this.sfxGain);
+    sweep.start(now); sweep.stop(now + 0.75);
+    // Sub thump on the tail
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(60, now + 0.45);
+    sub.frequency.exponentialRampToValueAtTime(30, now + 0.85);
+    const subg = ctx.createGain();
+    subg.gain.setValueAtTime(0.0, now + 0.45);
+    subg.gain.linearRampToValueAtTime(0.4, now + 0.5);
+    subg.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    sub.connect(subg); subg.connect(this.sfxGain);
+    sub.start(now + 0.45); sub.stop(now + 0.95);
+  }
+
   /* -------- Respawn -------- */
   respawnSfx() {
     if (!this._ensure()) return;

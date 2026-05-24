@@ -13,6 +13,7 @@ import SettingsModal from "@/components/SettingsModal";
 import FriendsModal from "@/components/FriendsModal";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import RespawnOverlay from "@/components/RespawnOverlay";
+import DeathOverlay from "@/components/DeathOverlay";
 import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
 
 export default function Game() {
@@ -66,6 +67,8 @@ export default function Game() {
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   // Timestamp of the last respawn — used to (re)trigger RespawnOverlay.
   const [respawnAt, setRespawnAt] = useState(null);
+  // Timestamp of the last local death — used to (re)trigger DeathOverlay.
+  const [diedAt, setDiedAt] = useState(null);
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showGameFriends, setShowGameFriends] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
@@ -126,22 +129,27 @@ export default function Game() {
       onLocalUpdate: (ev) => {
         if (ev.type === "damaged") {
           // Build a damage-indicator marker so the HUD can show an arc pointing
-          // toward the shooter. We also compute the angle relative to the
-          // player's current facing here so the engine snapshot used in the
-          // HUD doesn't have to know world coords.
+          // toward the shooter. We store the shooter id + their last known
+          // world position so the HUD can re-resolve the arc each frame and
+          // follow the shooter if they move (see DamageDirectionLayer).
           let angleRad = null;
           if (ev.from) {
             const you = engineRef.current;
             if (you) {
               const dx = ev.from.x - you.position.x;
               const dz = ev.from.z - you.position.z;
-              // World yaw=0 points along -Z (see engine input math). Compute
-              // angle in world XY plane → atan2(dx, -dz). Subtracting the
-              // player's yaw rotates it into HUD/screen space (0 = forward,
-              // π/2 = right, ±π = behind).
+              // World yaw=0 points along -Z (see engine input math). The
+              // player's facing bearing in this same convention is `-yaw`
+              // (atan2(-sin(yaw), cos(yaw)) = -yaw), so the bearing of the
+              // shooter *relative to the player's facing* is:
+              //   screenAngle = worldAngle - playerForwardBearing
+              //               = atan2(dx, -dz) + yaw
+              // 0 = front, +π/2 = right, ±π = behind, -π/2 = left. Earlier
+              // versions used `- yaw` which inverted the arc once the
+              // player had rotated more than ~90° (the indicator pointed
+              // forward when shot from behind, etc.).
               const worldAngle = Math.atan2(dx, -dz);
-              angleRad = worldAngle - (ev.yaw ?? 0);
-              // Normalize to [-π, π]
+              angleRad = worldAngle + (ev.yaw ?? 0);
               while (angleRad > Math.PI) angleRad -= 2 * Math.PI;
               while (angleRad < -Math.PI) angleRad += 2 * Math.PI;
             }
@@ -151,7 +159,7 @@ export default function Game() {
             damaged: Date.now(),
             damageMarkers: [
               ...(h.damageMarkers || []).filter((m) => Date.now() - m.ts < 1500),
-              { ts: Date.now(), angle: angleRad },
+              { ts: Date.now(), angle: angleRad, shooterId: ev.shooterId || null, from: ev.from || null },
             ].slice(-5),
           }));
           audioBus.hurt();
@@ -187,6 +195,10 @@ export default function Game() {
           audioBus.respawnSfx?.();
           setRespawnAt(Date.now());
           setHud((h) => ({ ...h, lastKiller: null, damageMarkers: [] }));
+        } else if (ev.type === "died") {
+          // Edge-triggered local death — play the K.O. burst overlay.
+          audioBus.deathSfx?.();
+          setDiedAt(Date.now());
         }
       },
     });
@@ -500,6 +512,7 @@ export default function Game() {
         pointerLocked={pointerLocked}
         onStart={handleStart}
         onExit={handleExit}
+        engineRef={engineRef}
       />
       {showPause && !isSpectator && (
         <div
@@ -581,6 +594,8 @@ export default function Game() {
       />
       {/* Comic-style respawn flash, plays for ~1.1s after each respawn. */}
       <RespawnOverlay trigger={respawnAt} />
+      {/* Comic K.O. burst, plays for ~1.4s when the local player dies. */}
+      <DeathOverlay trigger={diedAt} />
       <TouchControls
         engineRef={engineRef}
         onShoot={() => {}}
