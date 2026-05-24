@@ -10,6 +10,7 @@ import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
+import RankUpOverlay from "@/components/RankUpOverlay";
 import { useQueue } from "@/context/QueueContext";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
@@ -24,6 +25,9 @@ export default function Lobby() {
   const spectateEndedTarget = searchParams.get("target") || "";
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
+  // Rank-up celebration overlay. Triggered by a global `virtue-rankup` event
+  // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
+  const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..target
   // Random per-attempt target wait for Quick Match (2..9s, capped under 10s).
   // Re-rolled every time the player clicks QUICK MATCH so the queue feels
@@ -67,6 +71,24 @@ export default function Lobby() {
       audioBus.setMusicVolume?.(s.musicVolume ?? 0.32);
       audioBus.setSfxVolume?.(s.sfxVolume ?? 0.65);
     } catch {}
+  }, []);
+
+  // Subscribe to the global `virtue-rankup` event so any rank-up (e.g. after
+  // a WARPSPEED redeem from the Account settings) plays the celebration
+  // overlay even though the user isn't in a match.
+  useEffect(() => {
+    const onRankUp = (e) => {
+      const d = e?.detail || {};
+      if (!d.new_tier) return;
+      setRankUp({
+        prevTier: d.prev_tier || { idx: 0, name: "BRONZE" },
+        newTier:  d.new_tier,
+        rpDelta:  d.rp_delta ?? 0,
+        newPoints: d.new_points ?? 0,
+      });
+    };
+    window.addEventListener("virtue-rankup", onRankUp);
+    return () => window.removeEventListener("virtue-rankup", onRankUp);
   }, []);
 
   // Auto-clear ?disconnected=1 from URL after 5s, hide the toast.
@@ -400,6 +422,17 @@ export default function Lobby() {
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
+
+      {/* Rank-up celebration — fires after a tier-skip redeem. The overlay
+          self-dismisses after ~6.5s and can be clicked through. */}
+      <RankUpOverlay
+        open={!!rankUp}
+        prevTier={rankUp?.prevTier}
+        newTier={rankUp?.newTier}
+        rpDelta={rankUp?.rpDelta}
+        newPoints={rankUp?.newPoints}
+        onClose={() => setRankUp(null)}
+      />
 
       {/* Party invite toasts (top-right) */}
       {partyInvites.length > 0 && (

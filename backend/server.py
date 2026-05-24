@@ -688,9 +688,10 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     # rank_up_tiers: jump the player N tiers up by topping up RP to the
     # bottom of the target band. Hard-capped at Grandmaster (tier 6) — code
     # can never push into Goonmaster which is earned-only.
+    rank_up_payload: Optional[dict] = None
     if reward.get("rank_up_tiers"):
         cur_pts = int(user.get("rank_points", 0) or 0)
-        cur_tier_idx, _ = rank_for_points(cur_pts)
+        cur_tier_idx, cur_tier_name = rank_for_points(cur_pts)
         steps = max(1, int(reward["rank_up_tiers"]))
         # Cap target at tier 6 (Grandmaster). Tier 7 = Goonmaster, unreachable
         # via code.
@@ -703,6 +704,14 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
             if rp_grant > 0:
                 inc = update_ops.setdefault("$inc", {})
                 inc["rank_points"] = int(inc.get("rank_points", 0)) + rp_grant
+            # Surface tier-change details so the frontend can trigger the
+            # rank-up celebration overlay on a successful redeem.
+            rank_up_payload = {
+                "prev_tier": {"idx": cur_tier_idx, "name": cur_tier_name},
+                "new_tier":  {"idx": target_tier_idx, "name": RANK_TIERS[target_tier_idx][1]},
+                "rp_delta":  int(rp_grant),
+                "new_points": int(target_pts),
+            }
     sets: Dict[str, object] = {}
     if reward.get("banner_animated"):
         sets["banner_animated"] = True
@@ -718,6 +727,7 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
         "ok": True,
         "reward": reward,
         "label": reward.get("label", "Reward granted"),
+        "rank_up": rank_up_payload,
         "user": public_user(fresh) if fresh else None,
     }
 

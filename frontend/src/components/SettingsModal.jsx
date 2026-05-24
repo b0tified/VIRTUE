@@ -843,6 +843,13 @@ export default function SettingsModal({ open, onClose }) {
                   setRedeemMsg({ kind: "ok", text: data?.label || "Reward granted!" });
                   setRedeemCode("");
                   try { await refreshMe?.(); } catch {}
+                  // If the code crossed a rank tier, fire a global event so
+                  // the lobby can play the rank-up celebration overlay.
+                  if (data?.rank_up) {
+                    try {
+                      window.dispatchEvent(new CustomEvent("virtue-rankup", { detail: data.rank_up }));
+                    } catch {}
+                  }
                 } catch (err) {
                   setRedeemMsg({
                     kind: "err",
