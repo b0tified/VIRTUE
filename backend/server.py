@@ -1053,7 +1053,7 @@ class GameRoom:
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
 
-    def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0):
+    def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None):
         bot = Player(ws=None, is_bot=True, bot_name=name)
         bot.is_dummy = False
         # Difficulty scales HP, aim accuracy and fire rate at runtime (see _tick_bots).
@@ -1062,17 +1062,32 @@ class GameRoom:
         bot.hp = bot.max_hp
         if disguised:
             bot.disguised = True
-            # Match a real-player-looking platform + avatar + low rank.
+            # Match a real-player-looking platform + avatar + tier-aligned rank.
             bot.disguise_platform = random.choice(["pc", "mobile", "pc", "pc"])
             bot.avatar = random.randint(0, 4)
-            # Give them a low-tier rank to blend with new players.
-            pts = random.randint(0, 850)
+            if disguise_tier_idx is None:
+                # Casual / generic disguise — keep the original low-rank look so
+                # quick-match bots blend in with new players.
+                pts = random.randint(0, 850)
+            else:
+                # Tier-aligned disguise: pick a random point value INSIDE the
+                # band for the given tier. Used by ranked-vs-bots rooms so the
+                # bot's rank icon matches what real players would see at that
+                # lobby's tier (e.g. Diamond room → bot card says DIAMOND).
+                ti = max(0, min(len(RANK_TIERS) - 1, int(disguise_tier_idx)))
+                low = RANK_TIERS[ti][0]
+                # Upper bound: one less than next tier's threshold (or +400
+                # for the top tier so we still vary slightly).
+                high = (RANK_TIERS[ti + 1][0] - 1) if (ti + 1 < len(RANK_TIERS)) else (low + 400)
+                pts = random.randint(low, max(low, high))
             t_idx, t_name = rank_for_points(pts)
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name
             bot.rank_tier = t_idx
         self.players[bot.id] = bot
-        logger.info("Bot spawned: %s (%s) diff=%.2f%s", name, bot.id, bot.difficulty, " [disguised]" if disguised else "")
+        logger.info("Bot spawned: %s (%s) diff=%.2f%s%s", name, bot.id, bot.difficulty,
+                    " [disguised]" if disguised else "",
+                    f" tier={disguise_tier_idx}" if (disguised and disguise_tier_idx is not None) else "")
         return bot
 
     async def add(self, player: Player):
@@ -2005,7 +2020,10 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
         # `disguised=True` makes ranked bots appear as real players in the
         # scoreboard, kill-feed, and the death overlay's "killed by" card — no
         # BOT badge after they kill you. They keep their bot AI internally.
-        room.spawn_bot(f"{name}-RB", disguised=True, difficulty=ranked_difficulty)
+        # `disguise_tier_idx` aligns the bot's visible rank to the lobby's
+        # tier so a Diamond player sees DIAMOND-ranked "opponents" instead
+        # of obvious BRONZE placeholders.
+        room.spawn_bot(f"{name}-RB", disguised=True, difficulty=ranked_difficulty, disguise_tier_idx=tier_idx)
     RANKED_BOT_ROOMS[user_id] = room
     RANKED_BOT_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
     logger.info("Ranked-bot room spawned for user=%s tier=%d bots=%d", user_id, tier_idx, bot_count)
