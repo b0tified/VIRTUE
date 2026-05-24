@@ -11,6 +11,7 @@ import TouchControls from "@/components/TouchControls";
 import Chat from "@/components/Chat";
 import SettingsModal from "@/components/SettingsModal";
 import FriendsModal from "@/components/FriendsModal";
+import RankUpOverlay from "@/components/RankUpOverlay";
 import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
 
 export default function Game() {
@@ -61,6 +62,7 @@ export default function Game() {
   const [pointerLocked, setPointerLocked] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [showPause, setShowPause] = useState(false);
+  const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showGameFriends, setShowGameFriends] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
@@ -220,6 +222,17 @@ export default function Game() {
         }
         if (msg.type === "match_end") {
           setHud((h) => ({ ...h, matchEnd: msg }));
+          // Find this player's placement to drive the rank-up overlay.
+          const youId = engineRef.current?.youId;
+          const mine = (msg.placements || []).find((p) => p.id === youId);
+          if (mine && (mine.rank_change || 0) > 0) {
+            setRankUp({
+              prevTier: { idx: mine.prev_rank_tier ?? 0, name: mine.prev_rank_name || "BRONZE" },
+              newTier:  { idx: mine.rank_tier ?? 0,      name: mine.rank_name || "BRONZE" },
+              rpDelta:  mine.delta ?? 0,
+              newPoints: mine.new_points ?? 0,
+            });
+          }
           setTimeout(() => {
             try { document.exitPointerLock?.(); } catch {}
             nav("/lobby", { replace: true });
@@ -539,6 +552,17 @@ export default function Game() {
       {/* In-match Settings + Friends modals (reuse lobby components). */}
       <SettingsModal open={showGameSettings} onClose={() => setShowGameSettings(false)} />
       <FriendsModal open={showGameFriends} onClose={() => setShowGameFriends(false)} />
+
+      {/* Rank-up celebration — triggered by match_end when the local player
+          gained a tier this match. Auto-dismisses after 6.5s. */}
+      <RankUpOverlay
+        open={!!rankUp}
+        prevTier={rankUp?.prevTier}
+        newTier={rankUp?.newTier}
+        rpDelta={rankUp?.rpDelta}
+        newPoints={rankUp?.newPoints}
+        onClose={() => setRankUp(null)}
+      />
       <TouchControls
         engineRef={engineRef}
         onShoot={() => {}}

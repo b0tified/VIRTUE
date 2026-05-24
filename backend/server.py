@@ -1845,6 +1845,8 @@ class GameRoom:
                 placement_played_before = 0
                 is_placement = False
                 delta = base_delta
+                prev_tier_idx, prev_tier_name = 0, "BRONZE"
+                rank_change = 0
                 try:
                     udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
                     cur = int((udoc or {}).get("rank_points", 0) or 0)
@@ -1854,6 +1856,10 @@ class GameRoom:
                         delta = base_delta * PLACEMENT_MULTIPLIER if base_delta > 0 else 0
                     new_points = max(0, cur + delta)
                     tier_idx, tier_name = rank_for_points(new_points)
+                    # Tier delta for the rank-up overlay: rank_change > 0
+                    # means the player gained a tier this match.
+                    prev_tier_idx, prev_tier_name = rank_for_points(cur)
+                    rank_change = tier_idx - prev_tier_idx
                     prev_peak = int((udoc or {}).get("peak_rank_points", 0) or 0)
                     new_peak = max(prev_peak, new_points)
                     update_set = {"rank_points": new_points}
@@ -1866,6 +1872,8 @@ class GameRoom:
                 except Exception as e:
                     logger.warning("rank update failed: %s", e)
                     tier_idx, tier_name = rank_for_points(new_points)
+                    prev_tier_idx, prev_tier_name = tier_idx, tier_name
+                    rank_change = 0
                 placements.append({
                     "id": p.id,
                     "username": p.username,
@@ -1876,6 +1884,11 @@ class GameRoom:
                     "new_points": new_points,
                     "rank_tier": tier_idx,
                     "rank_name": tier_name,
+                    # Previous tier + change so the client can play the
+                    # rank-up / rank-down overlay only for actual transitions.
+                    "prev_rank_tier": prev_tier_idx,
+                    "prev_rank_name": prev_tier_name,
+                    "rank_change": rank_change,
                     "is_placement": is_placement,
                     "placement_match_number": placement_played_before + 1 if is_placement else None,
                     "placement_matches_total": PLACEMENT_MATCHES,
@@ -1905,6 +1918,9 @@ class GameRoom:
                     "new_points": cur_points,
                     "rank_tier": tier_idx,
                     "rank_name": tier_name,
+                    "prev_rank_tier": tier_idx,
+                    "prev_rank_name": tier_name,
+                    "rank_change": 0,
                     "is_placement": False,
                     "placement_match_number": None,
                     "placement_matches_total": PLACEMENT_MATCHES,

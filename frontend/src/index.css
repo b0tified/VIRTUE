@@ -558,6 +558,48 @@ html.virtue-no-ui-blur .hud-panel {
     column-gap: 0.5rem !important;
     row-gap: 0.25rem !important;
     max-width: 100% !important;
+
+/* =============================================================
+   Rank-Up Overlay animations
+   ============================================================= */
+@keyframes rankup-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes rankup-burst-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes rankup-banner-pop {
+  0%   { transform: translateY(-40px) scale(0.6); opacity: 0; }
+  60%  { transform: translateY(8px)   scale(1.08); opacity: 1; }
+  100% { transform: translateY(0)     scale(1); opacity: 1; }
+}
+
+@keyframes rankup-prev-in {
+  from { transform: translateX(0) scale(1); opacity: 0; }
+  to   { transform: translateX(0) scale(1); opacity: 1; }
+}
+
+@keyframes rankup-prev-out {
+  from { transform: translateX(0)     scale(1)   rotate(0deg); opacity: 1; }
+  to   { transform: translateX(-160%) scale(0.6) rotate(-12deg); opacity: 0; }
+}
+
+@keyframes rankup-new-in {
+  0%   { transform: translateY(40px) scale(0.3) rotate(8deg); opacity: 0; filter: blur(10px); }
+  60%  { transform: translateY(-6px) scale(1.12) rotate(-2deg); opacity: 1; filter: blur(0); }
+  100% { transform: translateY(0)    scale(1)    rotate(0deg); opacity: 1; filter: blur(0); }
+}
+
+@keyframes rankup-star-fall {
+  0%   { transform: translateY(0)        rotate(0deg)   scale(0.6); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(120vh)    rotate(360deg) scale(1.2); opacity: 0; }
+}
+
   }
   [data-testid="lobby-page"] > main > div:first-child > div:last-child > * {
     margin-top: 0 !important;
