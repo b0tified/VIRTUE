@@ -23,7 +23,11 @@ export default function Lobby() {
   const spectateEndedTarget = searchParams.get("target") || "";
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
-  const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..10
+  const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..target
+  // Random per-attempt target wait for Quick Match (2..9s, capped under 10s).
+  // Re-rolled every time the player clicks QUICK MATCH so the queue feels
+  // organic instead of always landing on exactly 10.
+  const [quickQueueTarget, setQuickQueueTarget] = useState(8);
   const [showTiers, setShowTiers] = useState(false);
   // (Removed `counts` state — replaced by client-side `displayOnline` below.)
   // Ranked queue state now lives in the global QueueContext so the toast
@@ -129,6 +133,8 @@ export default function Lobby() {
 
   const startQuickQueue = () => {
     if (quickQueueSec !== null) return;
+    // Re-roll the target wait each click: 2..9 seconds inclusive.
+    setQuickQueueTarget(2 + Math.floor(Math.random() * 8));
     setQuickQueueSec(0);
   };
 
@@ -179,18 +185,19 @@ export default function Lobby() {
     setPartyInvites((p) => p.filter((i) => i.party_id !== invite.party_id));
   };
 
-  // Quick-match queue ticker: count UP from 0 → 10 (10s grace window so the
-  // casual "matchmaking" feels intentional). After 10s we navigate to
-  // /play?mode=casual (the room is shared + bot-filled by the backend).
+  // Quick-match queue ticker: count UP from 0 → randomized target (2-9s, hard
+  // cap below 10s). The "matchmaking" beat feels intentional but no longer
+  // lands on exactly 10 every time. The casual room is shared + bot-filled
+  // by the backend, so the wait is purely cosmetic on the client.
   useEffect(() => {
     if (quickQueueSec === null) return;
-    if (quickQueueSec >= 10) {
+    if (quickQueueSec >= quickQueueTarget) {
       nav("/play?mode=casual");
       return;
     }
     const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s + 1)), 1000);
     return () => clearTimeout(id);
-  }, [quickQueueSec, nav]);
+  }, [quickQueueSec, quickQueueTarget, nav]);
 
   // Ranked match-found countdown is handled inside QueueContext.
 

@@ -1492,7 +1492,11 @@ export class GameEngine {
                 bannerColor: ev.shooter_banner_color ?? null,
                 bannerAnimated: !!ev.shooter_banner_animated,
                 level: ev.shooter_level ?? 1,
-                isBot: !!ev.shooter_is_bot,
+                // Hard-force the BOT tag off on the death "killed by" card.
+                // Backend disguises bots, but as a belt-and-suspenders we
+                // also strip the flag here so the player never sees the
+                // BOT pill in the post-death moment (works for ranked + casual).
+                isBot: false,
                 weapon: ev.weapon || "ak47",
               },
             });
