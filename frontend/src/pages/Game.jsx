@@ -106,6 +106,11 @@ export default function Game() {
             reloading: you?.reloading ?? false,
             reloadProgress: you?.reload_progress ?? 1,
             spread: you?.spread ?? 0,
+            // Mirror laser heat + overheat state so the HUD can swap the
+            // ammo block for a heat bar while the laser is equipped.
+            laserHeat: you?.laser_heat ?? 0,
+            laserOverheated: !!you?.laser_overheated,
+            laserFiring: !!you?.laser_firing,
           };
         });
       },
@@ -209,6 +214,8 @@ export default function Game() {
         if (msg.type === "pong") {
           const rtt = Date.now() - (msg.ts || 0);
           pingRef.current.value = rtt;
+          // Surface ping for any subscribers (e.g. PerfCounter chip).
+          try { window.dispatchEvent(new CustomEvent("virtue-ping", { detail: rtt })); } catch {}
           return;
         }
         if (msg.type === "match_end") {
@@ -410,6 +417,12 @@ export default function Game() {
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
+      {/* Post-FX overlays + CSS filter wrapper. These hook into the new
+          graphics settings (brightness/contrast/saturation/scanlines/etc.)
+          without touching the WebGL renderer — purely CSS so they cost
+          virtually nothing on a healthy GPU. */}
+      <PostFxLayer />
+      <PerfCounter />
       <canvas
         ref={canvasRef}
         className="w-full h-full"
@@ -548,3 +561,164 @@ export default function Game() {
     </div>
   );
 }
+
+/* Layered post-FX driven entirely by the settings store. Sits above the
+   canvas but below the HUD (z-1). Each effect is its own div so it can
+   blend mode / opacity independently. CSS-only so no engine surgery. */
+function PostFxLayer() {
+  const [s, setS] = useState(() => settingsStore.get());
+  useEffect(() => settingsStore.subscribe(setS), []);
+  // Mirror uiBlur to a body class so the HUD panels strip backdrop-filter.
+  useEffect(() => {
+    const enabled = s.uiBlur !== false;
+    document.documentElement.classList.toggle("virtue-no-ui-blur", !enabled);
+    return () => document.documentElement.classList.remove("virtue-no-ui-blur");
+  }, [s.uiBlur]);
+  // Build a single CSS filter string for brightness/contrast/saturation
+  // and color-blind LMS shifts. Empty string = browser uses default.
+  const cb = s.colorBlindMode;
+  const cbHue =
+    cb === "protanopia" ? "hue-rotate(-12deg) saturate(0.85)" :
+    cb === "deuteranopia" ? "hue-rotate(12deg) saturate(0.85)" :
+    cb === "tritanopia" ? "hue-rotate(40deg) saturate(0.9)" : "";
+  const filter = [
+    `brightness(${s.brightness ?? 1})`,
+    `contrast(${s.contrast ?? 1})`,
+    `saturate(${s.saturation ?? 1})`,
+    cbHue,
+  ].filter(Boolean).join(" ");
+  return (
+    <>
+      {/* Global color filter — applied to the canvas via a sibling overlay
+          using `mix-blend-mode: none`. Trick: we set a wrapper around #root
+          when we'd need to filter the canvas; instead we just paint a
+          semitransparent backdrop. Brightness/contrast actually need to
+          target the canvas directly so we toggle a body class. */}
+      <BodyFilter filter={filter} />
+      {s.vignette !== false && (
+        <div
+          className="pointer-events-none fixed inset-0 z-[1]"
+          style={{
+            background:
+              "radial-gradient(circle at center, transparent 55%, rgba(0,0,0,0.55) 100%)",
+          }}
+          data-testid="postfx-vignette"
+        />
+      )}
+      {s.filmGrain && (
+        <div
+          className="pointer-events-none fixed inset-0 z-[2] mix-blend-overlay opacity-25"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.7'/></svg>\")",
+            backgroundSize: "180px 180px",
+            animation: "grain-jitter 0.4s steps(2) infinite",
+          }}
+          data-testid="postfx-film-grain"
+        />
+      )}
+      {s.chromaticAberration && (
+        <div
+          className="pointer-events-none fixed inset-0 z-[2]"
+          style={{
+            boxShadow:
+              "inset 0 0 0 1px rgba(255,0,80,0.10), inset 0 0 0 2px rgba(0,180,255,0.10)",
+            mixBlendMode: "screen",
+          }}
+          data-testid="postfx-chromatic-aberration"
+        />
+      )}
+      {s.scanlines && (
+        <div
+          className="pointer-events-none fixed inset-0 z-[2] opacity-25"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(to bottom, rgba(0,0,0,0.5) 0 1px, transparent 1px 3px)",
+          }}
+          data-testid="postfx-scanlines"
+        />
+      )}
+    </>
+  );
+}
+
+/* Toggle a CSS filter on <html> based on settings. We use a side-effect-only
+   component so we don't need to wrap the whole tree in an extra div. */
+function BodyFilter({ filter }) {
+  useEffect(() => {
+    document.documentElement.style.setProperty("--virtue-postfx-filter", filter);
+    document.documentElement.classList.add("virtue-postfx-active");
+    return () => {
+      document.documentElement.style.removeProperty("--virtue-postfx-filter");
+      document.documentElement.classList.remove("virtue-postfx-active");
+    };
+  }, [filter]);
+  return null;
+}
+
+/* Tiny FPS / ping counter shown in the top-left when enabled. Subscribes to
+   the engine's render tick via requestAnimationFrame for a smoothed FPS, and
+   to the existing ping channel via the global event the engine emits on
+   every pong. */
+export function PerfCounter() {
+  const [s, setS] = useState(() => settingsStore.get());
+  const [fps, setFps] = useState(0);
+  const [ping, setPing] = useState(null);
+  useEffect(() => settingsStore.subscribe(setS), []);
+  useEffect(() => {
+    if (!s.showFps) return;
+    let last = performance.now();
+    let acc = 0;
+    let count = 0;
+    let raf;
+    const tick = () => {
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      acc += dt;
+      count += 1;
+      if (acc >= 500) {
+        setFps(Math.round((1000 * count) / acc));
+        acc = 0;
+        count = 0;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [s.showFps]);
+  useEffect(() => {
+    if (!s.showPing) return;
+    const onPing = (e) => {
+      const v = e?.detail;
+      if (typeof v === "number") setPing(Math.round(v));
+    };
+    window.addEventListener("virtue-ping", onPing);
+    return () => window.removeEventListener("virtue-ping", onPing);
+  }, [s.showPing]);
+  if (!s.showFps && !s.showPing) return null;
+  return (
+    <div
+      className="pointer-events-none fixed top-2 left-2 z-30 font-mono text-xs flex gap-2"
+      data-testid="perf-counter"
+    >
+      {s.showFps && (
+        <span
+          className="px-1.5 py-0.5 rounded bg-black/70 text-white tabular-nums"
+          data-testid="perf-fps"
+        >
+          {fps} FPS
+        </span>
+      )}
+      {s.showPing && ping !== null && (
+        <span
+          className="px-1.5 py-0.5 rounded bg-black/70 text-white tabular-nums"
+          data-testid="perf-ping"
+        >
+          {ping} MS
+        </span>
+      )}
+    </div>
+  );
+}
+

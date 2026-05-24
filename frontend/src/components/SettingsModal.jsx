@@ -497,6 +497,200 @@ export default function SettingsModal({ open, onClose }) {
               testid="settings-motion-blur"
             />
           </section>
+
+          {/* Detail / asset quality */}
+          <section>
+            <div className="font-anton uppercase tracking-widest text-sm mb-2">Texture Quality</div>
+            <div className="grid grid-cols-3 gap-2" data-testid="settings-texture-quality">
+              {[
+                { id: "low",    label: "Low",    note: "Nearest-filtered, no mipmaps" },
+                { id: "medium", label: "Medium", note: "Linear, no mipmaps" },
+                { id: "high",   label: "High",   note: "Linear + mipmaps (default)" },
+              ].map(({ id, label, note }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => patch({ textureQuality: id })}
+                  className={`flex flex-col items-start rounded border px-3 py-2 text-left transition-colors ${
+                    (s.textureQuality || "high") === id
+                      ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
+                      : "border-neutral-800 hover:border-neutral-700"
+                  }`}
+                  data-testid={`settings-texture-quality-${id}`}
+                >
+                  <span className="font-anton uppercase tracking-widest text-xs">{label}</span>
+                  <span className="text-[10px] text-neutral-500 mt-0.5">{note}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className="font-anton uppercase tracking-widest text-sm mb-2">Weapon Viewmodel Detail</div>
+            <div className="grid grid-cols-3 gap-2" data-testid="settings-weapon-detail">
+              {["low", "medium", "high"].map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => patch({ weaponDetail: id })}
+                  className={`rounded border px-3 py-2 text-xs font-anton uppercase tracking-widest transition-colors ${
+                    (s.weaponDetail || "high") === id
+                      ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
+                      : "border-neutral-800 hover:border-neutral-700"
+                  }`}
+                  data-testid={`settings-weapon-detail-${id}`}
+                >
+                  {id}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <SliderRow
+            label="Particle Density"
+            valueText={`${Math.round((s.particleDensity ?? 1.0) * 100)}%`}
+            value={s.particleDensity ?? 1.0}
+            min={0}
+            max={2.0}
+            step={0.1}
+            onChange={(v) => patch({ particleDensity: v })}
+            testid="settings-particle-density"
+            note="Shell casings, sparks, muzzle smoke. 0 = off."
+          />
+
+          <SliderRow
+            label="Grass Density"
+            valueText={`${Math.round((s.grassDensity ?? 1.0) * 100)}%`}
+            value={s.grassDensity ?? 1.0}
+            min={0}
+            max={1.5}
+            step={0.1}
+            onChange={(v) => patch({ grassDensity: v })}
+            testid="settings-grass-density"
+            note="Animated grass-blade sprites in the arena."
+          />
+
+          {/* Post-processing & color */}
+          <section className="space-y-2">
+            <ToggleRow
+              label="Cloud Shadows"
+              note="Dynamic shadow blobs sweep across the arena."
+              checked={s.cloudShadows !== false}
+              onChange={(v) => patch({ cloudShadows: v })}
+              testid="settings-cloud-shadows"
+            />
+            <ToggleRow
+              label="Vignette"
+              note="Soft dark corners; adds focus to the center of the screen."
+              checked={s.vignette !== false}
+              onChange={(v) => patch({ vignette: v })}
+              testid="settings-vignette"
+            />
+            <ToggleRow
+              label="Film Grain"
+              note="Subtle animated grain texture. Cinematic look."
+              checked={!!s.filmGrain}
+              onChange={(v) => patch({ filmGrain: v })}
+              testid="settings-film-grain"
+            />
+            <ToggleRow
+              label="Chromatic Aberration"
+              note="Slight color fringing at screen edges."
+              checked={!!s.chromaticAberration}
+              onChange={(v) => patch({ chromaticAberration: v })}
+              testid="settings-chromatic-aberration"
+            />
+            <ToggleRow
+              label="Scanlines"
+              note="Retro CRT overlay. Heavier on low-end devices."
+              checked={!!s.scanlines}
+              onChange={(v) => patch({ scanlines: v })}
+              testid="settings-scanlines"
+            />
+            <ToggleRow
+              label="UI Backdrop Blur"
+              note="Frosted-glass effect behind HUD panels. Disable for max FPS."
+              checked={s.uiBlur !== false}
+              onChange={(v) => patch({ uiBlur: v })}
+              testid="settings-ui-blur"
+            />
+          </section>
+
+          <SliderRow
+            label="Brightness"
+            valueText={`${Math.round((s.brightness ?? 1.0) * 100)}%`}
+            value={s.brightness ?? 1.0}
+            min={0.6}
+            max={1.4}
+            step={0.05}
+            onChange={(v) => patch({ brightness: v })}
+            testid="settings-brightness"
+          />
+          <SliderRow
+            label="Contrast"
+            valueText={`${Math.round((s.contrast ?? 1.0) * 100)}%`}
+            value={s.contrast ?? 1.0}
+            min={0.7}
+            max={1.3}
+            step={0.05}
+            onChange={(v) => patch({ contrast: v })}
+            testid="settings-contrast"
+          />
+          <SliderRow
+            label="Saturation"
+            valueText={`${Math.round((s.saturation ?? 1.0) * 100)}%`}
+            value={s.saturation ?? 1.0}
+            min={0}
+            max={1.6}
+            step={0.05}
+            onChange={(v) => patch({ saturation: v })}
+            testid="settings-saturation"
+            note="0% = pure black & white; 100% = default."
+          />
+
+          <section>
+            <div className="font-anton uppercase tracking-widest text-sm mb-2">Color-Blind Mode</div>
+            <div className="grid grid-cols-2 gap-2" data-testid="settings-colorblind">
+              {[
+                { id: "off",          label: "Off" },
+                { id: "protanopia",   label: "Protanopia" },
+                { id: "deuteranopia", label: "Deuteranopia" },
+                { id: "tritanopia",   label: "Tritanopia" },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => patch({ colorBlindMode: id })}
+                  className={`rounded border px-3 py-2 text-xs font-anton uppercase tracking-widest transition-colors ${
+                    (s.colorBlindMode || "off") === id
+                      ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
+                      : "border-neutral-800 hover:border-neutral-700"
+                  }`}
+                  data-testid={`settings-colorblind-${id}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* Performance indicators */}
+          <section className="space-y-2">
+            <ToggleRow
+              label="Show FPS"
+              note="Tiny frames-per-second counter in the corner."
+              checked={!!s.showFps}
+              onChange={(v) => patch({ showFps: v })}
+              testid="settings-show-fps"
+            />
+            <ToggleRow
+              label="Show Ping"
+              note="Roundtrip latency counter next to FPS."
+              checked={!!s.showPing}
+              onChange={(v) => patch({ showPing: v })}
+              testid="settings-show-ping"
+            />
+          </section>
           </>
           )}
 
@@ -671,6 +865,32 @@ export default function SettingsModal({ open, onClose }) {
     </div>
   );
 }
+
+/* Slider row used by the new graphics options. Mirrors `ToggleRow`'s look so
+   they stack cleanly. Renders a label + live value chip + range input + the
+   optional helper note below. */
+function SliderRow({ label, valueText, value, min, max, step, onChange, note, testid }) {
+  return (
+    <section data-testid={testid}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="font-anton uppercase tracking-widest text-sm">{label}</div>
+        <div className="text-xs tabular-nums">{valueText}</div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-[#FFD700]"
+        data-testid={`${testid}-slider`}
+      />
+      {note && <p className="text-[10px] text-neutral-500 mt-1">{note}</p>}
+    </section>
+  );
+}
+
 
 function ToggleRow({ label, note, checked, onChange, testid }) {
   return (

@@ -28,6 +28,23 @@ const DEFAULTS = Object.freeze({
   hudScale: 1.0,            // 0.75 - 1.25
   showDamageNumbers: true,  // floating damage numbers on hits
   showKillFeed: true,       // top-right kill feed
+  // More granular graphics knobs ---------------------------------------------
+  textureQuality: "high",   // "low" | "medium" | "high" — toon-map filter / mipmap
+  weaponDetail: "high",     // "low" | "medium" | "high" — viewmodel poly count
+  particleDensity: 1.0,     // 0 (off) - 2.0 — multiplier for shells/sparks/grass
+  grassDensity: 1.0,        // 0 (off) - 1.5 — multiplier for grass blade sprites
+  cloudShadows: true,       // dynamic sky shadow blobs sweeping across the map
+  vignette: true,           // soft dark corners overlay
+  filmGrain: false,         // subtle animated grain texture
+  chromaticAberration: false, // edge color fringing — adds cinematic flair
+  scanlines: false,         // retro CRT scan lines overlay
+  colorBlindMode: "off",    // "off" | "protanopia" | "deuteranopia" | "tritanopia"
+  uiBlur: true,             // backdrop blur on HUD panels
+  brightness: 1.0,          // 0.6 - 1.4 — multiplicative CSS filter
+  contrast: 1.0,            // 0.7 - 1.3 — multiplicative CSS filter
+  saturation: 1.0,          // 0.0 - 1.6 — multiplicative CSS filter
+  showFps: false,           // small FPS counter (top-left)
+  showPing: false,          // small ping counter next to FPS
   // Network — server region. Currently cosmetic (single-region deployment),
   // but persists the user's choice so we can route matchmaking to the
   // chosen region once additional gameservers come online.

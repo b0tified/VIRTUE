@@ -509,6 +509,32 @@ canvas { outline: none; display: block; }
     height: 16px !important;
   }
   /* Rank-badge row sits tight under the logo, smaller chips. */
+
+/* =============================================================
+   Post-FX CSS hooks (filter applied to the game canvas via
+   <PostFxLayer> + <BodyFilter>). Only affects the in-match
+   canvas — wrapped in .virtue-postfx-active so the lobby stays
+   untouched.
+   ============================================================= */
+html.virtue-postfx-active [data-testid="game-canvas"] {
+  filter: var(--virtue-postfx-filter, none);
+}
+
+@keyframes grain-jitter {
+  0%   { transform: translate3d(0, 0, 0); }
+  25%  { transform: translate3d(-2px, 1px, 0); }
+  50%  { transform: translate3d(1px, -2px, 0); }
+  75%  { transform: translate3d(-1px, 2px, 0); }
+  100% { transform: translate3d(2px, -1px, 0); }
+}
+
+/* UI Backdrop Blur toggle. Default keeps the frosted glass on HUD panels;
+   disabling it strips the backdrop-filter for max FPS on weak GPUs. */
+html.virtue-no-ui-blur .hud-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
   [data-testid="lobby-page"] [data-testid="rank-badge-row"] {
     margin-top: 0.2rem !important;
     margin-bottom: 0.2rem !important;

@@ -227,30 +227,79 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
           </div>
         </div>
 
-        {/* Ammo + reload (only for ranged weapons; hidden for katana) */}
-        {hud.weapon !== "secondary" && hud.ammo != null && (
-          <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)" }} data-testid="hud-ammo">
-            <div className="flex items-end gap-2">
-              <span
-                className="font-display text-4xl tabular-nums"
-                style={{ color: hud.ammo === 0 ? "#E62429" : hud.ammo <= Math.max(3, Math.floor((hud.magSize || 1) * 0.2)) ? "#FFD700" : "#FFFFFF" }}
-              >
-                {hud.ammo}
+        {/* Ammo + reload (AK) — or heat bar (laser). Hidden for katana. */}
+        {hud.weapon === "tertiary" ? (
+          <div
+            className="hud-panel"
+            style={{
+              background: hud.laserOverheated ? "rgba(230,36,41,0.92)" : "rgba(10,10,10,0.85)",
+              transition: "background 0.18s linear",
+            }}
+            data-testid="hud-laser-heat"
+            data-overheated={hud.laserOverheated || undefined}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-anton uppercase tracking-widest text-[10px] opacity-90">
+                {hud.laserOverheated ? "OVERHEATED" : "HEAT"}
               </span>
-              <span className="font-anton text-lg text-white/60 mb-1">/ {hud.magSize ?? "—"}</span>
+              <span className="font-display text-2xl tabular-nums leading-none">
+                {Math.round(Math.min(1, Math.max(0, hud.laserHeat || 0)) * 100)}%
+              </span>
             </div>
-            {hud.reloading && (
-              <div className="mt-1 w-32 h-1.5 border border-white/40 overflow-hidden" data-testid="hud-reload-bar">
-                <div
-                  className="h-full bg-[#FFD700] transition-all"
-                  style={{ width: `${Math.min(100, Math.max(0, (hud.reloadProgress || 0) * 100))}%` }}
-                />
+            {/* Heat bar — fills cyan→yellow→red as heat climbs. The fill width
+                tracks server-side `laser_heat` so it stays accurate across
+                lag spikes. */}
+            <div
+              className="w-40 h-3 border-2 border-white/70 overflow-hidden relative"
+              data-testid="hud-laser-heat-bar"
+            >
+              <div
+                className="h-full"
+                style={{
+                  width: `${Math.min(100, Math.max(0, (hud.laserHeat || 0) * 100))}%`,
+                  background:
+                    (hud.laserHeat || 0) > 0.85
+                      ? "#E62429"
+                      : (hud.laserHeat || 0) > 0.55
+                      ? "#FFD700"
+                      : "#00CFFF",
+                  transition: "width 0.08s linear, background 0.2s linear",
+                  boxShadow: (hud.laserHeat || 0) > 0.55 ? "0 0 8px rgba(255,68,0,0.6)" : "none",
+                }}
+              />
+              {/* Overheat-threshold tick at 100% (already at the edge). */}
+            </div>
+            {hud.laserOverheated && (
+              <div className="font-anton uppercase text-[10px] tracking-widest text-white mt-1 animate-pulse">
+                COOLING…
               </div>
             )}
-            {!hud.reloading && hud.ammo === 0 && (
-              <div className="font-anton uppercase text-[10px] tracking-widest text-[#E62429] mt-1">PRESS R · RELOAD</div>
-            )}
           </div>
+        ) : (
+          hud.weapon !== "secondary" && hud.ammo != null && (
+            <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)" }} data-testid="hud-ammo">
+              <div className="flex items-end gap-2">
+                <span
+                  className="font-display text-4xl tabular-nums"
+                  style={{ color: hud.ammo === 0 ? "#E62429" : hud.ammo <= Math.max(3, Math.floor((hud.magSize || 1) * 0.2)) ? "#FFD700" : "#FFFFFF" }}
+                >
+                  {hud.ammo}
+                </span>
+                <span className="font-anton text-lg text-white/60 mb-1">/ {hud.magSize ?? "—"}</span>
+              </div>
+              {hud.reloading && (
+                <div className="mt-1 w-32 h-1.5 border border-white/40 overflow-hidden" data-testid="hud-reload-bar">
+                  <div
+                    className="h-full bg-[#FFD700] transition-all"
+                    style={{ width: `${Math.min(100, Math.max(0, (hud.reloadProgress || 0) * 100))}%` }}
+                  />
+                </div>
+              )}
+              {!hud.reloading && hud.ammo === 0 && (
+                <div className="font-anton uppercase text-[10px] tracking-widest text-[#E62429] mt-1">PRESS R · RELOAD</div>
+              )}
+            </div>
+          )
         )}
 
         <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : "rgba(255,215,0,0.92)", color: "#0A0A0A" }} data-testid="hud-weapon">
