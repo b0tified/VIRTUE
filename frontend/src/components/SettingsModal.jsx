@@ -546,6 +546,48 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(v) => patch({ rayTracedLighting: v })}
               testid="settings-ray-traced-lighting"
             />
+            <ToggleRow
+              label="Disable V-Sync"
+              note="Render on a setTimeout loop instead of vsync. Lower input lag on high-refresh monitors but can cause tearing."
+              checked={!!s.disableVsync}
+              onChange={(v) => patch({ disableVsync: v })}
+              testid="settings-disable-vsync"
+            />
+          </section>
+
+          {/* Frame Generation picker — multiplies the per-frame render passes
+              for smoother perceived motion. Off = 1x (vanilla), 2x doubles,
+              3x triples. GPU usage scales linearly. */}
+          <section data-testid="settings-frame-gen-section">
+            <div className="font-anton uppercase tracking-widest text-sm mb-2">
+              Frame Generation
+            </div>
+            <div className="grid grid-cols-3 gap-2" data-testid="settings-frame-gen">
+              {[
+                { id: "off", label: "Off",  note: "1x — vanilla" },
+                { id: "2x",  label: "2x",   note: "Doubled smoothness" },
+                { id: "3x",  label: "3x",   note: "Tripled — heavy GPU" },
+              ].map(({ id, label, note }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => patch({ frameGen: id })}
+                  className={`flex flex-col items-start rounded border px-3 py-2 text-left transition-colors ${
+                    (s.frameGen || "off") === id
+                      ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
+                      : "border-neutral-800 hover:border-neutral-700"
+                  }`}
+                  data-testid={`settings-frame-gen-${id}`}
+                >
+                  <span className="font-anton uppercase tracking-widest text-xs">{label}</span>
+                  <span className="text-[10px] text-neutral-500 mt-0.5">{note}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-neutral-500 mt-2">
+              Interpolates additional frames between physics ticks. Best paired
+              with Disable V-Sync for the lowest input latency.
+            </p>
           </section>
 
           <section>

@@ -60,6 +60,14 @@ const DEFAULTS = Object.freeze({
   // ~25-35% extra GPU on modern hardware; falls back gracefully on weak
   // devices (renderer just ignores the shadow flag).
   rayTracedLighting: false,
+  // V-Sync — when true, the engine renders on a setTimeout loop instead of
+  // requestAnimationFrame so it can tick faster than the display refresh.
+  // Mostly reduces input latency on high-refresh monitors.
+  disableVsync: false,
+  // Frame Generation — render extra interpolated frames between physics
+  // ticks. "off" = 1x (default), "2x" = render 2 frames per RAF, "3x" = 3.
+  // Cheap on modern GPUs; helps perceived smoothness on 60Hz displays.
+  frameGen: "off",
   // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
   keybinds: {
     forward: "KeyW",

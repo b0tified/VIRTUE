@@ -2020,7 +2020,7 @@ export class GameEngine {
     const now = performance.now();
     // FPS cap (0 = uncapped). Re-schedules without re-rendering when over budget.
     if (this._frameMinMs > 0 && (now - this.lastTime) + 0.5 < this._frameMinMs) {
-      requestAnimationFrame(this._loop);
+      this._scheduleFrame();
       return;
     }
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
@@ -2028,13 +2028,43 @@ export class GameEngine {
     this._update(dt);
     this.renderer.render(this.scene, this.camera);
     this._fpsFrames++;
+    // Frame Generation — re-render with a sub-tick interpolation step so each
+    // RAF produces multiple presents. The engine's _update() already advances
+    // remote-entity interpolation by dt, so calling it again with a half-dt
+    // genuinely smooths motion at the cost of GPU work. Multiplier is 1 (off),
+    // 2, or 3 per the user's setting.
+    const fgMul = Math.max(1, Math.min(3, this._frameGenMul | 0));
+    if (fgMul > 1) {
+      const sub = dt / fgMul;
+      for (let i = 1; i < fgMul; i++) {
+        this._update(sub);
+        this.renderer.render(this.scene, this.camera);
+        this._fpsFrames++;
+      }
+    }
     if (now - this._fpsLastT >= 500) {
       this.fps = Math.round((this._fpsFrames * 1000) / (now - this._fpsLastT));
       this._fpsFrames = 0;
       this._fpsLastT = now;
     }
-    requestAnimationFrame(this._loop);
+    this._scheduleFrame();
   };
+
+  /* Schedule the next render. RAF is locked to the display's vsync (60-240Hz).
+     "Disable V-Sync" swaps to a setTimeout(0) loop which lets the engine tick
+     faster than the display refresh — useful for low input-lag scenarios on
+     high-refresh monitors where the browser would otherwise cap RAF below the
+     panel's native rate. Note: tearing is still controlled by the OS
+     compositor, so the actual visual benefit is mostly reduced input latency. */
+  _scheduleFrame() {
+    if (this._vsyncDisabled) {
+      // setTimeout 0 is the closest browsers offer to an uncapped loop.
+      // Clamped to ~500Hz so we don't starve the main thread.
+      setTimeout(this._loop, 1);
+    } else {
+      requestAnimationFrame(this._loop);
+    }
+  }
 
   /* Live-applies graphics + FPS-cap settings from the settings store.
      Quality "low" → 0.5x pixel ratio, "medium" → 1.0x, "high" → device DPR.
@@ -2070,6 +2100,15 @@ export class GameEngine {
     }
     if (s.cameraBob !== undefined) {
       this._bobEnabled = !!s.cameraBob;
+    }
+    if (s.disableVsync !== undefined) {
+      this._vsyncDisabled = !!s.disableVsync;
+    }
+    if (s.frameGen !== undefined) {
+      // "off" / "2x" / "3x" → 1 / 2 / 3 render passes per RAF
+      const v = String(s.frameGen);
+      this._frameGenMul =
+        v === "3x" ? 3 : v === "2x" ? 2 : 1;
     }
     if (s.rayTracedLighting !== undefined) {
       // Toggle the "ray-traced lighting" preset. Real-time path/ray tracing
