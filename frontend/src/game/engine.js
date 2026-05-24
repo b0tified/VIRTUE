@@ -481,8 +481,9 @@ export class GameEngine {
     sunHalo.position.copy(sun.position).multiplyScalar(0.995);
     sunHalo.lookAt(0, 30, 0);
     this.scene.add(sunHalo);
-    // Clouds — varied sizes + multi-puff shapes
+    // Clouds — varied sizes + multi-puff shapes (drift slowly each frame).
     const cloudMat = this._toonMat(0xffffff);
+    this._clouds = [];
     for (let i = 0; i < 22; i++) {
       const cluster = new THREE.Group();
       const puffs = 3 + Math.floor(Math.random() * 4);
@@ -493,9 +494,15 @@ export class GameEngine {
         cluster.add(puff);
       }
       cluster.position.set((Math.random() - 0.5) * 160, 22 + Math.random() * 14, (Math.random() - 0.5) * 160);
+      // Drift speed: 0.6 to 1.4 units/sec in a consistent direction.
+      cluster.userData.driftX = 0.6 + Math.random() * 0.8;
+      cluster.userData.bob = Math.random() * Math.PI * 2;
       this.scene.add(cluster);
+      this._clouds.push(cluster);
     }
-    // Distant birds — tiny V-shaped sprites for a sense of scale
+    // Distant birds — tiny V-shaped sprites that fly across the sky in a
+    // wide arc, and flap their wings every ~0.25s for life.
+    this._birds = [];
     for (let i = 0; i < 6; i++) {
       const bird = new THREE.Group();
       const wm = this._toonMat(0x0A0A0A);
@@ -507,7 +514,19 @@ export class GameEngine {
       rw.position.x = 0.3;
       bird.add(lw); bird.add(rw);
       bird.position.set(-40 + i * 12, 28 + (i % 2) * 3, -50 - (i % 3) * 6);
+      // Animate state: heading angle, speed, flap phase. We'll loop them
+      // around the arena center on a big slow circle so they're always
+      // visible somewhere.
+      bird.userData.angle = (i / 6) * Math.PI * 2;
+      bird.userData.radius = 60 + (i % 3) * 10;
+      bird.userData.height = 26 + (i % 2) * 4;
+      bird.userData.speed = 0.18 + (i % 3) * 0.04; // rad/sec
+      bird.userData.flapPhase = Math.random() * Math.PI * 2;
+      bird.userData.flapHz = 6 + (i % 3) * 0.7;
+      bird.userData.lw = lw;
+      bird.userData.rw = rw;
       this.scene.add(bird);
+      this._birds.push(bird);
     }
 
     // ===== Decorative non-collidable map detail =====
@@ -1298,6 +1317,35 @@ export class GameEngine {
     const label = this._makeLabel(state.username, state.is_bot);
     label.position.set(0, 2.3, 0);
     group.add(label);
+    // Spawn-immunity halo — a translucent gold ring + glowing sphere that
+    // wraps the player while invuln. Invisible by default; the per-frame
+    // update toggles it based on `p.invuln`.
+    const invulnRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.95, 0.06, 8, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd700,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
+    );
+    invulnRing.rotation.x = Math.PI / 2;
+    invulnRing.position.y = 0.05;
+    invulnRing.visible = false;
+    group.add(invulnRing);
+    const invulnGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(1.0, 12, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd700,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    invulnGlow.position.y = 1.0;
+    invulnGlow.visible = false;
+    group.add(invulnGlow);
     const entry = {
       mesh: group,
       label,
@@ -1311,6 +1359,8 @@ export class GameEngine {
       movingSpeed: 0,
       prevAlive: state.alive,
       deathT: 0,
+      invulnRing,
+      invulnGlow,
     };
     this.players.set(state.id, entry);
     return entry;
@@ -1425,6 +1475,25 @@ export class GameEngine {
         entry.lastHp = p.hp;
         entry.x = p.x; entry.y = p.y; entry.z = p.z;
         entry.alive = p.alive; entry.is_bot = p.is_bot;
+        // Spawn-immunity visuals. Pulses the ring + halo while invuln is
+        // active so it's unambiguous to other players that they can't damage
+        // this target right now.
+        const showInvuln = !!p.invuln && p.alive;
+        if (entry.invulnRing) entry.invulnRing.visible = showInvuln;
+        if (entry.invulnGlow) entry.invulnGlow.visible = showInvuln;
+        if (showInvuln) {
+          const t = performance.now() * 0.006;
+          const pulse = 0.55 + 0.45 * Math.sin(t);
+          if (entry.invulnRing) {
+            entry.invulnRing.material.opacity = 0.45 + pulse * 0.45;
+            entry.invulnRing.rotation.z += 0.06;
+            entry.invulnRing.scale.setScalar(1.0 + pulse * 0.15);
+          }
+          if (entry.invulnGlow) {
+            entry.invulnGlow.material.opacity = 0.1 + pulse * 0.18;
+            entry.invulnGlow.scale.setScalar(1.0 + pulse * 0.12);
+          }
+        }
 
         // Track movement (speed) for limb swing
         const dx = p.x - entry.prevX;
@@ -1790,6 +1859,35 @@ export class GameEngine {
     // damage + heat ramp are independent (driven by `laser_firing` in the
     // 20Hz input message); this is purely cosmetic.
     this._updateLaserBeamVisual();
+
+    // Animate clouds + birds. Clouds drift in +X with a tiny vertical bob;
+    // they wrap around the arena so they appear infinite. Birds circle on a
+    // wide arc and flap their wings continuously.
+    if (this._clouds) {
+      for (const c of this._clouds) {
+        c.position.x += c.userData.driftX * dt;
+        c.userData.bob += dt;
+        c.position.y += Math.sin(c.userData.bob * 0.4) * 0.005;
+        if (c.position.x > 90) c.position.x = -90;
+      }
+    }
+    if (this._birds) {
+      for (const b of this._birds) {
+        b.userData.angle += b.userData.speed * dt;
+        const r = b.userData.radius;
+        b.position.x = Math.cos(b.userData.angle) * r;
+        b.position.z = Math.sin(b.userData.angle) * r;
+        b.position.y = b.userData.height + Math.sin(b.userData.angle * 2) * 0.6;
+        // Yaw the bird so it faces its direction of travel.
+        b.rotation.y = -b.userData.angle - Math.PI / 2;
+        // Wing flap: oscillate z-rotation between +0.65 and +0.25 (left
+        // wing) / -0.65 and -0.25 (right wing).
+        b.userData.flapPhase += dt * b.userData.flapHz;
+        const f = (Math.sin(b.userData.flapPhase) + 1) * 0.5; // 0..1
+        b.userData.lw.rotation.z = 0.25 + f * 0.4;
+        b.userData.rw.rotation.z = -0.25 - f * 0.4;
+      }
+    }
 
     // Laser viewmodel heat overlay — tint glow parts from cyan → orange/red
     // as heat climbs to 1.0, pulse + puff angrily once overheated.

@@ -113,6 +113,10 @@ export default function Game() {
             laserHeat: you?.laser_heat ?? 0,
             laserOverheated: !!you?.laser_overheated,
             laserFiring: !!you?.laser_firing,
+            // Spawn immunity flag — surfaces as a top-of-screen banner so
+            // the player knows damage isn't being dealt to them this brief
+            // window.
+            invuln: !!you?.invuln,
           };
         });
       },

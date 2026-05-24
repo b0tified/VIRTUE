@@ -123,6 +123,23 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit }) {
           pointing toward whoever shot you. Each marker fades over 1.5s. */}
       <DamageDirectionLayer markers={hud.damageMarkers || []} enabled={showFlash} />
 
+      {/* Spawn-immunity banner — fixed top, only visible while the local
+          player is invuln. Pulses to draw attention so the player knows they
+          can't be damaged this brief window. */}
+      {hud.alive && hud.invuln && (
+        <div
+          className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 border-pow shadow-pow-sm"
+          style={{
+            background: "#FFD700",
+            color: "#0A0A0A",
+            animation: "invuln-pulse 1.0s ease-in-out infinite",
+          }}
+          data-testid="hud-invuln-banner"
+        >
+          <span className="font-anton uppercase tracking-widest text-xs sm:text-sm">SPAWN PROTECTED</span>
+        </div>
+      )}
+
       {/* Hit confirm pop near crosshair */}
       {showHit && pointerLocked && (
         <div className="hit-pop" data-testid="hit-pop" style={hud.hitHeadshot ? { color: "#FFD700" } : undefined}>
