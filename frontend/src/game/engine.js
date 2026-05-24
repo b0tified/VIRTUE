@@ -1363,6 +1363,18 @@ export class GameEngine {
       for (const p of msg.players) {
         seen.add(p.id);
         if (p.id === this.youId) {
+          // Detect server-side respawn: alive transitioned false → true. The
+          // server picks a fresh random spawn point when respawning, so the
+          // client *must* snap its position to match — otherwise shots are
+          // raycast from the death location and never hit anything.
+          if (p.alive && !this.alive) {
+            this.position.set(p.x, p.y, p.z);
+            // Clear any in-air velocity so we don't fall through the floor
+            // immediately after the snap (vy is the engine's only motion
+            // state — horizontal movement is recomputed each tick from input).
+            this.vy = 0;
+            this.onGround = true;
+          }
           this.hp = p.hp;
           this.alive = p.alive;
           // Mirror ammo + reloading from server so we can gate local fire prediction.
