@@ -437,3 +437,109 @@ canvas { outline: none; display: block; }
   .lobby-bg-blob { animation: none !important; }
 }
 
+
+
+/* =============================================================
+   Mobile landscape lobby fit
+   --------------------------------------------------------------
+   Triggers only on short viewports in landscape orientation
+   (typically a phone held sideways: ≤500px tall). Desktop and
+   tablets in portrait keep the larger layout untouched.
+
+   Goals:
+   1. The whole lobby fits in the viewport without scrolling.
+   2. The VIRTUE logo shrinks so the buttons stay on-screen.
+   3. The action buttons compress to ~36px tall with smaller text.
+   4. The hero column widens to use the empty right half.
+   ============================================================= */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* The lobby uses min-h-screen which makes the page taller than the
+     viewport on landscape phones; clamp it to the actual viewport so
+     we don't scroll. */
+  [data-testid="lobby-page"] {
+    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
+  }
+  /* Hero logo: text-5xl is still too big when only ~360px of vertical
+     space is available. Drop to text-2xl. */
+  [data-testid="lobby-page"] [data-testid="lobby-hero-logo"] {
+    font-size: 1.75rem !important;     /* ~text-3xl */
+    line-height: 1 !important;
+    margin-top: 0 !important;
+  }
+  /* Header padding: tighten so we recover ~24px of vertical room. */
+  [data-testid="lobby-page"] > header {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+  /* The main grid's gap eats horizontal real-estate; the right column
+     is empty on phones anyway, so push the hero to span the full
+     width when sideways. */
+  [data-testid="lobby-page"] > main {
+    margin-top: 0 !important;
+    gap: 0.5rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  [data-testid="lobby-page"] > main > div:first-child {
+    grid-column: 1 / -1 !important;
+  }
+  /* QUICK MATCH is the giant hero button — drop its font size hard so
+     it stops eating two button-rows worth of height. */
+  [data-testid="lobby-page"] [data-testid="lobby-play-button"] {
+    font-size: 0.95rem !important;
+    padding-top: 0.2rem !important;
+    padding-bottom: 0.2rem !important;
+  }
+  /* Other action buttons — make them compact. */
+  [data-testid="lobby-page"] [data-testid="lobby-ranked-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-practice-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-offline-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-leaderboard-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-profile-button"] {
+    padding-top: 0.15rem !important;
+    padding-bottom: 0.15rem !important;
+    font-size: 0.75rem !important;
+    line-height: 1.1 !important;
+  }
+  /* Hide the play-button arrow icon's extra height contribution. */
+  [data-testid="lobby-page"] [data-testid="lobby-play-button"] svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  /* Rank-badge row sits tight under the logo, smaller chips. */
+  [data-testid="lobby-page"] [data-testid="rank-badge-row"] {
+    margin-top: 0.2rem !important;
+    margin-bottom: 0.2rem !important;
+    gap: 0.35rem !important;
+    /* Compress the row's own bounding box so scaled children don't leave
+       phantom space behind. */
+    line-height: 0.9 !important;
+  }
+  [data-testid="lobby-page"] [data-testid="rank-badge-row"] > * {
+    transform: scale(0.78);
+    transform-origin: left center;
+    margin-right: -0.5rem !important;
+  }
+  /* Pull the button column tight against the badge row. */
+  [data-testid="lobby-page"] > main > div:first-child > div:last-child {
+    margin-top: 0.25rem !important;
+    /* Lay the 6 action buttons + party panel out in a 2-column grid so
+       everything fits in ~190px of vertical space instead of ~380px. */
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    column-gap: 0.5rem !important;
+    row-gap: 0.25rem !important;
+    max-width: 100% !important;
+  }
+  [data-testid="lobby-page"] > main > div:first-child > div:last-child > * {
+    margin-top: 0 !important;
+  }
+  /* QUICK MATCH gets the full first row for emphasis. */
+  [data-testid="lobby-page"] [data-testid="lobby-play-button"] {
+    grid-column: 1 / -1 !important;
+  }
+  /* Hide the dev/preview-only Tier overlay strip if it leaks into the
+     action grid — keeps the 2x3 grid tidy. */
+}

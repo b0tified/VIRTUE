@@ -1110,9 +1110,17 @@ class GameRoom:
         if player.is_bot or player.ws is None:
             return
         try:
-            await player.ws.send_text(json.dumps(msg))
-        except Exception:
-            pass
+            # Per-client send timeout — a wedged TCP send buffer used to stall
+            # the entire 20Hz tick (gather() in broadcast() awaits all sends).
+            # 1.5s is well above a healthy round-trip and well below "frozen".
+            await asyncio.wait_for(player.ws.send_text(json.dumps(msg)), timeout=1.5)
+        except (Exception, asyncio.TimeoutError):
+            # Drop the slow/dead socket so we don't keep blocking on it.
+            try:
+                await player.ws.close()
+            except Exception:
+                pass
+            player.ws = None
 
     async def broadcast(self, msg: dict):
         data = json.dumps(msg)
@@ -1120,16 +1128,31 @@ class GameRoom:
         # 20Hz tick because each send_text was awaited sequentially. Using
         # gather() lets fast clients receive their state while slow ones are
         # still flushing. return_exceptions=True so one failure doesn't cancel
-        # the whole group.
+        # the whole group, and each individual send is wrapped in a tight
+        # timeout so a wedged socket can't block the tick.
         targets = [p for p in list(self.players.values()) if not p.is_bot and p.ws is not None]
         if not targets:
             return
+
+        async def _send_one(ws):
+            # 1.5s send budget per client. Anything slower means TCP backpressure
+            # — drop the socket instead of stalling everyone else's gameplay.
+            return await asyncio.wait_for(ws.send_text(data), timeout=1.5)
+
         results = await asyncio.gather(
-            *[p.ws.send_text(data) for p in targets],
+            *[_send_one(p.ws) for p in targets],
             return_exceptions=True,
         )
         for p, res in zip(targets, results):
             if isinstance(res, Exception):
+                # Close the socket so the player's WS receive task unwinds and
+                # we don't try to send to it again on the next tick.
+                try:
+                    if p.ws is not None:
+                        await p.ws.close()
+                except Exception:
+                    pass
+                p.ws = None
                 self.players.pop(p.id, None)
 
     def collides_obstacle(self, x: float, z: float) -> bool:
