@@ -600,6 +600,44 @@ html.virtue-no-ui-blur .hud-panel {
   100% { transform: translateY(120vh)    rotate(360deg) scale(1.2); opacity: 0; }
 }
 
+/* =============================================================
+   Respawn Overlay animations
+   ============================================================= */
+@keyframes respawn-flash {
+  0%   { opacity: 1; }
+  40%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+
+@keyframes respawn-burst-spin {
+  0%   { transform: rotate(0deg)   scale(0.2); opacity: 0.95; }
+  100% { transform: rotate(180deg) scale(1.4); opacity: 0; }
+}
+
+@keyframes respawn-ring-out {
+  0%   { transform: scale(0.15); opacity: 1; }
+  100% { transform: scale(10);   opacity: 0; }
+}
+
+@keyframes respawn-sparkles-spin {
+  0%   { transform: rotate(0deg)   scale(0.4); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: rotate(140deg) scale(1.6); opacity: 0; }
+}
+
+@keyframes respawn-sparkle-pop {
+  0%   { transform: scale(0.4); opacity: 0; }
+  40%  { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.6); opacity: 0; }
+}
+
+@keyframes respawn-banner-pop {
+  0%   { transform: translateY(28px) scale(0.5) rotate(-3deg); opacity: 0; filter: blur(8px); }
+  55%  { transform: translateY(-4px) scale(1.12) rotate(2deg); opacity: 1; filter: blur(0); }
+  85%  { transform: translateY(0)    scale(1)    rotate(0deg); opacity: 1; }
+  100% { transform: translateY(-12px) scale(0.96) rotate(0deg); opacity: 0; }
+}
+
   }
   [data-testid="lobby-page"] > main > div:first-child > div:last-child > * {
     margin-top: 0 !important;

@@ -98,6 +98,9 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - `TestLeaderboardAndProfile::test_leaderboard_sorted_desc` expects kills-desc; current sort is rank_points desc.
 - `TestWebSocket::test_two_clients_see_each_other_shoot_kill_persists` and `TestBotsActivelyShoot` flaky (timing-dependent on bot AI).
 
+### Iteration 13 — **THIS SESSION (2026-02-24)**
+- ✅ **Respawn animation** — New `RespawnOverlay.jsx` plays a ~1.1s comic-style flash whenever the local player transitions dead → alive. Effects: white-out revive flash → expanding blue + red rings → rotating sparkle ring → "RESPAWN!" banner pop with lightning bolts → rotating yellow halftone burst. New `audioBus.respawnSfx()` plays a swept-saw "WHOOSH-ZING" + two-note chime under it. Triggered from `engine.js` `onLocalUpdate({type:"respawn"})` on the alive-edge; Game.jsx listens, clears the killer card + damage markers, sets `respawnAt` timestamp. CSS keyframes added to `index.css`. Engine exposed on `window.__virtueEngine` for e2e/debug.
+
 ## Roadmap / Backlog
 ### Iteration 12 — **THIS SESSION (2026-02-24)**
 - ✅ **WARPSPEED redeem code triggers RankUpOverlay** — `/api/codes/redeem` now returns a `rank_up` payload (`prev_tier`, `new_tier`, `rp_delta`, `new_points`) when a tier-skip code is redeemed. `SettingsModal` dispatches a `virtue-rankup` window event on success; `Lobby` listens and mounts `RankUpOverlay` so the celebration plays even when the redeem happens outside a match. One-time per account (existing `redeemed_codes` guard). Verified via curl + Playwright.

@@ -12,6 +12,7 @@ import Chat from "@/components/Chat";
 import SettingsModal from "@/components/SettingsModal";
 import FriendsModal from "@/components/FriendsModal";
 import RankUpOverlay from "@/components/RankUpOverlay";
+import RespawnOverlay from "@/components/RespawnOverlay";
 import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
 
 export default function Game() {
@@ -63,6 +64,8 @@ export default function Game() {
   const [chatMessages, setChatMessages] = useState([]);
   const [showPause, setShowPause] = useState(false);
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
+  // Timestamp of the last respawn — used to (re)trigger RespawnOverlay.
+  const [respawnAt, setRespawnAt] = useState(null);
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showGameFriends, setShowGameFriends] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
@@ -177,10 +180,19 @@ export default function Game() {
           setHud((h) => ({ ...h, laserOverheat: Date.now() }));
         } else if (ev.type === "reload-start") {
           audioBus.reload(ev.weapon || "ak47");
+        } else if (ev.type === "respawn") {
+          // Local player just transitioned dead → alive. Play the comic
+          // respawn animation + revive SFX, and clear the last-killer so
+          // the death overlay's killer card doesn't bleed into next life.
+          audioBus.respawnSfx?.();
+          setRespawnAt(Date.now());
+          setHud((h) => ({ ...h, lastKiller: null, damageMarkers: [] }));
         }
       },
     });
     engineRef.current = engine;
+    // Expose for in-browser debugging + e2e tests (cheap, single-instance).
+    try { window.__virtueEngine = engine; } catch {}
 
     // Apply persisted graphics + FPS-cap settings and keep them live.
     engine.applySettings(settingsStore.get());
@@ -567,6 +579,8 @@ export default function Game() {
         newPoints={rankUp?.newPoints}
         onClose={() => setRankUp(null)}
       />
+      {/* Comic-style respawn flash, plays for ~1.1s after each respawn. */}
+      <RespawnOverlay trigger={respawnAt} />
       <TouchControls
         engineRef={engineRef}
         onShoot={() => {}}

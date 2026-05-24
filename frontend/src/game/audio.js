@@ -476,6 +476,42 @@ class AudioBus {
     });
   }
 
+  /* -------- Respawn -------- */
+  respawnSfx() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    // Ascending power-up chord: comic-style "WHOOSH-ZING" — a swept saw +
+    // two sparkle triangles. Punchy but short (~0.5s).
+    const sweep = ctx.createOscillator();
+    sweep.type = "sawtooth";
+    sweep.frequency.setValueAtTime(120, now);
+    sweep.frequency.exponentialRampToValueAtTime(900, now + 0.32);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(400, now);
+    lp.frequency.linearRampToValueAtTime(2400, now + 0.32);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0, now);
+    sg.gain.linearRampToValueAtTime(0.22, now + 0.05);
+    sg.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    sweep.connect(lp); lp.connect(sg); sg.connect(this.sfxGain);
+    sweep.start(now); sweep.stop(now + 0.5);
+    // Two-note "ZING" chime — bright triangles, perfect-fifth interval.
+    [880, 1320].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      const t = now + 0.15 + i * 0.06;
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+      osc.connect(g); g.connect(this.sfxGain);
+      osc.start(t); osc.stop(t + 0.34);
+    });
+  }
+
   /* -------- Footstep -------- */
   footstep(sprint = false) {
     if (!this._ensure()) return;

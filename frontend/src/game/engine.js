@@ -1445,6 +1445,10 @@ export class GameEngine {
             // state — horizontal movement is recomputed each tick from input).
             this.vy = 0;
             this.onGround = true;
+            // Fire a one-shot 'respawn' event so the HUD/Game layer can
+            // play the comic-style respawn animation + SFX. Edge-triggered
+            // on the !alive → alive transition.
+            this.onLocalUpdate?.({ type: "respawn" });
           }
           this.hp = p.hp;
           this.alive = p.alive;
