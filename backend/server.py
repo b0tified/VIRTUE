@@ -49,13 +49,20 @@ api = APIRouter(prefix="/api")
 _BG_TASKS: set = set()
 
 
-def _bg(coro):
-    """Schedule a coroutine in the background without blocking the caller.
-    Used for non-critical DB writes (kill/death stat increments) that would
-    otherwise stall the 20Hz tick loop or WebSocket receive coroutine when
-    Mongo is slow."""
+def _bg(awaitable):
+    """Fire-and-forget a non-critical DB write so it doesn't stall the tick.
+    Accepts either a coroutine OR an asyncio.Future (newer Motor versions
+    return the latter from update_one/find_one/etc.). The previous version
+    only accepted coroutines and crashed the tick on every kill event."""
     try:
-        t = asyncio.create_task(coro)
+        if asyncio.iscoroutine(awaitable):
+            t = asyncio.create_task(awaitable)
+        elif isinstance(awaitable, asyncio.Future):
+            # asyncio.ensure_future wraps the existing Future into a Task
+            # we can track + cancel. Pass-through if already a Task.
+            t = asyncio.ensure_future(awaitable)
+        else:
+            return  # unknown awaitable type — nothing to do
         _BG_TASKS.add(t)
         t.add_done_callback(_BG_TASKS.discard)
     except RuntimeError:
