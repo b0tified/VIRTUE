@@ -64,6 +64,13 @@ export default function SettingsModal({ open, onClose }) {
     if (!open) return;
     setMusicMuted(audioBus.musicMuted);
     setSfxMuted(audioBus.sfxMuted);
+    // Reapply saved volumes whenever the modal opens. Audio context may have
+    // been (re)initialized since last setting change, so reading the store
+    // and pushing through to the bus keeps everything coherent.
+    const cur = settingsStore.get();
+    audioBus.setMasterVolume?.(cur.masterVolume ?? 0.9);
+    audioBus.setMusicVolume?.(cur.musicVolume ?? 0.32);
+    audioBus.setSfxVolume?.(cur.sfxVolume ?? 0.65);
   }, [open]);
 
   // Stay synced if anything else changes the store mid-open.
@@ -144,29 +151,61 @@ export default function SettingsModal({ open, onClose }) {
         <div className="px-5 py-4 space-y-5 max-h-[65vh] overflow-y-auto" data-testid={`settings-tab-content-${tab}`}>
           {tab === "audio" && (
           <>
-          {/* Audio toggles */}
-          <section>
-            <div className="font-anton uppercase tracking-widest text-sm mb-2">Audio</div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={toggleMusic}
-                className={`flex items-center justify-center gap-2 rounded border px-3 py-2 transition-colors ${musicMuted ? "border-neutral-800 text-neutral-500" : "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"}`}
-                data-testid="settings-music-toggle"
-              >
-                <Music size={16} strokeWidth={3} />
-                <span className="font-anton uppercase tracking-widest text-sm">{musicMuted ? "Music · Off" : "Music · On"}</span>
-              </button>
-              <button
-                type="button"
-                onClick={toggleSfx}
-                className={`flex items-center justify-center gap-2 rounded border px-3 py-2 transition-colors ${sfxMuted ? "border-neutral-800 text-neutral-500" : "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"}`}
-                data-testid="settings-sfx-toggle"
-              >
-                {sfxMuted ? <VolumeX size={16} strokeWidth={3} /> : <Volume2 size={16} strokeWidth={3} />}
-                <span className="font-anton uppercase tracking-widest text-sm">{sfxMuted ? "SFX · Off" : "SFX · On"}</span>
-              </button>
-            </div>
+          {/* Master / Music / SFX volume sliders. Replace the legacy on/off
+              buttons — sliders give players precise control and the value
+              applies live via the audioBus volume setters. The previous
+              mute toggles are preserved as compact icon buttons next to each
+              slider for one-tap muting. */}
+          <section className="space-y-4" data-testid="settings-audio-volumes">
+            <VolumeRow
+              label="Master Volume"
+              icon={<Volume2 size={14} strokeWidth={3} />}
+              value={s.masterVolume ?? 0.9}
+              muted={!!s.audioMuted}
+              onChange={(v) => {
+                patch({ masterVolume: v, audioMuted: v <= 0 });
+                audioBus.setMasterVolume?.(v);
+                audioBus.setMuted(v <= 0);
+              }}
+              onToggleMute={() => {
+                const nextMuted = !s.audioMuted;
+                patch({ audioMuted: nextMuted });
+                audioBus.setMuted(nextMuted);
+              }}
+              testid="settings-master-volume"
+            />
+            <VolumeRow
+              label="Music Volume"
+              icon={<Music size={14} strokeWidth={3} />}
+              value={s.musicVolume ?? 0.32}
+              muted={musicMuted}
+              onChange={(v) => {
+                patch({ musicVolume: v });
+                audioBus.setMusicVolume?.(v);
+                if (v > 0 && musicMuted) {
+                  audioBus.setMusicMuted(false);
+                  setMusicMuted(false);
+                }
+              }}
+              onToggleMute={toggleMusic}
+              testid="settings-music-volume"
+            />
+            <VolumeRow
+              label="SFX Volume"
+              icon={sfxMuted ? <VolumeX size={14} strokeWidth={3} /> : <Volume2 size={14} strokeWidth={3} />}
+              value={s.sfxVolume ?? 0.65}
+              muted={sfxMuted}
+              onChange={(v) => {
+                patch({ sfxVolume: v });
+                audioBus.setSfxVolume?.(v);
+                if (v > 0 && sfxMuted) {
+                  audioBus.setSfxMuted(false);
+                  setSfxMuted(false);
+                }
+              }}
+              onToggleMute={toggleSfx}
+              testid="settings-sfx-volume"
+            />
           </section>
           </>
           )}
@@ -499,6 +538,16 @@ export default function SettingsModal({ open, onClose }) {
           </section>
 
           {/* Detail / asset quality */}
+          <section className="space-y-2">
+            <ToggleRow
+              label="Ray-Traced Lighting"
+              note="Soft real-time shadows, three colored fill lights, ACES tone mapping. Heavier on GPU."
+              checked={!!s.rayTracedLighting}
+              onChange={(v) => patch({ rayTracedLighting: v })}
+              testid="settings-ray-traced-lighting"
+            />
+          </section>
+
           <section>
             <div className="font-anton uppercase tracking-widest text-sm mb-2">Texture Quality</div>
             <div className="grid grid-cols-3 gap-2" data-testid="settings-texture-quality">
@@ -890,6 +939,52 @@ function SliderRow({ label, valueText, value, min, max, step, onChange, note, te
     </section>
   );
 }
+
+/* Volume slider row used in the Audio tab. Combines a label, the live
+   percentage chip, a slider, and a small mute-toggle icon on the right.
+   `muted` is purely visual — the parent owns the mute state. */
+function VolumeRow({ label, icon, value, muted, onChange, onToggleMute, testid }) {
+  const pct = Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * 100);
+  return (
+    <div data-testid={testid}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="font-anton uppercase tracking-widest text-sm flex items-center gap-2">
+          <span className={muted ? "text-neutral-500" : "text-[#FFD700]"}>{icon}</span>
+          {label}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs tabular-nums ${muted ? "text-neutral-500" : ""}`} data-testid={`${testid}-value`}>
+            {muted ? "MUTED" : `${pct}%`}
+          </span>
+          <button
+            type="button"
+            onClick={onToggleMute}
+            className={`rounded border px-1.5 py-0.5 text-[10px] font-anton uppercase tracking-widest transition-colors ${
+              muted
+                ? "border-neutral-700 text-neutral-400"
+                : "border-[#FFD700]/60 text-[#FFD700] hover:bg-[#FFD700]/10"
+            }`}
+            data-testid={`${testid}-mute`}
+          >
+            {muted ? "Unmute" : "Mute"}
+          </button>
+        </div>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={muted ? 0 : value}
+        disabled={muted}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-[#FFD700] disabled:opacity-50"
+        data-testid={`${testid}-slider`}
+      />
+    </div>
+  );
+}
+
 
 
 function ToggleRow({ label, note, checked, onChange, testid }) {

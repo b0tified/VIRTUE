@@ -48,6 +48,27 @@ export class GameEngine {
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
     sun.position.set(40, 60, 30);
     this.scene.add(sun);
+    this._sun = sun;
+    // "Ray-Traced Lighting" preset — adds three colored point lights around
+    // the arena + enables shadow casting on the sun + bumps the renderer to
+    // a higher-quality output tone-mapping curve. Toggled by applySettings.
+    // (No actual WebGPU ray tracing — this is the closest we get in WebGL
+    // without a custom shader pipeline.)
+    this._rtLights = [];
+    const RT_LIGHTS = [
+      { pos: [25, 12, 25], color: 0xff7a3a }, // warm orange
+      { pos: [70, 12, 25], color: 0x66c8ff }, // cool cyan
+      { pos: [50, 16, 70], color: 0xff7ed6 }, // magenta accent
+    ];
+    for (const { pos, color } of RT_LIGHTS) {
+      const p = new THREE.PointLight(color, 0, 40, 2);
+      p.position.set(...pos);
+      p.castShadow = false; // Enabled by applySettings(rayTracedLighting=true)
+      this.scene.add(p);
+      this._rtLights.push(p);
+    }
+    this._ambientFill = new THREE.AmbientLight(0xffffff, 0.0);
+    this.scene.add(this._ambientFill);
 
     // Player state
     this.position = new THREE.Vector3(35, 1.8, 35);
@@ -2049,6 +2070,41 @@ export class GameEngine {
     }
     if (s.cameraBob !== undefined) {
       this._bobEnabled = !!s.cameraBob;
+    }
+    if (s.rayTracedLighting !== undefined) {
+      // Toggle the "ray-traced lighting" preset. Real-time path/ray tracing
+      // isn't available in browser WebGL, so this enables:
+      //   • soft-PCF shadow map on the renderer + sun + dynamic point lights
+      //   • three colored point lights (warm/cool/magenta) for richer fills
+      //   • a small ambient lift so toon materials don't crush to black
+      //   • ACES-filmic tone mapping for more cinematic highlights
+      const on = !!s.rayTracedLighting;
+      try {
+        this.renderer.shadowMap.enabled = on;
+        if (on) {
+          this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.renderer.toneMappingExposure = 1.05;
+        } else {
+          this.renderer.toneMapping = THREE.NoToneMapping;
+          this.renderer.toneMappingExposure = 1.0;
+        }
+      } catch {}
+      if (this._sun) {
+        this._sun.castShadow = on;
+        if (on) {
+          this._sun.shadow.mapSize.set(1024, 1024);
+          this._sun.shadow.camera.near = 1;
+          this._sun.shadow.camera.far = 200;
+          this._sun.shadow.bias = -0.0005;
+        }
+      }
+      for (const pl of this._rtLights || []) {
+        pl.intensity = on ? 2.4 : 0;
+      }
+      if (this._ambientFill) {
+        this._ambientFill.intensity = on ? 0.18 : 0.0;
+      }
     }
   }
 

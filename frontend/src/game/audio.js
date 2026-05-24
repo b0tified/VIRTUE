@@ -13,6 +13,7 @@ class AudioBus {
     this.sfxMuted = false;
     this._musicVol = 0.32;
     this._sfxVol = 0.65;
+    this._masterVol = 0.9;
   }
 
   _ensure() {
@@ -21,7 +22,7 @@ class AudioBus {
       if (!AC) return false;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.9;
+      this.master.gain.value = this.muted ? 0 : this._masterVol;
       this.master.connect(this.ctx.destination);
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.value = this.musicMuted ? 0 : this._musicVol;
@@ -36,7 +37,7 @@ class AudioBus {
 
   setMuted(m) {
     this.muted = m;
-    if (this.master) this.master.gain.value = m ? 0 : 0.9;
+    if (this.master) this.master.gain.value = m ? 0 : this._masterVol;
   }
 
   setMusicMuted(m) {
@@ -47,6 +48,29 @@ class AudioBus {
   setSfxMuted(m) {
     this.sfxMuted = m;
     if (this.sfxGain) this.sfxGain.gain.value = m ? 0 : this._sfxVol;
+  }
+
+  /* Volume setters (0..1). Used by the new slider UI. Mute toggles still
+     work — a 0-volume mute is treated as muted = true so the SFX preview
+     button can still wake the audio context. */
+  setMasterVolume(v) {
+    this._masterVol = Math.max(0, Math.min(1, Number(v) || 0));
+    if (this.master) this.master.gain.value = this.muted ? 0 : this._masterVol;
+  }
+  setMusicVolume(v) {
+    this._musicVol = Math.max(0, Math.min(1, Number(v) || 0));
+    if (this.musicGain) this.musicGain.gain.value = this.musicMuted ? 0 : this._musicVol;
+  }
+  setSfxVolume(v) {
+    this._sfxVol = Math.max(0, Math.min(1, Number(v) || 0));
+    if (this.sfxGain) this.sfxGain.gain.value = this.sfxMuted ? 0 : this._sfxVol;
+  }
+  getVolumes() {
+    return {
+      master: this._masterVol ?? 0.9,
+      music: this._musicVol,
+      sfx: this._sfxVol,
+    };
   }
 
   /* -------- UI cue: triumphant "match found" fanfare --------

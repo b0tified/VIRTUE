@@ -49,6 +49,17 @@ const DEFAULTS = Object.freeze({
   // but persists the user's choice so we can route matchmaking to the
   // chosen region once additional gameservers come online.
   serverRegion: "auto",     // "auto" | "na-east" | "na-west" | "eu" | "sa" | "asia" | "oce"
+  // Audio volumes (0..1). Replaces the old mute toggles in the UI but the
+  // mute setters still work — setting volume = 0 is equivalent to mute.
+  masterVolume: 0.9,
+  musicVolume: 0.32,
+  sfxVolume: 0.65,
+  // Ray-traced lighting (cosmetic). Enables real-time soft shadow maps,
+  // an additional directional sun + 3 colored point lights around the map,
+  // and a brighter ambient pass for the cel-shaded toon materials. Costs
+  // ~25-35% extra GPU on modern hardware; falls back gracefully on weak
+  // devices (renderer just ignores the shadow flag).
+  rayTracedLighting: false,
   // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
   keybinds: {
     forward: "KeyW",

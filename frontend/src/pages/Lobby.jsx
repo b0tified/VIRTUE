@@ -2,6 +2,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
+import settingsStore from "@/game/settings";
 import api from "@/api";
 import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
@@ -55,12 +56,16 @@ export default function Lobby() {
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
 
-  // Initialise audio mute states from localStorage so the bus reflects user prefs
-  // immediately on mount.
+  // Initialise audio mute states + volumes from settings/localStorage so the
+  // bus reflects user prefs immediately on mount.
   useEffect(() => {
     try {
       audioBus.setMusicMuted(localStorage.getItem("lobby_music_muted") === "1");
       audioBus.setSfxMuted(localStorage.getItem("sfx_muted") === "1");
+      const s = settingsStore.get();
+      audioBus.setMasterVolume?.(s.masterVolume ?? 0.9);
+      audioBus.setMusicVolume?.(s.musicVolume ?? 0.32);
+      audioBus.setSfxVolume?.(s.sfxVolume ?? 0.65);
     } catch {}
   }, []);
 
