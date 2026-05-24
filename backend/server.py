@@ -858,6 +858,38 @@ DISGUISED_BOT_NAMES = [
     "Krypt0nite", "0verkill", "RogueByte", "FlareStorm", "VoltKid", "Mute_Echo",
     "QwiKshot", "redhatcat", "vp1r3lord", "TheSarcophagus",
 ]
+# Tier-aligned bot name pools. As the player climbs the ladder, the bots
+# they encounter use progressively longer / more "tryhard" handles — long
+# emote names, smurf suffixes, streamer tags. Adds soul to the disguise.
+TIERED_BOT_NAMES: Dict[int, List[str]] = {
+    # Bronze — humble, slightly broken handles
+    0: ["smallchunkz", "lagspike", "TumbleweedJoe", "FluffyPanic", "newbnoodle",
+        "DustBunni", "potato_mode", "GrillMaster", "wallpeeker", "snorkelboy"],
+    # Silver — typical mid-game gamer names
+    1: ["RogueByte", "n3onGhost42", "BlitzReaper", "FlareStorm", "PixelPunk",
+        "VoltKid", "ShadowKnife", "x_zenith_x", "RiptideRyan", "QwiKshot"],
+    # Gold — more confident handles
+    2: ["KryptoKid", "DOOMscroll", "0verkill", "ScopeDaddy", "ironwingX",
+        "MetaSlash", "ChromeFang", "neonpalm", "lightswitch_", "trapcardOG"],
+    # Platinum — "decent player" energy
+    3: ["FrostByte_TV", "CinderSnake", "EchoVibes", "phantomThief.exe",
+        "BurnoutBeam", "PixelDealer", "vorpalcat", "MidnightCarmine",
+        "duskhowl", "rampage_arc"],
+    # Diamond — long-game, branded usernames
+    4: ["DarkVoyager_TTV", "NorthStarz0", "DriftWolf-9", "PrismRiderX",
+        "vexnight_", "AmberStrike77", "wickedhalo_TV", "lonestar.os",
+        "VelvetVoltage", "HellsBellsHQ"],
+    # Master — competitive feel, sponsors, tournament tags
+    5: ["Vexnight_TTV", "ApexLumen_T1", "SilverFang_GG", "ArcanePulse_TV",
+        "NocturnaRift", "ScarletPhase_LFT", "Vespera_Origin", "OnyxRevenant",
+        "RyuKaiser_LFG", "Mistral_Onyx"],
+    # Grandmaster — pro / staff tags, sponsor-suffixed
+    6: ["FrostKnight_Origin", "Vespera_Pro", "ZephyrTKO_EU", "K1ngslayer.gg",
+        "OnyxRevenant_T1", "MidnightProtocol", "NocturneApex_FNT",
+        "VelourSavant_T1", "Mistral_Chrono", "DraconisGG.TV"],
+    # Goonmaster — only one slot, never actually bot-fills, but seed for completeness
+    7: ["GOONFATHER", "TheLastGoon", "GoonLord_404"],
+}
 PLACEMENT_MATCHES = 5
 PLACEMENT_MULTIPLIER = 2
 
@@ -2016,14 +2048,23 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
     # (Higher diff = faster reactions, better aim, more accurate fire — see
     # the bot tick in GameRoom.tick().)
     ranked_difficulty = 1.4 + min(6, tier_idx) * 0.2
-    for name in BOT_NAMES[:bot_count]:
+    # Tier-aligned name pool — higher tiers get longer / more "competitive"
+    # handles (sponsor tags, TTV suffixes, etc.). Falls back to BOT_NAMES if
+    # the tier has no custom pool seeded.
+    name_pool = TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES
+    chosen_names = random.sample(name_pool, k=min(bot_count, len(name_pool)))
+    # If somehow the pool was smaller than bot_count (shouldn't happen for the
+    # current sizes 1..3), pad with BOT_NAMES so the room still fills up.
+    while len(chosen_names) < bot_count:
+        chosen_names.append(BOT_NAMES[len(chosen_names) % len(BOT_NAMES)])
+    for name in chosen_names:
         # `disguised=True` makes ranked bots appear as real players in the
         # scoreboard, kill-feed, and the death overlay's "killed by" card — no
         # BOT badge after they kill you. They keep their bot AI internally.
         # `disguise_tier_idx` aligns the bot's visible rank to the lobby's
         # tier so a Diamond player sees DIAMOND-ranked "opponents" instead
         # of obvious BRONZE placeholders.
-        room.spawn_bot(f"{name}-RB", disguised=True, difficulty=ranked_difficulty, disguise_tier_idx=tier_idx)
+        room.spawn_bot(name, disguised=True, difficulty=ranked_difficulty, disguise_tier_idx=tier_idx)
     RANKED_BOT_ROOMS[user_id] = room
     RANKED_BOT_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
     logger.info("Ranked-bot room spawned for user=%s tier=%d bots=%d", user_id, tier_idx, bot_count)
