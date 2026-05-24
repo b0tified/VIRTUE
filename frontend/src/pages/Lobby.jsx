@@ -449,6 +449,15 @@ export default function Lobby() {
                   CASUAL · FFA
                 </div>
               </div>
+              <button
+                onClick={cancelQuickQueue}
+                className="mt-3 btn-pow bg-[#E62429] text-white w-full [&]:py-2 [&]:text-sm"
+                data-testid="quick-queue-leave-button"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <X size={16} strokeWidth={3} /> LEAVE QUEUE
+                </span>
+              </button>
             </div>
           </div>
         </div>

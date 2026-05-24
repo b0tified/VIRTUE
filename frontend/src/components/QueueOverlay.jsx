@@ -79,6 +79,17 @@ export default function QueueOverlay() {
               Est. wait <span className="text-[#0055FF] tabular-nums">~{fmtMS(queueState.estimated_wait_seconds)}</span>
             </div>
           )}
+          {!queueState.matched && (
+            <button
+              onClick={cancelRanked}
+              className="mt-3 btn-pow bg-[#E62429] text-white w-full [&]:py-2 [&]:text-sm"
+              data-testid="queue-leave-button"
+            >
+              <span className="flex items-center justify-center gap-2">
+                <X size={16} strokeWidth={3} /> LEAVE QUEUE
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </div>
