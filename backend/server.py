@@ -630,6 +630,10 @@ REDEEM_CODES: Dict[str, dict] = {
     # handled below: it tops up bonus_xp so the player's total XP is at
     # least the threshold for that level.
     "RANKEDREADY": {"min_level": 5,                  "label": "Level 5 Unlocked — Ranked Ready!"},
+    # One-time tier promotion. Tops up RP so the player lands at the bottom
+    # of the *next* tier band. Hard-capped at Grandmaster — Goonmaster is
+    # earned only and can't be skipped to via code.
+    "WARPSPEED":   {"rank_up_tiers": 1,              "label": "Warp Speed — +1 Rank Tier"},
 }
 
 
@@ -681,6 +685,24 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
         rp_grant = min(int(reward["rp"]), max(0, 7500 - cur_pts))
         if rp_grant > 0:
             update_ops.setdefault("$inc", {})["rank_points"] = rp_grant
+    # rank_up_tiers: jump the player N tiers up by topping up RP to the
+    # bottom of the target band. Hard-capped at Grandmaster (tier 6) — code
+    # can never push into Goonmaster which is earned-only.
+    if reward.get("rank_up_tiers"):
+        cur_pts = int(user.get("rank_points", 0) or 0)
+        cur_tier_idx, _ = rank_for_points(cur_pts)
+        steps = max(1, int(reward["rank_up_tiers"]))
+        # Cap target at tier 6 (Grandmaster). Tier 7 = Goonmaster, unreachable
+        # via code.
+        target_tier_idx = min(6, cur_tier_idx + steps)
+        if target_tier_idx > cur_tier_idx:
+            # Land the player at the *start* of the new tier's band so they
+            # have to fight to climb further within it.
+            target_pts = RANK_TIERS[target_tier_idx][0]
+            rp_grant = max(0, target_pts - cur_pts)
+            if rp_grant > 0:
+                inc = update_ops.setdefault("$inc", {})
+                inc["rank_points"] = int(inc.get("rank_points", 0)) + rp_grant
     sets: Dict[str, object] = {}
     if reward.get("banner_animated"):
         sets["banner_animated"] = True
