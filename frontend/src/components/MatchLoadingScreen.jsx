@@ -14,6 +14,8 @@
 */
 import { useEffect, useState } from "react";
 import LobbyBackground from "@/components/LobbyBackground";
+import MapPreview from "@/components/MapPreview";
+import { pickRandomMapMeta } from "@/game/mapsMeta";
 import { Loader2, Zap } from "lucide-react";
 
 const MODE_LABELS = {
@@ -25,8 +27,12 @@ const MODE_LABELS = {
 
 export default function MatchLoadingScreen({ open, mode = "casual", username }) {
   const [dots, setDots] = useState("");
+  // Map preview re-rolled on every open so the loading screen feels fresh.
+  // Server also picks uniformly at random so this matches the player's odds.
+  const [previewMap, setPreviewMap] = useState(null);
   useEffect(() => {
     if (!open) return;
+    setPreviewMap(pickRandomMapMeta());
     const id = setInterval(() => {
       setDots((d) => (d.length >= 3 ? "" : d + "."));
     }, 280);
@@ -70,10 +76,10 @@ export default function MatchLoadingScreen({ open, mode = "casual", username }) 
         }}
       />
       {/* Content stack */}
-      <div className="relative flex flex-col items-center justify-center gap-6 px-4 text-center">
+      <div className="relative flex flex-col items-center justify-center gap-5 px-4 text-center">
         {/* Title */}
         <div
-          className="font-display text-pow-shadow-lg flex items-center gap-3 leading-none text-5xl sm:text-7xl"
+          className="font-display text-pow-shadow-lg flex items-center gap-3 leading-none text-4xl sm:text-6xl"
           style={{
             color: "#FFFFFF",
             textShadow: `0 0 18px ${meta.accent}99, 5px 5px 0 #0A0A0A, -1px -1px 0 #0A0A0A`,
@@ -81,10 +87,33 @@ export default function MatchLoadingScreen({ open, mode = "casual", username }) 
           }}
           data-testid="match-loading-title"
         >
-          <Zap size={36} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
+          <Zap size={32} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
           {meta.title}
-          <Zap size={36} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
+          <Zap size={32} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
         </div>
+        {/* Map preview + name */}
+        {previewMap && (
+          <div
+            className="flex flex-col items-center gap-2"
+            style={{ animation: "match-loading-banner-pop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both" }}
+            data-testid="match-loading-map"
+          >
+            <MapPreview map={previewMap} size={260} />
+            <div className="flex items-center gap-2 font-anton uppercase tracking-widest text-white/60 text-[10px]">
+              <span>MAP</span>
+              <span
+                className="text-white text-base"
+                style={{ textShadow: `0 0 8px ${previewMap.palette?.obstacle || "#fff"}cc, 2px 2px 0 #0A0A0A` }}
+                data-testid="match-loading-map-name"
+              >
+                {previewMap.name}
+              </span>
+            </div>
+            <div className="font-anton uppercase tracking-widest text-[10px] text-white/45 max-w-xs">
+              {previewMap.tagline}
+            </div>
+          </div>
+        )}
         {/* Status row */}
         <div
           className="flex items-center gap-3 font-anton uppercase tracking-widest text-white/90 text-sm"

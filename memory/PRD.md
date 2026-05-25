@@ -169,6 +169,10 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **LocalSim mirrored** — Offline-vs-AI also cycles both maps; `_pickMap()` runs on each LocalSim construct.
 - 🧪 Verified via Playwright: 8 offline attempts saw both `crossfire` and `downtown` with their full obstacle counts (40 / 41) and `_currentMapId` reflecting the rebuilt geometry. Visual confirmation: distinct color palettes + layouts per map.
 
+### Iteration 18 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Loading screen now shows the map** — `MatchLoadingScreen` picks a random map from a new shared `mapsMeta.js` registry on every open and renders a top-down SVG minimap preview (with halftone dot texture, comic outlines, spawn markers, "N" compass), the map name (DOWNTOWN / CROSSFIRE), and a one-line tagline ("Mega-tower at center · quadrant cover…" / "Corridor grid · diagonal pillars…"). New components: `/app/frontend/src/components/MapPreview.jsx` + `/app/frontend/src/game/mapsMeta.js`. Server map selection is also uniform random so the preview matches the player's odds.
+- 🧪 Verified in browser via dispatch of `virtue-match-loading` — overlay renders with the SVG preview, map name + tagline visible. Lint clean across all three touched files.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
