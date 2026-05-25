@@ -10,6 +10,10 @@ const DEFAULTS = Object.freeze({
   antialias: true,
   fpsCap: 0,                // 0 = unlimited, else 30/60/120/144
   touchControls: "auto",    // "auto" | "on" | "off"
+  // Mobile auto-fire — when on, the gun shoots continuously while the player
+  // is touching the right-side look pad. Engine cooldown gates the actual
+  // RPM. Off by default so the Fire button remains the canonical input.
+  touchAutoFire: false,
   fovDegrees: 75,
   aimAssist: true,
   aimAssistStrength: 0.6,   // 0.0 - 1.0 — applied only when aimAssist is true

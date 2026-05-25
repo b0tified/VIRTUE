@@ -446,6 +446,15 @@ export default function SettingsModal({ open, onClose }) {
                 </label>
               ))}
             </div>
+            <div className="mt-2">
+              <ToggleRow
+                label="Auto-Fire (Touch)"
+                note="Continuously fire while aiming with the right joystick. Engine cooldown gates the RPM."
+                checked={!!s.touchAutoFire}
+                onChange={(v) => patch({ touchAutoFire: v })}
+                testid="settings-touch-auto-fire"
+              />
+            </div>
           </section>
 
           {/* Aim assist (controller / touch) */}

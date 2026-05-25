@@ -20,6 +20,7 @@ function isTouchDevice() {
 export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon, onToggleScoreboard }) {
   const [enabled, setEnabled] = useState(false);
   const [hudLayout, setHudLayout] = useState(() => settingsStore.get().hudLayout || settingsStore.DEFAULTS.hudLayout);
+  const autoFireRef = useRef(!!settingsStore.get().touchAutoFire);
   const moveStickRef = useRef(null);
   const lookStickRef = useRef(null);
   // Track active touches so we can drive both sticks simultaneously.
@@ -29,6 +30,9 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     keys: new Set(),
     weapon: "primary",
   });
+  // Auto-fire interval — runs only while the look pad is being touched AND
+  // the touchAutoFire setting is enabled.
+  const autoFireTimerRef = useRef(null);
 
   // React to settings changes (touchControls: auto/on/off + HUD layout edits).
   useEffect(() => {
@@ -36,6 +40,7 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       const mode = s.touchControls || "auto";
       setEnabled(mode === "on" || (mode === "auto" && isTouchDevice()));
       setHudLayout(s.hudLayout || settingsStore.DEFAULTS.hudLayout);
+      autoFireRef.current = !!s.touchAutoFire;
     });
     return unsub;
   }, []);
@@ -79,6 +84,11 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       if (eng) {
         TOUCH_KEY_MAP.forEach((k) => eng.keys.delete("Key" + k.toUpperCase()));
         eng.touchActive = false;
+      }
+      // Stop auto-fire loop if it was running.
+      if (autoFireTimerRef.current) {
+        clearInterval(autoFireTimerRef.current);
+        autoFireTimerRef.current = null;
       }
     };
   }, [enabled, engineRef]);
@@ -128,6 +138,16 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     st.touchId = t.identifier;
     st.lastX = t.clientX;
     st.lastY = t.clientY;
+    // Start auto-fire loop if the setting is enabled. Engine cooldown gates
+    // the actual shot rate so calling _tryShoot every 50ms is safe.
+    if (autoFireRef.current && !autoFireTimerRef.current) {
+      const fire = () => {
+        const eng = engineRef.current;
+        if (eng) eng._tryShoot?.(eng.yaw, eng.pitch);
+      };
+      fire();
+      autoFireTimerRef.current = setInterval(fire, 50);
+    }
   };
 
   const onLookMove = (e) => {
@@ -153,6 +173,11 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       if (e.changedTouches[i].identifier === st.touchId) {
         st.touchId = null;
       }
+    }
+    // Stop auto-fire when the look pad is released.
+    if (st.touchId === null && autoFireTimerRef.current) {
+      clearInterval(autoFireTimerRef.current);
+      autoFireTimerRef.current = null;
     }
   };
 
