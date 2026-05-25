@@ -181,6 +181,9 @@ export class GameEngine {
     document.removeEventListener("contextmenu", this._onContextMenu);
     window.removeEventListener("resize", this._onResize);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
+    // Stop the rain-on-wet-streets ambient so it doesn't keep hissing in
+    // the lobby after the player exits a downtown match.
+    try { audioBus.rainAmbient(false); } catch {}
     this.renderer.dispose();
   }
 
@@ -903,6 +906,93 @@ export class GameEngine {
         oldMat.dispose?.();
       }
     }
+
+    // Per-map decorative extensions outside the playable arena. Currently
+    // only SHORELINE adds an ocean strip + wet-sand beach + a few rocks
+    // to the south so players see actual coastline beyond the perimeter.
+    if (!this._shorelineExtras) {
+      this._shorelineExtras = new THREE.Group();
+      this.scene.add(this._shorelineExtras);
+    }
+    this._shorelineExtras.visible = arena.map_id === "shoreline";
+    if (arena.map_id === "shoreline" && this._shorelineExtras.children.length === 0) {
+      const size = arena.size || 50;
+      // Wet sand strip just outside the south edge of the arena (lighter
+      // tone, slight darken near the waterline).
+      const sandGeo = new THREE.PlaneGeometry(size * 2, 18);
+      const sandMat = new THREE.MeshToonMaterial({ color: 0xddb472, gradientMap: this.toonMap });
+      const sand = new THREE.Mesh(sandGeo, sandMat);
+      sand.rotation.x = -Math.PI / 2;
+      sand.position.set(0, 0.04, size + 9);
+      this._shorelineExtras.add(sand);
+
+      // Ocean — large flat blue plane further out, with subtle vertex
+      // displacement painted as a procedural texture (gentle wave bands).
+      const oc = document.createElement("canvas");
+      oc.width = 64; oc.height = 256;
+      const octx = oc.getContext("2d");
+      const og = octx.createLinearGradient(0, 0, 0, 256);
+      og.addColorStop(0.0, "#2f8fbf");
+      og.addColorStop(0.4, "#1c5a86");
+      og.addColorStop(0.7, "#15466b");
+      og.addColorStop(1.0, "#0d2f4a");
+      octx.fillStyle = og; octx.fillRect(0, 0, 64, 256);
+      // Wave bands
+      octx.strokeStyle = "rgba(255,255,255,0.18)";
+      octx.lineWidth = 2;
+      for (let i = 0; i < 12; i++) {
+        const y = 12 + i * 20 + Math.random() * 6;
+        octx.beginPath();
+        for (let x = 0; x <= 64; x += 4) {
+          const yy = y + Math.sin(x * 0.4 + i) * 1.5;
+          if (x === 0) octx.moveTo(x, yy); else octx.lineTo(x, yy);
+        }
+        octx.stroke();
+      }
+      const oceanTex = new THREE.CanvasTexture(oc);
+      oceanTex.colorSpace = THREE.SRGBColorSpace;
+      oceanTex.wrapS = oceanTex.wrapT = THREE.RepeatWrapping;
+      const oceanGeo = new THREE.PlaneGeometry(220, 140, 8, 8);
+      const oceanMat = new THREE.MeshBasicMaterial({ map: oceanTex });
+      const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+      ocean.rotation.x = -Math.PI / 2;
+      ocean.position.set(0, 0.03, size + 90);
+      this._shorelineExtras.add(ocean);
+      this._shorelineOcean = ocean;
+
+      // Foamy waterline — white strip at the sand/ocean boundary
+      const foam = new THREE.Mesh(
+        new THREE.PlaneGeometry(size * 2, 1.4),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }),
+      );
+      foam.rotation.x = -Math.PI / 2;
+      foam.position.set(0, 0.06, size + 18);
+      this._shorelineExtras.add(foam);
+      this._shorelineFoam = foam;
+
+      // A few decorative beach rocks + a beach umbrella for charm
+      const placeRock = (x, z, r) => {
+        const rock = this._outlined(new THREE.DodecahedronGeometry(r, 0), 0x5a5550, 1.04);
+        rock.position.set(x, r * 0.5, z);
+        this._shorelineExtras.add(rock);
+      };
+      placeRock(-30, size + 12, 0.6);
+      placeRock(-22, size + 14, 0.5);
+      placeRock(8,   size + 13, 0.7);
+      placeRock(22,  size + 10, 0.5);
+      placeRock(36,  size + 16, 0.8);
+
+      // Beach umbrella (red striped)
+      const umb = new THREE.Group();
+      const pole = this._outlined(new THREE.CylinderGeometry(0.06, 0.06, 2.5, 8), 0xeeeeee, 1.06);
+      pole.position.y = 1.25;
+      umb.add(pole);
+      const top = this._outlined(new THREE.ConeGeometry(1.4, 0.6, 8), 0xe63946, 1.05);
+      top.position.y = 2.3;
+      umb.add(top);
+      umb.position.set(-12, 0, size + 9);
+      this._shorelineExtras.add(umb);
+    }
     if (Array.isArray(this._grassBlades)) {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
       // neither aesthetic wants tall green tufts.
@@ -1211,29 +1301,46 @@ export class GameEngine {
     // bright flash actually fires — matches real-life perception.
     const now = performance.now() / 1000;
     if (this._thunderCueAt && now >= this._thunderCueAt) {
-      try { audioBus.thunder(); } catch {}
-      // Visual flash peaks 0.8s after the cue (matches the crackle in
-      // the audio envelope).
-      this._lightningStart = now + 0.8;
-      this._lightningActiveUntil = now + 0.8 + 0.55;
-      this._lightningDouble = Math.random() < 0.45;
-      // Next thunder cue: 6-18s out from now (including the in-flight one).
+      // Pick one of several lightning patterns. Each pattern is a list of
+      // flash bursts (offset from the cue + intensity multiplier). The
+      // overall lightning "active" window covers from the first to the
+      // last burst's tail. Thunder audio also varies.
+      // Patterns:
+      //   0) "single"     — one big flash at 0.80s
+      //   1) "double"     — flash at 0.65s + smaller at 0.90s
+      //   2) "triple"     — three quick flashes 0.70 / 0.95 / 1.20
+      //   3) "rolling"    — wide rumbling pattern, longer + softer
+      //   4) "flicker"    — rapid 4-stutter at 0.75 / 0.82 / 0.90 / 1.00
+      const patterns = [
+        { thunderVariant: 0, bursts: [{ at: 0.80, strength: 1.0 }],                                       endPad: 0.55 },
+        { thunderVariant: 2, bursts: [{ at: 0.65, strength: 1.0 }, { at: 0.92, strength: 0.6 }],          endPad: 0.50 },
+        { thunderVariant: 1, bursts: [{ at: 0.70, strength: 0.9 }, { at: 0.95, strength: 0.7 }, { at: 1.22, strength: 0.5 }], endPad: 0.45 },
+        { thunderVariant: 2, bursts: [{ at: 0.60, strength: 0.7 }, { at: 1.10, strength: 0.9 }, { at: 1.55, strength: 0.6 }], endPad: 0.55 },
+        { thunderVariant: 1, bursts: [{ at: 0.75, strength: 0.9 }, { at: 0.83, strength: 0.5 }, { at: 0.92, strength: 0.7 }, { at: 1.05, strength: 0.4 }], endPad: 0.40 },
+      ];
+      const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+      try { audioBus.thunder(pattern.thunderVariant); } catch {}
+      // Active window: from now → (last burst.at + endPad)
+      const lastBurstAt = pattern.bursts[pattern.bursts.length - 1].at;
+      this._lightningStart = now;
+      this._lightningBursts = pattern.bursts;
+      this._lightningActiveUntil = now + lastBurstAt + pattern.endPad;
+      // Next thunder cue: 6-18s out
       this._thunderCueAt = now + 6 + Math.random() * 12;
     }
-    if (this._lightningStart > 0 && now >= this._lightningStart && now < this._lightningActiveUntil) {
+    if (this._lightningStart > 0 && now < this._lightningActiveUntil) {
       const t = now - this._lightningStart;
-      // Flash envelope: bright spike at t=0, decay, optional second flash
-      // at t=0.22-0.30.
-      let strength;
-      if (t < 0.12) {
-        strength = 1 - t / 0.12;
-      } else if (this._lightningDouble && t > 0.22 && t < 0.34) {
-        strength = 1 - (t - 0.22) / 0.12;
-      } else if (t < 0.55) {
-        strength = Math.max(0, 0.25 * (1 - (t - 0.12) / 0.43));
-      } else {
-        strength = 0;
+      // Composite strength: for each burst in the pattern, contribute a
+      // 120ms-peak envelope + soft decay so overlapping bursts naturally
+      // sum into a flicker / rolling effect.
+      let strength = 0;
+      for (const b of (this._lightningBursts || [])) {
+        const dt = t - b.at;
+        if (dt < 0) continue;
+        if (dt < 0.10)      strength += (1 - dt / 0.10) * b.strength;
+        else if (dt < 0.40) strength += 0.25 * (1 - (dt - 0.10) / 0.30) * b.strength;
       }
+      strength = Math.min(1.5, strength);
       if (this._sun)  this._sun.intensity  = 1.0  + strength * 2.5;
       if (this._hemi) this._hemi.intensity = 1.0  + strength * 1.6;
       if (this._ambientFill) this._ambientFill.intensity = 0.48 + strength * 1.4;
@@ -2566,6 +2673,22 @@ export class GameEngine {
     }
     // Rain + lightning (no-op on day maps).
     this._updateWeather(dt);
+
+    // Shoreline ocean ambience — slowly drift the ocean texture so waves
+    // appear to roll, and gently pulse the foam strip.
+    if (this._shorelineExtras && this._shorelineExtras.visible) {
+      if (this._shorelineOcean) {
+        const m = this._shorelineOcean.material;
+        if (m.map) {
+          m.map.offset.y = (m.map.offset.y - dt * 0.05) % 1;
+          m.map.needsUpdate = true;
+        }
+      }
+      if (this._shorelineFoam) {
+        const tt = performance.now() / 1000;
+        this._shorelineFoam.material.opacity = 0.45 + Math.sin(tt * 0.9) * 0.15;
+      }
+    }
     if (this._birds) {
       for (const b of this._birds) {
         b.userData.angle += b.userData.speed * dt;

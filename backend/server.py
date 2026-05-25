@@ -2813,9 +2813,72 @@ class GameRoom:
                     "placement_match_number": placement_played_before + 1 if is_placement else None,
                     "placement_matches_total": PLACEMENT_MATCHES,
                 })
+            # Append bot rows so the match-end overlay shows the full lobby
+            # in ranked mode too. Bots earn no RP but their kills/deaths +
+            # disguised rank label appear on the scoreboard.
+            for p in all_participants:
+                if not p.is_bot:
+                    continue
+                bot_placement = placement_of.get(p.id, total_with_bots)
+                bot_tier_idx = int(getattr(p, "rank_tier", 0) or 0)
+                bot_tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
+                placements.append({
+                    "id": p.id,
+                    "user_id": "",
+                    "username": p.username or p.bot_name or "BOT",
+                    "kills": p.kills,
+                    "deaths": p.deaths,
+                    "delta": 0,
+                    "base_delta": 0,
+                    "new_points": 0,
+                    "rank_tier": bot_tier_idx,
+                    "rank_name": bot_tier_name,
+                    "prev_rank_tier": bot_tier_idx,
+                    "prev_rank_name": bot_tier_name,
+                    "rank_change": 0,
+                    "is_placement": False,
+                    "placement_match_number": None,
+                    "placement_matches_total": PLACEMENT_MATCHES,
+                    "placement": bot_placement,
+                })
+            # Re-sort by kills so the bot rows interleave with real-player
+            # rows by placement, not appended at the bottom.
+            placements.sort(key=lambda r: (-r.get("kills", 0), r.get("deaths", 0)))
         else:
-            # Casual: no RP, just record the match in stats so K/D analytics still work.
-            for p in real_players:
+            # Casual: no RP. Build placements for ALL participants (bots
+            # included) so the match-end overlay shows the full lobby's
+            # kill counts — without this, only the real player's row was
+            # appended and bot kills appeared to be "missing" from the
+            # scoreboard.
+            for p in all_participants:
+                placement = placement_of.get(p.id, total_with_bots)
+                if p.is_bot:
+                    # Bots: zero-RP rows, no DB write. Show their disguised
+                    # rank label if one was assigned (matches the in-match
+                    # leaderboard widget). Avoid leaking is_bot to the
+                    # client so they look like real opponents.
+                    tier_idx = int(getattr(p, "rank_tier", 0) or 0)
+                    tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
+                    placements.append({
+                        "id": p.id,
+                        "user_id": "",
+                        "username": p.username or p.bot_name or "BOT",
+                        "kills": p.kills,
+                        "deaths": p.deaths,
+                        "delta": 0,
+                        "base_delta": 0,
+                        "new_points": 0,
+                        "rank_tier": tier_idx,
+                        "rank_name": tier_name,
+                        "prev_rank_tier": tier_idx,
+                        "prev_rank_name": tier_name,
+                        "rank_change": 0,
+                        "is_placement": False,
+                        "placement_match_number": None,
+                        "placement_matches_total": PLACEMENT_MATCHES,
+                        "placement": placement,
+                    })
+                    continue
                 cur_points = 0
                 tier_idx, tier_name = 0, "BRONZE"
                 try:
@@ -2845,6 +2908,7 @@ class GameRoom:
                     "is_placement": False,
                     "placement_match_number": None,
                     "placement_matches_total": PLACEMENT_MATCHES,
+                    "placement": placement,
                 })
 
         payload = {

@@ -114,62 +114,71 @@ class AudioBus {
     sub.stop(now + 0.75);
   }
 
-  /* Quiet thunder — a low rumbling roll that precedes a lightning strike.
-     Implemented as filtered brown noise with a slow attack/release. The
-     volume is intentionally low (~0.15 of sfx gain peak) so it serves as
-     atmosphere, not an interruption. ~1.4s long; the caller's flash should
-     hit around the 800ms mark. */
-  thunder() {
+  /* Quiet thunder — picks one of three variants at random for variety:
+       0) "rumble"      — long low brown-noise roll (~1.6s)
+       1) "boom"        — short heavy single hit, lots of low + a sharp crack
+       2) "rolling"     — multi-burst rumble with two crackles
+     All variants peak at the same crackle time (~0.78s) so the caller's
+     visual flash sync stays consistent. */
+  thunder(variant = null) {
     if (!this._ensure()) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const out = this.sfxGain;
-    // 1) Brown-noise buffer for the rumble body
-    const dur = 1.4;
-    const sampleCount = Math.floor(ctx.sampleRate * dur);
+    const v = variant != null ? variant : Math.floor(Math.random() * 3);
+    // Per-variant tuning. All louder than the prior single-version build.
+    const tune = (
+      v === 1 ? { dur: 1.2,  peakGain: 0.42, lpStart: 220, lpEnd: 140, crackleGain: 0.32, crackleQ: 0.6, crackleFreq: 1100, doubleCrackle: false } :
+      v === 2 ? { dur: 1.9,  peakGain: 0.34, lpStart: 170, lpEnd: 100, crackleGain: 0.22, crackleQ: 0.7, crackleFreq:  800, doubleCrackle: true  } :
+                { dur: 1.6,  peakGain: 0.36, lpStart: 180, lpEnd: 110, crackleGain: 0.24, crackleQ: 0.8, crackleFreq:  900, doubleCrackle: false }
+    );
+    // 1) Brown-noise rumble body
+    const sampleCount = Math.floor(ctx.sampleRate * tune.dur);
     const buf = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
     const data = buf.getChannelData(0);
     let last = 0;
     for (let i = 0; i < sampleCount; i++) {
-      // Brown noise via integrated white noise → low-frequency emphasis.
       const white = Math.random() * 2 - 1;
       last = (last + 0.02 * white) / 1.02;
       data[i] = last * 3.5;
     }
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    // 2) Low-pass it to keep the boom in the bass range
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
-    lp.frequency.setValueAtTime(180, now);
-    lp.frequency.linearRampToValueAtTime(120, now + dur);
-    // 3) Envelope — gentle attack, sustained mid, slow decay
+    lp.frequency.setValueAtTime(tune.lpStart, now);
+    lp.frequency.linearRampToValueAtTime(tune.lpEnd, now + tune.dur);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.16, now + 0.30);
-    g.gain.linearRampToValueAtTime(0.14, now + 0.75);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    g.gain.linearRampToValueAtTime(tune.peakGain, now + 0.30);
+    g.gain.linearRampToValueAtTime(tune.peakGain * 0.85, now + 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + tune.dur);
     src.connect(lp); lp.connect(g); g.connect(out);
     src.start(now);
-    src.stop(now + dur);
-    // 4) Tiny mid-frequency crackle around the strike peak (~0.8s in)
-    const crackleStart = now + 0.78;
-    const crackle = ctx.createBufferSource();
-    const cbuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.18), ctx.sampleRate);
-    const cdata = cbuf.getChannelData(0);
-    for (let i = 0; i < cdata.length; i++) cdata[i] = (Math.random() * 2 - 1) * 0.8;
-    crackle.buffer = cbuf;
-    const cbp = ctx.createBiquadFilter();
-    cbp.type = "bandpass";
-    cbp.frequency.value = 900;
-    cbp.Q.value = 0.8;
-    const cg = ctx.createGain();
-    cg.gain.setValueAtTime(0.0001, crackleStart);
-    cg.gain.linearRampToValueAtTime(0.10, crackleStart + 0.02);
-    cg.gain.exponentialRampToValueAtTime(0.0001, crackleStart + 0.18);
-    crackle.connect(cbp); cbp.connect(cg); cg.connect(out);
-    crackle.start(crackleStart);
-    crackle.stop(crackleStart + 0.2);
+    src.stop(now + tune.dur);
+    // 2) Crackle(s) — one always at the peak (0.78s), optionally a second
+    // a beat later for "rolling thunder" effect.
+    const fireCrackle = (offset, gain) => {
+      const startAt = now + offset;
+      const c = ctx.createBufferSource();
+      const cbuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.22), ctx.sampleRate);
+      const cdata = cbuf.getChannelData(0);
+      for (let i = 0; i < cdata.length; i++) cdata[i] = (Math.random() * 2 - 1) * 0.9;
+      c.buffer = cbuf;
+      const cbp = ctx.createBiquadFilter();
+      cbp.type = "bandpass";
+      cbp.frequency.value = tune.crackleFreq;
+      cbp.Q.value = tune.crackleQ;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0.0001, startAt);
+      cg.gain.linearRampToValueAtTime(gain, startAt + 0.02);
+      cg.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.22);
+      c.connect(cbp); cbp.connect(cg); cg.connect(out);
+      c.start(startAt);
+      c.stop(startAt + 0.24);
+    };
+    fireCrackle(0.78, tune.crackleGain);
+    if (tune.doubleCrackle) fireCrackle(1.10, tune.crackleGain * 0.7);
   }
 
   /* Looping rain-on-wet-streets ambient. Idempotent: calling start when
@@ -203,7 +212,7 @@ class AudioBus {
       // Volume — quiet
       const g = ctx.createGain();
       g.gain.value = 0;
-      g.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 1.2);
+      g.gain.linearRampToValueAtTime(0.025, ctx.currentTime + 1.2);
       src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(this.sfxGain);
       src.start();
       this._rainAmbient = src;
