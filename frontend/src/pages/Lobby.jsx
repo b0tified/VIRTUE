@@ -14,6 +14,7 @@ import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
 import PracticeMapSelector from "@/components/PracticeMapSelector";
+import LobbyDailyPanel from "@/components/LobbyDailyPanel";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
 
@@ -462,8 +463,8 @@ export default function Lobby() {
               same stats are still surfaced inside the Profile page. */}
         </div>
 
-        <div className="lg:col-span-5 relative hidden lg:flex items-center justify-center">
-          {/* Match info panel removed per request */}
+        <div className="lg:col-span-5 relative hidden lg:flex items-start justify-center pt-16 xl:pt-20">
+          <LobbyDailyPanel />
         </div>
       </main>
 

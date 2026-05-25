@@ -3046,7 +3046,7 @@ class GameRoom:
             await asyncio.sleep(interval)
 
 
-game_room = GameRoom(is_ranked=False, match_duration=300.0)  # 5 minute Quick Match
+game_room = GameRoom(is_ranked=False, match_duration=60.0)  # 1 minute Quick Match
 ranked_room = GameRoom(is_ranked=True, match_duration=120.0)  # 2 minute Ranked
 practice_room = GameRoom(is_ranked=False, match_duration=99999.0)  # Practice never ends
 practice_room.is_practice = True

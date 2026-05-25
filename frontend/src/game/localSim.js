@@ -387,6 +387,12 @@ export class LocalSim {
     this.pendingEvents = [];
     this.tickHandle = null;
     this._intentional = false;
+    // Offline FFA matches end after 2 minutes (practice mode has no timer).
+    // We track in ms (performance.now()) so the tick loop can decrement
+    // and emit match_end identically to the server.
+    this.matchDuration = this.mode === "offline" ? 120 : null;
+    this.matchStartMs = null;
+    this.matchEnded = false;
   }
 
   connect() {
@@ -428,13 +434,14 @@ export class LocalSim {
     // Send welcome async
     Promise.resolve().then(() => {
       this.onOpen();
+      this.matchStartMs = performance.now();
       this.onMessage({
         type: "welcome",
         you: this.me.to_state(performance.now()),
         arena: ARENA,
         is_ranked: false,
-        match_duration: null,
-        match_start: null,
+        match_duration: this.matchDuration,
+        match_start: this.matchStartMs ? this.matchStartMs / 1000 : null,
         spectator: false,
         spectate_target_id: null,
       });
@@ -778,17 +785,56 @@ export class LocalSim {
     }
     // Build state payload
     const events = this.pendingEvents.splice(0, this.pendingEvents.length);
+    let timeLeft = null;
+    if (this.matchDuration != null && this.matchStartMs != null && !this.matchEnded) {
+      const elapsed = (now - this.matchStartMs) / 1000;
+      timeLeft = Math.max(0, this.matchDuration - elapsed);
+    }
     const state = {
       type: "state",
       players: Array.from(this.players.values()).map((p) => p.to_state(now)),
       events,
-      time_left: null,
+      time_left: timeLeft,
       in_queue: false,
       real_count: 1,
       min_real_players: 1,
       is_ranked: false,
     };
     this.onMessage(state);
+
+    // Emit match_end exactly once when offline timer hits 0.
+    if (timeLeft !== null && timeLeft <= 0 && !this.matchEnded) {
+      this.matchEnded = true;
+      const sorted = Array.from(this.players.values()).sort((a, b) => {
+        if (b.kills !== a.kills) return b.kills - a.kills;
+        return (a.deaths || 0) - (b.deaths || 0);
+      });
+      const placements = sorted.map((p) => ({
+        id: p.id,
+        user_id: p.id,
+        username: p.username,
+        is_bot: !!p.is_bot,
+        avatar: p.avatar ?? 0,
+        kills: p.kills || 0,
+        deaths: p.deaths || 0,
+        rank_tier: p.rank_tier ?? 0,
+        rank_name: p.rank_name || "BRONZE",
+        rank_points: p.rank_points ?? 0,
+        peak_rank_tier: p.peak_rank_tier ?? 0,
+        delta: 0,
+        new_points: p.rank_points ?? 0,
+        rank_change: 0,
+        is_placement: false,
+        placement_match_number: null,
+        placement_matches_total: 5,
+      }));
+      this.onMessage({
+        type: "match_end",
+        placements,
+        duration: this.matchDuration,
+        is_ranked: false,
+      });
+    }
   }
 }
 

@@ -220,6 +220,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Looping rain-on-wet-streets hiss** — New `audioBus.rainAmbient(true|false)`. White-noise buffer (2s, looped) → high-pass at 1800Hz → peaking bandpass at 4500Hz → gentle 1.2s gain fade-in to 0.05. Idempotent (start while running is a no-op); stop fades out cleanly over 800ms before stopping the source. Engine calls `rainAmbient(true)` when night activates and `rainAmbient(false)` when leaving night.
 - 🧪 Verified live: puddles visible as faint reflections at distance; building window halos still dominant; rain ambient code path active. Lint clean.
 
+### Iteration 26 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Daily Challenges moved to lobby right column** — New `LobbyDailyPanel.jsx` mounts in the previously-empty `lg:col-span-5` area of `Lobby.jsx`. Pulls from `/api/progression`, renders the 3 daily challenge rows inline (progress bar, XP/coin reward chips, inline CLAIM button). Auto-refreshes every 30s and on `refreshMe` after a claim.
+- ✅ **Quick Match shortened to 1 minute** — `game_room` `match_duration` 300.0 → 60.0 in `server.py`. Casual FFA now ends after 60s; HUD timer counts down accordingly.
+- ✅ **Offline-vs-AI capped at 2 minutes** — `LocalSim` now tracks `matchDuration=120` for `offline` mode (practice mode untouched). State payload includes computed `time_left`; when the timer hits 0 the sim emits a `match_end` payload with placements sorted by kills/deaths so the Victory/Defeat overlay fires identically to online play.
+- 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
+
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
