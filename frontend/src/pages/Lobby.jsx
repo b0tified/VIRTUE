@@ -13,6 +13,8 @@ import LobbyBackground from "@/components/LobbyBackground";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
+import MatchLoadingScreen from "@/components/MatchLoadingScreen";
+import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
@@ -33,6 +35,18 @@ export default function Lobby() {
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..target
+  // When non-null, the MatchLoadingScreen overlays the lobby for ~1.4s
+  // before the actual route change. Set right before any nav("/play").
+  const [loadingMode, setLoadingMode] = useState(null);
+  // Listen for `virtue-match-loading` events fired by navigateToMatch()
+  // — anywhere in the lobby tree (PartyPanel, QueueContext-triggered
+  // ranked nav, etc.) can ask for the loading overlay to show without
+  // having to thread state through props.
+  useEffect(() => {
+    const handler = (e) => setLoadingMode(e?.detail?.mode || "casual");
+    window.addEventListener("virtue-match-loading", handler);
+    return () => window.removeEventListener("virtue-match-loading", handler);
+  }, []);
   // Random per-attempt target wait for Quick Match (2..9s, capped under 10s).
   // Re-rolled every time the player clicks QUICK MATCH so the queue feels
   // organic instead of always landing on exactly 10.
@@ -177,8 +191,18 @@ export default function Lobby() {
   const refreshParty = useCallback(async () => {
     try {
       const { data } = await api.get("/party/me");
-      setParty(data.party_id ? data : null);
-    } catch { setParty(null); }
+      // Only clear state when the server *confirms* the user has no
+      // party (empty payload). Throwing on a network blip used to set
+      // null → next poll restores it = the "party disappears and
+      // reappears" flicker.
+      setParty(data && data.party_id ? data : null);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 404 || status === 401) {
+        setParty(null);
+      }
+      // Other failures (timeout, 5xx, network): leave existing state.
+    }
   }, []);
   useEffect(() => {
     let alive = true;
@@ -223,8 +247,11 @@ export default function Lobby() {
   useEffect(() => {
     if (quickQueueSec === null) return;
     if (quickQueueSec >= quickQueueTarget) {
-      nav("/play?mode=casual");
-      return;
+      // Trigger the loading screen (via the global event the loader
+      // listens for) and navigate after the overlay has had time to read.
+      setQuickQueueSec(null);
+      const cancel = navigateToMatch(nav, "/play?mode=casual", { mode: "casual", username: user?.username });
+      return cancel;
     }
     const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s + 1)), 1000);
     return () => clearTimeout(id);
@@ -321,17 +348,17 @@ export default function Lobby() {
         </div>
       </header>
 
-      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8 px-3 sm:px-6 md:px-12 lg:px-20 mt-0 sm:mt-1">
-        <div className="lg:col-span-7">
+      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-8 sm:-mt-12">
+        <div className="lg:col-span-7 -mt-2">
           {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
           <h1
-            className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none -mt-1"
+            className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
             data-testid="lobby-hero-logo"
           >
             <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>
           </h1>
 
-          <div className="mt-1 sm:mt-2 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
+          <div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
             {user?.in_placements && (
               <div
@@ -362,7 +389,7 @@ export default function Lobby() {
             </button>
           </div>
 
-          <div className="mt-2 sm:mt-4 space-y-1.5 sm:space-y-3 max-w-md">
+          <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 max-w-md">
             {party && (
               <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
             )}
@@ -399,12 +426,22 @@ export default function Lobby() {
                   : "RANKED MATCH"}
               </span>
             </button>
-            <Link to="/play?mode=practice" className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-practice-button">
+            <button
+              type="button"
+              onClick={() => navigateToMatch(nav, "/play?mode=practice", { mode: "offline", username: user?.username })}
+              className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
+              data-testid="lobby-practice-button"
+            >
               <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE RANGE</span>
-            </Link>
-            <Link to="/play?mode=offline" className="btn-pow bg-[#06A35F] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-offline-button">
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateToMatch(nav, "/play?mode=offline", { mode: "offline", username: user?.username })}
+              className="btn-pow bg-[#06A35F] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
+              data-testid="lobby-offline-button"
+            >
               <span className="flex items-center gap-3"><WifiOff size={18} strokeWidth={3} /> OFFLINE VS AI</span>
-            </Link>
+            </button>
             <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
@@ -457,6 +494,10 @@ export default function Lobby() {
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
       <ShopModal open={showShop} onClose={() => setShowShop(false)} />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
+      {/* Comic-style match transition overlay — fires whenever the lobby
+          (or any of its children via navigateToMatch) is about to nav
+          into a /play route. Self-dismisses on Lobby unmount. */}
+      <MatchLoadingScreen open={!!loadingMode} mode={loadingMode} username={user?.username} />
 
       {/* Rank-up celebration — fires after a tier-skip redeem. The overlay
           self-dismisses after ~6.5s and can be clicked through. */}

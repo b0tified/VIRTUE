@@ -754,3 +754,16 @@ html.virtue-no-ui-blur .hud-panel {
 .anim-lowhp-pulse {
   animation: virtue-lowhp-pulse 0.85s ease-in-out infinite;
 }
+
+/* =============================================================
+   Match loading screen — overlay shown while transitioning from
+   the lobby into a match (~1.4s).
+   ============================================================= */
+@keyframes match-loading-banner-pop {
+  0%   { transform: translateY(28px) scale(0.7) rotate(-2deg); opacity: 0; filter: blur(8px); }
+  60%  { transform: translateY(-4px)  scale(1.08) rotate(1deg); opacity: 1; filter: blur(0); }
+  100% { transform: translateY(0)     scale(1)    rotate(0deg); opacity: 1; }
+}
+@keyframes match-loading-burst-spin {
+  to { transform: rotate(360deg); }
+}

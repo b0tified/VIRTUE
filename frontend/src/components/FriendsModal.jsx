@@ -166,11 +166,25 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
   const rankText = (u.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A";
 
   return (
-    <div className="px-3 sm:px-5 py-3 flex items-center gap-3" data-testid={`friend-row-${mode}-${idx}`}>
+    <div
+      className={`px-3 sm:px-5 py-3 flex items-center gap-3 transition-colors hover:bg-[#FFF7D6] ${
+        u.in_match ? "border-l-4 border-l-[#E62429]" :
+        u.in_queue ? "border-l-4 border-l-[#0055FF]" :
+        u.online   ? "border-l-4 border-l-[#06A35F]" :
+                     "border-l-4 border-l-transparent"
+      }`}
+      data-testid={`friend-row-${mode}-${idx}`}
+    >
       <Avatar idx={u.avatar} size={42} online={u.online} testid={`friend-avatar-${idx}`} />
       <div className="flex-1 min-w-0">
-        <div className="font-anton uppercase text-base truncate" data-testid={`friend-username-${idx}`}>
-          {u.username}
+        <div className="font-anton uppercase text-base truncate flex items-center gap-2" data-testid={`friend-username-${idx}`}>
+          <span>{u.username}</span>
+          {/* Level chip — gives a quick "newbie vs veteran" read at a glance. */}
+          {typeof u.level === "number" && (
+            <span className="font-anton uppercase text-[9px] px-1 bg-neutral-900 text-white">
+              LV {u.level}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span
@@ -184,19 +198,21 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
               Lets you see at a glance what a friend is doing right now. */}
           {u.in_match ? (
             <span
-              className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border border-black"
+              className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border border-black flex items-center gap-1"
               data-testid={`friend-status-${idx}`}
               data-status="in-match"
             >
-              ● IN MATCH{u.match_kind ? ` · ${String(u.match_kind).toUpperCase()}` : ""}
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+              IN MATCH{u.match_kind ? ` · ${String(u.match_kind).toUpperCase()}` : ""}
             </span>
           ) : u.in_queue ? (
             <span
-              className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#0055FF] text-white border border-black"
+              className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#0055FF] text-white border border-black flex items-center gap-1"
               data-testid={`friend-status-${idx}`}
               data-status="in-queue"
             >
-              ● IN QUEUE
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+              IN QUEUE
             </span>
           ) : (
             <span

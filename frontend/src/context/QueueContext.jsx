@@ -84,7 +84,13 @@ export function QueueProvider({ children }) {
                 joinedAtRef.current = 0;
                 setWaitSec(0);
                 if (localTimerRef.current) { clearInterval(localTimerRef.current); localTimerRef.current = null; }
-                nav("/play?mode=ranked", { replace: true });
+                // Show the comic loading overlay before pushing the route.
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent("virtue-match-loading", { detail: { mode: "ranked" } }),
+                  );
+                } catch {}
+                setTimeout(() => nav("/play?mode=ranked", { replace: true }), 1200);
               } else {
                 setMatchFoundSec(sec);
               }

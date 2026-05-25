@@ -1760,8 +1760,24 @@ class GameRoom:
         })
         if not getattr(player, "is_spectator", False):
             await self.broadcast({"type": "join", "player": player.to_state()})
-        if self.last_match_end_payload and self.in_intermission:
-            await self._send(player, self.last_match_end_payload)
+        # Replay the last match_end payload ONLY to players who were
+        # actually in that match (i.e. their user_id appears in the
+        # placements). Sending it to a fresh quick-play joiner causes the
+        # client to immediately show "MATCH OVER" before the next round
+        # has started — which looked like the game "instantly ending".
+        if (
+            self.last_match_end_payload
+            and self.in_intermission
+            and not player.is_bot
+            and player.user_id
+        ):
+            placements = (self.last_match_end_payload or {}).get("placements", []) or []
+            played_in = any(
+                isinstance(p, dict) and str(p.get("user_id") or "") == str(player.user_id)
+                for p in placements
+            )
+            if played_in:
+                await self._send(player, self.last_match_end_payload)
 
     async def remove(self, player: Player):
         async with self.lock:
@@ -2507,6 +2523,7 @@ class GameRoom:
                     base_delta = delta
                 placements.append({
                     "id": p.id,
+                    "user_id": p.user_id,
                     "username": p.username,
                     "kills": p.kills,
                     "deaths": p.deaths,
@@ -2541,6 +2558,7 @@ class GameRoom:
                     pass
                 placements.append({
                     "id": p.id,
+                    "user_id": p.user_id,
                     "username": p.username,
                     "kills": p.kills,
                     "deaths": p.deaths,
