@@ -114,6 +114,136 @@ class AudioBus {
     sub.stop(now + 0.75);
   }
 
+  /* Victory fanfare — bright ascending C-major arpeggio + soaring top
+     note with shimmer + sub-bass swell. Roughly 2.0s total. Plays once
+     when the match-result overlay mounts in 1st-place state. */
+  victory() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const out = this.sfxGain;
+    // C major arpeggio: C5, E5, G5, C6, E6, G6
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568.0];
+    notes.forEach((freq, i) => {
+      const t0 = now + i * 0.11;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.018);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+      osc.connect(g); g.connect(out);
+      osc.start(t0); osc.stop(t0 + 0.4);
+    });
+    // Sustained top C with vibrato — the "trumpet hold"
+    const holdStart = now + notes.length * 0.11;
+    const hold = ctx.createOscillator();
+    const hg = ctx.createGain();
+    hold.type = "triangle";
+    hold.frequency.value = 1046.5; // C6
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = 5.5;
+    lfoGain.gain.value = 8;
+    lfo.connect(lfoGain).connect(hold.frequency);
+    hg.gain.setValueAtTime(0.0001, holdStart);
+    hg.gain.exponentialRampToValueAtTime(0.2, holdStart + 0.05);
+    hg.gain.setValueAtTime(0.2, holdStart + 0.7);
+    hg.gain.exponentialRampToValueAtTime(0.0001, holdStart + 1.2);
+    hold.connect(hg); hg.connect(out);
+    hold.start(holdStart); hold.stop(holdStart + 1.25);
+    lfo.start(holdStart); lfo.stop(holdStart + 1.25);
+    // Sub-bass swell underneath
+    const sub = ctx.createOscillator();
+    const sg = ctx.createGain();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(65, now);
+    sub.frequency.exponentialRampToValueAtTime(130, now + 1.4);
+    sg.gain.setValueAtTime(0.0001, now);
+    sg.gain.exponentialRampToValueAtTime(0.28, now + 0.6);
+    sg.gain.exponentialRampToValueAtTime(0.0001, now + 1.9);
+    sub.connect(sg); sg.connect(out);
+    sub.start(now); sub.stop(now + 2.0);
+    // Bright shimmer — high noise burst gated by lowpass for a "magic"
+    // sparkle texture on top of the chord
+    const noiseLen = ctx.sampleRate * 1.5;
+    const buf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.4);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass"; hp.frequency.value = 3500;
+    const sn = ctx.createGain();
+    sn.gain.setValueAtTime(0.0001, holdStart);
+    sn.gain.exponentialRampToValueAtTime(0.08, holdStart + 0.1);
+    sn.gain.exponentialRampToValueAtTime(0.0001, holdStart + 1.3);
+    src.connect(hp); hp.connect(sn); sn.connect(out);
+    src.start(holdStart); src.stop(holdStart + 1.4);
+  }
+
+  /* Defeat sting — descending minor "sad trombone" trio with a final
+     pitch-bend down + low buzz. Roughly 1.6s. Plays once when match
+     ends in any non-1st placement. */
+  defeat() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const out = this.sfxGain;
+    // Three descending notes ~ minor 2nd / minor 3rd intervals (sad horn)
+    const notes = [
+      { f: 392.0, t: 0.00, dur: 0.32 },  // G4
+      { f: 349.2, t: 0.32, dur: 0.32 },  // F4
+      { f: 293.7, t: 0.64, dur: 0.42 },  // D4
+    ];
+    notes.forEach((n) => {
+      const t0 = now + n.t;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.value = n.f;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.03);
+      g.gain.setValueAtTime(0.16, t0 + n.dur - 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + n.dur);
+      // Lowpass for a softer brass tone (sawtooth alone is too harsh)
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 1400;
+      osc.connect(lp); lp.connect(g); g.connect(out);
+      osc.start(t0); osc.stop(t0 + n.dur + 0.05);
+    });
+    // Final "wah-wah" pitch bend on the last note's tail — drop another
+    // tritone down for the classic comedic defeat
+    const bendStart = now + 1.06;
+    const bend = ctx.createOscillator();
+    const bg = ctx.createGain();
+    bend.type = "sawtooth";
+    bend.frequency.setValueAtTime(293.7, bendStart);
+    bend.frequency.exponentialRampToValueAtTime(180, bendStart + 0.45);
+    bg.gain.setValueAtTime(0.0001, bendStart);
+    bg.gain.exponentialRampToValueAtTime(0.18, bendStart + 0.04);
+    bg.gain.exponentialRampToValueAtTime(0.0001, bendStart + 0.55);
+    const lp2 = ctx.createBiquadFilter();
+    lp2.type = "lowpass"; lp2.frequency.value = 1100;
+    bend.connect(lp2); lp2.connect(bg); bg.connect(out);
+    bend.start(bendStart); bend.stop(bendStart + 0.6);
+    // Low sub-rumble that fades in then crashes out
+    const sub = ctx.createOscillator();
+    const sg = ctx.createGain();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(70, now);
+    sub.frequency.exponentialRampToValueAtTime(36, now + 1.5);
+    sg.gain.setValueAtTime(0.0001, now);
+    sg.gain.exponentialRampToValueAtTime(0.22, now + 0.4);
+    sg.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
+    sub.connect(sg); sg.connect(out);
+    sub.start(now); sub.stop(now + 1.65);
+  }
+
+
   /* Quiet thunder — picks one of three variants at random for variety:
        0) "rumble"      — long low brown-noise roll (~1.6s)
        1) "boom"        — short heavy single hit, lots of low + a sharp crack

@@ -282,17 +282,22 @@ export default function Game() {
               newPoints: mine.new_points ?? 0,
             });
           }
-          // Auto-fallback: if the user doesn't press the Back to Lobby
-          // button on the Victory/Defeat screen, drop them back to lobby
-          // after 15s. The new screen has an explicit Back to Lobby
-          // button so this just guards against AFK / closed tab. We
-          // stash the id so the button can cancel it (see onLobby below).
+          // Disconnect from the server immediately so the room's next
+          // intermission/match_start can't yank the player back into
+          // active gameplay before they've acknowledged the result. The
+          // overlay stays visible until they click Back to Lobby (or the
+          // AFK fallback below fires). Intentional close → no
+          // "?disconnected=1" toast.
+          try { document.exitPointerLock?.(); } catch {}
+          try { sockRef.current?.close?.(); } catch {}
+          // AFK fallback: auto-drop them to lobby after 20s so a closed
+          // tab / minimised window can't strand them on the overlay
+          // forever. The Back to Lobby button cancels this.
           if (matchEndFallbackRef.current) clearTimeout(matchEndFallbackRef.current);
           matchEndFallbackRef.current = setTimeout(() => {
             matchEndFallbackRef.current = null;
-            try { document.exitPointerLock?.(); } catch {}
             nav("/lobby", { replace: true });
-          }, 15000);
+          }, 20000);
           return;
         }
         if (msg.type === "chat") {
@@ -303,7 +308,11 @@ export default function Game() {
           return;
         }
         if (msg.type === "match_start") {
-          setHud((h) => ({ ...h, matchEnd: null }));
+          // Only honour match_start when we don't already have a
+          // match-end overlay up. After end_match, we close the socket
+          // (see match_end handler) so this branch only fires for the
+          // very first match join.
+          setHud((h) => h.matchEnd ? h : { ...h, matchEnd: null });
           return;
         }
         if (msg.type === "state") {

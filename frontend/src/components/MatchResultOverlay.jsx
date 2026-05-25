@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Trophy, Skull, Star, Crosshair, Target, Home } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
+import audioBus from "@/game/audio";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -46,7 +47,13 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
     const a = setTimeout(() => setStage(1), 60);
     const b = setTimeout(() => setStage(2), 320);
     const c = setTimeout(() => setStage(3), 620);
+    // Play the result sting exactly once when the overlay mounts.
+    try {
+      if (isVictory) audioBus.victory?.();
+      else audioBus.defeat?.();
+    } catch {}
     return () => { clearTimeout(a); clearTimeout(b); clearTimeout(c); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Confetti positions are randomised once per mount so the burst feels
