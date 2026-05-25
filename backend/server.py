@@ -1962,7 +1962,27 @@ class GameRoom:
             player.x = float(sx)
             player.z = float(sz)
         async with self.lock:
+            # Detect whether the room had any real, non-spectator players
+            # BEFORE this add. Used to restart the match clock so the very
+            # first player of a freshly-spawned (or long-idle) casual room
+            # doesn't get an instant match_end from accumulated idle time.
+            had_real_players = any(
+                (not p.is_bot) and (not getattr(p, "is_spectator", False))
+                for p in self.players.values()
+            )
             self.players[player.id] = player
+        # Restart the match clock if this is the first real player to join
+        # an empty (or bots-only) room while a match is supposedly in
+        # progress. Otherwise the tick loop's `now - match_start >= duration`
+        # check fires immediately and broadcasts match_end before the new
+        # player has done anything — the "instant defeat on Quick Play" bug.
+        if (
+            not had_real_players
+            and not player.is_bot
+            and not getattr(player, "is_spectator", False)
+            and not self.in_intermission
+        ):
+            self.match_start = time.time()
         # Stamp the match this player will participate in. During intermission,
         # the upcoming match is match_num + 1 (current match is over). This
         # lets end_match target its broadcast precisely so late joiners don't

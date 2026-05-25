@@ -188,6 +188,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Random-pick path remains the default for all other modes (casual / ranked / party) — selector is practice-only.
 - 🧪 Verified live: SELECT MAP modal renders 4 cards correctly, picking SHORELINE → confirm starts the game with sandy ground + beach obstacles + URL `?mode=practice&map=shoreline`. Engine arena state shows `map_id: 'shoreline', current: 'shoreline'`. Lint clean on all 7 touched/new files.
 
+### Iteration 21 — **THIS SESSION (2026-02-25, late)**
+- 🐛 **Instant-defeat on Quick Play (truly truly fixed)** — Root cause was different from prior iterations: `GameRoom.match_start` is set at room init time, but the tick loop only fires `end_match()` when there's at least one real player. So a casual room sitting idle for > match_duration (5 min) had a "stale clock" — the FIRST player to join after a long idle would trigger an immediate match_end on the very next tick because `now - match_start >= duration` was already True.
+- Fix: `GameRoom.add` now resets `match_start = now()` when the first real (non-spectator, non-bot) player joins while the room is not in intermission. Subsequent joiners do NOT reset the clock. Spectator joins also don't reset.
+- 🧪 4 new regression tests + 12 prior tests passing (no regressions): clock resets on first real-player join, clock does NOT reset for spectators, clock does NOT reset for subsequent joiners, end_match would NOT trigger immediately after add+tick.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
