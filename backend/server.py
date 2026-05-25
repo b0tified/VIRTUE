@@ -2793,21 +2793,35 @@ async def matchmaker_loop():
         try:
             now = time.time()
             async with QUEUE_LOCK:
-                # Pair real-vs-real players in same tier
+                # Pair entries (each entry can hold 1 user or a whole party).
+                # We match two entries head-to-head; every user_id in either
+                # entry is tagged MATCHED with the same match_id so all
+                # party-mates enter the ranked room together.
                 for tier_idx, q in RANKED_QUEUE.items():
                     while len(q) >= 2:
                         a = q.pop(0)
                         b = q.pop(0)
                         mid = uuid.uuid4().hex[:10]
-                        MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
-                        MATCHED_USERS[b["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
+                        a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
+                        b_uids = b.get("user_ids") or ([b["user_id"]] if b.get("user_id") else [])
+                        for uid in a_uids + b_uids:
+                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
                         # Record wait-to-match for the ETA estimator. Using max
-                        # of both players' waits = the longer wait, which is
+                        # of both entries' waits = the longer wait, which is
                         # what new entrants will most likely experience.
                         RECENT_MATCH_WAITS[tier_idx].append(max(now - a["joined_at"], now - b["joined_at"]))
-                        logger.info("Matched tier=%d %s vs %s (mid=%s)", tier_idx, a["username"], b["username"], mid)
-                # Bot-fill: any player queued for > tier-specific timeout gets matched against bots.
-                # Goonmaster (tier 7) has timeout=inf — the loop body is unreachable for that tier.
+                        logger.info(
+                            "Matched tier=%d entryA=%s (party=%s) vs entryB=%s (party=%s) mid=%s",
+                            tier_idx, ",".join(a.get("usernames") or [a.get("username", "?")]),
+                            bool(a.get("is_party")),
+                            ",".join(b.get("usernames") or [b.get("username", "?")]),
+                            bool(b.get("is_party")),
+                            mid,
+                        )
+                # Bot-fill: an entry queued longer than the tier-specific
+                # timeout gets matched against bots. Works the same for
+                # parties — the entire entry's user_ids get matched.
+                # Goonmaster (tier 7) has timeout=inf — unreachable here.
                 for tier_idx, q in RANKED_QUEUE.items():
                     tier_timeout = bot_fill_seconds_for_tier(tier_idx)
                     if tier_timeout == float("inf"):
@@ -2815,9 +2829,16 @@ async def matchmaker_loop():
                     while q and (now - q[0]["joined_at"]) >= tier_timeout:
                         a = q.pop(0)
                         mid = uuid.uuid4().hex[:10]
-                        MATCHED_USERS[a["user_id"]] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True}
+                        a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
+                        for uid in a_uids:
+                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True}
                         RECENT_MATCH_WAITS[tier_idx].append(now - a["joined_at"])
-                        logger.info("Bot-filled %s after %ds queue (tier=%d)", a["username"], int(tier_timeout), tier_idx)
+                        logger.info(
+                            "Bot-filled tier=%d entry=%s (party=%s, %d users) after %ds queue",
+                            tier_idx,
+                            ",".join(a.get("usernames") or [a.get("username", "?")]),
+                            bool(a.get("is_party")), len(a_uids), int(tier_timeout),
+                        )
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
         await asyncio.sleep(0.5)
@@ -2842,8 +2863,72 @@ async def season_status():
 RANKED_MIN_LEVEL = 5
 
 
+async def _party_for_user(user_id: str) -> Optional[dict]:
+    """Look up the user's current party (if any). Returns the party dict
+    from PARTIES or None. Wraps PARTY_MEMBER_INDEX for callers that don't
+    need to import the global directly."""
+    pid = PARTY_MEMBER_INDEX.get(user_id)
+    if not pid:
+        return None
+    return PARTIES.get(pid)
+
+
+async def _max_party_tier(party: dict) -> tuple[int, str, str]:
+    """Resolve the highest rank tier across `party`'s members.
+
+    Returns `(tier_idx, tier_name, highest_member_username)`. Used by the
+    party-ranked queue to lock the whole party into the leader's strongest
+    tier so the group can't dodge into a softer bracket by inviting a
+    low-ranked friend.
+    """
+    best_pts = -1
+    best_tier_idx = 0
+    best_user = ""
+    for uid in party.get("members", []):
+        try:
+            doc = await db.users.find_one({"_id": ObjectId(uid)}, {"rank_points": 1, "username": 1})
+            pts = int((doc or {}).get("rank_points", 0) or 0)
+            if pts > best_pts:
+                best_pts = pts
+                ti, _ = rank_for_points(pts)
+                best_tier_idx = ti
+                best_user = (doc or {}).get("username", "")
+        except Exception:
+            continue
+    if best_pts < 0:
+        best_pts = 0
+    _, best_name = rank_for_points(best_pts)
+    return best_tier_idx, best_name, best_user
+
+
+def _remove_user_from_ranked_queue(user_id: str) -> Optional[dict]:
+    """Remove every queue entry that contains `user_id` from RANKED_QUEUE
+    (lock must be held by caller). Returns the removed entry (the first
+    one found) so callers can mirror MATCHED_USERS cleanup for any other
+    party-mate that was tagged together.
+
+    With party support, an entry can hold multiple user_ids — yanking it
+    out for any one user effectively un-queues the whole party.
+    """
+    removed: Optional[dict] = None
+    for q in RANKED_QUEUE.values():
+        keep: List[dict] = []
+        for e in q:
+            uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+            if user_id in uids:
+                if removed is None:
+                    removed = e
+                continue
+            keep.append(e)
+        q[:] = keep
+    return removed
+
+
 @api.post("/queue/ranked")
 async def queue_ranked_join(user: dict = Depends(get_current_user)):
+    """Enqueue the caller for ranked. If they're in a party, the whole
+    party queues together at the *highest* member's tier; only the leader
+    can press the button. Solo players are unchanged."""
     user_id = str(user["_id"])
     # Gate: Ranked locks until Level 5 — protects new players + their MMR.
     user_level = compute_level(user.get("stats", {}))["level"]
@@ -2852,25 +2937,71 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
             status_code=403,
             detail=f"Ranked unlocks at Level {RANKED_MIN_LEVEL}. You are Level {user_level}.",
         )
-    points = int(user.get("rank_points", 0) or 0)
-    tier_idx, tier_name = rank_for_points(points)
+    party = await _party_for_user(user_id)
+    is_party = bool(party)
+    if is_party and party.get("leader_id") != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the party leader can queue ranked.",
+        )
+    # Resolve tier — party uses max(members.rank_tier).
+    if is_party:
+        # Every party member must be eligible — block the entry if any
+        # member is below RANKED_MIN_LEVEL. Prevents using low-level alts
+        # to game the tier calculation (their points are 0 but they could
+        # still drag the group into a match they can't survive).
+        for uid in party["members"]:
+            mdoc = await db.users.find_one({"_id": ObjectId(uid)}, {"stats": 1, "username": 1})
+            mlvl = compute_level((mdoc or {}).get("stats", {}))["level"]
+            if mlvl < RANKED_MIN_LEVEL:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Party member {(mdoc or {}).get('username', '?')} is Level {mlvl} (Ranked needs L{RANKED_MIN_LEVEL}).",
+                )
+        tier_idx, tier_name, top_user = await _max_party_tier(party)
+        member_ids = list(party["members"])
+        usernames = []
+        for uid in member_ids:
+            mdoc = await db.users.find_one({"_id": ObjectId(uid)}, {"username": 1})
+            usernames.append((mdoc or {}).get("username", "?"))
+        logger.info(
+            "Party-ranked queue join: party=%s leader=%s tier=%d (%s, anchored by %s) members=%d",
+            party.get("party_id") or party.get("_id") or "?",
+            user.get("username", "?"),
+            tier_idx, tier_name, top_user, len(member_ids),
+        )
+    else:
+        points = int(user.get("rank_points", 0) or 0)
+        tier_idx, tier_name = rank_for_points(points)
+        member_ids = [user_id]
+        usernames = [user.get("username", "")]
     fill = bot_fill_seconds_for_tier_api(tier_idx)
     now_ts = time.time()
     async with QUEUE_LOCK:
-        if user_id in MATCHED_USERS:
-            m = MATCHED_USERS[user_id]
-            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
+        # If any of the resolved member ids is already matched, surface that.
+        for mid in member_ids:
+            if mid in MATCHED_USERS:
+                m = MATCHED_USERS[mid]
+                return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
+        # If anyone is already queued, return that state (idempotent).
         for q in RANKED_QUEUE.values():
             for e in q:
-                if e["user_id"] == user_id:
+                uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+                if any(mid in uids for mid in member_ids):
                     elapsed = now_ts - e["joined_at"]
-                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q), "wait_seconds": int(elapsed), "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, elapsed)}
+                    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": q.index(e) + 1, "tier_size": len(q), "wait_seconds": int(elapsed), "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, elapsed), "is_party": is_party, "party_size": len(member_ids)}
         RANKED_QUEUE[tier_idx].append({
+            "user_ids": member_ids,
+            "usernames": usernames,
+            # Back-compat: keep `user_id`/`username` populated with the
+            # primary user (caller). Older code paths still read these.
             "user_id": user_id,
             "username": user.get("username", ""),
             "joined_at": now_ts,
+            "is_party": is_party,
+            "party_id": (party or {}).get("party_id") if is_party else None,
         })
-    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx]), "wait_seconds": 0, "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, 0.0)}
+    return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx]), "wait_seconds": 0, "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, 0.0), "is_party": is_party, "party_size": len(member_ids)}
 
 
 @api.get("/queue/ranked")
@@ -2885,19 +3016,37 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
         return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill}
     for ti, q in RANKED_QUEUE.items():
         for i, e in enumerate(q):
-            if e["user_id"] == user_id:
+            uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+            if user_id in uids:
                 elapsed = now_ts - e["joined_at"]
-                return {"in_queue": True, "tier": ti, "tier_name": tier_name, "position": i + 1, "tier_size": len(q), "wait_seconds": int(elapsed), "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti), "estimated_wait_seconds": estimate_wait_seconds(ti, elapsed)}
+                return {
+                    "in_queue": True, "tier": ti, "tier_name": tier_name,
+                    "position": i + 1, "tier_size": len(q),
+                    "wait_seconds": int(elapsed),
+                    "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti),
+                    "estimated_wait_seconds": estimate_wait_seconds(ti, elapsed),
+                    "is_party": bool(e.get("is_party")),
+                    "party_size": len(uids),
+                }
     return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
 
 
 @api.delete("/queue/ranked")
 async def queue_ranked_leave(user: dict = Depends(get_current_user)):
+    """Leave the ranked queue. For party queues, this dequeues every
+    member of the party so the group can't be 'half-queued' (which would
+    desync everyone's state)."""
     user_id = str(user["_id"])
     async with QUEUE_LOCK:
-        for q in RANKED_QUEUE.values():
-            q[:] = [e for e in q if e["user_id"] != user_id]
-        MATCHED_USERS.pop(user_id, None)
+        removed = _remove_user_from_ranked_queue(user_id)
+        # Clear MATCHED_USERS for everyone in the removed entry — if they
+        # got matched mid-leave, that ack is now stale.
+        cleared = set([user_id])
+        if removed:
+            for uid in (removed.get("user_ids") or []):
+                cleared.add(uid)
+        for uid in cleared:
+            MATCHED_USERS.pop(uid, None)
     return {"ok": True}
 
 
@@ -2958,12 +3107,28 @@ async def _party_card(user_id: str) -> dict:
 
 async def _party_payload(party_id: str) -> dict:
     p = PARTIES[party_id]
+    members = [await _party_card(uid) for uid in p["members"]]
+    # Surface the tier the party would queue ranked at (max across members)
+    # so the lobby button can show "RANKED MATCH · PLATINUM" before the
+    # leader presses it. Cheap because we already loaded each member.
+    best_pts = 0
+    best_tier_idx = 0
+    best_user = ""
+    for m in members:
+        if int(m.get("rank_points", 0) or 0) >= best_pts:
+            best_pts = int(m.get("rank_points", 0) or 0)
+            best_tier_idx = int(m.get("rank_tier", 0) or 0)
+            best_user = m.get("username", "")
+    _, best_tier_name = rank_for_points(best_pts)
     return {
         "party_id": party_id,
         "leader_id": p["leader_id"],
-        "members": [await _party_card(uid) for uid in p["members"]],
+        "members": members,
         "match_starting": bool(p.get("match_starting", False)),
         "max_size": MAX_PARTY_SIZE,
+        "ranked_tier": best_tier_idx,
+        "ranked_tier_name": best_tier_name,
+        "ranked_anchored_by": best_user,
     }
 
 
@@ -3021,9 +3186,13 @@ def _friend_card(u: dict) -> dict:
     queue_tier = None
     try:
         for ti, q in RANKED_QUEUE.items():
-            if any(e.get("user_id") == uid for e in q):
-                in_queue = True
-                queue_tier = ti
+            for e in q:
+                uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+                if uid in uids:
+                    in_queue = True
+                    queue_tier = ti
+                    break
+            if in_queue:
                 break
     except Exception:
         pass
@@ -3296,8 +3465,24 @@ async def cleanup_party_room_if_empty(party_id: str):
 async def _leave_party_internal(user_id: str):
     party_id = PARTY_MEMBER_INDEX.pop(user_id, None)
     if not party_id or party_id not in PARTIES:
+        # Even with no party association, scrub them from the ranked queue
+        # — defensive against stale state.
+        async with QUEUE_LOCK:
+            _remove_user_from_ranked_queue(user_id)
+            MATCHED_USERS.pop(user_id, None)
         return
     party = PARTIES[party_id]
+    # If the party is currently in the ranked queue, dequeue the whole
+    # entry so the remaining members aren't stuck in a half-broken group.
+    # This mirrors the explicit /queue/ranked DELETE behavior.
+    async with QUEUE_LOCK:
+        removed = _remove_user_from_ranked_queue(user_id)
+        cleared = set([user_id])
+        if removed:
+            for uid in (removed.get("user_ids") or []):
+                cleared.add(uid)
+        for uid in cleared:
+            MATCHED_USERS.pop(uid, None)
     if user_id in party["members"]:
         party["members"].remove(user_id)
     if party["leader_id"] == user_id:

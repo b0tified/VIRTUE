@@ -73,10 +73,25 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
         })}
       </div>
       {isLeader && (
-        <div className="border-t-2 border-black p-2">
+        <div className="border-t-2 border-black p-2 flex flex-col gap-1.5">
           <button onClick={start} className="btn-pow bg-[#E62429] text-white w-full [&]:py-1.5 [&]:text-sm" data-testid="party-start-button">
             <span className="flex items-center justify-center gap-2"><Play size={14} strokeWidth={3} /> START QUICK MATCH</span>
           </button>
+          {/* Tier hint — surfaces the rank the whole party will queue at
+              if the leader presses the lobby's RANKED MATCH button. The
+              actual queue button lives in the lobby (top-level) so it
+              shares the global queue context; this is just a hint. */}
+          {party.ranked_tier_name && (
+            <div
+              className="font-anton uppercase text-[10px] tracking-widest text-center text-neutral-700"
+              data-testid="party-ranked-hint"
+            >
+              Ranked queues at <span className="text-[#0055FF]">{party.ranked_tier_name}</span>
+              {party.ranked_anchored_by && party.ranked_anchored_by !== myId && (
+                <span className="opacity-60"> · {party.ranked_anchored_by}</span>
+              )}
+            </div>
+          )}
         </div>
       )}
       {!isLeader && (
