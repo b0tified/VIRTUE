@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
-import { ArrowLeft, Trophy, Calendar, RotateCcw } from "lucide-react";
+import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye } from "lucide-react";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -15,6 +15,7 @@ function fmtDHMS(seconds) {
 }
 
 export default function Leaderboard() {
+  const nav = useNavigate();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [season, setSeason] = useState(null); // { season_number, seconds_left, season_ends_at, length_days }
@@ -36,13 +37,20 @@ export default function Leaderboard() {
   }, []);
 
   // Re-fetch season every 30s for accurate baseline; local tick every 1s for the timer.
+  // Also re-poll the leaderboard itself every 15s so in_match flags stay fresh
+  // — players queue, finish matches, and disconnect constantly, and a stale
+  // Spectate button would 404.
   useEffect(() => {
     const refresh = setInterval(async () => {
       try {
         const { data } = await api.get("/season");
         setSeason(data);
       } catch {}
-    }, 30000);
+      try {
+        const { data } = await api.get("/leaderboard");
+        setRows(data);
+      } catch {}
+    }, 15000);
     const live = setInterval(() => setTick((t) => t + 1), 1000);
     return () => { clearInterval(refresh); clearInterval(live); };
   }, []);
@@ -115,7 +123,32 @@ export default function Leaderboard() {
                   data-testid={`leaderboard-row-${i}`}
                 >
                   <div className="col-span-1 font-display text-2xl">{i + 1}</div>
-                  <div className="col-span-5 font-anton uppercase text-lg">{r.username}</div>
+                  <div className="col-span-5 font-anton uppercase text-lg flex items-center gap-2">
+                    <span>{r.username}</span>
+                    {/* Live status chip — IN MATCH (red, clickable to spectate)
+                        > ONLINE (green dot) > nothing for offline rows.
+                        Mirrors the FriendsModal status chip pattern. */}
+                    {r.in_match ? (
+                      <button
+                        type="button"
+                        onClick={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
+                        className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform"
+                        data-testid={`leaderboard-spectate-${i}`}
+                        title={`Spectate ${r.username}`}
+                      >
+                        <Eye size={11} strokeWidth={3} />
+                        SPECTATE
+                      </button>
+                    ) : r.online ? (
+                      <span
+                        className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F]"
+                        data-testid={`leaderboard-status-${i}`}
+                        data-status="online"
+                      >
+                        ● ONLINE
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="col-span-2 text-right font-anton text-lg">{r.kills}</div>
                   <div className="col-span-2 text-right">
                     <span

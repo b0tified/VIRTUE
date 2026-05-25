@@ -236,7 +236,17 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         <ActionBtn label="Reload" onPress={() => onReload?.()} color="#FFD700" testid="touch-reload" />
         <ActionBtn label="Melee"  onPress={pressMelee}        color="#9B59B6" testid="touch-melee" />
         <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" />
-        <ActionBtn label="Fire"   onPress={pressShoot}        color="#E62429" big testid="touch-fire" />
+        {/* Fire button: hold for auto-fire on AK-47 (engine cooldown gates
+            shots to the weapon's RPM, so calling _tryShoot every 50ms is
+            safe — the function bails when the cooldown timer hasn't elapsed). */}
+        <ActionBtn
+          label="Fire"
+          onPress={pressShoot}
+          color="#E62429"
+          big
+          autoRepeatMs={50}
+          testid="touch-fire"
+        />
       </div>
 
       {/* Weapon switcher (top-right above look pad) */}
@@ -303,11 +313,34 @@ function Knob({ dx, dy }) {
   );
 }
 
-function ActionBtn({ label, onPress, color, big = false, testid }) {
+function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 0 }) {
+  // Auto-repeat handle (for the Fire button). When the touch is held, we
+  // fire `onPress` every `autoRepeatMs` ms; engine-side cooldown gates the
+  // actual shot rate so this is safe.
+  const intervalRef = useRef(null);
+  const startRepeat = (e) => {
+    e.preventDefault();
+    onPress();
+    if (autoRepeatMs > 0) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => onPress(), autoRepeatMs);
+    }
+  };
+  const stopRepeat = (e) => {
+    if (e) e.preventDefault();
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+  // Cleanup on unmount.
+  useEffect(() => () => stopRepeat(), []);
   return (
     <button
       type="button"
-      onTouchStart={(e) => { e.preventDefault(); onPress(); }}
+      onTouchStart={startRepeat}
+      onTouchEnd={stopRepeat}
+      onTouchCancel={stopRepeat}
       className={`rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform ${big ? "w-20 h-20 text-lg" : "w-16 h-16 text-xs"}`}
       style={{ background: color, boxShadow: "0 4px 0 #000" }}
       data-testid={testid}

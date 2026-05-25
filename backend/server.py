@@ -662,14 +662,22 @@ async def refresh_token(request: Request, response: Response):
 # -------------------------------------------------------------------
 @api.get("/leaderboard")
 async def leaderboard():
-    cursor = db.users.find({}, {"_id": 0, "username": 1, "rank_points": 1, "stats": 1, "email": 1}).sort([("rank_points", -1), ("stats.kills", -1)]).limit(50)
+    cursor = db.users.find({}, {"username": 1, "rank_points": 1, "stats": 1, "email": 1}).sort([("rank_points", -1), ("stats.kills", -1)]).limit(50)
     rows = []
     async for u in cursor:
         s = u.get("stats", {})
         kills = s.get("kills", 0)
         pts = int(u.get("rank_points", 0) or 0)
         idx, name = rank_for_points(pts)
+        uid = str(u["_id"])
+        # Surface live state so the leaderboard can show a "Spectate"
+        # button only on rows where the player is actually in a match. The
+        # frontend uses the username (not user id) to route the spectate
+        # request to match `/spectate/{username}`.
+        loc = player_location(uid)
+        in_match = loc is not None and loc.get("kind") in ("casual", "ranked", "party")
         rows.append({
+            "id": uid,
             "username": u.get("username", u.get("email", "anon")),
             "kills": kills,
             "deaths": s.get("deaths", 0),
@@ -677,6 +685,9 @@ async def leaderboard():
             "rank_points": pts,
             "rank_tier": idx,
             "rank_name": name,
+            "online": is_online(uid),
+            "in_match": in_match,
+            "match_kind": loc.get("kind") if loc else None,
         })
     return rows
 

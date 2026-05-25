@@ -1576,17 +1576,25 @@ export class GameEngine {
       return;
     }
     if (msg.type === "state" && this.isSpectator && this.spectateTargetId) {
-      // Lock camera to follow the spectate target (3rd-person above their head).
+      // Lock camera to the spectate target in *first-person* — we see
+      // exactly what they see. Eye level sits at y + 1.7 (head height in
+      // the humanoid build), yaw/pitch mirror the target's aim.
       const t = msg.players.find((p) => p.id === this.spectateTargetId);
       if (t) {
-        // Offset camera ~4m behind & ~2m above target's head.
-        const cp = Math.cos(t.pitch || 0);
-        const back = new THREE.Vector3(Math.sin(t.yaw) * cp, 0, Math.cos(t.yaw) * cp);
-        back.multiplyScalar(4);
-        this.position.set(t.x + back.x, t.y + 2.0, t.z + back.z);
-        // Look toward target's eyes.
+        this.position.set(t.x, t.y + 1.7, t.z);
         this.yaw = t.yaw;
-        this.pitch = t.pitch - 0.25;
+        this.pitch = t.pitch || 0;
+        // Hide the target's mesh so we don't see the back of their head /
+        // helmet poking into the camera. Toggle other players back on in
+        // case the previous spectate target swapped (e.g. they died and
+        // we were re-targeted by spectate matchmaking).
+        for (const [id, entry] of this.players) {
+          if (!entry || !entry.mesh) continue;
+          const shouldHide = id === this.spectateTargetId;
+          if (entry.mesh.visible !== !shouldHide) {
+            entry.mesh.visible = !shouldHide;
+          }
+        }
       }
     }
     if (msg.type === "leave") {
