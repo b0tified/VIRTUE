@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
@@ -35,6 +35,9 @@ export default function Lobby() {
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..target
+  // Latches once the quick-match navigation has been dispatched, so the
+  // effect's cleanup never cancels the in-flight nav (see ticker effect).
+  const quickNavStartedRef = useRef(false);
   // When non-null, the MatchLoadingScreen overlays the lobby for ~1.4s
   // before the actual route change. Set right before any nav("/play").
   const [loadingMode, setLoadingMode] = useState(null);
@@ -178,6 +181,9 @@ export default function Lobby() {
 
   const startQuickQueue = () => {
     if (quickQueueSec !== null) return;
+    // Reset the nav latch so re-queuing after returning from a match
+    // works again.
+    quickNavStartedRef.current = false;
     // Re-roll the target wait each click: 2..9 seconds inclusive.
     setQuickQueueTarget(2 + Math.floor(Math.random() * 8));
     setQuickQueueSec(0);
@@ -244,18 +250,26 @@ export default function Lobby() {
   // cap below 10s). The "matchmaking" beat feels intentional but no longer
   // lands on exactly 10 every time. The casual room is shared + bot-filled
   // by the backend, so the wait is purely cosmetic on the client.
+  //
+  // Important: when the target is hit we MUST NOT return the
+  // navigateToMatch's cancel handle from the cleanup — `setQuickQueueSec(null)`
+  // re-runs the effect's cleanup and would clear the pending nav timer,
+  // stranding the player on the loading screen.
   useEffect(() => {
     if (quickQueueSec === null) return;
     if (quickQueueSec >= quickQueueTarget) {
-      // Trigger the loading screen (via the global event the loader
-      // listens for) and navigate after the overlay has had time to read.
+      if (quickNavStartedRef.current) return;
+      quickNavStartedRef.current = true;
+      // Reset the counter but DO NOT return the cancel handle — we want
+      // the loading overlay to play through and the nav to fire even
+      // though the state change re-triggers this effect.
       setQuickQueueSec(null);
-      const cancel = navigateToMatch(nav, "/play?mode=casual", { mode: "casual", username: user?.username });
-      return cancel;
+      navigateToMatch(nav, "/play?mode=casual", { mode: "casual", username: user?.username });
+      return;
     }
     const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s + 1)), 1000);
     return () => clearTimeout(id);
-  }, [quickQueueSec, quickQueueTarget, nav]);
+  }, [quickQueueSec, quickQueueTarget, nav, user?.username]);
 
   // Ranked match-found countdown is handled inside QueueContext.
 
