@@ -207,6 +207,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Hooked `_updateWeather(dt)` into the main update loop next to cloud/bird animations. Lazy-builds the rain particle system the first time night activates; rain visibility toggles on day/night swap.
 - 🧪 Verified live: rain streaks visible across the sky, lightning flash dramatically illuminates buildings + sky during burst, brighter base lighting reveals opponents at full draw distance. Lint clean.
 
+### Iteration 24 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Brighter night map** — Sun 0.7→1.0, Hemi 0.75→1.0, ambient fill 0.32→0.48 (still cool blue tinted). DOWNTOWN now reads much brighter while still feeling like night (stars + moon + glowing windows still dominate).
+- ✅ **Lighter rain** — Particle count 1800→700, size 1.8→0.55, opacity 0.7→0.55. Rain now feels atmospheric rather than screen-fill. Streak texture also shortened (32px gradient vs 64px) for a tighter drop look.
+- ✅ **Quiet thunder before lightning** — New `audioBus.thunder()` method: brown-noise low-pass filtered to <180Hz with a gentle attack/sustain/decay envelope (1.4s total) + a tiny bandpass crackle at the 0.78s mark. Volume capped at ~0.16 of sfx gain so it's atmospheric not interruptive.
+- Lightning re-scheduled: now driven by `_thunderCueAt` instead of `_lightningNextAt`. When the cue fires, `audioBus.thunder()` plays AND the visual flash is armed to peak 0.8s later (matching the crackle in the audio). Next cue scheduled 6-18s out.
+- 🧪 Verified live: night is clearly brighter (player can see the full road + buildings + opponents); rain is now subtle dots/streaks scattered rather than dense; thunder code path active (audioBus.thunder() called when cue fires). Lint clean.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

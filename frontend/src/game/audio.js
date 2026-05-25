@@ -114,6 +114,64 @@ class AudioBus {
     sub.stop(now + 0.75);
   }
 
+  /* Quiet thunder — a low rumbling roll that precedes a lightning strike.
+     Implemented as filtered brown noise with a slow attack/release. The
+     volume is intentionally low (~0.15 of sfx gain peak) so it serves as
+     atmosphere, not an interruption. ~1.4s long; the caller's flash should
+     hit around the 800ms mark. */
+  thunder() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const out = this.sfxGain;
+    // 1) Brown-noise buffer for the rumble body
+    const dur = 1.4;
+    const sampleCount = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < sampleCount; i++) {
+      // Brown noise via integrated white noise → low-frequency emphasis.
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;
+      data[i] = last * 3.5;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    // 2) Low-pass it to keep the boom in the bass range
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(180, now);
+    lp.frequency.linearRampToValueAtTime(120, now + dur);
+    // 3) Envelope — gentle attack, sustained mid, slow decay
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.16, now + 0.30);
+    g.gain.linearRampToValueAtTime(0.14, now + 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(lp); lp.connect(g); g.connect(out);
+    src.start(now);
+    src.stop(now + dur);
+    // 4) Tiny mid-frequency crackle around the strike peak (~0.8s in)
+    const crackleStart = now + 0.78;
+    const crackle = ctx.createBufferSource();
+    const cbuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.18), ctx.sampleRate);
+    const cdata = cbuf.getChannelData(0);
+    for (let i = 0; i < cdata.length; i++) cdata[i] = (Math.random() * 2 - 1) * 0.8;
+    crackle.buffer = cbuf;
+    const cbp = ctx.createBiquadFilter();
+    cbp.type = "bandpass";
+    cbp.frequency.value = 900;
+    cbp.Q.value = 0.8;
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.0001, crackleStart);
+    cg.gain.linearRampToValueAtTime(0.10, crackleStart + 0.02);
+    cg.gain.exponentialRampToValueAtTime(0.0001, crackleStart + 0.18);
+    crackle.connect(cbp); cbp.connect(cg); cg.connect(out);
+    crackle.start(crackleStart);
+    crackle.stop(crackleStart + 0.2);
+  }
+
   _hashId(id) {
     if (!id) return 0;
     let h = 0;

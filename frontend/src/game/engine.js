@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import settingsStore from "@/game/settings";
 import { skinById } from "@/game/skins";
+import audioBus from "@/game/audio";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -953,22 +954,22 @@ export class GameEngine {
     this.scene.background = new THREE.Color(night ? 0x1a2348 : 0x7cc3f0);
     this.scene.fog = new THREE.Fog(night ? 0x243057 : 0xc7e6f7, night ? 110 : 80, night ? 200 : 145);
 
-    // 3) Lights — slightly brighter at night than a pure moonlit scene so
-    // players can still see across the arena. We keep the cool blue tint
-    // (so it still reads as "night") but bump the intensities enough that
-    // building outlines and players are visible at full draw distance.
+    // 3) Lights — brighter night so players can clearly see across the
+    // arena. We keep the cool blue tint so the scene still reads as night,
+    // but lift the intensities to a moonlit-city feel rather than a
+    // black-out blackout. Lightning will spike these temporarily.
     if (this._sun) {
-      this._sun.intensity = night ? 0.7 : 1.4;
-      this._sun.color.set(night ? 0x8aa0d8 : 0xffffff);
+      this._sun.intensity = night ? 1.0 : 1.4;
+      this._sun.color.set(night ? 0xa8bce8 : 0xffffff);
     }
     if (this._hemi) {
-      this._hemi.intensity = night ? 0.75 : 1.0;
-      this._hemi.color.set(night ? 0x3a4a78 : 0xfff2a8);
-      this._hemi.groundColor.set(night ? 0x12182c : 0x4c7d3a);
+      this._hemi.intensity = night ? 1.0 : 1.0;
+      this._hemi.color.set(night ? 0x5d72a8 : 0xfff2a8);
+      this._hemi.groundColor.set(night ? 0x1c2640 : 0x4c7d3a);
     }
     if (this._ambientFill) {
-      this._ambientFill.intensity = night ? 0.32 : (this._ambientFill.intensity > 0 ? this._ambientFill.intensity : 0.0);
-      this._ambientFill.color.set(night ? 0xa9c0ff : 0xffffff);
+      this._ambientFill.intensity = night ? 0.48 : (this._ambientFill.intensity > 0 ? this._ambientFill.intensity : 0.0);
+      this._ambientFill.color.set(night ? 0xc0d2ff : 0xffffff);
     }
 
     // 4) Sun visuals — hide the disc + halos at night; show a moon + stars.
@@ -1046,37 +1047,37 @@ export class GameEngine {
     // Lazy-build the rain particle system the first time night activates.
     if (night) {
       if (!this._rain) {
-        const RAIN_COUNT = 1800;
+        // Lighter rain — fewer, smaller drops so the storm is atmospheric
+        // rather than a screen-fill.
+        const RAIN_COUNT = 700;
         const positions = new Float32Array(RAIN_COUNT * 3);
-        const velocities = new Float32Array(RAIN_COUNT); // per-drop fall speed
+        const velocities = new Float32Array(RAIN_COUNT);
         for (let i = 0; i < RAIN_COUNT; i++) {
-          positions[i * 3]     = (Math.random() - 0.5) * 110; // x
-          positions[i * 3 + 1] = Math.random() * 50;          // y
-          positions[i * 3 + 2] = (Math.random() - 0.5) * 110; // z
-          velocities[i] = 28 + Math.random() * 18;            // 28-46 units/sec
+          positions[i * 3]     = (Math.random() - 0.5) * 110;
+          positions[i * 3 + 1] = Math.random() * 50;
+          positions[i * 3 + 2] = (Math.random() - 0.5) * 110;
+          velocities[i] = 28 + Math.random() * 18;
         }
         const rainGeo = new THREE.BufferGeometry();
         rainGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        // Procedural streak texture — vertical gradient so each "point"
-        // reads as a falling raindrop, not a square dot.
+        // Procedural streak texture
         const rc = document.createElement("canvas");
-        rc.width = 8; rc.height = 64;
+        rc.width = 4; rc.height = 32;
         const rctx = rc.getContext("2d");
-        const grd = rctx.createLinearGradient(0, 0, 0, 64);
+        const grd = rctx.createLinearGradient(0, 0, 0, 32);
         grd.addColorStop(0.00, "rgba(200,214,255,0.0)");
-        grd.addColorStop(0.30, "rgba(220,230,255,0.6)");
-        grd.addColorStop(0.70, "rgba(240,245,255,0.95)");
-        grd.addColorStop(1.00, "rgba(200,214,255,0.2)");
-        rctx.fillStyle = grd; rctx.fillRect(0, 0, 8, 64);
+        grd.addColorStop(0.50, "rgba(240,245,255,0.85)");
+        grd.addColorStop(1.00, "rgba(200,214,255,0.0)");
+        rctx.fillStyle = grd; rctx.fillRect(0, 0, 4, 32);
         const rainTex = new THREE.CanvasTexture(rc);
         rainTex.colorSpace = THREE.SRGBColorSpace;
         const rainMat = new THREE.PointsMaterial({
           map: rainTex,
           color: 0xffffff,
-          size: 1.8,
+          size: 0.55,
           sizeAttenuation: true,
           transparent: true,
-          opacity: 0.7,
+          opacity: 0.55,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
         });
@@ -1085,9 +1086,11 @@ export class GameEngine {
         this.scene.add(this._rain);
       }
       this._rain.visible = true;
-      // Reset lightning scheduling so the first strike fires within 4-10s
-      // of entering night mode.
-      this._lightningNextAt = performance.now() / 1000 + 4 + Math.random() * 6;
+      // Reset lightning scheduling. We schedule a "thunder cue" first
+      // (4-10s away). When the cue fires, we play the audio rumble AND
+      // arm the visual flash to peak ~0.8s later — matching the audio.
+      this._thunderCueAt = performance.now() / 1000 + 4 + Math.random() * 6;
+      this._lightningStart = 0;
       this._lightningActiveUntil = 0;
     } else {
       if (this._rain) this._rain.visible = false;
@@ -1131,20 +1134,22 @@ export class GameEngine {
       pos.needsUpdate = true;
     }
 
-    // --- Lightning: random strikes every 6-18s. A strike briefly cranks
-    // the hemisphere + sun + ambient intensities for ~120ms, then a
-    // softer ~250ms fade. Three "double-flash" pattern is used randomly
-    // to read as a real lightning strike.
+    // --- Lightning + thunder: every 6-18s we play a low rumble (~1.4s
+    // audio), and 0.8s into the rumble we trigger the visual flash. The
+    // audio leads so the player gets a "storm coming" warning before the
+    // bright flash actually fires — matches real-life perception.
     const now = performance.now() / 1000;
-    if (now >= this._lightningNextAt) {
-      // Schedule a 1- or 2-flash burst. Active window covers the entire
-      // burst; intensities are computed below based on elapsed.
-      this._lightningStart = now;
-      this._lightningActiveUntil = now + 0.55;
+    if (this._thunderCueAt && now >= this._thunderCueAt) {
+      try { audioBus.thunder(); } catch {}
+      // Visual flash peaks 0.8s after the cue (matches the crackle in
+      // the audio envelope).
+      this._lightningStart = now + 0.8;
+      this._lightningActiveUntil = now + 0.8 + 0.55;
       this._lightningDouble = Math.random() < 0.45;
-      this._lightningNextAt = now + 6 + Math.random() * 12;
+      // Next thunder cue: 6-18s out from now (including the in-flight one).
+      this._thunderCueAt = now + 6 + Math.random() * 12;
     }
-    if (now < this._lightningActiveUntil) {
+    if (this._lightningStart > 0 && now >= this._lightningStart && now < this._lightningActiveUntil) {
       const t = now - this._lightningStart;
       // Flash envelope: bright spike at t=0, decay, optional second flash
       // at t=0.22-0.30.
@@ -1158,19 +1163,19 @@ export class GameEngine {
       } else {
         strength = 0;
       }
-      if (this._sun)  this._sun.intensity  = 0.7  + strength * 2.6;
-      if (this._hemi) this._hemi.intensity = 0.75 + strength * 1.8;
-      if (this._ambientFill) this._ambientFill.intensity = 0.32 + strength * 1.5;
+      if (this._sun)  this._sun.intensity  = 1.0  + strength * 2.5;
+      if (this._hemi) this._hemi.intensity = 1.0  + strength * 1.6;
+      if (this._ambientFill) this._ambientFill.intensity = 0.48 + strength * 1.4;
       if (this._sky && this._sky.material) {
         // Brighten the sky dome visually during the flash.
         const c = this._sky.material.color || (this._sky.material.color = new THREE.Color());
         c.setRGB(1, 1, 1).multiplyScalar(0.4 + strength * 0.6);
       }
-    } else if (this._sun && this._sun.intensity !== 0.7) {
+    } else if (this._sun && this._sun.intensity !== 1.0) {
       // Restore baseline night intensities once the flash ends.
-      this._sun.intensity = 0.7;
-      this._hemi.intensity = 0.75;
-      if (this._ambientFill) this._ambientFill.intensity = 0.32;
+      this._sun.intensity = 1.0;
+      this._hemi.intensity = 1.0;
+      if (this._ambientFill) this._ambientFill.intensity = 0.48;
       if (this._sky && this._sky.material && this._sky.material.color) {
         this._sky.material.color.setRGB(1, 1, 1);
       }
