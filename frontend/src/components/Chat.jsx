@@ -82,9 +82,7 @@ export default function Chat({ messages, onSend, hidden }) {
             SEND
           </button>
         </form>
-      ) : (
-        <div className="text-[10px] font-anton uppercase tracking-widest text-white/40">[Enter] to chat</div>
-      )}
+      ) : null}
     </div>
   );
 }

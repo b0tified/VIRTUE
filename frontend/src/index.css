@@ -508,8 +508,46 @@ canvas { outline: none; display: block; }
     width: 16px !important;
     height: 16px !important;
   }
-  /* Rank-badge row sits tight under the logo, smaller chips. */
-
+  /* Header buttons (online/coins/shop/pass/friends/settings) — these
+     stack tightly across the top right. Shrink padding + text so all
+     five chips fit at 480px-tall landscape phones. */
+  [data-testid="lobby-page"] [data-testid="active-players-online"],
+  [data-testid="lobby-page"] [data-testid="lobby-coins-badge"],
+  [data-testid="lobby-page"] [data-testid="lobby-shop-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-progression-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-friends-button"],
+  [data-testid="lobby-page"] [data-testid="lobby-settings-button"] {
+    padding: 0.2rem 0.45rem !important;
+    font-size: 0.6rem !important;
+    line-height: 1 !important;
+  }
+  [data-testid="lobby-page"] [data-testid="active-players-online"] .font-display,
+  [data-testid="lobby-page"] [data-testid="lobby-coins-badge"] .font-display {
+    font-size: 1rem !important;
+  }
+  /* On phones the "ONLINE" label still hides at sm: breakpoint, but
+     also hide the COINS / SHOP / PASS text labels — leave just the
+     icons + numbers so the chips stay narrow. */
+  [data-testid="lobby-page"] [data-testid="lobby-shop-button"] .hidden,
+  [data-testid="lobby-page"] [data-testid="lobby-progression-button"] .hidden,
+  [data-testid="lobby-page"] [data-testid="lobby-friends-button"] .hidden,
+  [data-testid="lobby-page"] [data-testid="lobby-coins-badge"] .hidden {
+    display: none !important;
+  }
+  [data-testid="lobby-page"] [data-testid="lobby-shop-button"] svg,
+  [data-testid="lobby-page"] [data-testid="lobby-progression-button"] svg,
+  [data-testid="lobby-page"] [data-testid="lobby-friends-button"] svg,
+  [data-testid="lobby-page"] [data-testid="lobby-settings-button"] svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  /* Compact the user's lobby player card in the header (no testid; uses
+     the header container as scope). */
+  [data-testid="lobby-page"] header > div > div:first-child {
+    transform: scale(0.78);
+    transform-origin: top left;
+  }
+}
 /* =============================================================
    Post-FX CSS hooks (filter applied to the game canvas via
    <PostFxLayer> + <BodyFilter>). Only affects the in-match
@@ -535,12 +573,15 @@ html.virtue-no-ui-blur .hud-panel {
   -webkit-backdrop-filter: none !important;
 }
 
+/* =============================================================
+   Mobile landscape lobby fit — secondary block (continuation rules
+   that were originally orphaned by a missing brace in earlier edits).
+   ============================================================= */
+@media (orientation: landscape) and (max-height: 500px) {
   [data-testid="lobby-page"] [data-testid="rank-badge-row"] {
     margin-top: 0.2rem !important;
     margin-bottom: 0.2rem !important;
     gap: 0.35rem !important;
-    /* Compress the row's own bounding box so scaled children don't leave
-       phantom space behind. */
     line-height: 0.9 !important;
   }
   [data-testid="lobby-page"] [data-testid="rank-badge-row"] > * {
@@ -548,16 +589,25 @@ html.virtue-no-ui-blur .hud-panel {
     transform-origin: left center;
     margin-right: -0.5rem !important;
   }
-  /* Pull the button column tight against the badge row. */
+  /* Pull the button column tight against the badge row. Lay the 6 action
+     buttons + party panel out in a 2-column grid so everything fits in
+     ~190px of vertical space instead of ~380px. */
   [data-testid="lobby-page"] > main > div:first-child > div:last-child {
     margin-top: 0.25rem !important;
-    /* Lay the 6 action buttons + party panel out in a 2-column grid so
-       everything fits in ~190px of vertical space instead of ~380px. */
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
     column-gap: 0.5rem !important;
     row-gap: 0.25rem !important;
     max-width: 100% !important;
+  }
+  [data-testid="lobby-page"] > main > div:first-child > div:last-child > * {
+    margin-top: 0 !important;
+  }
+  /* QUICK MATCH gets the full first row for emphasis. */
+  [data-testid="lobby-page"] [data-testid="lobby-play-button"] {
+    grid-column: 1 / -1 !important;
+  }
+}
 
 /* =============================================================
    Rank-Up Overlay animations
@@ -693,14 +743,14 @@ html.virtue-no-ui-blur .hud-panel {
   10%, 60%           { opacity: 0.15; }
 }
 
-  }
-  [data-testid="lobby-page"] > main > div:first-child > div:last-child > * {
-    margin-top: 0 !important;
-  }
-  /* QUICK MATCH gets the full first row for emphasis. */
-  [data-testid="lobby-page"] [data-testid="lobby-play-button"] {
-    grid-column: 1 / -1 !important;
-  }
-  /* Hide the dev/preview-only Tier overlay strip if it leaks into the
-     action grid — keeps the 2x3 grid tidy. */
+/* =============================================================
+   Low-HP HUD pulse — drives the health card's red breathing
+   when the player drops to <=25HP (alive only).
+   ============================================================= */
+@keyframes virtue-lowhp-pulse {
+  0%, 100% { box-shadow: 0 0 0 #0000, 4px 4px 0 #0A0A0A; transform: translate(0,0); }
+  50%      { box-shadow: 0 0 18px #E62429cc, 4px 4px 0 #0A0A0A; transform: translate(0, -1px); }
+}
+.anim-lowhp-pulse {
+  animation: virtue-lowhp-pulse 0.85s ease-in-out infinite;
 }

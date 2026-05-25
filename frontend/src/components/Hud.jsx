@@ -212,23 +212,81 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
       </div>
       )}
 
-      {/* Bottom-left: HP */}
+      {/* Bottom-left: HP — comic-style angular badge with shield glow when
+          invulnerable, gradient fill, pulse-on-low-hp, and a soft shadow
+          stroke for the number so it stays legible over busy scenes. */}
       <div className="absolute bottom-6 left-6 z-20" data-testid="hud-health">
-        <div className="hud-panel" style={{ background: hud.invuln ? "rgba(0,85,255,0.9)" : "rgba(10,10,10,0.85)" }}>
+        <div
+          className={`relative px-4 pt-2 pb-3 border-pow shadow-pow-sm flex flex-col gap-2 min-w-[260px] ${
+            hud.hp <= 25 && hud.alive ? "anim-lowhp-pulse" : ""
+          }`}
+          style={{
+            // Use the player's HP to drive a subtle background gradient —
+            // healthy = dark+green tint, low = dark+red tint, invuln = blue.
+            background: hud.invuln
+              ? "linear-gradient(135deg, #0055FFee 0%, #0a1a4aee 100%)"
+              : hud.hp <= 25
+                ? "linear-gradient(135deg, #2a0608ee 0%, #0a0a0aee 100%)"
+                : hud.hp <= 50
+                  ? "linear-gradient(135deg, #2a1a00ee 0%, #0a0a0aee 100%)"
+                  : "linear-gradient(135deg, #0a2a16ee 0%, #0a0a0aee 100%)",
+            color: "#fff",
+          }}
+        >
+          {/* Top row: heart icon, big HP number, status label */}
           <div className="flex items-center gap-3">
-            <Heart size={22} strokeWidth={3} className="text-[#E62429]" />
-            <div className="font-display text-4xl">{hud.hp}</div>
-            <div className="text-xs opacity-80">HP{hud.invuln ? " · SHIELDED" : ""}</div>
-          </div>
-          <div className="mt-2 w-56 h-3 border-2 border-white">
             <div
-              className="h-full"
+              className="relative w-10 h-10 flex items-center justify-center border-2 border-white/30"
               style={{
-                width: `${Math.max(0, Math.min(100, hud.hp))}%`,
-                background: hud.hp > 50 ? "#34C759" : hud.hp > 25 ? "#FFD700" : "#E62429",
-                transition: "width 0.15s linear",
+                background: hud.invuln ? "#FFD700" : "#E62429",
+                boxShadow: hud.hp <= 25 ? "0 0 14px #E62429" : "0 0 8px rgba(230,36,41,0.5)",
               }}
-            />
+            >
+              <Heart size={22} strokeWidth={3} className="text-white" fill="currentColor" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-baseline gap-2">
+                <span
+                  className="font-display text-4xl leading-none"
+                  style={{ textShadow: "3px 3px 0 #0A0A0A, -1px -1px 0 #0A0A0A" }}
+                  data-testid="hud-hp-value"
+                >
+                  {hud.hp}
+                </span>
+                <span className="font-anton uppercase tracking-widest text-xs opacity-70">/ 100</span>
+              </div>
+              <div className="font-anton uppercase tracking-widest text-[10px] mt-0.5"
+                style={{ color: hud.invuln ? "#FFD700" : hud.hp <= 25 ? "#FF6B6B" : "#9af0c8" }}>
+                {hud.invuln ? "● SHIELDED" : hud.hp <= 25 ? "⚠ CRITICAL" : hud.hp <= 50 ? "● INJURED" : "● HEALTHY"}
+              </div>
+            </div>
+          </div>
+          {/* Segmented health bar — 5 bars of 20HP each, makes it easier
+              to read state at a glance vs. a continuous fill. All segments
+              share the same color (based on current HP) so the bar reads
+              as "X bars remaining" rather than a static gradient. */}
+          <div className="flex gap-0.5 h-4 border-2 border-black" style={{ background: "#000" }}>
+            {[0, 20, 40, 60, 80].map((threshold) => {
+              const segPct = Math.max(0, Math.min(20, hud.hp - threshold)) / 20;
+              const segColor = hud.invuln
+                ? "#FFD700"
+                : hud.hp > 50 ? "#34C759"
+                : hud.hp > 25 ? "#FFD700"
+                : "#E62429";
+              return (
+                <div key={threshold} className="flex-1 relative overflow-hidden">
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      width: `${segPct * 100}%`,
+                      background: `linear-gradient(180deg, ${segColor} 0%, ${segColor}aa 100%)`,
+                      transition: "width 0.2s ease-out, background 0.2s",
+                      boxShadow: segPct > 0 && hud.hp <= 25 ? `0 0 8px ${segColor}` : "none",
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -313,17 +371,14 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                 </div>
               )}
               {!hud.reloading && hud.ammo === 0 && (
-                <div className="font-anton uppercase text-[10px] tracking-widest text-[#E62429] mt-1">PRESS R · RELOAD</div>
+                <div className="font-anton uppercase text-[10px] tracking-widest text-[#E62429] mt-1 animate-pulse">LOW AMMO</div>
               )}
             </div>
           )
         )}
 
         <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : "rgba(255,215,0,0.92)", color: "#0A0A0A" }} data-testid="hud-weapon">
-          <div className="text-xs">{hud.weapon === "secondary" ? "[2/V] KATANA" : hud.weapon === "tertiary" ? "[3] LASER" : "[1] AK-47"}</div>
-        </div>
-        <div className="hud-panel" style={{ background: "rgba(10,10,10,0.7)" }}>
-          <div className="text-xs">TAB · SCOREBOARD · R · RELOAD</div>
+          <div className="text-xs">{hud.weapon === "secondary" ? "KATANA" : hud.weapon === "tertiary" ? "LASER" : "AK-47"}</div>
         </div>
       </div>
 
