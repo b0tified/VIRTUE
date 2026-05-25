@@ -148,25 +148,32 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
         </div>
       )}
 
-      {/* Top-left: FPS / Ping / Username */}
+      {/* Top-left: FPS / Ping / Username — FPS + Ping are off by default
+          (toggle in Settings → Video). Username + connection chip always show. */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2" data-testid="hud-top-left">
-        <div className="flex gap-2">
-          <div className="hud-panel !py-1 !px-3" data-testid="hud-fps" title="Frames per second">
-            <div className="flex items-center gap-2 text-sm">
-              <Activity size={14} strokeWidth={3} style={{ color: fpsColor }} />
-              <span className="opacity-70">FPS</span>
-              <span className="font-anton" style={{ color: fpsColor }}>{hud.fps}</span>
-            </div>
+        {(gfx.showFps || gfx.showPing) && (
+          <div className="flex gap-2">
+            {gfx.showFps && (
+              <div className="hud-panel !py-1 !px-3" data-testid="hud-fps" title="Frames per second">
+                <div className="flex items-center gap-2 text-sm">
+                  <Activity size={14} strokeWidth={3} style={{ color: fpsColor }} />
+                  <span className="opacity-70">FPS</span>
+                  <span className="font-anton" style={{ color: fpsColor }}>{hud.fps}</span>
+                </div>
+              </div>
+            )}
+            {gfx.showPing && (
+              <div className="hud-panel !py-1 !px-3" data-testid="hud-ping" title="Round-trip time to server">
+                <div className="flex items-center gap-2 text-sm">
+                  <Wifi size={14} strokeWidth={3} style={{ color: pingColor }} />
+                  <span className="opacity-70">PING</span>
+                  <span className="font-anton" style={{ color: pingColor }}>{hud.ping}</span>
+                  <span className="opacity-60 text-xs">ms</span>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="hud-panel !py-1 !px-3" data-testid="hud-ping" title="Round-trip time to server">
-            <div className="flex items-center gap-2 text-sm">
-              <Wifi size={14} strokeWidth={3} style={{ color: pingColor }} />
-              <span className="opacity-70">PING</span>
-              <span className="font-anton" style={{ color: pingColor }}>{hud.ping}</span>
-              <span className="opacity-60 text-xs">ms</span>
-            </div>
-          </div>
-        </div>
+        )}
         <div className="hud-panel">
           <div className="text-[#FFD700]">{username}</div>
         </div>
