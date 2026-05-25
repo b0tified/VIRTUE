@@ -200,6 +200,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - SHORELINE + CROSSFIRE remain daytime.
 - 🧪 Verified live: DOWNTOWN renders with deep night sky, stars, glowing yellow windows, dark asphalt streets, and atmospheric bird silhouettes. Lint clean.
 
+### Iteration 23 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Downtown brightness boost** — Bumped night-mode lighting so players can spot opponents across the full arena: sun 0.35→0.7, hemi 0.45→0.75, ambient fill 0.18→0.32, fog start 80→110m, fog end 145→200m, cool blue light tints slightly warmer. Still reads clearly as nighttime.
+- ✅ **Rain on DOWNTOWN** — 1800-particle `THREE.Points` system with a procedurally-generated vertical streak texture (canvas gradient) + additive blending so drops glow softly against the dark scene. Drops fall 28-46u/s with a slight wind sway; the column follows the player horizontally (wraps when drops drift off-camera) so the player is always inside the rain.
+- ✅ **Lightning on DOWNTOWN** — Random strikes every 6-18s. Each strike runs an envelope that spikes sun + hemi + ambient + sky-dome brightness for ~120ms (with a 45% chance of a double-flash at 220-340ms), then a softer 250ms fade back to baseline night intensities. Sky dome color briefly tints toward white during the peak.
+- Hooked `_updateWeather(dt)` into the main update loop next to cloud/bird animations. Lazy-builds the rain particle system the first time night activates; rain visibility toggles on day/night swap.
+- 🧪 Verified live: rain streaks visible across the sky, lightning flash dramatically illuminates buildings + sky during burst, brighter base lighting reveals opponents at full draw distance. Lint clean.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

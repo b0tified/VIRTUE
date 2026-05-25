@@ -947,24 +947,28 @@ export class GameEngine {
       this._sky.material.needsUpdate = true;
       old?.dispose?.();
     }
-    // 2) Renderer clear-color + fog tinting.
-    this.scene.background = new THREE.Color(night ? 0x0a1438 : 0x7cc3f0);
-    this.scene.fog = new THREE.Fog(night ? 0x162a5e : 0xc7e6f7, 80, 145);
+    // 2) Renderer clear-color + fog tinting. At night we push the fog
+    // further out + tint it slightly bluer so players can still spot
+    // each other across the arena's full 50-unit footprint.
+    this.scene.background = new THREE.Color(night ? 0x1a2348 : 0x7cc3f0);
+    this.scene.fog = new THREE.Fog(night ? 0x243057 : 0xc7e6f7, night ? 110 : 80, night ? 200 : 145);
 
-    // 3) Lights — dim sun + hemi at night, cool blue tinted, low intensity.
+    // 3) Lights — slightly brighter at night than a pure moonlit scene so
+    // players can still see across the arena. We keep the cool blue tint
+    // (so it still reads as "night") but bump the intensities enough that
+    // building outlines and players are visible at full draw distance.
     if (this._sun) {
-      this._sun.intensity = night ? 0.35 : 1.4;
-      this._sun.color.set(night ? 0x6f86d6 : 0xffffff);
+      this._sun.intensity = night ? 0.7 : 1.4;
+      this._sun.color.set(night ? 0x8aa0d8 : 0xffffff);
     }
     if (this._hemi) {
-      this._hemi.intensity = night ? 0.45 : 1.0;
-      this._hemi.color.set(night ? 0x1c2a55 : 0xfff2a8);
-      this._hemi.groundColor.set(night ? 0x080c1c : 0x4c7d3a);
+      this._hemi.intensity = night ? 0.75 : 1.0;
+      this._hemi.color.set(night ? 0x3a4a78 : 0xfff2a8);
+      this._hemi.groundColor.set(night ? 0x12182c : 0x4c7d3a);
     }
     if (this._ambientFill) {
-      // Tiny ambient lift at night so players aren't pitch black.
-      this._ambientFill.intensity = night ? 0.18 : (this._ambientFill.intensity > 0 ? this._ambientFill.intensity : 0.0);
-      this._ambientFill.color.set(night ? 0x8aa0e0 : 0xffffff);
+      this._ambientFill.intensity = night ? 0.32 : (this._ambientFill.intensity > 0 ? this._ambientFill.intensity : 0.0);
+      this._ambientFill.color.set(night ? 0xa9c0ff : 0xffffff);
     }
 
     // 4) Sun visuals — hide the disc + halos at night; show a moon + stars.
@@ -1036,6 +1040,140 @@ export class GameEngine {
     // Lampposts intentionally stay visible (their bulb glows yellow).
     if (Array.isArray(this._dayDecorations)) {
       this._dayDecorations.forEach((d) => { if (d) d.visible = !night; });
+    }
+
+    // 7) Weather (rain + lightning) — only on the downtown night map.
+    // Lazy-build the rain particle system the first time night activates.
+    if (night) {
+      if (!this._rain) {
+        const RAIN_COUNT = 1800;
+        const positions = new Float32Array(RAIN_COUNT * 3);
+        const velocities = new Float32Array(RAIN_COUNT); // per-drop fall speed
+        for (let i = 0; i < RAIN_COUNT; i++) {
+          positions[i * 3]     = (Math.random() - 0.5) * 110; // x
+          positions[i * 3 + 1] = Math.random() * 50;          // y
+          positions[i * 3 + 2] = (Math.random() - 0.5) * 110; // z
+          velocities[i] = 28 + Math.random() * 18;            // 28-46 units/sec
+        }
+        const rainGeo = new THREE.BufferGeometry();
+        rainGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        // Procedural streak texture — vertical gradient so each "point"
+        // reads as a falling raindrop, not a square dot.
+        const rc = document.createElement("canvas");
+        rc.width = 8; rc.height = 64;
+        const rctx = rc.getContext("2d");
+        const grd = rctx.createLinearGradient(0, 0, 0, 64);
+        grd.addColorStop(0.00, "rgba(200,214,255,0.0)");
+        grd.addColorStop(0.30, "rgba(220,230,255,0.6)");
+        grd.addColorStop(0.70, "rgba(240,245,255,0.95)");
+        grd.addColorStop(1.00, "rgba(200,214,255,0.2)");
+        rctx.fillStyle = grd; rctx.fillRect(0, 0, 8, 64);
+        const rainTex = new THREE.CanvasTexture(rc);
+        rainTex.colorSpace = THREE.SRGBColorSpace;
+        const rainMat = new THREE.PointsMaterial({
+          map: rainTex,
+          color: 0xffffff,
+          size: 1.8,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        this._rain = new THREE.Points(rainGeo, rainMat);
+        this._rainVelocities = velocities;
+        this.scene.add(this._rain);
+      }
+      this._rain.visible = true;
+      // Reset lightning scheduling so the first strike fires within 4-10s
+      // of entering night mode.
+      this._lightningNextAt = performance.now() / 1000 + 4 + Math.random() * 6;
+      this._lightningActiveUntil = 0;
+    } else {
+      if (this._rain) this._rain.visible = false;
+      this._lightningActiveUntil = 0;
+    }
+  }
+
+  /* Per-frame update for rain + lightning. Called from the main loop. */
+  _updateWeather(dt) {
+    if (!this._isNight) return;
+    // --- Rain: rotate each drop downward, recycle from below back to top
+    // and shift the whole grid with the player's XZ so the rain follows
+    // the camera and is always visible (saves drawing 100k+ drops).
+    if (this._rain && this._rain.visible) {
+      const pos = this._rain.geometry.attributes.position;
+      const arr = pos.array;
+      const vels = this._rainVelocities;
+      const cx = this.position.x;
+      const cz = this.position.z;
+      // Slight wind sway so the rain doesn't fall perfectly vertical —
+      // reads more dynamic and matches the cel-shaded aesthetic.
+      const wind = 4.0;
+      for (let i = 0; i < vels.length; i++) {
+        const i3 = i * 3;
+        arr[i3 + 1] -= vels[i] * dt;
+        arr[i3]     += wind * dt;
+        if (arr[i3 + 1] < 0) {
+          // Recycle: jump back up + randomize horizontal placement around
+          // the camera so the player is always inside the rain column.
+          arr[i3]     = cx + (Math.random() - 0.5) * 110;
+          arr[i3 + 1] = 45 + Math.random() * 8;
+          arr[i3 + 2] = cz + (Math.random() - 0.5) * 110;
+        }
+        // Wrap horizontally so drops that drift off the edge come back
+        // into view on the opposite side.
+        if (arr[i3] > cx + 55)  arr[i3] -= 110;
+        if (arr[i3] < cx - 55)  arr[i3] += 110;
+        if (arr[i3 + 2] > cz + 55) arr[i3 + 2] -= 110;
+        if (arr[i3 + 2] < cz - 55) arr[i3 + 2] += 110;
+      }
+      pos.needsUpdate = true;
+    }
+
+    // --- Lightning: random strikes every 6-18s. A strike briefly cranks
+    // the hemisphere + sun + ambient intensities for ~120ms, then a
+    // softer ~250ms fade. Three "double-flash" pattern is used randomly
+    // to read as a real lightning strike.
+    const now = performance.now() / 1000;
+    if (now >= this._lightningNextAt) {
+      // Schedule a 1- or 2-flash burst. Active window covers the entire
+      // burst; intensities are computed below based on elapsed.
+      this._lightningStart = now;
+      this._lightningActiveUntil = now + 0.55;
+      this._lightningDouble = Math.random() < 0.45;
+      this._lightningNextAt = now + 6 + Math.random() * 12;
+    }
+    if (now < this._lightningActiveUntil) {
+      const t = now - this._lightningStart;
+      // Flash envelope: bright spike at t=0, decay, optional second flash
+      // at t=0.22-0.30.
+      let strength;
+      if (t < 0.12) {
+        strength = 1 - t / 0.12;
+      } else if (this._lightningDouble && t > 0.22 && t < 0.34) {
+        strength = 1 - (t - 0.22) / 0.12;
+      } else if (t < 0.55) {
+        strength = Math.max(0, 0.25 * (1 - (t - 0.12) / 0.43));
+      } else {
+        strength = 0;
+      }
+      if (this._sun)  this._sun.intensity  = 0.7  + strength * 2.6;
+      if (this._hemi) this._hemi.intensity = 0.75 + strength * 1.8;
+      if (this._ambientFill) this._ambientFill.intensity = 0.32 + strength * 1.5;
+      if (this._sky && this._sky.material) {
+        // Brighten the sky dome visually during the flash.
+        const c = this._sky.material.color || (this._sky.material.color = new THREE.Color());
+        c.setRGB(1, 1, 1).multiplyScalar(0.4 + strength * 0.6);
+      }
+    } else if (this._sun && this._sun.intensity !== 0.7) {
+      // Restore baseline night intensities once the flash ends.
+      this._sun.intensity = 0.7;
+      this._hemi.intensity = 0.75;
+      if (this._ambientFill) this._ambientFill.intensity = 0.32;
+      if (this._sky && this._sky.material && this._sky.material.color) {
+        this._sky.material.color.setRGB(1, 1, 1);
+      }
     }
   }
 
@@ -2350,6 +2488,8 @@ export class GameEngine {
         if (c.position.x > 90) c.position.x = -90;
       }
     }
+    // Rain + lightning (no-op on day maps).
+    this._updateWeather(dt);
     if (this._birds) {
       for (const b of this._birds) {
         b.userData.angle += b.userData.speed * dt;
