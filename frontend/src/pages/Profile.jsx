@@ -5,7 +5,7 @@ import api from "@/api";
 import {
   ArrowLeft, Crown, Trophy, Bot, Swords, History, WifiOff,
   Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
-  Check, Lock,
+  Check, Lock, Gem, Snowflake, Atom,
 } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
@@ -17,6 +17,9 @@ const AVATAR_LOCKS = {
   6: { level: 5,  tier: 0, label: "Flaming Skull" },        // tier 0 = no rank gate, level-only
   7: { level: 15, tier: 4, label: "Pulsing Diamond" },
   8: { level: 25, tier: 5, label: "Swirling Lightning" },
+  9: { level: 10, tier: 0, label: "Frost Sigil" },
+  10: { level: 20, tier: 4, label: "Quantum Core" },
+  11: { level: 30, tier: 7, label: "All-Seeing Eye" },
 };
 const BANNER_ANIM_UNLOCK = { level: 10, tier: 2, label: "Animated Banner" };
 
@@ -30,16 +33,20 @@ function isAvatarUnlocked(idx, level, peakTier) {
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
-// 8 banner icons + 8 banner colors, customizable from the profile.
+// 12 banner icons + 12 banner colors, customizable from the profile.
 const BANNER_ICONS = [
-  { Icon: Trophy,  label: "Trophy" },
-  { Icon: Crown,   label: "Crown" },
-  { Icon: Flame,   label: "Flame" },
-  { Icon: Star,    label: "Star" },
-  { Icon: Zap,     label: "Bolt" },
-  { Icon: Bomb,    label: "Bomb" },
-  { Icon: Target,  label: "Target" },
-  { Icon: Skull,   label: "Skull" },
+  { Icon: Trophy,    label: "Trophy" },
+  { Icon: Crown,     label: "Crown" },
+  { Icon: Flame,     label: "Flame" },
+  { Icon: Star,      label: "Star" },
+  { Icon: Zap,       label: "Bolt" },
+  { Icon: Bomb,      label: "Bomb" },
+  { Icon: Target,    label: "Target" },
+  { Icon: Skull,     label: "Skull" },
+  { Icon: Sparkles,  label: "Sparkles" },
+  { Icon: Gem,       label: "Gem" },
+  { Icon: Snowflake, label: "Frost" },
+  { Icon: Atom,      label: "Quantum" },
 ];
 const BANNER_COLORS = [
   { name: "RED",     bg: "#E62429", fg: "#FFFFFF" },
@@ -50,6 +57,10 @@ const BANNER_COLORS = [
   { name: "CYAN",    bg: "#5BC0EB", fg: "#0A0A0A" },
   { name: "ORANGE",  bg: "#FF7B00", fg: "#FFFFFF" },
   { name: "BLACK",   bg: "#0A0A0A", fg: "#FFD700" },
+  { name: "OCEAN",   bg: "#001a3a", fg: "#9adcff" },
+  { name: "MINT",    bg: "#00ffaa", fg: "#0A0A0A" },
+  { name: "ROSE",    bg: "#ff3a8a", fg: "#FFFFFF" },
+  { name: "VOID",    bg: "#3a0066", fg: "#ff00ff" },
 ];
 
 export function bannerIconMeta(idx) {

@@ -381,6 +381,32 @@ SKINS_CATALOG: List[dict] = [
      "helmet": 0x6b4d00, "visor": 0xffffff, "shoulder": 0xffd700, "stripe": 0xffffff, "belt": 0x4a3500, "cape": 0xffd700,
      "aura": 0xffd700, "aura_mode": "spin"},
 
+    # ─── New animated shop skins ─────────────────────────────────────────
+    {"id": "prism",    "name": "Prism Hunter",   "price": 2500, "rarity": "epic",      "obtain": "shop",
+     "body": 0xffffff, "leg": 0x222244, "head": 0xf2c08a, "accent": 0xff00ff,
+     "helmet": 0x222244, "visor": 0xff00ff, "shoulder": 0x00ffff, "stripe": 0xffff00, "belt": 0x222244, "cape": 0xffffff,
+     "aura": 0xff00ff, "aura_mode": "rainbow"},
+
+    {"id": "inferno",  "name": "Inferno Lord",   "price": 4500, "rarity": "legendary", "obtain": "shop",
+     "body": 0x6b0010, "leg": 0x2a0000, "head": 0xff8800, "accent": 0xffd700,
+     "helmet": 0x3a0000, "visor": 0xff5500, "shoulder": 0xff5500, "stripe": 0xffd700, "belt": 0x1a0000, "cape": 0xff5500,
+     "aura": 0xff5500, "aura_mode": "flame"},
+
+    {"id": "glacier",  "name": "Glacier Mage",   "price": 2200, "rarity": "epic",      "obtain": "shop",
+     "body": 0x9adcff, "leg": 0x0a2a6b, "head": 0xeaf6ff, "accent": 0xffffff,
+     "helmet": 0x0a2a6b, "visor": 0x9adcff, "shoulder": 0xeaf6ff, "stripe": 0xffffff, "belt": 0x0a2a6b, "cape": 0xeaf6ff,
+     "aura": 0x9adcff, "aura_mode": "frost"},
+
+    {"id": "toxic",    "name": "Toxic Sniper",   "price": 1100, "rarity": "rare",      "obtain": "shop",
+     "body": 0x0d3a16, "leg": 0x05130a, "head": 0xc8ffa8, "accent": 0x6cff5e,
+     "helmet": 0x05130a, "visor": 0x6cff5e, "shoulder": 0x6cff5e, "stripe": 0xc8ffa8, "belt": 0x05130a, "cape": None,
+     "aura": 0x6cff5e, "aura_mode": "flicker"},
+
+    {"id": "cosmic",   "name": "Cosmic Drift",   "price": 3800, "rarity": "legendary", "obtain": "shop",
+     "body": 0x1a0033, "leg": 0x000022, "head": 0xc8a8ff, "accent": 0xff00ff,
+     "helmet": 0x000022, "visor": 0x00ffff, "shoulder": 0xff00ff, "stripe": 0x00ffff, "belt": 0x000022, "cape": 0xff00ff,
+     "aura": 0xff00ff, "aura_mode": "comet"},
+
     # ─── Season-pass exclusive (not in shop) ────────────────────────────
     {"id": "solar",    "name": "Solar Inferno",  "price": 0,    "rarity": "epic",      "obtain": "pass_tier_10",
      "body": 0xff5500, "leg": 0x6b1a00, "head": 0xf2c08a, "accent": 0xffd700,
@@ -1086,13 +1112,13 @@ async def progression_claim(payload: ProgressionClaimIn, user: dict = Depends(ge
 
 
 class AvatarIn(BaseModel):
-    avatar: int = Field(ge=0, le=8)
+    avatar: int = Field(ge=0, le=11)
 
 
-# Banner customization — 8 icons × 8 colors, displayed on the profile card.
+# Banner customization — 12 icons × 12 colors, displayed on the profile card.
 class BannerIn(BaseModel):
-    banner_icon: int = Field(ge=0, le=7)
-    banner_color: int = Field(ge=0, le=7)
+    banner_icon: int = Field(ge=0, le=11)
+    banner_color: int = Field(ge=0, le=11)
     banner_animated: bool = False
 
 
@@ -1122,16 +1148,19 @@ async def set_banner(payload: BannerIn, user: dict = Depends(get_current_user)):
 
 @api.post("/profile/me/avatar")
 async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
-    # Animated avatars (idx 6, 7, 8) are gated by level OR peak rank.
+    # Animated avatars (idx 6..11) are gated by level OR peak rank.
     if payload.avatar >= 6:
         stats = user.get("stats", {})
         lvl = compute_level(stats)["level"]
         peak_pts = int(user.get("peak_rank_points", user.get("rank_points", 0)) or 0)
         peak_tier, _ = rank_for_points(peak_pts)
         gates = {
-            6: {"level": 5,  "tier": 0},  # Flaming Skull
-            7: {"level": 15, "tier": 4},  # Pulsing Diamond
-            8: {"level": 25, "tier": 5},  # Swirling Lightning
+            6:  {"level": 5,  "tier": 0},  # Flaming Skull
+            7:  {"level": 15, "tier": 4},  # Pulsing Diamond
+            8:  {"level": 25, "tier": 5},  # Swirling Lightning
+            9:  {"level": 10, "tier": 0},  # Frost Sigil
+            10: {"level": 20, "tier": 4},  # Quantum Core
+            11: {"level": 30, "tier": 7},  # All-Seeing Eye
         }
         g = gates[payload.avatar]
         if lvl < g["level"] and peak_tier < g["tier"]:
@@ -1581,6 +1610,7 @@ NUM_BOTS = 3
 RANKED_MIN_REAL_PLAYERS = 1
 QUEUE_BOT_FILL_SEC = 45.0
 QUEUE_BOT_FILL_SEC_HIGH = 120.0  # Master tier (5) and above wait longer
+QUEUE_BOT_FILL_SEC_GOONMASTER = 600.0  # Goonmaster (7) waits 10 minutes before bot-fill
 QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 
 # -------------------------------------------------------------------
@@ -1628,15 +1658,16 @@ def weapon_cfg(name: str) -> dict:
 
 
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
-    # GOONMASTER (tier 7) is real-vs-real only — never bot-fill, queue stays
-    # open until two same-tier players are found.
+    # GOONMASTER (tier 7) waits a long 10 minutes before bot-fill kicks in —
+    # so the highest tier still gets a real-vs-real shot but isn't stuck
+    # in queue forever when no other Goonmaster is online.
     if tier_idx >= 7:
-        return float("inf")
+        return QUEUE_BOT_FILL_SEC_GOONMASTER
     return QUEUE_BOT_FILL_SEC_HIGH if tier_idx >= QUEUE_HIGH_TIER_MIN else QUEUE_BOT_FILL_SEC
 
 
 def bot_fill_seconds_for_tier_api(tier_idx: int) -> int:
-    """JSON-safe version: returns -1 when the tier never bot-fills (e.g. Goonmaster)."""
+    """JSON-safe version: returns -1 when the tier never bot-fills (currently unused — kept for backwards compat)."""
     v = bot_fill_seconds_for_tier(tier_idx)
     return -1 if v == float("inf") else int(v)
 BOT_NAMES = ["BLAZE-7", "VORTEX", "RAVEN-X", "GHOST-9", "TITAN", "CYPHER"]
@@ -3073,7 +3104,7 @@ RANKED_BOT_ROOM_TASKS: Dict[str, asyncio.Task] = {}
 
 def ranked_bot_count_for_tier(tier_idx: int) -> int:
     if tier_idx >= 7:
-        return 0  # never reached — Goonmaster doesn't bot-fill
+        return 1  # Goonmaster — single elite bot after 10-minute queue wait
     if tier_idx >= 5:
         return 1  # Master / Grandmaster
     return 3  # Bronze..Diamond
@@ -3184,8 +3215,6 @@ def estimate_wait_seconds(tier_idx: int, current_wait: float) -> int:
         avg = sum(waits) / len(waits)
         return max(1, int(round(avg)))
     fill = bot_fill_seconds_for_tier(tier_idx)
-    if fill == float("inf"):
-        return 30  # Goonmaster never bot-fills; show a placeholder.
     return max(1, int(round(fill)))
 
 

@@ -7,7 +7,7 @@
 import {
   VenetianMask, Skull, Shield, Swords, Ghost,
   Trophy, Crown, Flame, Star, Zap, Bomb, Target, Skull as SkullIcon, Sparkles,
-  Gem,
+  Gem, Snowflake, Atom, Eye,
 } from "lucide-react";
 import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor } from "@/game/rankIcons";
 
@@ -27,15 +27,24 @@ const AVATARS = [
   { Icon: Gem,          bg: "#5BC0EB", iconColor: "#FFFFFF", label: "Pulsing Diamond", anim: "diamond" },
   // idx 8 — Swirling Lightning (animated, unlock: Level 25 or Master peak)
   { Icon: Zap,          bg: "#FFD700", iconColor: "#0A0A0A", label: "Swirling Lightning", anim: "lightning" },
+  // idx 9 — Frost Sigil (animated, unlock: Level 10)
+  { Icon: Snowflake,    bg: "#0a2a6b", iconColor: "#9adcff", label: "Frost Sigil", anim: "frost" },
+  // idx 10 — Quantum Core (animated, unlock: Level 20)
+  { Icon: Atom,         bg: "#1a0033", iconColor: "#ff00ff", label: "Quantum Core", anim: "quantum" },
+  // idx 11 — All-Seeing Eye (animated, unlock: Level 30 or Goonmaster peak)
+  { Icon: Eye,          bg: "#000000", iconColor: "#ff3a3a", label: "All-Seeing Eye", anim: "eye" },
 ];
 
-// 8 banner icons + 8 banner colors — must mirror Profile.jsx ordering.
-const BANNER_ICONS = [Trophy, Crown, Flame, Star, Zap, Bomb, Target, SkullIcon];
+// Banner icons / colors — extended pool. Must mirror Profile.jsx ordering.
+const BANNER_ICONS = [Trophy, Crown, Flame, Star, Zap, Bomb, Target, SkullIcon, Sparkles, Gem, Snowflake, Atom];
 const BANNER_COLORS = [
   { bg: "#E62429", fg: "#FFFFFF" }, { bg: "#0055FF", fg: "#FFFFFF" },
   { bg: "#FFD700", fg: "#0A0A0A" }, { bg: "#06A35F", fg: "#FFFFFF" },
   { bg: "#9B59B6", fg: "#FFFFFF" }, { bg: "#5BC0EB", fg: "#0A0A0A" },
   { bg: "#FF7B00", fg: "#FFFFFF" }, { bg: "#0A0A0A", fg: "#FFD700" },
+  // New: deep ocean, neon mint, rose, void purple.
+  { bg: "#001a3a", fg: "#9adcff" }, { bg: "#00ffaa", fg: "#0A0A0A" },
+  { bg: "#ff3a8a", fg: "#FFFFFF" }, { bg: "#3a0066", fg: "#ff00ff" },
 ];
 
 export function avatarMeta(idx, peakTier = null) {

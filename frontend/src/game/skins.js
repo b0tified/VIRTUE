@@ -65,6 +65,32 @@ export const SKINS = [
     helmet: 0x6b4d00, visor: 0xffffff, shoulder: 0xffd700, stripe: 0xffffff, belt: 0x4a3500, cape: 0xffd700,
     aura: 0xffd700, aura_mode: "spin" },
 
+  // ─── New animated shop skins ──────────────────────────────────────────
+  { id: "prism",    name: "Prism Hunter",   price: 2500, rarity: "epic",      obtain: "shop",
+    body: 0xffffff, leg: 0x222244, head: 0xf2c08a, accent: 0xff00ff,
+    helmet: 0x222244, visor: 0xff00ff, shoulder: 0x00ffff, stripe: 0xffff00, belt: 0x222244, cape: 0xffffff,
+    aura: 0xff00ff, aura_mode: "rainbow" },
+
+  { id: "inferno",  name: "Inferno Lord",   price: 4500, rarity: "legendary", obtain: "shop",
+    body: 0x6b0010, leg: 0x2a0000, head: 0xff8800, accent: 0xffd700,
+    helmet: 0x3a0000, visor: 0xff5500, shoulder: 0xff5500, stripe: 0xffd700, belt: 0x1a0000, cape: 0xff5500,
+    aura: 0xff5500, aura_mode: "flame" },
+
+  { id: "glacier",  name: "Glacier Mage",   price: 2200, rarity: "epic",      obtain: "shop",
+    body: 0x9adcff, leg: 0x0a2a6b, head: 0xeaf6ff, accent: 0xffffff,
+    helmet: 0x0a2a6b, visor: 0x9adcff, shoulder: 0xeaf6ff, stripe: 0xffffff, belt: 0x0a2a6b, cape: 0xeaf6ff,
+    aura: 0x9adcff, aura_mode: "frost" },
+
+  { id: "toxic",    name: "Toxic Sniper",   price: 1100, rarity: "rare",      obtain: "shop",
+    body: 0x0d3a16, leg: 0x05130a, head: 0xc8ffa8, accent: 0x6cff5e,
+    helmet: 0x05130a, visor: 0x6cff5e, shoulder: 0x6cff5e, stripe: 0xc8ffa8, belt: 0x05130a, cape: null,
+    aura: 0x6cff5e, aura_mode: "flicker" },
+
+  { id: "cosmic",   name: "Cosmic Drift",   price: 3800, rarity: "legendary", obtain: "shop",
+    body: 0x1a0033, leg: 0x000022, head: 0xc8a8ff, accent: 0xff00ff,
+    helmet: 0x000022, visor: 0x00ffff, shoulder: 0xff00ff, stripe: 0x00ffff, belt: 0x000022, cape: 0xff00ff,
+    aura: 0xff00ff, aura_mode: "comet" },
+
   // Pass-only — appear in shop only after they're owned (equip-only there).
   { id: "solar",    name: "Solar Inferno",  price: 0,    rarity: "epic",      obtain: "pass_tier_10",
     body: 0xff5500, leg: 0x6b1a00, head: 0xf2c08a, accent: 0xffd700,

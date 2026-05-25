@@ -2802,6 +2802,38 @@ export class GameEngine {
             if (inner) inner.material.opacity = on ? 0.7 : 0.05;
             if (outer) outer.material.opacity = on ? 0.4 : 0.02;
             if (halo)  halo.material.opacity  = on ? 0.16 : 0.0;
+          } else if (mode === "rainbow") {
+            // Hue rotates through the full circle every ~2.4s. Both rings
+            // get the same hue so the chromatic shift reads as one unified
+            // colour sweep around the player.
+            const hue = (entry.auraPhase * 0.42) % 1;
+            const col = entry._rainbowColor || (entry._rainbowColor = new (inner.material.color.constructor)());
+            col.setHSL(hue, 1.0, 0.55);
+            if (inner) { inner.material.color.copy(col); inner.rotation.z += dt * 2.0; inner.material.opacity = 0.7; }
+            if (outer) { outer.material.color.copy(col); outer.rotation.z -= dt * 1.4; outer.material.opacity = 0.45; }
+            if (halo)  { halo.material.color.copy(col); halo.material.opacity = 0.16 + 0.08 * Math.sin(entry.auraPhase * 6); }
+          } else if (mode === "flame") {
+            // Violent jitter + warm pulse. Inner ring scales rapidly, halo
+            // shifts vertical position like a guttering flame.
+            const jitter = 0.5 + 0.5 * Math.sin(entry.auraPhase * 9.2);
+            const big    = 0.5 + 0.5 * Math.sin(entry.auraPhase * 3.7);
+            if (inner) { inner.scale.setScalar(1.0 + jitter * 0.18); inner.material.opacity = 0.55 + jitter * 0.4; }
+            if (outer) { outer.rotation.z += dt * 0.9; outer.material.opacity = 0.25 + big * 0.4; }
+            if (halo)  { halo.position.y = 1.0 + jitter * 0.1; halo.material.opacity = 0.10 + big * 0.18; }
+          } else if (mode === "frost") {
+            // Slow opposing spin + soft breathing — feels cold + glassy.
+            const breath = 0.5 + 0.5 * Math.sin(entry.auraPhase * 1.6);
+            if (inner) { inner.rotation.z += dt * 0.6; inner.material.opacity = 0.45 + breath * 0.3; }
+            if (outer) { outer.rotation.z -= dt * 0.45; outer.scale.setScalar(1.0 + breath * 0.08); outer.material.opacity = 0.22 + breath * 0.2; }
+            if (halo)  { halo.material.opacity = 0.08 + breath * 0.12; }
+          } else if (mode === "comet") {
+            // Inner ring spins fast and stays bright; outer ring trails
+            // slower with a brief opacity dip every revolution like a
+            // comet's tail sweep.
+            const trail = 0.5 + 0.5 * Math.sin(entry.auraPhase * 2.2);
+            if (inner) { inner.rotation.z += dt * 3.2; inner.material.opacity = 0.7; }
+            if (outer) { outer.rotation.z += dt * 1.6; outer.material.opacity = 0.18 + trail * 0.42; outer.scale.setScalar(1.0 + trail * 0.18); }
+            if (halo)  { halo.material.opacity = 0.14 + trail * 0.12; }
           }
         }
       }

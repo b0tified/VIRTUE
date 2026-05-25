@@ -319,10 +319,85 @@ canvas { outline: none; display: block; }
   0%   { background-position: -100% 0; }
   100% { background-position:  100% 0; }
 }
+/* idx 9 — Frost Sigil: cool blue rotating snowflake halo with breathing icon. */
+.avatar-anim-frost { position: relative; isolation: isolate; }
+.avatar-anim-frost::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, #9adcff 0deg, #0a2a6b 90deg, #9adcff 180deg, #0a2a6b 270deg, #9adcff 360deg);
+  filter: blur(4px);
+  z-index: -1;
+  animation: anim-frost-spin 5s linear infinite;
+  opacity: 0.85;
+}
+.avatar-anim-frost > svg {
+  animation: anim-frost-breathe 2.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 5px rgba(154,220,255,0.85));
+}
+@keyframes anim-frost-spin { to { transform: rotate(360deg); } }
+@keyframes anim-frost-breathe {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px rgba(154,220,255,0.75)); }
+  50%      { transform: scale(1.12) rotate(20deg); filter: drop-shadow(0 0 10px rgba(220,240,255,1)); }
+}
+/* idx 10 — Quantum Core: magenta orbital aura with chromatic-aberration shake. */
+.avatar-anim-quantum { position: relative; isolation: isolate; }
+.avatar-anim-quantum::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle, rgba(255,0,255,0.5) 0 25%, transparent 60%),
+    conic-gradient(from 0deg, #ff00ff 0deg 20deg, transparent 20deg 80deg, #00ffaa 80deg 100deg, transparent 100deg 200deg, #ff00ff 200deg 220deg, transparent 220deg 360deg);
+  filter: blur(5px);
+  z-index: -1;
+  animation: anim-quantum-spin 2.2s linear infinite;
+  opacity: 0.9;
+}
+.avatar-anim-quantum > svg {
+  animation: anim-quantum-jitter 0.5s steps(2) infinite;
+  filter: drop-shadow(0 0 6px #ff00ff) drop-shadow(0 0 12px rgba(0,255,170,0.5));
+}
+@keyframes anim-quantum-spin { to { transform: rotate(-360deg); } }
+@keyframes anim-quantum-jitter {
+  0%, 100% { transform: translate(0,0); }
+  25%      { transform: translate(0.5px, -0.5px); }
+  50%      { transform: translate(-0.5px, 0.5px); }
+  75%      { transform: translate(0.5px, 0.5px); }
+}
+/* idx 11 — All-Seeing Eye: ominous red iris pulse with slow ring rotation. */
+.avatar-anim-eye { position: relative; isolation: isolate; }
+.avatar-anim-eye::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle, rgba(255,58,58,0.65) 0 40%, transparent 70%),
+    repeating-conic-gradient(from 0deg, rgba(255,58,58,0.4) 0deg 6deg, transparent 6deg 18deg);
+  filter: blur(3px);
+  z-index: -1;
+  animation: anim-eye-spin 8s linear infinite;
+}
+.avatar-anim-eye > svg {
+  animation: anim-eye-blink 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 7px rgba(255,58,58,1)) drop-shadow(0 0 14px rgba(255,0,0,0.45));
+}
+@keyframes anim-eye-spin { to { transform: rotate(360deg); } }
+@keyframes anim-eye-blink {
+  0%, 8%, 100% { transform: scaleY(1); filter: drop-shadow(0 0 7px rgba(255,58,58,1)); }
+  4%           { transform: scaleY(0.15); }
+  50%          { transform: scale(1.08); filter: drop-shadow(0 0 14px rgba(255,200,200,1)); }
+}
 @media (prefers-reduced-motion: reduce) {
   .avatar-anim-flame::before, .avatar-anim-flame > svg,
   .avatar-anim-diamond::before, .avatar-anim-diamond > svg,
   .avatar-anim-lightning::before, .avatar-anim-lightning > svg,
+  .avatar-anim-frost::before, .avatar-anim-frost > svg,
+  .avatar-anim-quantum::before, .avatar-anim-quantum > svg,
+  .avatar-anim-eye::before, .avatar-anim-eye > svg,
   .banner-anim::after { animation: none !important; }
 }
 
@@ -741,6 +816,11 @@ html.virtue-no-ui-blur .hud-panel {
 @keyframes shop-aura-flicker {
   0%, 25%, 75%, 100% { opacity: 1; }
   10%, 60%           { opacity: 0.15; }
+}
+@keyframes shop-aura-flame {
+  0%   { transform: scaleX(1)    scaleY(1)    translateY(0);    opacity: 0.85; }
+  50%  { transform: scaleX(1.1)  scaleY(1.45) translateY(-2px); opacity: 1; }
+  100% { transform: scaleX(0.95) scaleY(1.25) translateY(0);    opacity: 0.95; }
 }
 
 /* =============================================================

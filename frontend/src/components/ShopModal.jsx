@@ -365,7 +365,36 @@ function auraCss(skin) {
       filter: "blur(2px)",
     };
   }
-  // flicker
+  if (skin.aura_mode === "rainbow") {
+    return {
+      background:
+        "conic-gradient(from 0deg, #ff0000, #ff9500, #ffd700, #00e676, #00b8ff, #6b00ff, #ff00d4, #ff0000)",
+      animation: "shop-aura-spin 2.4s linear infinite",
+      filter: "blur(2px) saturate(1.4)",
+    };
+  }
+  if (skin.aura_mode === "flame") {
+    return {
+      background: `radial-gradient(ellipse at 50% 60%, #ffd700cc 0%, ${color}aa 35%, ${color}33 70%, transparent 100%)`,
+      animation: "shop-aura-flame 0.8s ease-in-out infinite alternate",
+      filter: "blur(3px) saturate(1.3)",
+    };
+  }
+  if (skin.aura_mode === "frost") {
+    return {
+      background: `radial-gradient(ellipse at 50% 50%, #ffffff99 0%, ${color}aa 30%, ${color}33 70%, transparent 100%)`,
+      animation: "shop-aura-pulse 3.2s ease-in-out infinite",
+      filter: "blur(2px) brightness(1.15)",
+    };
+  }
+  if (skin.aura_mode === "comet") {
+    return {
+      background: `conic-gradient(from 0deg, ${color}ff 0deg 50deg, ${color}66 60deg 120deg, transparent 130deg 360deg)`,
+      animation: "shop-aura-spin 1.6s linear infinite",
+      filter: "blur(2px)",
+    };
+  }
+  // flicker (default for any remaining unknown mode)
   return {
     background: `radial-gradient(ellipse at 50% 50%, ${color}cc 0%, ${color}55 60%, transparent 100%)`,
     animation: "shop-aura-flicker 0.9s steps(2, end) infinite",

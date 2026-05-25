@@ -31,6 +31,12 @@ export function QueueProvider({ children }) {
     if (localTimerRef.current) { clearInterval(localTimerRef.current); localTimerRef.current = null; }
     if (matchTimerRef.current) { clearInterval(matchTimerRef.current); matchTimerRef.current = null; }
   }, []);
+  // Consecutive `in_queue: false` poll counter. A single rogue response
+  // (e.g. server momentarily 500/empty body, or a queue lock race) used
+  // to flip queueState → null and the toast would disappear → reappear
+  // on the next 1s poll. We now require 3 consecutive misses before
+  // tearing the toast down.
+  const missesRef = useRef(0);
 
   // Local elapsed-time ticker — runs 4× per second so the timer is smooth and
   // never resets between server polls.
@@ -51,6 +57,7 @@ export function QueueProvider({ children }) {
     joinedAtRef.current = Date.now() - ((data.wait_seconds || 0) * 1000);
     setQueueState(data);
     setWaitSec(data.wait_seconds || 0);
+    missesRef.current = 0;
     startLocalTimer();
     pollIdRef.current = setInterval(async () => {
       try {
@@ -68,8 +75,9 @@ export function QueueProvider({ children }) {
             setWaitSec(s.wait_seconds);
           }
         }
-        setQueueState(s);
         if (s.matched) {
+          missesRef.current = 0;
+          setQueueState(s);
           if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
           try { await api.post("/queue/ranked/ack"); } catch {}
           audioBus.matchFound();
@@ -96,14 +104,27 @@ export function QueueProvider({ children }) {
             }
           }, 1000);
         } else if (!s.in_queue) {
-          // External cancel (e.g., party leader pressed Cancel). Tear down
-          // the local poll so the follower's UI goes idle too.
-          stopAll();
-          joinedAtRef.current = 0;
-          setWaitSec(0);
-          setQueueState(null);
+          // Tolerate transient `in_queue: false` blips — only tear down
+          // after 3 consecutive misses (~3s). Fixes the
+          // "toast disappears and reappears" flicker.
+          missesRef.current += 1;
+          if (missesRef.current >= 3) {
+            stopAll();
+            joinedAtRef.current = 0;
+            setWaitSec(0);
+            setQueueState(null);
+            missesRef.current = 0;
+          }
+        } else {
+          // Healthy in_queue: true response — reset miss counter.
+          missesRef.current = 0;
+          setQueueState(s);
         }
-      } catch {}
+      } catch {
+        // Network blip: treat as a soft miss too so a flaky connection
+        // doesn't yank the toast around.
+        missesRef.current += 1;
+      }
     }, 1000);
   }, [nav, startLocalTimer, stopAll]);
 
