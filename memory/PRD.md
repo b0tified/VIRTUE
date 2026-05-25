@@ -144,6 +144,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 ### Iteration 13 — **THIS SESSION (2026-02-25)**
 - ✅ **Settings → Auto-Fire (Touch) toggle** — New `touchAutoFire` setting (default off). Lives in Settings → Controls under Touch Controls. When on, the right-side look pad triggers continuous auto-fire while held; engine cooldown gates RPM. Cleans up the interval on touch-end, unmount, and when touch controls become disabled. (`/app/frontend/src/game/settings.js`, `SettingsModal.jsx`, `TouchControls.jsx`)
 
+### Iteration 14 — **THIS SESSION (2026-02-25, later)**
+- ✅ **Spectate POV polish** — when spectating, the spectated player's body mesh is now persistently hidden (was being re-shown each state tick by `entry.mesh.visible = p.alive || …`), AND the spectator now renders a viewmodel matching the target's currently-equipped weapon (`t.weapon` → primary/secondary/tertiary via `setWeapon`). Laser-firing flag also mirrored so beam fx match. Files: `/app/frontend/src/game/engine.js` (spectate block + visibility skip + viewmodel-visible gate).
+- ✅ **Party ranked queue timer for followers** — `QueueContext` now runs a 3-second background poll on `/api/queue/ranked`. When the party leader queues, the follower's payload returns `in_queue=true` (server already supported `user_ids` array membership) and the context hydrates `queueState` + `waitSec`. PartyPanel reads `waitSec` from the hook (was reading non-existent `queueState.waitSeconds`).
+- ✅ **Party ranked match start for ALL members** — same background poll detects `s.matched=true` and runs the standard 3-2-1 countdown → match-loading overlay → nav to `/play?mode=ranked` for every party member. Bot-fill matches now stamp a shared `room_key` (leader id) on every member's `MATCHED_USERS`, and the WS handler routes followers to the leader's `ranked_bot_room` via that key so all members land in the same `GameRoom`. Spectate path updated to consult `loc.ranked_bot_key`.
+- 🧪 Verified via testing agent (8/8 pytest passing): party of 2 followers see `in_queue=true` payloads, bot-fill produces identical `match_id` for leader+follower, and both WS connections share the same `ranked_bot_room` instance.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
