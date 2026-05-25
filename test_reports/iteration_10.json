@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration-10 verified: (1) backend fix for recurring 'instant-defeat' bug — GameRoom.last_match_end_recipients prevents duplicate match_end replay for players who already received the live broadcast and re-join during intermission; (2) legitimate replay still fires for users in placements but NOT in recipients (late reconnect, network blip); (3) recipients set is cleared on reset and re-populated on the next end_match; (4) frontend Play Again button is fully removed, single centered BACK TO LOBBY remains; (5) 15s auto-fallback still navigates to /lobby. All 5 new backend tests pass + 7 iteration-9 regression tests pass + both frontend Playwright flows pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_intermission_replay.py",
+    "/app/test_reports/pytest/iteration10_results.xml",
+    "/app/backend/tests/test_iteration9_match_num_targeting.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 4018 lines — beyond the 700-line guideline. Recommend splitting GameRoom / WS handlers / auth into focused modules in a future cleanup pass (not blocking this fix).",
+    "In MatchResultOverlay.jsx the unused 'ArrowRight' lucide import was correctly dropped — confirmed clean. The 'mine' lookup in MatchResultOverlay falls back to a Defeat render when neither id nor user_id matches; harmless but worth a future tweak to make the lookup more robust (e.g. fall back to username).",
+    "The comment on Game.jsx ~line 270-272 still references 'explicit Play Again + Back to Lobby buttons' — stale after the Play Again removal. Minor doc nit; recommend updating to '...explicit Back to Lobby button...'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10_intermission_replay.py (new)"
+  ],
+  "success_rate": {"backend": "100% (5/5 new + 7/7 regression)", "frontend": "100% (2/2 flows)"},
+  "test_credentials": "player1@shooter.com / player123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None — all backend tests use programmatic GameRoom + SpyWS in-memory only (TEST_ prefixed usernames, never written to MongoDB). Frontend uses synthetic match_end injected via window.__virtue_sock.onMessage (no server WS round-trip).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration-10 backend tests live at /app/backend/tests/test_iteration10_intermission_replay.py. They use a controllable asyncio.sleep monkeypatch to pause inside end_match's 10s intermission via an asyncio.Event so we can interleave a remove()/add() cycle exactly when the bug used to fire. Reuse this pattern for any future intermission-window tests. The frontend instrumentation hook (window.__virtue_sock.onMessage) added in iteration-9 is still live in Game.jsx and works for injecting any server payload from Playwright.",
+  "rca_of_the_issue": "Original bug: GameRoom.add() unconditionally replayed last_match_end_payload to any player whose user_id appeared in placements + in_intermission. A player who finished a match, dismissed the overlay, hit BACK TO LOBBY, then clicked Quick Play during the same 10s intermission re-entered the same GameRoom (casual is shared), the welcome branch found them in placements, and re-sent match_end → instant defeat. Fix: end_match now records every user_id it broadcast to in self.last_match_end_recipients BEFORE the asyncio.gather send, and the welcome-replay branch skips users already in that set. The set is cleared in the reset block alongside last_match_end_payload. remove() intentionally does NOT clear the set — that's how we identify them as 'already saw it' on re-join (verified in test). Reproduction: pre-fix, calling room.add() with the same user_id that just received match_end would replay it; post-fix, ws_a2.count('match_end') == 0 (test_rejoin_during_intermission_skips_replay_for_already_notified)."
+}

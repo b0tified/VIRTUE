@@ -54,7 +54,7 @@ function formatTime(seconds) {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
-export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef, onPlayAgain, onLobby }) {
+export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef, onLobby }) {
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
@@ -412,7 +412,6 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           matchEnd={hud.matchEnd}
           youId={hud.youId}
           isRanked={!!hud.isRanked}
-          onPlayAgain={onPlayAgain}
           onLobby={onLobby}
         />
       )}

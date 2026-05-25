@@ -1727,6 +1727,12 @@ class GameRoom:
         self.match_start = time.time()
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
+        # User ids that already received the live match_end broadcast for the
+        # current intermission. Used by add()'s replay branch to avoid
+        # double-showing the overlay to a player who finished a match,
+        # exited to lobby, and re-joined quick-play during the same
+        # intermission — they had already seen it.
+        self.last_match_end_recipients: set[str] = set()
         # Incremented each time end_match runs. Stamped on each joining player
         # as `joined_match_num` so we can target match_end broadcasts at only
         # the players who actually participated in that match — joining
@@ -1816,14 +1822,17 @@ class GameRoom:
             await self.broadcast({"type": "join", "player": player.to_state()})
         # Replay the last match_end payload ONLY to players who were
         # actually in that match (i.e. their user_id appears in the
-        # placements). Sending it to a fresh quick-play joiner causes the
-        # client to immediately show "MATCH OVER" before the next round
-        # has started — which looked like the game "instantly ending".
+        # placements) AND who didn't already receive the live broadcast
+        # in this same intermission. Without the second check a player
+        # who finished a match, exited to lobby, and re-clicked Quick
+        # Play during the 10s intermission would get the overlay again
+        # ("instant defeat" bug) even though they already saw it.
         if (
             self.last_match_end_payload
             and self.in_intermission
             and not player.is_bot
             and player.user_id
+            and str(player.user_id) not in self.last_match_end_recipients
         ):
             placements = (self.last_match_end_payload or {}).get("placements", []) or []
             played_in = any(
@@ -2711,15 +2720,21 @@ class GameRoom:
 
         # Targeted broadcast: only players who joined this match get the
         # match_end overlay. Bots are skipped naturally (no ws). Spectators
-        # also receive it so their UI can show the final standings.
-        await asyncio.gather(*(
-            self._send(p, payload)
-            for p in self.players.values()
+        # also receive it so their UI can show the final standings. Track
+        # the user ids we broadcast to so add()'s welcome-replay branch
+        # doesn't double-show the overlay to a player who comes back via
+        # the lobby during the same intermission.
+        recipients = [
+            p for p in self.players.values()
             if (
                 getattr(p, "is_spectator", False)
                 or getattr(p, "joined_match_num", ended_match_num) == ended_match_num
             )
-        ), return_exceptions=True)
+        ]
+        for p in recipients:
+            if not p.is_bot and p.user_id:
+                self.last_match_end_recipients.add(str(p.user_id))
+        await asyncio.gather(*(self._send(p, payload) for p in recipients), return_exceptions=True)
 
         # Intermission: 10s
         await asyncio.sleep(10.0)
@@ -2740,6 +2755,7 @@ class GameRoom:
         self.match_start = time.time()
         self.in_intermission = False
         self.last_match_end_payload = None
+        self.last_match_end_recipients.clear()
         self.match_num += 1
         await self.broadcast({"type": "match_start", "duration": self.match_duration})
 

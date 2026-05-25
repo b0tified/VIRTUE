@@ -5,12 +5,12 @@
    table is still rendered below so the player can see kills / Δ RP /
    final rank for every participant. */
 import { useEffect, useMemo, useState } from "react";
-import { Trophy, Skull, Star, Crosshair, Target, ArrowRight, Home } from "lucide-react";
+import { Trophy, Skull, Star, Crosshair, Target, Home } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
-export default function MatchResultOverlay({ matchEnd, youId, isRanked, onPlayAgain, onLobby }) {
+export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby }) {
   const placements = matchEnd?.placements || [];
   // Find the local player's row. If they aren't in placements (e.g. spectator
   // or a late joiner the server didn't include) we still render a defeat
@@ -309,24 +309,15 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onPlayAg
 
         {/* Actions */}
         <div
-          className="flex flex-col sm:flex-row gap-2 sm:gap-3"
+          className="flex justify-center"
           style={{
             opacity: stage >= 3 ? 1 : 0,
             animation: stage >= 3 ? "match-slide-up 360ms ease-out 60ms both" : "none",
           }}
         >
           <button
-            onClick={onPlayAgain}
-            className="btn-pow bg-[#E62429] text-white flex-1 [&]:py-3"
-            data-testid="match-result-play-again"
-          >
-            <span className="flex items-center justify-center gap-2 font-anton uppercase tracking-widest">
-              <ArrowRight size={18} strokeWidth={3} /> Play Again
-            </span>
-          </button>
-          <button
             onClick={onLobby}
-            className="btn-pow bg-white text-black flex-1 [&]:py-3"
+            className="btn-pow bg-white text-black w-full sm:w-auto sm:min-w-[260px] [&]:py-3"
             data-testid="match-result-lobby"
           >
             <span className="flex items-center justify-center gap-2 font-anton uppercase tracking-widest">

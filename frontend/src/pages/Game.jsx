@@ -532,26 +532,6 @@ export default function Game() {
         onStart={handleStart}
         onExit={handleExit}
         engineRef={engineRef}
-        onPlayAgain={() => {
-          // Cancel the 15s auto-fallback so a successful in-place Play
-          // Again (casual / party / practice) doesn't yank the user to
-          // lobby half a minute later.
-          if (matchEndFallbackRef.current) {
-            clearTimeout(matchEndFallbackRef.current);
-            matchEndFallbackRef.current = null;
-          }
-          // For casual / party / practice the next match_start will fire
-          // server-side after the 10s intermission; just dismiss the
-          // overlay so the player can keep playing in-place. Ranked
-          // matches are one-shot — bounce back to the lobby so they can
-          // re-queue with fresh placements.
-          if (mode === "ranked") {
-            try { document.exitPointerLock?.(); } catch {}
-            nav("/lobby", { replace: true });
-          } else {
-            setHud((h) => ({ ...h, matchEnd: null }));
-          }
-        }}
         onLobby={() => {
           if (matchEndFallbackRef.current) {
             clearTimeout(matchEndFallbackRef.current);
