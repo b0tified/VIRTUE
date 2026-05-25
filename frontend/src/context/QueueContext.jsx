@@ -24,6 +24,7 @@ export function QueueProvider({ children }) {
   const pollIdRef = useRef(null);          // server-poll interval
   const localTimerRef = useRef(null);      // 4Hz local timer
   const matchTimerRef = useRef(null);      // 3-2-1 countdown
+  const bgPollIdRef = useRef(null);        // low-frequency background poll (detects party-leader joins)
 
   const stopAll = useCallback(() => {
     if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
@@ -41,68 +42,80 @@ export function QueueProvider({ children }) {
     }, 250);
   }, []);
 
+  // Drive the high-frequency poll + match-found countdown using a server
+  // payload that already reports `in_queue: true`. Used by joinRanked (when
+  // the local user presses the button) AND by the background poller (when a
+  // party leader queues the whole group — followers detect it here).
+  const beginActivePoll = useCallback((data) => {
+    if (pollIdRef.current) return; // already running
+    joinedAtRef.current = Date.now() - ((data.wait_seconds || 0) * 1000);
+    setQueueState(data);
+    setWaitSec(data.wait_seconds || 0);
+    startLocalTimer();
+    pollIdRef.current = setInterval(async () => {
+      try {
+        const { data: s } = await api.get("/queue/ranked");
+        // Sync local clock to the server's authoritative elapsed value, but
+        // ONLY while still queueing (server is in_queue=true & not matched).
+        // Once matched, `wait_seconds` means "seconds since match" — applying
+        // it here would yank the local timer back to ~0 and create the
+        // jumping behaviour the user reported. Same after a cancel: the
+        // server returns in_queue=false / wait_seconds=0, which we ignore.
+        if (s && s.in_queue && !s.matched && typeof s.wait_seconds === "number") {
+          const localSec = Math.floor((Date.now() - joinedAtRef.current) / 1000);
+          if (Math.abs(s.wait_seconds - localSec) > 2) {
+            joinedAtRef.current = Date.now() - (s.wait_seconds * 1000);
+            setWaitSec(s.wait_seconds);
+          }
+        }
+        setQueueState(s);
+        if (s.matched) {
+          if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
+          try { await api.post("/queue/ranked/ack"); } catch {}
+          audioBus.matchFound();
+          setMatchFoundSec(3);
+          let sec = 3;
+          matchTimerRef.current = setInterval(() => {
+            sec -= 1;
+            if (sec <= 0) {
+              clearInterval(matchTimerRef.current);
+              matchTimerRef.current = null;
+              setMatchFoundSec(null);
+              setQueueState(null);
+              joinedAtRef.current = 0;
+              setWaitSec(0);
+              if (localTimerRef.current) { clearInterval(localTimerRef.current); localTimerRef.current = null; }
+              try {
+                window.dispatchEvent(
+                  new CustomEvent("virtue-match-loading", { detail: { mode: "ranked" } }),
+                );
+              } catch {}
+              setTimeout(() => nav("/play?mode=ranked", { replace: true }), 1200);
+            } else {
+              setMatchFoundSec(sec);
+            }
+          }, 1000);
+        } else if (!s.in_queue) {
+          // External cancel (e.g., party leader pressed Cancel). Tear down
+          // the local poll so the follower's UI goes idle too.
+          stopAll();
+          joinedAtRef.current = 0;
+          setWaitSec(0);
+          setQueueState(null);
+        }
+      } catch {}
+    }, 1000);
+  }, [nav, startLocalTimer, stopAll]);
+
   const joinRanked = useCallback(async () => {
     try {
       const { data } = await api.post("/queue/ranked");
-      joinedAtRef.current = Date.now() - ((data.wait_seconds || 0) * 1000);
-      setQueueState(data);
-      setWaitSec(data.wait_seconds || 0);
-      startLocalTimer();
-      pollIdRef.current = setInterval(async () => {
-        try {
-          const { data: s } = await api.get("/queue/ranked");
-          // Sync local clock to the server's authoritative elapsed value, but
-          // ONLY while still queueing (server is in_queue=true & not matched).
-          // Once matched, `wait_seconds` means "seconds since match" — applying
-          // it here would yank the local timer back to ~0 and create the
-          // jumping behaviour the user reported. Same after a cancel: the
-          // server returns in_queue=false / wait_seconds=0, which we ignore.
-          if (s && s.in_queue && !s.matched && typeof s.wait_seconds === "number") {
-            const localSec = Math.floor((Date.now() - joinedAtRef.current) / 1000);
-            // Only resync when the drift is meaningful (>2s) so micro-jitter
-            // from poll latency doesn't push the displayed second back/forth.
-            if (Math.abs(s.wait_seconds - localSec) > 2) {
-              joinedAtRef.current = Date.now() - (s.wait_seconds * 1000);
-              setWaitSec(s.wait_seconds);
-            }
-          }
-          setQueueState(s);
-          if (s.matched) {
-            if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
-            try { await api.post("/queue/ranked/ack"); } catch {}
-            audioBus.matchFound();
-            // 3-2-1 countdown, then navigate to the match.
-            setMatchFoundSec(3);
-            let sec = 3;
-            matchTimerRef.current = setInterval(() => {
-              sec -= 1;
-              if (sec <= 0) {
-                clearInterval(matchTimerRef.current);
-                matchTimerRef.current = null;
-                setMatchFoundSec(null);
-                setQueueState(null);
-                joinedAtRef.current = 0;
-                setWaitSec(0);
-                if (localTimerRef.current) { clearInterval(localTimerRef.current); localTimerRef.current = null; }
-                // Show the comic loading overlay before pushing the route.
-                try {
-                  window.dispatchEvent(
-                    new CustomEvent("virtue-match-loading", { detail: { mode: "ranked" } }),
-                  );
-                } catch {}
-                setTimeout(() => nav("/play?mode=ranked", { replace: true }), 1200);
-              } else {
-                setMatchFoundSec(sec);
-              }
-            }, 1000);
-          }
-        } catch {}
-      }, 1000);
+      beginActivePoll(data);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.response?.data?.detail || e.message };
     }
-  }, [startLocalTimer, nav]);
+  }, [beginActivePoll]);
 
   const cancelRanked = useCallback(async () => {
     stopAll();
@@ -115,6 +128,33 @@ export function QueueProvider({ children }) {
 
   // Cleanup on unmount
   useEffect(() => () => stopAll(), [stopAll]);
+
+  // Background poll — every 3s, ask the server whether *we* are queued.
+  // This catches the case where a party leader queued the whole party so
+  // every follower also detects the queue + match-found event and navigates
+  // to the ranked room. We skip while the active poll is already running
+  // (joinRanked path) to avoid double polling, and pause once the user is
+  // already matched / mid-countdown.
+  useEffect(() => {
+    const tick = async () => {
+      if (pollIdRef.current || matchTimerRef.current) return;
+      try {
+        const { data: s } = await api.get("/queue/ranked");
+        if (s && (s.in_queue || s.matched)) {
+          beginActivePoll(s);
+        }
+      } catch {}
+    };
+    // Fire once on mount so we don't wait a full interval after refresh.
+    tick();
+    bgPollIdRef.current = setInterval(tick, 3000);
+    return () => {
+      if (bgPollIdRef.current) {
+        clearInterval(bgPollIdRef.current);
+        bgPollIdRef.current = null;
+      }
+    };
+  }, [beginActivePoll]);
 
   return (
     <QueueContext.Provider value={{ queueState, waitSec, matchFoundSec, joinRanked, cancelRanked }}>

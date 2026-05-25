@@ -1584,6 +1584,19 @@ export class GameEngine {
         this.position.set(t.x, t.y + 1.7, t.z);
         this.yaw = t.yaw;
         this.pitch = t.pitch || 0;
+        // Mirror the target's currently-equipped weapon so the viewmodel
+        // matches what they're holding. Server uses "ak47"/"katana"/"laser";
+        // engine slot names are primary/secondary/tertiary.
+        const weaponSlot = (
+          t.weapon === "katana" ? "secondary" :
+          t.weapon === "laser"  ? "tertiary"  :
+          "primary"
+        );
+        if (this.currentWeapon !== weaponSlot) {
+          this.setWeapon(weaponSlot);
+        }
+        // Mirror laser-firing flag so the spectator sees the same beam fx.
+        this._laserFireHeld = !!t.laser_firing;
         // Hide the target's mesh so we don't see the back of their head /
         // helmet poking into the camera. Toggle other players back on in
         // case the previous spectate target swapped (e.g. they died and
@@ -1704,7 +1717,12 @@ export class GameEngine {
           entry.mesh.rotation.z = 0;
         }
         entry.prevAlive = p.alive;
-        entry.mesh.visible = p.alive || entry.deathT > 0;
+        // Don't override visibility for the spectate target — the spectate
+        // block above keeps it hidden so we don't see the inside of their
+        // head from the locked first-person camera.
+        if (!(this.isSpectator && p.id === this.spectateTargetId)) {
+          entry.mesh.visible = p.alive || entry.deathT > 0;
+        }
       }
       for (const id of Array.from(this.players.keys())) {
         if (!seen.has(id) && id !== this.youId) {
@@ -1946,8 +1964,10 @@ export class GameEngine {
 
     // Weapon sway + recoil + ADS
     if (this._weapon) {
-      // Spectators don't have a viewmodel — hide the entire weapon group.
-      if (this.isSpectator) {
+      // Spectators normally don't have a viewmodel, but when locked to a
+      // target we render the gun as if it were ours so the POV matches
+      // their first-person view.
+      if (this.isSpectator && !this.spectateTargetId) {
         this._weapon.visible = false;
       } else {
         this._weapon.visible = true;

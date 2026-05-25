@@ -1786,7 +1786,11 @@ class GameRoom:
                 kind = "party"
             elif getattr(self, "is_ranked_bot", False):
                 kind = "ranked"
-            PLAYER_LOCATION[player.user_id] = {"kind": kind, "party_id": getattr(self, "party_id", None)}
+            PLAYER_LOCATION[player.user_id] = {
+                "kind": kind,
+                "party_id": getattr(self, "party_id", None),
+                "ranked_bot_key": getattr(self, "ranked_bot_key", None),
+            }
         await self._send(player, {
             "type": "welcome",
             "you": player.to_state(),
@@ -2786,6 +2790,7 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
         return room
     room = GameRoom(is_ranked=True, match_duration=120.0)
     room.is_ranked_bot = True
+    room.ranked_bot_key = user_id
     bot_count = ranked_bot_count_for_tier(tier_idx)
     # Ranked bot difficulty scales aggressively with the player's tier so the
     # ladder actually feels harder as you climb: Bronze 1.4 → Grandmaster 2.6.
@@ -2900,8 +2905,12 @@ async def matchmaker_loop():
                         a = q.pop(0)
                         mid = uuid.uuid4().hex[:10]
                         a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
+                        # For party bot-fills, every member must join the *same*
+                        # private bot room — key it by the first user (leader)
+                        # so all followers resolve to the same GameRoom.
+                        shared_key = a_uids[0] if a_uids else None
                         for uid in a_uids:
-                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True}
+                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True, "room_key": shared_key}
                         RECENT_MATCH_WAITS[tier_idx].append(now - a["joined_at"])
                         logger.info(
                             "Bot-filled tier=%d entry=%s (party=%s, %d users) after %ds queue",
@@ -3791,7 +3800,11 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         u_id = str(user["_id"])
         matched = MATCHED_USERS.get(u_id, {})
         if matched.get("vs_bot"):
-            room = await get_or_create_ranked_bot_room(u_id, int(matched.get("tier", 0)))
+            # For party bot-fills, every member resolves to the leader's
+            # private room via the shared room_key. Solo bot-fills fall back
+            # to the caller's own id (same as before).
+            shared_key = matched.get("room_key") or u_id
+            room = await get_or_create_ranked_bot_room(shared_key, int(matched.get("tier", 0)))
         else:
             room = ranked_room
     elif mode == "practice":
@@ -3821,7 +3834,13 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             room = game_room
         elif kind == "ranked":
             # Real-vs-real ranked room; ranked-bot rooms are private — match by per-user key.
-            room = await get_or_create_ranked_bot_room(str(target_user["_id"]), int(target_user.get("rank_tier", 0))) if str(target_user["_id"]) in RANKED_BOT_ROOMS else ranked_room
+            bot_key = loc.get("ranked_bot_key")
+            if bot_key and bot_key in RANKED_BOT_ROOMS:
+                room = RANKED_BOT_ROOMS[bot_key]
+            elif str(target_user["_id"]) in RANKED_BOT_ROOMS:
+                room = RANKED_BOT_ROOMS[str(target_user["_id"])]
+            else:
+                room = ranked_room
         elif kind == "party" and loc.get("party_id"):
             room = await get_or_create_party_room(loc["party_id"])
         elif kind == "offline":
@@ -3879,7 +3898,9 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         elif mode == "party" and party_id:
             await cleanup_party_room_if_empty(party_id)
         elif mode == "ranked" and getattr(room, "is_ranked_bot", False):
-            await cleanup_ranked_bot_room_if_empty(str(user["_id"]))
+            # Use the room's actual key (leader id for party bot-fills,
+            # solo player id otherwise) so cleanup matches the room map.
+            await cleanup_ranked_bot_room_if_empty(getattr(room, "ranked_bot_key", str(user["_id"])))
 
 
 @api.get("/")

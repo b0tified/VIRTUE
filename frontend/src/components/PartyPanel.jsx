@@ -22,7 +22,7 @@ const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E6
 export default function PartyPanel({ party, myId, refresh, className = "" }) {
   const nav = useNavigate();
   const startedRef = useRef(false);
-  const { queueState, joinRanked, cancelRanked } = useQueue();
+  const { queueState, waitSec, joinRanked, cancelRanked } = useQueue();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -179,7 +179,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
               >
                 <span className="flex items-center justify-center gap-2">
                   <Loader2 size={14} strokeWidth={3} className="animate-spin" />
-                  IN QUEUE · {queueState?.waitSeconds ?? 0}s · CANCEL
+                  IN QUEUE · {waitSec}s · CANCEL
                 </span>
               </button>
             )}
@@ -192,7 +192,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
               data-testid="party-member-queue-info"
             >
               <Loader2 size={12} strokeWidth={3} className="animate-spin" />
-              IN RANKED QUEUE @ {tier} · {queueState?.waitSeconds ?? 0}s
+              IN RANKED QUEUE @ {tier} · {waitSec}s
             </div>
           ) : (
             <div
