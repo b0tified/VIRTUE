@@ -245,6 +245,20 @@ export default function Game() {
         }
       },
       onMessage: (msg) => {
+        if (msg.type === "welcome") {
+          // The engine handles the actual welcome (camera + arena rebuild).
+          // We just notify the global MatchLoadingScreen so it can swap
+          // its preview to the actual server-selected map and dismiss.
+          try {
+            window.dispatchEvent(new CustomEvent("virtue-match-loaded", {
+              detail: {
+                map_id: msg.arena?.map_id || null,
+                map_name: msg.arena?.name || null,
+              },
+            }));
+          } catch {}
+          // Don't return — let the engine consume the welcome too.
+        }
         if (msg.type === "pong") {
           const rtt = Date.now() - (msg.ts || 0);
           pingRef.current.value = rtt;

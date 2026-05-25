@@ -13,7 +13,6 @@ import LobbyBackground from "@/components/LobbyBackground";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
-import MatchLoadingScreen from "@/components/MatchLoadingScreen";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
 
@@ -38,18 +37,8 @@ export default function Lobby() {
   // Latches once the quick-match navigation has been dispatched, so the
   // effect's cleanup never cancels the in-flight nav (see ticker effect).
   const quickNavStartedRef = useRef(false);
-  // When non-null, the MatchLoadingScreen overlays the lobby for ~1.4s
-  // before the actual route change. Set right before any nav("/play").
-  const [loadingMode, setLoadingMode] = useState(null);
-  // Listen for `virtue-match-loading` events fired by navigateToMatch()
-  // — anywhere in the lobby tree (PartyPanel, QueueContext-triggered
-  // ranked nav, etc.) can ask for the loading overlay to show without
-  // having to thread state through props.
-  useEffect(() => {
-    const handler = (e) => setLoadingMode(e?.detail?.mode || "casual");
-    window.addEventListener("virtue-match-loading", handler);
-    return () => window.removeEventListener("virtue-match-loading", handler);
-  }, []);
+  // (MatchLoadingScreen moved to App root — listens for `virtue-match-loading`
+  // there so it survives the route change to /play.)
   // Random per-attempt target wait for Quick Match (2..9s, capped under 10s).
   // Re-rolled every time the player clicks QUICK MATCH so the queue feels
   // organic instead of always landing on exactly 10.
@@ -508,10 +497,8 @@ export default function Lobby() {
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
       <ShopModal open={showShop} onClose={() => setShowShop(false)} />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
-      {/* Comic-style match transition overlay — fires whenever the lobby
-          (or any of its children via navigateToMatch) is about to nav
-          into a /play route. Self-dismisses on Lobby unmount. */}
-      <MatchLoadingScreen open={!!loadingMode} mode={loadingMode} username={user?.username} />
+      {/* MatchLoadingScreen now lives at the App root so it persists across
+          the Lobby → /play route change (see App.js). */}
 
       {/* Rank-up celebration — fires after a tier-skip redeem. The overlay
           self-dismisses after ~6.5s and can be clicked through. */}

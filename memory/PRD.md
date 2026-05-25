@@ -173,6 +173,15 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Loading screen now shows the map** — `MatchLoadingScreen` picks a random map from a new shared `mapsMeta.js` registry on every open and renders a top-down SVG minimap preview (with halftone dot texture, comic outlines, spawn markers, "N" compass), the map name (DOWNTOWN / CROSSFIRE), and a one-line tagline ("Mega-tower at center · quadrant cover…" / "Corridor grid · diagonal pillars…"). New components: `/app/frontend/src/components/MapPreview.jsx` + `/app/frontend/src/game/mapsMeta.js`. Server map selection is also uniform random so the preview matches the player's odds.
 - 🧪 Verified in browser via dispatch of `virtue-match-loading` — overlay renders with the SVG preview, map name + tagline visible. Lint clean across all three touched files.
 
+### Iteration 19 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Loading screen now waits for WS welcome + reveals actual map** — `MatchLoadingScreen` lifted to App.js root (so it survives the Lobby → /play route change). Rewritten event-driven (no `open` prop):
+  - `virtue-match-loading` → phase `loading`, picks a random preview map.
+  - `virtue-match-loaded` (fired from Game.jsx onMessage when WS welcome arrives) → phase `confirmed`, swaps to the real server-selected map and shows a "CONFIRMED · MAP_NAME" badge (green if preview matched, gold if it differed) for 900ms before auto-dismiss.
+  - 6s safety timer dismisses the overlay if welcome never arrives (network failure).
+- `navigateToMatch.MATCH_LOAD_MS` reduced from 1400 → 800ms (overlay no longer needs to fully animate before nav; it now bridges the route change).
+- Lobby's MatchLoadingScreen render + `loadingMode` state removed (now lives at App root).
+- 🧪 Verified live: events fire in correct order (loading → loaded), preview maps surface during the gap, server's actual map is revealed once welcome lands, overlay dismisses cleanly. Lint clean across 4 touched files.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

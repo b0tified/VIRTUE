@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { QueueProvider } from "@/context/QueueContext";
 import QueueOverlay from "@/components/QueueOverlay";
+import MatchLoadingScreen from "@/components/MatchLoadingScreen";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Lobby from "@/pages/Lobby";
@@ -44,6 +45,10 @@ export default function App() {
       <BrowserRouter>
         <QueueProvider>
           <QueueOverlay />
+          {/* Match loading overlay lives at the app root so it survives
+              the Lobby → /play route change and can stay open until the
+              server's welcome arrives (revealing the actual selected map). */}
+          <MatchLoadingScreen />
           <Routes>
             <Route path="/" element={<Root />} />
             <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
