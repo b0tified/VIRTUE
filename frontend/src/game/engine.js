@@ -2035,7 +2035,13 @@ export class GameEngine {
           this._akMagGroup.position.set(0, 0, 0);
           this._akMagGroup.rotation.x = 0;
         }
-        this.recoil = Math.max(0, this.recoil - dt * 5);
+        // Recoil recovery: AK fires at 250ms cooldown (4 rounds/sec) so we
+        // decay the recoil over ~250ms (rate 4/s) — the kick now occupies
+        // the full firing interval instead of snapping back in 200ms and
+        // resting for 50ms. Laser keeps the snappier 5/s decay since it
+        // never lingers between shots (continuous beam).
+        const recoilDecayRate = this.currentWeapon === "primary" ? 4 : 5;
+        this.recoil = Math.max(0, this.recoil - dt * recoilDecayRate);
         if (this._muzzleFlash) {
           this._muzzleFlash.material.opacity = Math.max(0, this._muzzleFlash.material.opacity - dt * 14);
         }
