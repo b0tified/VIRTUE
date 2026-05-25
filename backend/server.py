@@ -1986,6 +1986,13 @@ class GameRoom:
             and not self.in_intermission
         ):
             self.match_start = time.time()
+            # Bots have been farming each other while the room was idle.
+            # Reset every bot's scoreline so the joining player doesn't
+            # walk into a lobby with bots already at double-digit kills.
+            for bot in self.players.values():
+                if bot.is_bot:
+                    bot.kills = 0
+                    bot.deaths = 0
         # Stamp the match this player will participate in. During intermission,
         # the upcoming match is match_num + 1 (current match is over). This
         # lets end_match target its broadcast precisely so late joiners don't
