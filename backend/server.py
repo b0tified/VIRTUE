@@ -151,6 +151,14 @@ def public_user(user: dict) -> dict:
     placement_played = int(user.get("placement_matches_played", 0) or 0)
     stats = user.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0})
     lvl = compute_level(stats)
+    # Owned skins always include the free Recruit default — keeps the UI
+    # simple even for accounts created before skins existed.
+    owned = list(user.get("owned_skins", []) or [])
+    if "default" not in owned:
+        owned = ["default", *owned]
+    selected = user.get("selected_skin") or "default"
+    if selected not in owned:
+        selected = "default"
     return {
         "id": str(user["_id"]),
         "email": user["email"],
@@ -174,6 +182,9 @@ def public_user(user: dict) -> dict:
         "placement_matches_played": placement_played,
         "placement_matches_total": PLACEMENT_MATCHES,
         "in_placements": placement_played < PLACEMENT_MATCHES,
+        "coins": int(user.get("coins", 0) or 0),
+        "owned_skins": owned,
+        "selected_skin": selected,
         "created_at": user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
     }
 
@@ -253,6 +264,45 @@ RANK_TIERS = [
     (2300, "GOONMASTER"),
 ]
 
+# RP deltas by placement at end of a ranked match. Tiered so that:
+#  - Bronze/Silver use the old generous curve (+30/+15/+5/-10).
+#  - Gold (idx 2) raises loss to -20.
+#  - At Platinum+ (idx >= 3), only 1st place gains RP; 2nd/3rd earn 0,
+#    and losses ramp to -40 / -60 / -60 / -60 / -60 (capped at Diamond+).
+# `compute_rp_delta(placement, tier_idx)` returns the RP delta a player
+# with `tier_idx` rank earns for finishing at `placement` (1-indexed,
+# placement is relative to *all participants* including bots).
+LOSS_BY_TIER = [-10, -10, -20, -40, -60, -60, -60, -60]
+
+
+def compute_rp_delta(placement: int, tier_idx: int) -> int:
+    """RP delta for a single player finishing at `placement` while sitting
+    in `tier_idx` going into the match.
+
+    Above Platinum (tier_idx >= 3) ranked is a "first or nothing" race:
+    only 1st place gains points and everyone outside the podium still
+    loses the tier's loss amount. Below Platinum, the original podium
+    rewards (30/15/5) still apply.
+    """
+    tier_idx = max(0, min(len(LOSS_BY_TIER) - 1, int(tier_idx)))
+    loss = LOSS_BY_TIER[tier_idx]
+    if tier_idx >= 3:
+        # Platinum and above: only 1st place gains. 2nd & 3rd are "safe"
+        # (no loss, no gain). 4th and below take the full tier loss.
+        if placement == 1:
+            return 30
+        if placement in (2, 3):
+            return 0
+        return loss
+    # Bronze, Silver, Gold: classic podium curve.
+    if placement == 1:
+        return 30
+    if placement == 2:
+        return 15
+    if placement == 3:
+        return 5
+    return loss
+
 
 def rank_for_points(points: int):
     idx = 0
@@ -262,6 +312,65 @@ def rank_for_points(points: int):
             idx = i
             name = n
     return idx, name
+
+
+# -------------------------------------------------------------------
+# Skins + In-Game Currency (COINS)
+# -------------------------------------------------------------------
+# Coins are earned ONLY via redeem codes + automatic level-up rewards.
+# No in-match earning — kills/wins don't grant coins (kept that way so
+# the economy can be tuned later via promo events).
+COINS_PER_LEVEL = 100  # awarded once per level the player reaches.
+
+# Catalog of player skins. The "default" skin is free + auto-owned by every
+# user. All paid skins recolor the humanoid (head/torso/limbs/accent) and
+# render an animated aura ring around the player at their feet.
+# Aura `mode`s drive the engine's per-frame animation:
+#   - "none":   no aura
+#   - "pulse":  steady opacity pulse (soft glow)
+#   - "spin":   rotating dual-tone ring
+#   - "flicker": sharp on/off flicker (ghost effect)
+SKINS_CATALOG: List[dict] = [
+    {"id": "default",  "name": "Recruit",       "price": 0,    "rarity": "common",    "body": 0xe62429, "leg": 0x1a1a1a, "head": 0xf2c08a, "accent": 0xffd700, "aura": 0x000000, "aura_mode": "none"},
+    {"id": "azure",    "name": "Azure Ranger",  "price": 200,  "rarity": "common",    "body": 0x0055ff, "leg": 0x0a2a6b, "head": 0xf2c08a, "accent": 0x9adcff, "aura": 0x4ab8ff, "aura_mode": "pulse"},
+    {"id": "neon",     "name": "Neon Cyan",     "price": 500,  "rarity": "rare",      "body": 0x00cfff, "leg": 0x004b6b, "head": 0xf2c08a, "accent": 0xffffff, "aura": 0x00ffff, "aura_mode": "pulse"},
+    {"id": "crimson",  "name": "Crimson Rogue", "price": 800,  "rarity": "rare",      "body": 0x6b0010, "leg": 0x1a0306, "head": 0xf2c08a, "accent": 0xff3a3a, "aura": 0xff1a1a, "aura_mode": "spin"},
+    {"id": "ghost",    "name": "Ghost White",   "price": 1200, "rarity": "epic",      "body": 0xeeeeee, "leg": 0x9aa0a8, "head": 0xeeeeee, "accent": 0x6cb0ff, "aura": 0xffffff, "aura_mode": "flicker"},
+    {"id": "verdant",  "name": "Verdant Hunter","price": 1500, "rarity": "epic",      "body": 0x1d6b29, "leg": 0x0d3a16, "head": 0xf2c08a, "accent": 0xe8ff7a, "aura": 0x6cff5e, "aura_mode": "pulse"},
+    {"id": "void",     "name": "Void Walker",   "price": 2000, "rarity": "legendary", "body": 0x14002a, "leg": 0x000000, "head": 0xb88be0, "accent": 0xd400ff, "aura": 0xb000ff, "aura_mode": "spin"},
+    {"id": "golden",   "name": "Golden Apex",   "price": 3000, "rarity": "legendary", "body": 0xffc700, "leg": 0x6b4d00, "head": 0xf2c08a, "accent": 0xffffff, "aura": 0xffd700, "aura_mode": "spin"},
+]
+SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
+
+
+def skin_for_user(user: dict) -> dict:
+    """Resolve the currently equipped skin definition for `user`.
+    Always returns a valid skin (falls back to 'default' if equipped skin
+    has been removed from the catalog)."""
+    sid = (user or {}).get("selected_skin") or "default"
+    return SKINS_BY_ID.get(sid) or SKINS_BY_ID["default"]
+
+
+async def credit_level_coins(user: dict) -> dict:
+    """Auto-grants level-up coins idempotently. Each time the player's
+    computed level exceeds `coins_credited_for_level`, we top up by
+    `(new_level - prev) * COINS_PER_LEVEL`. Called from auth/me, profile/me,
+    and after stat-changing endpoints so the wallet always reflects current
+    level milestones. Mutates the in-memory `user` dict and persists."""
+    if not user:
+        return user
+    lvl = compute_level(user.get("stats", {}))["level"]
+    credited = int(user.get("coins_credited_for_level", 0) or 0)
+    if lvl > credited:
+        bonus = (lvl - credited) * COINS_PER_LEVEL
+        new_coins = int(user.get("coins", 0) or 0) + bonus
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"coins": new_coins, "coins_credited_for_level": lvl}},
+        )
+        user["coins"] = new_coins
+        user["coins_credited_for_level"] = lvl
+    return user
 
 
 async def _user_from_token(token: str) -> Optional[dict]:
@@ -467,6 +576,7 @@ async def google_callback(payload: GoogleCallbackIn, response: Response):
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
+    await credit_level_coins(user)
     return public_user(user)
 
 
@@ -516,6 +626,87 @@ async def leaderboard():
 
 @api.get("/profile/me")
 async def profile_me(user: dict = Depends(get_current_user)):
+    await credit_level_coins(user)
+    return public_user(user)
+
+
+# -------------------------------------------------------------------
+# Skin Shop — players spend COINS on cosmetic skins.
+# -------------------------------------------------------------------
+class SkinBuyIn(BaseModel):
+    skin_id: str = Field(min_length=1, max_length=64)
+
+
+class SkinEquipIn(BaseModel):
+    skin_id: str = Field(min_length=1, max_length=64)
+
+
+@api.get("/shop/skins")
+async def shop_skins(user: dict = Depends(get_current_user)):
+    """Returns the full skin catalog with ownership flags + the user's coin
+    balance, so the shop UI can render the grid in one round-trip."""
+    await credit_level_coins(user)
+    owned = set(user.get("owned_skins", []) or [])
+    owned.add("default")  # always free
+    items = []
+    for s in SKINS_CATALOG:
+        items.append({
+            **s,
+            "owned": s["id"] in owned,
+            "equipped": (user.get("selected_skin") or "default") == s["id"],
+        })
+    return {
+        "coins": int(user.get("coins", 0) or 0),
+        "selected_skin": user.get("selected_skin") or "default",
+        "items": items,
+    }
+
+
+@api.post("/shop/buy")
+async def shop_buy(payload: SkinBuyIn, user: dict = Depends(get_current_user)):
+    """Purchase a skin with the player's coin balance. Idempotent: re-buying
+    an already-owned skin returns 409. Auto-equips on first purchase so the
+    player sees the change immediately."""
+    await credit_level_coins(user)
+    skin = SKINS_BY_ID.get(payload.skin_id)
+    if not skin:
+        raise HTTPException(status_code=404, detail="Skin not found.")
+    owned = set(user.get("owned_skins", []) or [])
+    owned.add("default")
+    if skin["id"] in owned:
+        raise HTTPException(status_code=409, detail="Already owned.")
+    price = int(skin.get("price", 0))
+    coins = int(user.get("coins", 0) or 0)
+    if coins < price:
+        raise HTTPException(status_code=402, detail=f"Not enough coins — needs {price}.")
+    new_coins = coins - price
+    new_owned = list(owned) + [skin["id"]]
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"coins": new_coins, "owned_skins": new_owned, "selected_skin": skin["id"]}},
+    )
+    user["coins"] = new_coins
+    user["owned_skins"] = new_owned
+    user["selected_skin"] = skin["id"]
+    return {"ok": True, "skin": skin, "user": public_user(user)}
+
+
+@api.post("/profile/me/skin")
+async def equip_skin(payload: SkinEquipIn, user: dict = Depends(get_current_user)):
+    """Equip an already-owned skin. The selected_skin is broadcast in the
+    next state tick so other players see the change live."""
+    skin = SKINS_BY_ID.get(payload.skin_id)
+    if not skin:
+        raise HTTPException(status_code=404, detail="Skin not found.")
+    owned = set(user.get("owned_skins", []) or [])
+    owned.add("default")
+    if skin["id"] not in owned:
+        raise HTTPException(status_code=403, detail="Skin not owned.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"selected_skin": skin["id"]}},
+    )
+    user["selected_skin"] = skin["id"]
     return public_user(user)
 
 
@@ -634,6 +825,11 @@ REDEEM_CODES: Dict[str, dict] = {
     # of the *next* tier band. Hard-capped at Grandmaster — Goonmaster is
     # earned only and can't be skipped to via code.
     "WARPSPEED":   {"rank_up_tiers": 1,              "label": "Warp Speed — +1 Rank Tier"},
+    # Coin grants — the *only* way to earn coins besides level-ups, so
+    # codes form the primary economy lever. Three tiers of generosity.
+    "COINTOSS":    {"coins": 250,                    "label": "+250 Coins — Coin Toss"},
+    "COINSHOWER":  {"coins": 1000,                   "label": "+1,000 Coins — Coin Shower"},
+    "JACKPOT":     {"coins": 5000,                   "label": "+5,000 Coins — Jackpot!"},
 }
 
 
@@ -663,6 +859,9 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     update_ops: Dict[str, dict] = {"$push": {"redeemed_codes": code}}
     if reward.get("xp"):
         update_ops.setdefault("$inc", {})["stats.bonus_xp"] = int(reward["xp"])
+    # Coin grants — straight $inc onto the wallet.
+    if reward.get("coins"):
+        update_ops.setdefault("$inc", {})["coins"] = int(reward["coins"])
     # min_level: top up bonus_xp so the player's total XP reaches the start
     # of the requested level. No-op if they already qualify naturally.
     if reward.get("min_level"):
@@ -950,6 +1149,12 @@ class Player:
             self.banner_color = 0
             self.banner_animated = False
             self.level = 1
+            # Bots pick a random non-default skin to add visual variety
+            # to lobbies; biased toward the cheaper tiers so legendary
+            # skins still feel rare among bots.
+            self.selected_skin = random.choice([
+                "default", "azure", "neon", "crimson", "verdant", "ghost",
+            ])
         else:
             self.user_id = str(user["_id"])
             self.username = user.get("username", user["email"].split("@")[0])
@@ -965,6 +1170,7 @@ class Player:
             self.banner_color = int(user.get("banner_color", 0) or 0)
             self.banner_animated = bool(user.get("banner_animated", False))
             self.level = compute_level(user.get("stats", {}))["level"]
+            self.selected_skin = user.get("selected_skin") or "default"
         self.id = ("bot_" if is_bot else "p_") + uuid.uuid4().hex[:10]
         x, z = random_spawn()
         self.x = float(x)
@@ -1074,6 +1280,7 @@ class Player:
             "banner_icon": int(getattr(self, "banner_icon", 0) or 0),
             "banner_color": int(getattr(self, "banner_color", 0) or 0),
             "banner_animated": bool(getattr(self, "banner_animated", False)),
+            "skin": getattr(self, "selected_skin", "default") or "default",
         }
 
     def shooter_payload(self) -> dict:
@@ -1866,26 +2073,45 @@ class GameRoom:
         """End a match: for ranked, award rank points; for casual, just show standings.
         Broadcasts a match_end payload, then resets the room after a 10s intermission."""
         self.in_intermission = True
-        real_players = [p for p in self.players.values() if not p.is_bot and p.user_id and not getattr(p, "is_spectator", False)]
-        real_players.sort(key=lambda p: p.kills, reverse=True)
+        # Include all participants (real + bots) for placement ordering so
+        # the match history shows the true total_players count. Real-player
+        # RP updates still only target real_players further down.
+        all_participants = [p for p in self.players.values() if not getattr(p, "is_spectator", False)]
+        all_participants.sort(key=lambda p: p.kills, reverse=True)
+        real_players = [p for p in all_participants if not p.is_bot and p.user_id]
+        # Map each real player to their placement *among all participants*.
+        placement_of = {p.id: idx + 1 for idx, p in enumerate(all_participants)}
+        total_with_bots = len(all_participants)
         placements = []
         if self.is_ranked:
-            rewards = [30, 15, 5]
-            for i, p in enumerate(real_players):
-                base_delta = rewards[i] if i < len(rewards) else -10
+            # Ranked scoring is tier-gated:
+            #  - High tiers (Platinum / Diamond / Master / Grandmaster /
+            #    Goonmaster, idx >= 3): only 1st place gains RP. 2nd/3rd
+            #    earn nothing (no loss), 4th+ lose. Forces top players to
+            #    actually win, not coast.
+            #  - Loss magnitude scales with tier so falling out of higher
+            #    ranks hurts more (capped at -60 for Diamond+).
+            for p in real_players:
+                # Resolve placement vs the full lobby (so a real player
+                # ranking behind 4 bots still loses RP).
+                placement = placement_of.get(p.id, len(real_players))
                 new_points = 0
                 placement_played_before = 0
                 is_placement = False
-                delta = base_delta
+                delta = 0
                 prev_tier_idx, prev_tier_name = 0, "BRONZE"
                 rank_change = 0
                 try:
                     udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
                     cur = int((udoc or {}).get("rank_points", 0) or 0)
+                    cur_tier_idx, _ = rank_for_points(cur)
                     placement_played_before = int((udoc or {}).get("placement_matches_played", 0) or 0)
                     is_placement = placement_played_before < PLACEMENT_MATCHES
-                    if is_placement:
-                        delta = base_delta * PLACEMENT_MULTIPLIER if base_delta > 0 else 0
+                    base_delta = compute_rp_delta(placement, cur_tier_idx)
+                    delta = base_delta * PLACEMENT_MULTIPLIER if (is_placement and base_delta > 0) else base_delta
+                    if is_placement and delta < 0:
+                        # Placements soften losses to 0, matching previous behavior.
+                        delta = 0
                     new_points = max(0, cur + delta)
                     tier_idx, tier_name = rank_for_points(new_points)
                     # Tier delta for the rank-up overlay: rank_change > 0
@@ -1906,6 +2132,7 @@ class GameRoom:
                     tier_idx, tier_name = rank_for_points(new_points)
                     prev_tier_idx, prev_tier_name = tier_idx, tier_name
                     rank_change = 0
+                    base_delta = delta
                 placements.append({
                     "id": p.id,
                     "username": p.username,
@@ -1968,6 +2195,9 @@ class GameRoom:
 
         # Persist per-player match history (newest first via index on ended_at desc).
         # Offline rooms set self.is_offline=True; we tag those for filtering.
+        # `placement` is the player's rank among *all* participants (bots
+        # included) so the match card reflects what actually happened on
+        # the scoreboard. `total_players` likewise counts bots.
         try:
             if real_players:
                 now = datetime.now(timezone.utc)
@@ -1980,8 +2210,8 @@ class GameRoom:
                         "mode": mode,
                         "kills": entry["kills"],
                         "deaths": entry["deaths"],
-                        "placement": placements.index(entry) + 1,
-                        "total_players": len(placements),
+                        "placement": placement_of.get(pl.id, 1),
+                        "total_players": total_with_bots,
                         "rp_delta": entry["delta"],
                         "rank_points_after": entry["new_points"],
                         "rank_name_after": entry["rank_name"],
@@ -2388,8 +2618,21 @@ def _friend_card(u: dict) -> dict:
     loc = player_location(str(u["_id"]))
     last_seen = u.get("last_seen_at")
     lvl = compute_level(u.get("stats", {}))
+    uid = str(u["_id"])
+    # `in_queue` checks the ranked matchmaker dict — friend rows surface a
+    # small "QUEUEING…" badge when a friend is waiting for ranked.
+    in_queue = False
+    queue_tier = None
+    try:
+        for ti, q in RANKED_QUEUE.items():
+            if any(e.get("user_id") == uid for e in q):
+                in_queue = True
+                queue_tier = ti
+                break
+    except Exception:
+        pass
     return {
-        "id": str(u["_id"]),
+        "id": uid,
         "username": u.get("username", ""),
         "avatar": int(u.get("avatar", 0) or 0),
         "rank_points": pts,
@@ -2399,9 +2642,11 @@ def _friend_card(u: dict) -> dict:
         "banner_icon": int(u.get("banner_icon", 0) or 0),
         "banner_color": int(u.get("banner_color", 0) or 0),
         "banner_animated": bool(u.get("banner_animated", False)),
-        "online": is_online(str(u["_id"])),
+        "online": is_online(uid),
         "in_match": loc is not None and loc.get("kind") in ("casual", "ranked", "party", "offline"),
         "match_kind": loc.get("kind") if loc else None,
+        "in_queue": in_queue,
+        "queue_tier": queue_tier,
         "last_seen_at": float(last_seen) if last_seen else None,
     }
 

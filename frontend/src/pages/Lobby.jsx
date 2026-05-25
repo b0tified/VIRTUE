@@ -4,13 +4,14 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import RankUpOverlay from "@/components/RankUpOverlay";
+import ShopModal from "@/components/ShopModal";
 import { useQueue } from "@/context/QueueContext";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
@@ -25,6 +26,7 @@ export default function Lobby() {
   const spectateEndedTarget = searchParams.get("target") || "";
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
+  const [showShop, setShowShop] = useState(false);
   // Rank-up celebration overlay. Triggered by a global `virtue-rankup` event
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
@@ -269,6 +271,27 @@ export default function Lobby() {
             <span className="font-anton uppercase text-[10px] tracking-widest opacity-90">Online</span>
             <span className="font-display text-2xl leading-none">{displayOnline}</span>
           </div>
+          {/* Coin balance — clickable, opens the skin shop. Always visible
+              (even on mobile) so the wallet value is glanceable. */}
+          <button
+            onClick={() => setShowShop(true)}
+            className="border-pow shadow-pow-sm px-3 py-2 flex items-center gap-2 hover:translate-y-[-1px] transition-transform"
+            style={{ background: "#FFD700", color: "#0A0A0A" }}
+            data-testid="lobby-coins-badge"
+            title="Open Shop"
+          >
+            <Coins size={14} strokeWidth={3} />
+            <span className="font-anton uppercase text-[10px] tracking-widest opacity-80 hidden sm:inline">Coins</span>
+            <span className="font-display text-xl sm:text-2xl leading-none">{user?.coins ?? 0}</span>
+          </button>
+          <button
+            onClick={() => setShowShop(true)}
+            className="btn-pow bg-[#9B59B6] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
+            data-testid="lobby-shop-button"
+            title="Skin shop"
+          >
+            <span className="flex items-center gap-2"><ShoppingBag size={18} strokeWidth={3} /><span className="hidden sm:inline">SHOP</span></span>
+          </button>
           <button
             onClick={() => setShowFriends(true)}
             className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
@@ -422,6 +445,7 @@ export default function Lobby() {
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
+      <ShopModal open={showShop} onClose={() => setShowShop(false)} />
 
       {/* Rank-up celebration — fires after a tier-skip redeem. The overlay
           self-dismisses after ~6.5s and can be clicked through. */}

@@ -678,6 +678,21 @@ html.virtue-no-ui-blur .hud-panel {
   100% { opacity: 0; }
 }
 
+/* =============================================================
+   Shop card aura previews (CSS-only, used by ShopModal previews)
+   ============================================================= */
+@keyframes shop-aura-pulse {
+  0%, 100% { transform: scaleX(1)   scaleY(1);   opacity: 0.9; }
+  50%      { transform: scaleX(1.15) scaleY(1.4); opacity: 1; }
+}
+@keyframes shop-aura-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shop-aura-flicker {
+  0%, 25%, 75%, 100% { opacity: 1; }
+  10%, 60%           { opacity: 0.15; }
+}
+
   }
   [data-testid="lobby-page"] > main > div:first-child > div:last-child > * {
     margin-top: 0 !important;

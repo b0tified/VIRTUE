@@ -101,10 +101,17 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 ### Iteration 13 — **THIS SESSION (2026-02-24)**
 - ✅ **Respawn animation** — New `RespawnOverlay.jsx` plays a ~1.1s comic-style flash whenever the local player transitions dead → alive. Effects: white-out revive flash → expanding blue + red rings → rotating sparkle ring → "RESPAWN!" banner pop with lightning bolts → rotating yellow halftone burst. New `audioBus.respawnSfx()` plays a swept-saw "WHOOSH-ZING" + two-note chime under it. Triggered from `engine.js` `onLocalUpdate({type:"respawn"})` on the alive-edge; Game.jsx listens, clears the killer card + damage markers, sets `respawnAt` timestamp. CSS keyframes added to `index.css`. Engine exposed on `window.__virtueEngine` for e2e/debug.
 
-### Iteration 14 — **THIS SESSION (2026-02-24)**
-- ✅ **Damage marker direction fixed** — old formula `worldAngle - yaw` inverted the arc once the player turned past 90°; corrected to `worldAngle + yaw` (player facing bearing in this coord system is `-yaw`, so the relative bearing is `worldAngle - (-yaw)`). Verified at yaw=0 / π / π/2 with shooter at world +X → arcs render at 90° / -90° / 180° respectively.
-- ✅ **Damage marker tracks shooter live** — `damaged` event now carries `shooterId`; `DamageDirectionLayer` accepts `engineRef` and re-resolves the angle each 33ms tick using the shooter's current `entry.mesh.position` (server-synced via state ticks), so the indicator follows them as they move. Falls back to the snapshot `from` position if the shooter has despawned.
-- ✅ **Death animation** — New `DeathOverlay.jsx` plays a 1.4s K.O. burst when the local player dies. Effects: full-screen red shock flash → expanding red halftone burst rays → comic "K.O.!" banner with skulls + heavy shake → "ELIMINATED" sub-banner fade-in → soft red vignette. New `audioBus.deathSfx()` plays a downward saw sweep + low sub thump under it. Triggered from `engine.js` via `onLocalUpdate({type:"died"})` on the alive→dead edge. After the 1.4s burst, the existing Hud "YOU'RE DOWN!" + killer card overlay takes over until respawn.
+### Iteration 15 — **THIS SESSION (2026-02-24)**
+- ✅ **In-game currency (COINS)** — new `coins` + `coins_credited_for_level` fields on user. Auto-credited 100/level on `/api/auth/me` and `/api/profile/me` (idempotent). Only earnable through level-ups + new redeem codes (`COINTOSS` +250, `COINSHOWER` +1000, `JACKPOT` +5000). No earn from matches by design.
+- ✅ **Skin shop** — new `SKINS_CATALOG` (8 skins: Recruit free, Azure/Neon/Crimson/Ghost/Verdant/Void/Golden 200→3000). Endpoints `GET /api/shop/skins`, `POST /api/shop/buy`, `POST /api/profile/me/skin`. Frontend `ShopModal.jsx` + lobby SHOP button + coin badge. Cards have CSS-only humanoid preview + animated aura behind.
+- ✅ **More player models** — skin recolors head/torso/legs/accent of every humanoid + adds a per-skin aura at the player's feet (pulse/spin/flicker modes driven by `aura_mode`). Bots randomize their skin so lobbies look varied. Skin hot-swap on equip without re-loading the match.
+- ✅ **Bots count in match history** — `placement` is now computed across *all participants* (real + bots) so a real player ranking behind bots is recorded honestly; `total_players` includes bots too.
+- ✅ **Ranked points overhaul** — new `compute_rp_delta(placement, tier_idx)`:
+  - Bronze/Silver: classic +30/+15/+5/-10.
+  - Gold: +30/+15/+5/**-20**.
+  - **Platinum+**: only 1st gains (+30), 2nd/3rd are safe (0), 4th+ lose **-40** (Plat) or **-60** (Diamond, Master, Grandmaster, Goonmaster). Unit-tested across all tiers.
+- ✅ **Friends in-queue + in-match badges** — `_friend_card` now exposes `in_queue` (resolved against `RANKED_QUEUE`) + `queue_tier`. FriendsModal shows IN MATCH (red) > IN QUEUE (blue) > ONLINE (green) > OFFLINE chips. Invite button disabled when friend is busy.
+- ✅ **Realistic sky** — replaced sky dome with 8-stop gradient (deep navy zenith → bright daylight → warm horizon → ground-line glow), bigger sun with multi-layer corona (inner halo + outer halo + additive bloom), and three altitude bands of clouds (14 low + 10 mid + 7 high) with parallax drift speed scaled by altitude.
 
 ## Roadmap / Backlog
 ### Iteration 12 — **THIS SESSION (2026-02-24)**

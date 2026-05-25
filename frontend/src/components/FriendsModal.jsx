@@ -172,7 +172,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
         <div className="font-anton uppercase text-base truncate" data-testid={`friend-username-${idx}`}>
           {u.username}
         </div>
-        <div className="flex items-center gap-2 mt-0.5">
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span
             className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black"
             style={{ background: rankColor, color: rankText }}
@@ -180,9 +180,33 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
             {u.rank_name}
           </span>
           <span className="text-[10px] font-anton uppercase tracking-widest text-neutral-500">{u.rank_points} RP</span>
-          <span className={`text-[10px] font-anton uppercase tracking-widest ${u.online ? "text-[#06A35F]" : "text-neutral-400"}`}>
-            {u.online ? "● ONLINE" : (u.last_seen_at ? `LAST SEEN ${formatRelativeTime(u.last_seen_at)}` : "OFFLINE")}
-          </span>
+          {/* Status chip — priority: in-match > in-queue > online > offline.
+              Lets you see at a glance what a friend is doing right now. */}
+          {u.in_match ? (
+            <span
+              className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border border-black"
+              data-testid={`friend-status-${idx}`}
+              data-status="in-match"
+            >
+              ● IN MATCH{u.match_kind ? ` · ${String(u.match_kind).toUpperCase()}` : ""}
+            </span>
+          ) : u.in_queue ? (
+            <span
+              className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#0055FF] text-white border border-black"
+              data-testid={`friend-status-${idx}`}
+              data-status="in-queue"
+            >
+              ● IN QUEUE
+            </span>
+          ) : (
+            <span
+              className={`text-[10px] font-anton uppercase tracking-widest ${u.online ? "text-[#06A35F]" : "text-neutral-400"}`}
+              data-testid={`friend-status-${idx}`}
+              data-status={u.online ? "online" : "offline"}
+            >
+              {u.online ? "● ONLINE" : (u.last_seen_at ? `LAST SEEN ${formatRelativeTime(u.last_seen_at)}` : "OFFLINE")}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
@@ -203,7 +227,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
         )}
         {mode === "friend" && (
           <>
-            {u.online && !u.in_match && (
+            {u.online && !u.in_match && !u.in_queue && (
               <button
                 disabled={busy}
                 onClick={async () => {

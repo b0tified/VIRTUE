@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import settingsStore from "@/game/settings";
+import { skinById } from "@/game/skins";
 
 const SENS_KEY = "virtue.mouseSensitivity";
 
@@ -447,58 +448,93 @@ export class GameEngine {
     this.scene.add(sign);
     this._sign = sign;
 
-    // Sky dome — vertical gradient texture (deep blue → warm horizon) baked
-    // onto a sphere. Adds depth without breaking the comic flat-shading.
+    // Sky dome — multi-stop atmospheric gradient (zenith blue → bright
+    // mid-sky → soft horizon haze → warm low-light glow). Painted onto a
+    // tall sky canvas so even subtle bands read clean across the sphere.
     const skyCanvas = document.createElement("canvas");
-    skyCanvas.width = 8; skyCanvas.height = 256;
+    skyCanvas.width = 8; skyCanvas.height = 512;
     const skc = skyCanvas.getContext("2d");
-    const grd = skc.createLinearGradient(0, 0, 0, 256);
-    grd.addColorStop(0.00, "#1E2A6A");   // zenith — deep navy
-    grd.addColorStop(0.35, "#3F6FCC");   // mid sky — comic blue
-    grd.addColorStop(0.68, "#9DDFF6");   // pale blue
-    grd.addColorStop(0.88, "#FFD89C");   // warm horizon
-    grd.addColorStop(1.00, "#FF7B7B");   // sunset glow at the bottom rim
-    skc.fillStyle = grd; skc.fillRect(0, 0, 8, 256);
+    const grd = skc.createLinearGradient(0, 0, 0, 512);
+    grd.addColorStop(0.00, "#0E1C4A");   // zenith — deep cosmic navy
+    grd.addColorStop(0.18, "#1B3A8C");   // upper atmosphere
+    grd.addColorStop(0.36, "#3F7BD8");   // mid sky — clean blue
+    grd.addColorStop(0.55, "#7CC3F0");   // pale daylight blue
+    grd.addColorStop(0.75, "#C7E6F7");   // bright horizon haze
+    grd.addColorStop(0.86, "#FFE4B5");   // warm horizon band
+    grd.addColorStop(0.94, "#FFB07A");   // golden glow
+    grd.addColorStop(1.00, "#E66D4D");   // ground-line warmth
+    skc.fillStyle = grd; skc.fillRect(0, 0, 8, 512);
     const skyTex = new THREE.CanvasTexture(skyCanvas);
     skyTex.colorSpace = THREE.SRGBColorSpace;
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(140, 24, 16),
+      new THREE.SphereGeometry(160, 32, 20),
       new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false }),
     );
     this.scene.add(sky);
-    // Sun — bright yellow disc with a halo
+    // Make the renderer clear-color match the upper horizon so fog blends
+    // into the sky seamlessly at draw distance.
+    this.scene.background = new THREE.Color(0x7cc3f0);
+    this.scene.fog = new THREE.Fog(0xc7e6f7, 80, 145);
+    // Sun — bright yellow disc with a multi-layer corona for realism.
     const sun = new THREE.Mesh(
-      new THREE.CircleGeometry(7, 24),
-      new THREE.MeshBasicMaterial({ color: 0xFFE680 }),
+      new THREE.CircleGeometry(8, 32),
+      new THREE.MeshBasicMaterial({ color: 0xFFF6C0 }),
     );
-    sun.position.set(-60, 38, -100);
+    sun.position.set(-70, 46, -110);
     sun.lookAt(0, 30, 0);
     this.scene.add(sun);
-    const sunHalo = new THREE.Mesh(
-      new THREE.CircleGeometry(10, 24),
-      new THREE.MeshBasicMaterial({ color: 0xFFC857, transparent: true, opacity: 0.45 }),
+    const sunHaloInner = new THREE.Mesh(
+      new THREE.CircleGeometry(12, 32),
+      new THREE.MeshBasicMaterial({ color: 0xFFE08A, transparent: true, opacity: 0.55, depthWrite: false }),
     );
-    sunHalo.position.copy(sun.position).multiplyScalar(0.995);
-    sunHalo.lookAt(0, 30, 0);
-    this.scene.add(sunHalo);
-    // Clouds — varied sizes + multi-puff shapes (drift slowly each frame).
-    const cloudMat = this._toonMat(0xffffff);
+    sunHaloInner.position.copy(sun.position).multiplyScalar(0.998);
+    sunHaloInner.lookAt(0, 30, 0);
+    this.scene.add(sunHaloInner);
+    const sunHaloOuter = new THREE.Mesh(
+      new THREE.CircleGeometry(20, 32),
+      new THREE.MeshBasicMaterial({ color: 0xFFC857, transparent: true, opacity: 0.28, depthWrite: false }),
+    );
+    sunHaloOuter.position.copy(sun.position).multiplyScalar(0.996);
+    sunHaloOuter.lookAt(0, 30, 0);
+    this.scene.add(sunHaloOuter);
+    const sunGlow = new THREE.Mesh(
+      new THREE.CircleGeometry(34, 32),
+      new THREE.MeshBasicMaterial({ color: 0xFFB04C, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    sunGlow.position.copy(sun.position).multiplyScalar(0.994);
+    sunGlow.lookAt(0, 30, 0);
+    this.scene.add(sunGlow);
+    // Clouds — three altitude bands with size + tint variation, so the
+    // sky feels layered rather than a single sticker band.
     this._clouds = [];
-    for (let i = 0; i < 22; i++) {
-      const cluster = new THREE.Group();
-      const puffs = 3 + Math.floor(Math.random() * 4);
-      for (let p = 0; p < puffs; p++) {
-        const r = 1.6 + Math.random() * 2.2;
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cloudMat);
-        puff.position.set((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 5);
-        cluster.add(puff);
+    const cloudPalettes = [
+      { color: 0xffffff, opacity: 1.0,  alt: 22, count: 14, sizeMin: 1.6, sizeMax: 3.8 },
+      { color: 0xeef4ff, opacity: 0.85, alt: 38, count: 10, sizeMin: 2.4, sizeMax: 5.0 },
+      { color: 0xd9e6f5, opacity: 0.6,  alt: 56, count: 7,  sizeMin: 3.6, sizeMax: 7.2 },
+    ];
+    for (const layer of cloudPalettes) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: layer.color,
+        transparent: layer.opacity < 1,
+        opacity: layer.opacity,
+        depthWrite: false,
+      });
+      for (let i = 0; i < layer.count; i++) {
+        const cluster = new THREE.Group();
+        const puffs = 4 + Math.floor(Math.random() * 5);
+        for (let p = 0; p < puffs; p++) {
+          const r = layer.sizeMin + Math.random() * (layer.sizeMax - layer.sizeMin);
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 7), mat);
+          puff.position.set((Math.random() - 0.5) * 6.5, (Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 6.5);
+          cluster.add(puff);
+        }
+        cluster.position.set((Math.random() - 0.5) * 180, layer.alt + (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 180);
+        // Higher clouds drift slower (parallax).
+        cluster.userData.driftX = (0.4 + Math.random() * 0.6) * (1.0 - layer.alt / 100);
+        cluster.userData.bob = Math.random() * Math.PI * 2;
+        this.scene.add(cluster);
+        this._clouds.push(cluster);
       }
-      cluster.position.set((Math.random() - 0.5) * 160, 22 + Math.random() * 14, (Math.random() - 0.5) * 160);
-      // Drift speed: 0.6 to 1.4 units/sec in a consistent direction.
-      cluster.userData.driftX = 0.6 + Math.random() * 0.8;
-      cluster.userData.bob = Math.random() * Math.PI * 2;
-      this.scene.add(cluster);
-      this._clouds.push(cluster);
     }
     // Distant birds — tiny V-shaped sprites that fly across the sky in a
     // wide arc, and flap their wings every ~0.25s for life.
@@ -1220,10 +1256,14 @@ export class GameEngine {
   }
 
   // -------- Humanoid (remote player) --------
-  _buildHumanoid(bodyColor) {
+  _buildHumanoid(skinOrColor) {
+    // `skinOrColor` accepts either a legacy hex int (back-compat with any
+    // old call sites) or a skin object from /game/skins.js. We normalise
+    // to a skin definition so the catalog can drive every recolor below.
+    const skin = (typeof skinOrColor === "number")
+      ? { body: skinOrColor, leg: 0x1a1a1a, head: 0xf2c08a, accent: 0xffd700, aura: 0x000000, aura_mode: "none" }
+      : (skinOrColor || skinById("default"));
     const group = new THREE.Group();
-    const skin = 0xf2c08a;
-    const dark = 0x1a1a1a;
     const bodyMeshes = [];
 
     const push = (geom, color, scale = 1.05) => {
@@ -1239,16 +1279,16 @@ export class GameEngine {
     };
 
     // ----- Upper body (static) -----
-    const head = push(new THREE.SphereGeometry(0.32, 14, 10), skin, 1.06);
+    const head = push(new THREE.SphereGeometry(0.32, 14, 10), skin.head, 1.06);
     head.position.y = 1.65;
     group.add(head);
     const mask = push(new THREE.BoxGeometry(0.62, 0.14, 0.02), 0x0a0a0a, 1.02);
     mask.position.set(0, 1.7, 0.3);
     group.add(mask);
-    const torso = push(new THREE.BoxGeometry(0.7, 0.9, 0.42), bodyColor, 1.05);
+    const torso = push(new THREE.BoxGeometry(0.7, 0.9, 0.42), skin.body, 1.05);
     torso.position.y = 1.05;
     group.add(torso);
-    const emblem = push(new THREE.BoxGeometry(0.32, 0.18, 0.02), 0xffd700, 1.04);
+    const emblem = push(new THREE.BoxGeometry(0.32, 0.18, 0.02), skin.accent, 1.04);
     emblem.position.set(0, 1.15, 0.22);
     group.add(emblem);
 
@@ -1261,10 +1301,10 @@ export class GameEngine {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.47, 1.45, 0);
       // Arm segment extends downward from pivot (origin at top of arm)
-      const sleeveG = push(armGeo, bodyColor, 1.05);
+      const sleeveG = push(armGeo, skin.body, 1.05);
       sleeveG.position.y = -0.35; // half of arm length so top is at pivot
       pivot.add(sleeveG);
-      const handG = push(handGeo, skin, 1.08);
+      const handG = push(handGeo, skin.head, 1.08);
       handG.position.set(0, -0.78, 0);
       pivot.add(handG);
       return pivot;
@@ -1283,7 +1323,7 @@ export class GameEngine {
     gunBarrel.rotation.x = Math.PI / 2;
     gunBarrel.position.set(0, -0.82, 0.45);
     heldGun.add(gunBarrel);
-    const gunMag = push(new THREE.BoxGeometry(0.1, 0.12, 0.1), 0xffd700, 1.06);
+    const gunMag = push(new THREE.BoxGeometry(0.1, 0.12, 0.1), skin.accent, 1.06);
     gunMag.position.set(0, -0.93, 0.08);
     heldGun.add(gunMag);
     rightArm.add(heldGun);
@@ -1294,7 +1334,7 @@ export class GameEngine {
     const buildLeg = (side) => {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.18, 0.82, 0);
-      const lg = push(legGeo, dark, 1.05);
+      const lg = push(legGeo, skin.leg, 1.05);
       lg.position.y = -0.42;
       pivot.add(lg);
       const bt = push(bootGeo, 0x0a0a0a, 1.05);
@@ -1306,12 +1346,71 @@ export class GameEngine {
     const rightLeg = buildLeg(1);
     group.add(leftLeg); group.add(rightLeg);
 
-    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg };
+    // ----- Aura (skin-specific) -----
+    // Two stacked rings at the player's feet + a soft halo sphere. The
+    // per-frame update animates opacity / rotation based on aura_mode.
+    let aura = null;
+    if (skin.aura_mode && skin.aura_mode !== "none" && skin.aura) {
+      aura = new THREE.Group();
+      const ringInner = new THREE.Mesh(
+        new THREE.TorusGeometry(0.7, 0.05, 8, 28),
+        new THREE.MeshBasicMaterial({
+          color: skin.aura,
+          transparent: true,
+          opacity: 0.65,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      ringInner.rotation.x = Math.PI / 2;
+      const ringOuter = new THREE.Mesh(
+        new THREE.TorusGeometry(0.95, 0.045, 8, 32),
+        new THREE.MeshBasicMaterial({
+          color: skin.aura,
+          transparent: true,
+          opacity: 0.4,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      ringOuter.rotation.x = Math.PI / 2;
+      ringOuter.position.y = 0.02;
+      const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(0.55, 14, 10),
+        new THREE.MeshBasicMaterial({
+          color: skin.aura,
+          transparent: true,
+          opacity: 0.12,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      halo.position.y = 1.0;
+      aura.add(ringInner); aura.add(ringOuter); aura.add(halo);
+      aura.userData.mode = skin.aura_mode;
+      aura.userData.color = skin.aura;
+      aura.userData.ringInner = ringInner;
+      aura.userData.ringOuter = ringOuter;
+      aura.userData.halo = halo;
+      aura.position.y = 0.03;
+      group.add(aura);
+    }
+
+    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura };
   }
 
   _addRemotePlayer(state) {
-    const color = state.is_bot ? 0x9b59b6 : this._hashColor(state.id);
-    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg } = this._buildHumanoid(color);
+    // Resolve the skin from the state tick. Falls back to a hashed body
+    // color when the player pre-dates the skins system (legacy accounts).
+    const skin = state.skin ? skinById(state.skin) : {
+      body: state.is_bot ? 0x9b59b6 : this._hashColor(state.id),
+      leg: 0x1a1a1a,
+      head: 0xf2c08a,
+      accent: 0xffd700,
+      aura: 0x000000,
+      aura_mode: "none",
+    };
+    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     this.scene.add(group);
     const label = this._makeLabel(state.username, state.is_bot);
@@ -1349,7 +1448,8 @@ export class GameEngine {
     const entry = {
       mesh: group,
       label,
-      color,
+      color: skin.body,
+      skinId: state.skin || "default",
       bodyMeshes,
       leftArm, rightArm, leftLeg, rightLeg,
       lastHp: state.hp,
@@ -1361,6 +1461,8 @@ export class GameEngine {
       deathT: 0,
       invulnRing,
       invulnGlow,
+      aura,
+      auraPhase: Math.random() * 6.28,
     };
     this.players.set(state.id, entry);
     return entry;
@@ -1477,6 +1579,13 @@ export class GameEngine {
         }
         let entry = this.players.get(p.id);
         if (!entry) entry = this._addRemotePlayer(p);
+        // Hot-swap mesh if the player equipped a new skin mid-session.
+        // Cheap because skins don't share state — we rebuild from scratch.
+        if (p.skin && entry.skinId && p.skin !== entry.skinId) {
+          this.scene.remove(entry.mesh);
+          this.players.delete(p.id);
+          entry = this._addRemotePlayer(p);
+        }
         if (entry.lastHp != null && p.hp < entry.lastHp && p.alive) {
           entry.flashUntil = performance.now() + 180;
         }
@@ -1965,6 +2074,35 @@ export class GameEngine {
         entry.leftLeg.rotation.x *= 0.85;
         entry.rightLeg.rotation.x *= 0.85;
         entry.mesh.position.y *= 0.85;
+      }
+      // Aura animation — drives the per-skin floor ring + halo. Hidden
+      // while dying so K.O. doesn't carry the glow.
+      if (entry.aura) {
+        const showAura = entry.deathT < 0.05 && entry.alive !== false;
+        entry.aura.visible = showAura;
+        if (showAura) {
+          entry.auraPhase = (entry.auraPhase || 0) + dt;
+          const mode = entry.aura.userData.mode;
+          const inner = entry.aura.userData.ringInner;
+          const outer = entry.aura.userData.ringOuter;
+          const halo  = entry.aura.userData.halo;
+          if (mode === "pulse") {
+            const p = 0.5 + 0.5 * Math.sin(entry.auraPhase * 3.2);
+            if (inner) inner.material.opacity = 0.35 + p * 0.5;
+            if (outer) outer.material.opacity = 0.15 + p * 0.35;
+            if (halo)  halo.material.opacity  = 0.08 + p * 0.14;
+          } else if (mode === "spin") {
+            if (inner) { inner.rotation.z += dt * 1.8; inner.material.opacity = 0.6; }
+            if (outer) { outer.rotation.z -= dt * 1.2; outer.material.opacity = 0.35; }
+            if (halo)  { halo.material.opacity = 0.10 + 0.05 * Math.sin(entry.auraPhase * 5); }
+          } else if (mode === "flicker") {
+            // Sharp on/off + occasional dropouts so the ghost feels jittery.
+            const on = ((entry.auraPhase * 9) | 0) % 5 !== 0;
+            if (inner) inner.material.opacity = on ? 0.7 : 0.05;
+            if (outer) outer.material.opacity = on ? 0.4 : 0.02;
+            if (halo)  halo.material.opacity  = on ? 0.16 : 0.0;
+          }
+        }
       }
     }
   }

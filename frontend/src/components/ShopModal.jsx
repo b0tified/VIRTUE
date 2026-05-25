@@ -1,0 +1,292 @@
+/* Skin shop modal. Renders the SKINS catalog as a grid of cards with the
+   user's current coin balance up top; each card shows a live 2D preview
+   of the skin (humanoid silhouette colored per skin), the price, ownership
+   state, and a Buy / Equip / Equipped action.
+
+   Buying calls POST /api/shop/buy and auto-equips on success. The auth
+   context's `refreshMe()` is called after each successful mutation so the
+   wallet + equipped indicator update everywhere (lobby PlayerCard, header
+   coin badge, etc.) without a page reload.
+*/
+import { useEffect, useMemo, useState } from "react";
+import api from "@/api";
+import { SKINS, RARITY_COLOR } from "@/game/skins";
+import { useAuth } from "@/context/AuthContext";
+import { Coins, Check, X, Lock } from "lucide-react";
+
+export default function ShopModal({ open, onClose }) {
+  const { user, refreshMe } = useAuth();
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const reload = async () => {
+    try {
+      const { data } = await api.get("/shop/skins");
+      setData(data);
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message || "Failed to load shop.");
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    reload();
+  }, [open]);
+
+  const coins = data?.coins ?? user?.coins ?? 0;
+  const selected = data?.selected_skin ?? user?.selected_skin ?? "default";
+  const items = data?.items || SKINS.map((s) => ({ ...s, owned: s.id === "default", equipped: s.id === selected }));
+
+  const buy = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/shop/buy", { skin_id: id });
+      await refreshMe?.();
+      await reload();
+    } catch (e) {
+      setError(e.response?.data?.detail || "Could not buy skin.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const equip = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/profile/me/skin", { skin_id: id });
+      await refreshMe?.();
+      await reload();
+    } catch (e) {
+      setError(e.response?.data?.detail || "Could not equip skin.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3"
+      data-testid="shop-modal"
+      onClick={onClose}
+    >
+      <div
+        className="card-pow w-[min(960px,96vw)] max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-black text-white px-5 py-3 flex items-center justify-between flex-shrink-0">
+          <div className="font-display text-3xl text-pow-shadow flex items-center gap-3">
+            <span className="text-[#FFD700]">SKIN</span><span className="text-white">SHOP</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div
+              className="border-pow shadow-pow-sm px-3 py-1.5 flex items-center gap-2"
+              style={{ background: "#FFD700", color: "#0A0A0A" }}
+              data-testid="shop-coin-balance"
+            >
+              <Coins size={14} strokeWidth={3} />
+              <span className="font-anton uppercase text-[10px] tracking-widest opacity-70">Coins</span>
+              <span className="font-display text-xl leading-none">{coins}</span>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-neutral-400 hover:text-white"
+              data-testid="shop-close"
+            >
+              <X size={22} strokeWidth={3} />
+            </button>
+          </div>
+        </div>
+        {/* Grid */}
+        <div className="bg-white p-4 overflow-y-auto" data-testid="shop-grid">
+          {error && (
+            <div
+              className="mb-3 px-3 py-2 border-2 border-[#E62429] bg-[#FFE4E4] text-[#7a1115] font-anton uppercase tracking-widest text-xs"
+              data-testid="shop-error"
+            >
+              {error}
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {items.map((s) => (
+              <SkinCard
+                key={s.id}
+                skin={s}
+                coins={coins}
+                busy={busy}
+                onBuy={() => buy(s.id)}
+                onEquip={() => equip(s.id)}
+              />
+            ))}
+          </div>
+          <p className="text-[10px] text-neutral-500 mt-4 text-center">
+            Earn coins by leveling up (+100/level) or redeeming promo codes. Skins are
+            permanent once bought.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Single skin card. Renders a flat CSS-only humanoid preview using the
+   skin's palette + an animated aura ring underneath. No Three.js — the
+   preview is good enough for the shop and stays performant. */
+function SkinCard({ skin, coins, busy, onBuy, onEquip }) {
+  const canAfford = coins >= skin.price;
+  const rarityHex = RARITY_COLOR[skin.rarity] || "#9aa3ad";
+  const auraStyle = useMemo(() => auraCss(skin), [skin]);
+  const colorHex = (n) => "#" + (n & 0xffffff).toString(16).padStart(6, "0");
+  return (
+    <div
+      className="border-pow shadow-pow-sm bg-neutral-50 flex flex-col"
+      data-testid={`shop-skin-${skin.id}`}
+      data-rarity={skin.rarity}
+    >
+      {/* Preview area */}
+      <div
+        className="relative h-44 overflow-hidden flex items-end justify-center"
+        style={{ background: `linear-gradient(180deg, ${colorHex(skin.body)}33 0%, #0A0A0A 100%)` }}
+      >
+        {/* Aura disc behind the figure */}
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-32 h-6 rounded-full" style={auraStyle} />
+        {/* Mini humanoid (CSS only) */}
+        <div className="relative mb-2" style={{ width: 76, height: 130 }}>
+          {/* Head */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 rounded-full border-2 border-black"
+            style={{ width: 28, height: 28, top: 0, background: colorHex(skin.head) }}
+          />
+          {/* Mask band */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
+            style={{ width: 30, height: 6, top: 10, background: "#0A0A0A" }}
+          />
+          {/* Torso */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
+            style={{ width: 42, height: 44, top: 30, background: colorHex(skin.body) }}
+          />
+          {/* Emblem */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
+            style={{ width: 14, height: 10, top: 42, background: colorHex(skin.accent) }}
+          />
+          {/* Arms */}
+          <div
+            className="absolute border-2 border-black"
+            style={{ width: 10, height: 36, top: 32, left: 4, background: colorHex(skin.body) }}
+          />
+          <div
+            className="absolute border-2 border-black"
+            style={{ width: 10, height: 36, top: 32, right: 4, background: colorHex(skin.body) }}
+          />
+          {/* Legs */}
+          <div
+            className="absolute border-2 border-black"
+            style={{ width: 14, height: 40, top: 76, left: 20, background: colorHex(skin.leg) }}
+          />
+          <div
+            className="absolute border-2 border-black"
+            style={{ width: 14, height: 40, top: 76, right: 20, background: colorHex(skin.leg) }}
+          />
+        </div>
+        {/* Rarity chip */}
+        <div
+          className="absolute top-2 left-2 font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border-2 border-black"
+          style={{ background: rarityHex, color: "#0A0A0A" }}
+          data-testid={`shop-skin-rarity-${skin.id}`}
+        >
+          {skin.rarity}
+        </div>
+        {/* Equipped pin */}
+        {skin.equipped && (
+          <div
+            className="absolute top-2 right-2 font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 bg-[#06A35F] text-white border-2 border-black flex items-center gap-1"
+            data-testid={`shop-skin-equipped-${skin.id}`}
+          >
+            <Check size={11} strokeWidth={3} /> EQUIPPED
+          </div>
+        )}
+      </div>
+      {/* Footer */}
+      <div className="p-3 flex items-center justify-between gap-2">
+        <div>
+          <div className="font-anton uppercase tracking-widest text-sm">{skin.name}</div>
+          <div className="flex items-center gap-1 text-xs text-neutral-600 font-anton uppercase tracking-widest">
+            <Coins size={12} strokeWidth={3} className="text-[#a36a00]" /> {skin.price}
+          </div>
+        </div>
+        {skin.equipped ? (
+          <button
+            disabled
+            className="btn-pow bg-neutral-200 text-neutral-500 [&]:px-3 [&]:py-1.5 [&]:text-xs"
+            data-testid={`shop-skin-action-${skin.id}`}
+          >
+            EQUIPPED
+          </button>
+        ) : skin.owned ? (
+          <button
+            disabled={busy}
+            onClick={onEquip}
+            className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs"
+            data-testid={`shop-skin-action-${skin.id}`}
+          >
+            EQUIP
+          </button>
+        ) : (
+          <button
+            disabled={busy || !canAfford}
+            onClick={onBuy}
+            className={`btn-pow [&]:px-3 [&]:py-1.5 [&]:text-xs ${canAfford ? "bg-[#FFD700] text-black" : "bg-neutral-200 text-neutral-500"}`}
+            data-testid={`shop-skin-action-${skin.id}`}
+            title={canAfford ? "Buy this skin" : "Not enough coins"}
+          >
+            <span className="flex items-center gap-1">
+              {!canAfford && <Lock size={11} strokeWidth={3} />}
+              BUY
+            </span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* CSS gradient that approximates the skin's aura. Defaults to a flat
+   disc; animated modes get a subtle keyframe shimmer via inline animation
+   names already defined in the Lobby's animation registry (banner-shimmer
+   reused for spin/pulse). */
+function auraCss(skin) {
+  if (!skin.aura_mode || skin.aura_mode === "none") {
+    return { background: "transparent" };
+  }
+  const color = "#" + (skin.aura & 0xffffff).toString(16).padStart(6, "0");
+  if (skin.aura_mode === "pulse") {
+    return {
+      background: `radial-gradient(ellipse at 50% 50%, ${color}cc 0%, ${color}55 60%, transparent 100%)`,
+      animation: "shop-aura-pulse 2s ease-in-out infinite",
+      filter: "blur(2px)",
+    };
+  }
+  if (skin.aura_mode === "spin") {
+    return {
+      background: `conic-gradient(from 0deg, ${color}cc, transparent 35%, ${color}99 65%, transparent 90%, ${color}cc)`,
+      animation: "shop-aura-spin 3s linear infinite",
+      filter: "blur(2px)",
+    };
+  }
+  // flicker
+  return {
+    background: `radial-gradient(ellipse at 50% 50%, ${color}cc 0%, ${color}55 60%, transparent 100%)`,
+    animation: "shop-aura-flicker 0.9s steps(2, end) infinite",
+    filter: "blur(3px)",
+  };
+}

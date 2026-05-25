@@ -160,6 +160,11 @@ class LocalPlayer {
     this.banner_animated = !!opts.banner_animated;
     this.peak_rank_tier = opts.peak_rank_tier ?? 0;
     this.level = opts.level ?? 1;
+    // Skin shown on the humanoid. Bots get a random non-default skin so
+    // the local arena visually matches the online lobby's variety.
+    this.skin = opts.skin ?? (opts.is_bot
+      ? ["default", "azure", "neon", "crimson", "verdant", "ghost"][Math.floor(Math.random() * 6)]
+      : "default");
     this.max_hp = opts.is_bot ? BOT_MAX_HP : MAX_HP;
     this.hp = this.max_hp;
     const sp = spawn();
@@ -228,6 +233,7 @@ class LocalPlayer {
       banner_animated: this.banner_animated,
       peak_rank_tier: this.peak_rank_tier,
       level: this.level,
+      skin: this.skin,
       platform: this.platform,
       x: this.x, y: this.y, z: this.z,
       yaw: this.yaw, pitch: this.pitch,
@@ -276,6 +282,7 @@ export class LocalSim {
       banner_animated: !!this.user?.banner_animated,
       peak_rank_tier: this.user?.peak_rank_tier ?? 0,
       level: this.user?.level ?? 1,
+      skin: this.user?.selected_skin || "default",
     });
     this.me = me;
     this.players.set(me.id, me);
