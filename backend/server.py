@@ -1727,6 +1727,12 @@ class GameRoom:
         self.match_start = time.time()
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
+        # Incremented each time end_match runs. Stamped on each joining player
+        # as `joined_match_num` so we can target match_end broadcasts at only
+        # the players who actually participated in that match — joining
+        # quick-play seconds before match_end no longer dumps the overlay
+        # on a fresh player.
+        self.match_num = 0
         # Healthpack state — one entry per static position. `available`
         # toggles when a player picks one up; `respawn_at` is the wall
         # clock time at which it pops back. Initially all available.
@@ -1775,6 +1781,11 @@ class GameRoom:
     async def add(self, player: Player):
         async with self.lock:
             self.players[player.id] = player
+        # Stamp the match this player will participate in. During intermission,
+        # the upcoming match is match_num + 1 (current match is over). This
+        # lets end_match target its broadcast precisely so late joiners don't
+        # see the previous match's "MATCH OVER" overlay.
+        player.joined_match_num = self.match_num + (1 if self.in_intermission else 0)
         # Track non-spectator real players' location for spectate discovery.
         if not player.is_bot and not getattr(player, "is_spectator", False) and player.user_id:
             kind = "ranked" if self.is_ranked else "casual"
@@ -2638,6 +2649,11 @@ class GameRoom:
             "is_ranked": self.is_ranked,
         }
         self.last_match_end_payload = payload
+        # Snapshot the match number BEFORE the broadcast so we can scope it
+        # to exactly the players who joined this match. Late joiners (joining
+        # quick-play in the last few seconds) have a higher joined_match_num
+        # and will get match_start cleanly without seeing the prior overlay.
+        ended_match_num = self.match_num
 
         # Persist per-player match history (newest first via index on ended_at desc).
         # Offline rooms set self.is_offline=True; we tag those for filtering.
@@ -2693,7 +2709,17 @@ class GameRoom:
         except Exception as e:
             logger.warning("match_history insert failed: %s", e)
 
-        await self.broadcast(payload)
+        # Targeted broadcast: only players who joined this match get the
+        # match_end overlay. Bots are skipped naturally (no ws). Spectators
+        # also receive it so their UI can show the final standings.
+        await asyncio.gather(*(
+            self._send(p, payload)
+            for p in self.players.values()
+            if (
+                getattr(p, "is_spectator", False)
+                or getattr(p, "joined_match_num", ended_match_num) == ended_match_num
+            )
+        ), return_exceptions=True)
 
         # Intermission: 10s
         await asyncio.sleep(10.0)
@@ -2709,9 +2735,12 @@ class GameRoom:
             p.alive = True
             p.invuln_until = time.time() + 3.0
             p.last_attacker = None
+            # All current players are now participating in the next match.
+            p.joined_match_num = self.match_num + 1
         self.match_start = time.time()
         self.in_intermission = False
         self.last_match_end_payload = None
+        self.match_num += 1
         await self.broadcast({"type": "match_start", "duration": self.match_duration})
 
     async def run(self):

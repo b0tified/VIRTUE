@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration-9 testing: validated (1) backend match_num targeting fix for the casual-room instant-match-end bug, and (2) the new MatchResultOverlay (Victory/Defeat splash). Wrote 7-test pytest suite that programmatically constructs a GameRoom with match_duration=2s, all 7 PASSED. Frontend overlay verified end-to-end via offline-flow + synthetic match_end injection on window.__virtue_sock. Victory, Defeat, Lobby button, and 15s auto-fallback all work. One regression found: Play Again button in offline/casual mode does not dismiss the overlay (overlay remains visible after click).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "MatchResultOverlay / Game.jsx onPlayAgain handler",
+        "issue": "In offline/casual mode the Play Again button click does NOT dismiss the Victory/Defeat overlay. Test injected a match_end (victory), clicked match-result-play-again, waited 2.5s — overlay-end-overlay is still present (URL also unchanged, so no nav happened, meaning the else-branch `setHud(h => ({...h, matchEnd: null}))` is either not firing or the state update is not propagating). Defeat overlay later injected on top did render correctly, so React state IS updating in general — but this specific click isn't clearing matchEnd. May be a stale-closure on `mode` (captured from useSearchParams at first render?) or the click is being swallowed by an overlay layer.",
+        "selector": "[data-testid='match-result-play-again']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Game.jsx match_end handler (lines 268-271)",
+        "issue": "The 15s auto-fallback setTimeout in the match_end handler is NEVER cleared when the user clicks Play Again. This means even after a successful Play Again dismiss in casual mode, the user will still be auto-navigated to /lobby 15s after the original match_end. Should store the timeout id in a ref and clearTimeout it inside onPlayAgain (or whenever matchEnd is cleared).",
+        "selector": "n/a",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9_match_num_targeting.py",
+    "/app/test_reports/pytest/iteration9_match_num_results.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): Play Again click in casual/offline mode must dismiss the match-end overlay. Investigate Game.jsx lines 520-532 — verify the `mode` variable in the handler closure is the live mode (likely needs to be re-read from URL inside the handler) and that setHud(matchEnd: null) is actually being called. Could also be that match-result-play-again's data-testid is duplicated or a higher-z element is eating the click.",
+    "FIX (MEDIUM): Clear the 15s auto-fallback setTimeout in Game.jsx (~line 268) inside both onPlayAgain and onLobby handlers, otherwise users who Play Again successfully will still get yanked to lobby after 15s.",
+    "REVERT INSTRUMENTATION: Decide whether to keep `window.__virtue_sock = sock;` in Game.jsx (added during testing). If you want it permanent, gate it under NODE_ENV !== 'production'.",
+    "Consider: the auto-fallback setTimeout is unconditional even for ranked. In ranked the Play Again ALSO navigates — both timers + nav both fire — fine functionally but wastes the timer."
+  ],
+  "critical_code_review_comments": [
+    "GameRoom.match_num fix is correct: __init__ sets to 0, add() stamps joined_match_num based on in_intermission, end_match snapshots ended_match_num before broadcast, asyncio.gather targets only matching players + spectators, reset block bumps match_num. Backend logic is solid.",
+    "MatchResultOverlay.jsx is well structured. ordinal() correctly produces '1ST'/'2ND'/'3RD'. data-result attribute toggles correctly. Stat tiles correctly conditional on isRanked.",
+    "Game.jsx setTimeout(15000) auto-fallback is fire-and-forget — no cleanup on unmount or on dismiss. Add a useRef to track it and clearTimeout in (a) Play Again handler, (b) Lobby handler, (c) cleanup of useEffect."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration9_match_num_targeting.py (NEW)",
+    "/app/frontend/src/pages/Game.jsx (added `window.__virtue_sock = sock;` after sockRef.current = sock — test instrumentation, ~3 lines added)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "80% (4/5 verified: victory ok, defeat ok, lobby ok, auto-fallback ok, play-again-dismiss FAILS)"
+  },
+  "test_credentials": "player1@shooter.com / player123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None — fixtures construct GameRoom in-process with SpyWS, no DB writes.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests are stable and reusable (asyncio.sleep monkeypatched to collapse 10s intermission). The frontend test pattern uses `window.__virtue_sock.onMessage({type:'match_end', placements:[...]})` injection after navigating to /play?mode=offline — works reliably once engine is ready (poll for !!window.__virtueEngine?.youId). Re-test Play Again offline once main agent fixes the handler. Ranked Play Again navigation path was not e2e tested (requires bot-filled ranked match) but the code (`if (mode === 'ranked') nav('/lobby')`) is straightforward and code-reviewed.",
+  "rca_of_the_issue": "Play Again offline non-dismiss RCA candidates: (1) `mode` in the onPlayAgain arrow function may close over a stale value from the very first render — though useSearchParams should return live values. (2) match-result-play-again button click might be intercepted by the overlay's wrapping `<div data-testid='match-end-overlay'>` if pointer-events on a child are mis-set — but click did NOT navigate so it landed on the right button. (3) setHud(...matchEnd:null) may be racing with the auto-fallback timer or another setHud that re-asserts matchEnd. Suggested fix: console.log inside onPlayAgain to confirm it fires, and confirm matchEnd is being cleared in hud state."
+}

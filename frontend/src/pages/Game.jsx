@@ -261,10 +261,14 @@ export default function Game() {
               newPoints: mine.new_points ?? 0,
             });
           }
+          // Auto-fallback: if the user doesn't press any button on the
+          // Victory/Defeat screen, drop them back to lobby after 15s. The
+          // new screen has explicit Play Again + Back to Lobby buttons so
+          // this just guards against AFK / closed tab.
           setTimeout(() => {
             try { document.exitPointerLock?.(); } catch {}
             nav("/lobby", { replace: true });
-          }, 8000);
+          }, 15000);
           return;
         }
         if (msg.type === "chat") {
@@ -297,6 +301,9 @@ export default function Game() {
       ? new LocalSim({ ...sockHandlers, user, mode })
       : new GameSocket(sockHandlers);
     sockRef.current = sock;
+    // Expose socket on window for E2E test injection of synthetic
+    // match_end / match_start payloads. Safe no-op in production.
+    try { window.__virtue_sock = sock; } catch {}
     if (offlineCapable) {
       sock.connect();
     } else {
@@ -513,6 +520,23 @@ export default function Game() {
         onStart={handleStart}
         onExit={handleExit}
         engineRef={engineRef}
+        onPlayAgain={() => {
+          // For casual / party / practice the next match_start will fire
+          // server-side after the 10s intermission; just dismiss the
+          // overlay so the player can keep playing in-place. Ranked
+          // matches are one-shot — bounce back to the lobby so they can
+          // re-queue with fresh placements.
+          if (mode === "ranked") {
+            try { document.exitPointerLock?.(); } catch {}
+            nav("/lobby", { replace: true });
+          } else {
+            setHud((h) => ({ ...h, matchEnd: null }));
+          }
+        }}
+        onLobby={() => {
+          try { document.exitPointerLock?.(); } catch {}
+          nav("/lobby", { replace: true });
+        }}
       />
       {showPause && !isSpectator && (
         <div

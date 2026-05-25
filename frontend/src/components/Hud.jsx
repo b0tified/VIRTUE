@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2 } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import PlayerCard from "@/components/PlayerCard";
+import MatchResultOverlay from "@/components/MatchResultOverlay";
 import settingsStore from "@/game/settings";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
@@ -53,7 +54,7 @@ function formatTime(seconds) {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
-export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef }) {
+export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef, onPlayAgain, onLobby }) {
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
@@ -405,61 +406,15 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
         </div>
       )}
 
-      {/* Match end overlay */}
+      {/* Match end overlay — Victory / Defeat splash with placement stats */}
       {hud.matchEnd && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 p-6" data-testid="match-end-overlay">
-          <div className="card-pow p-0 w-full max-w-2xl">
-            <div className="bg-[#0055FF] text-white px-6 py-4 flex items-center justify-between">
-              <div className="font-display text-4xl text-[#FFD700]">MATCH OVER</div>
-              <div className="font-anton uppercase text-sm tracking-widest">
-                {hud.isRanked ? "Returning to lobby..." : "Next match in 10s"}
-              </div>
-            </div>
-            <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
-              <div className="col-span-1">#</div>
-              <div className="col-span-5">Player</div>
-              <div className="col-span-2 text-right">Kills</div>
-              <div className="col-span-2 text-right">Δ RP</div>
-              <div className="col-span-2 text-right">Rank</div>
-            </div>
-            {(hud.matchEnd.placements || []).map((p, i) => {
-              const c = RANK_COLORS[Math.max(0, Math.min(7, p.rank_tier ?? 0))];
-              return (
-                <div key={p.id} className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i === 0 ? "bg-[#FFE680]" : "bg-white"}`} data-testid={`match-end-row-${i}`}>
-                  <div className="col-span-1 font-display text-xl">{i + 1}</div>
-                  <div className="col-span-5 font-anton uppercase flex items-center gap-2">
-                    <span>{p.username}</span>
-                    {p.is_placement && (
-                      <span
-                        className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-1.5 text-[10px] font-anton uppercase"
-                        title={`Placement match ${p.placement_match_number}/${p.placement_matches_total} — 2x RP, no loss`}
-                        data-testid={`placement-badge-${i}`}
-                      >
-                        <Star size={10} strokeWidth={3} /> P{p.placement_match_number}/{p.placement_matches_total}
-                      </span>
-                    )}
-                  </div>
-                  <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
-                  <div className={`col-span-2 text-right font-display text-2xl ${p.delta >= 0 ? "text-[#06A35F]" : "text-[#E62429]"}`} data-testid={`match-end-delta-${i}`}>
-                    {p.delta >= 0 ? "+" : ""}{p.delta}
-                    {p.is_placement && p.delta > 0 && (
-                      <span className="ml-1 text-xs font-anton text-[#9B59B6]">2x</span>
-                    )}
-                  </div>
-                  <div className="col-span-2 text-right">
-                    <span className="inline-flex items-center gap-1 font-anton uppercase text-sm px-2 py-1" style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}>
-                      {(() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={12} strokeWidth={3} />; })()}
-                      {p.rank_name}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-            {(!hud.matchEnd.placements || hud.matchEnd.placements.length === 0) && (
-              <div className="p-6 font-anton text-center uppercase">No ranked players this match</div>
-            )}
-          </div>
-        </div>
+        <MatchResultOverlay
+          matchEnd={hud.matchEnd}
+          youId={hud.youId}
+          isRanked={!!hud.isRanked}
+          onPlayAgain={onPlayAgain}
+          onLobby={onLobby}
+        />
       )}
 
       {/* Click-to-play overlay removed — clicking the canvas now requests
