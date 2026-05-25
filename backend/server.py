@@ -1379,6 +1379,33 @@ PLAYER_RADIUS = 0.5
 PLAYER_HEIGHT = 1.8
 MAX_HP = 100
 BOT_MAX_HP = 80
+
+# Out-of-combat health regeneration. Once a player has gone
+# `HEALTH_REGEN_DELAY` seconds without taking damage, they tick back up
+# at `HEALTH_REGEN_PER_SEC` HP/s until full. Reset on any damage source.
+HEALTH_REGEN_DELAY = 5.0      # seconds since last hit
+HEALTH_REGEN_PER_SEC = 18.0   # ~5.6s to full from 0
+
+# Healthpack pickups — server-spawned static entities at fixed map
+# positions. When a player walks within `HEALTHPACK_PICKUP_RADIUS` of
+# an *available* pack while not at full HP, the pack is consumed,
+# the player gains `HEALTHPACK_HEAL` HP (capped at max_hp), and the
+# pack respawns after `HEALTHPACK_RESPAWN_SECONDS`.
+HEALTHPACK_HEAL = 50
+HEALTHPACK_PICKUP_RADIUS = 1.4
+HEALTHPACK_RESPAWN_SECONDS = 20.0
+# Hand-picked spawn points spread across the arena. Y is fixed at 0.5
+# (floor + small lift so the model sits visibly above the ground).
+HEALTHPACK_POSITIONS: List[tuple] = [
+    (12.0, 0.0),
+    (-12.0, 0.0),
+    (0.0, 12.0),
+    (0.0, -12.0),
+    (8.0, 8.0),
+    (-8.0, -8.0),
+    (8.0, -8.0),
+    (-8.0, 8.0),
+]
 SHOT_DAMAGE = 25
 LASER_DAMAGE = 8
 BOT_SHOT_DAMAGE = 16
@@ -1571,6 +1598,11 @@ class Player:
         self.reload_until_ms: Dict[str, int] = {"ak47": 0, "laser": 0}
         self.spread: float = 0.0  # current cone radius in radians
         self.is_ads: bool = False
+        # Out-of-combat regen tracker — `last_damage_at` is bumped to
+        # `time.time()` every time the player takes any damage (bullet,
+        # melee, laser). After `HEALTH_REGEN_DELAY` seconds without a
+        # hit, the tick loop slowly tops the player back up.
+        self.last_damage_at: float = 0.0
         # Laser beam state — continuous-fire weapon with heat instead of ammo.
         # heat: 0.0..1.0 (1.0 = overheated, locks fire until full cooldown).
         self.laser_heat: float = 0.0
@@ -1695,6 +1727,13 @@ class GameRoom:
         self.match_start = time.time()
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
+        # Healthpack state — one entry per static position. `available`
+        # toggles when a player picks one up; `respawn_at` is the wall
+        # clock time at which it pops back. Initially all available.
+        self.healthpacks: List[dict] = [
+            {"id": f"hp_{i}", "x": float(x), "z": float(z), "available": True, "respawn_at": 0.0}
+            for i, (x, z) in enumerate(HEALTHPACK_POSITIONS)
+        ]
 
     def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None):
         bot = Player(ws=None, is_bot=True, bot_name=name)
@@ -1985,6 +2024,7 @@ class GameRoom:
         if best is not None:
             best.hp -= MELEE_DAMAGE
             best.last_attacker = attacker.id
+            best.last_damage_at = time.time()
             self.events.append({
                 "type": "hit",
                 "shooter_id": attacker.id,
@@ -2060,6 +2100,7 @@ class GameRoom:
                 damage = int(round(damage))
             hit.hp -= damage
             hit.last_attacker = shooter.id
+            hit.last_damage_at = time.time()
             self.events.append({
                 "type": "hit",
                 "shooter_id": shooter.id,
@@ -2126,6 +2167,7 @@ class GameRoom:
             damage = int(round(damage * cfg.get("headshot_mult", 1.5)))
         hit.hp -= damage
         hit.last_attacker = shooter.id
+        hit.last_damage_at = time.time()
         # Throttle hit events for the beam too — only emit when victim drops a
         # noticeable chunk OR died (else we'd flood the wire at 20 Hz).
         emit_hit = (hit.hp <= 0) or ((int(hit.hp) // 10) != ((int(hit.hp) + damage) // 10))
@@ -2424,6 +2466,16 @@ class GameRoom:
                 if p.spread < cfg["spread_base"]:
                     p.spread = cfg["spread_base"]
                 p.finish_reload_if_due()
+            # Out-of-combat health regen — alive players (real or bot)
+            # who haven't taken damage in `HEALTH_REGEN_DELAY` seconds
+            # tick back up at `HEALTH_REGEN_PER_SEC` HP/s. Spawn-invuln
+            # gold dot ticks the same way (we still respect invuln).
+            if p.alive and p.hp < p.max_hp:
+                last_hit = float(getattr(p, "last_damage_at", 0.0) or 0.0)
+                if (now - last_hit) >= HEALTH_REGEN_DELAY:
+                    new_hp = min(p.max_hp, int(p.hp + HEALTH_REGEN_PER_SEC * dt))
+                    if new_hp != p.hp:
+                        p.hp = new_hp
             # Laser beam tick — apply continuous damage + heat ramp, or cool off.
             if p.alive and not p.is_bot:
                 if p.laser_firing and p.weapon == "laser" and not p.laser_overheated:
