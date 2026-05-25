@@ -193,6 +193,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Fix: `GameRoom.add` now resets `match_start = now()` when the first real (non-spectator, non-bot) player joins while the room is not in intermission. Subsequent joiners do NOT reset the clock. Spectator joins also don't reset.
 - 🧪 4 new regression tests + 12 prior tests passing (no regressions): clock resets on first real-player join, clock does NOT reset for spectators, clock does NOT reset for subsequent joiners, end_match would NOT trigger immediately after add+tick.
 
+### Iteration 22 — **THIS SESSION (2026-02-25, late)**
+- ✅ **DOWNTOWN is now a night map with glowing windows** — Added `_applyDayNight(night)` to the engine. On the DOWNTOWN map: navy night sky gradient + 220 random stars on the upper hemisphere + a moon with a soft halo (replacing the daytime sun + corona); dimmed `DirectionalLight` (1.4 → 0.35, cool blue tint) + `HemisphereLight` (1.0 → 0.45); dark asphalt floor; trees + benches hidden; lampposts kept (their yellow bulbs now read as actual city light); clouds hidden.
+- **Window glow** — `_makeBuildingFaceTexture` accepts a `night` flag. Night variant draws each window with a soft warm radial gradient halo + bright yellow core + dark cross frame, with ~30% windows randomly "off" (dark) for variety. Building face plane swaps to `AdditiveBlending` at night so the windows visibly bloom against the dark sky. Night building body palette is night-tinted concrete (blues/grays). Day variant unchanged.
+- Day/night flag tracked in `this._isNight`; `_rebuildArenaFromServer` calls `_applyDayNight(arena.map_id === "downtown")` BEFORE rebuilding buildings so face textures pick up the correct variant.
+- SHORELINE + CROSSFIRE remain daytime.
+- 🧪 Verified live: DOWNTOWN renders with deep night sky, stars, glowing yellow windows, dark asphalt streets, and atmospheric bird silhouettes. Lint clean.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

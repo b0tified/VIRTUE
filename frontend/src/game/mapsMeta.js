@@ -28,15 +28,15 @@ export const MAP_DOWNTOWN = {
   name: "DOWNTOWN",
   size: 50,
   // Single-sentence tagline for the loading screen.
-  tagline: "Mega-tower at center · quadrant cover · open perimeter.",
+  tagline: "Night city · neon-lit windows · mega-tower at center.",
   // Colours used by the SVG preview — match the engine's palette for this
   // map so the minimap looks visually consistent with the in-game view.
   palette: {
-    bg: "#5fae5f",       // ground (cel-shaded green)
+    bg: "#1a1f2e",       // dark asphalt (night street)
     border: "#0A0A0A",
-    obstacle: "#b84a3a",
+    obstacle: "#3a4a7a", // night-tinted concrete
     crate: "#ff7b00",
-    accent: "#FFD700",   // for the central landmark
+    accent: "#FFE08A",   // glowing window yellow for the landmark
   },
   obstacles: [
     { x: 0, z: 0, w: 6, h: 8, d: 6 },           // central mega-tower

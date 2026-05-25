@@ -44,8 +44,9 @@ export class GameEngine {
     this.toonMap.magFilter = THREE.NearestFilter;
     this.toonMap.minFilter = THREE.NearestFilter;
 
-    // Lights
-    this.scene.add(new THREE.HemisphereLight(0xfff2a8, 0x4c7d3a, 1.0));
+    // Lights — track refs so day/night swap can adjust intensities.
+    this._hemi = new THREE.HemisphereLight(0xfff2a8, 0x4c7d3a, 1.0);
+    this.scene.add(this._hemi);
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
     sun.position.set(40, 60, 30);
     this.scene.add(sun);
@@ -458,30 +459,12 @@ export class GameEngine {
     // Sky dome — multi-stop atmospheric gradient (zenith blue → bright
     // mid-sky → soft horizon haze → warm low-light glow). Painted onto a
     // tall sky canvas so even subtle bands read clean across the sphere.
-    const skyCanvas = document.createElement("canvas");
-    skyCanvas.width = 8; skyCanvas.height = 512;
-    const skc = skyCanvas.getContext("2d");
-    const grd = skc.createLinearGradient(0, 0, 0, 512);
-    grd.addColorStop(0.00, "#0E1C4A");   // zenith — deep cosmic navy
-    grd.addColorStop(0.18, "#1B3A8C");   // upper atmosphere
-    grd.addColorStop(0.36, "#3F7BD8");   // mid sky — clean blue
-    grd.addColorStop(0.55, "#7CC3F0");   // pale daylight blue
-    grd.addColorStop(0.75, "#C7E6F7");   // bright horizon haze
-    grd.addColorStop(0.86, "#FFE4B5");   // warm horizon band
-    grd.addColorStop(0.94, "#FFB07A");   // golden glow
-    grd.addColorStop(1.00, "#E66D4D");   // ground-line warmth
-    skc.fillStyle = grd; skc.fillRect(0, 0, 8, 512);
-    const skyTex = new THREE.CanvasTexture(skyCanvas);
-    skyTex.colorSpace = THREE.SRGBColorSpace;
     const sky = new THREE.Mesh(
       new THREE.SphereGeometry(160, 32, 20),
-      new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ side: THREE.BackSide, depthWrite: false }),
     );
     this.scene.add(sky);
-    // Make the renderer clear-color match the upper horizon so fog blends
-    // into the sky seamlessly at draw distance.
-    this.scene.background = new THREE.Color(0x7cc3f0);
-    this.scene.fog = new THREE.Fog(0xc7e6f7, 80, 145);
+    this._sky = sky;
     // Sun — bright yellow disc with a multi-layer corona for realism.
     const sun = new THREE.Mesh(
       new THREE.CircleGeometry(8, 32),
@@ -490,6 +473,7 @@ export class GameEngine {
     sun.position.set(-70, 46, -110);
     sun.lookAt(0, 30, 0);
     this.scene.add(sun);
+    this._sunDisc = sun;
     const sunHaloInner = new THREE.Mesh(
       new THREE.CircleGeometry(12, 32),
       new THREE.MeshBasicMaterial({ color: 0xFFE08A, transparent: true, opacity: 0.55, depthWrite: false }),
@@ -497,6 +481,7 @@ export class GameEngine {
     sunHaloInner.position.copy(sun.position).multiplyScalar(0.998);
     sunHaloInner.lookAt(0, 30, 0);
     this.scene.add(sunHaloInner);
+    this._sunHaloInner = sunHaloInner;
     const sunHaloOuter = new THREE.Mesh(
       new THREE.CircleGeometry(20, 32),
       new THREE.MeshBasicMaterial({ color: 0xFFC857, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -504,6 +489,7 @@ export class GameEngine {
     sunHaloOuter.position.copy(sun.position).multiplyScalar(0.996);
     sunHaloOuter.lookAt(0, 30, 0);
     this.scene.add(sunHaloOuter);
+    this._sunHaloOuter = sunHaloOuter;
     const sunGlow = new THREE.Mesh(
       new THREE.CircleGeometry(34, 32),
       new THREE.MeshBasicMaterial({ color: 0xFFB04C, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending }),
@@ -511,6 +497,10 @@ export class GameEngine {
     sunGlow.position.copy(sun.position).multiplyScalar(0.994);
     sunGlow.lookAt(0, 30, 0);
     this.scene.add(sunGlow);
+    this._sunGlow = sunGlow;
+    // Apply the default daytime theme. Maps that should be at night (e.g.
+    // DOWNTOWN) will swap this via _applyDayNight() on welcome / match_start.
+    this._applyDayNight(false);
     // Clouds — three altitude bands with size + tint variation, so the
     // sky feels layered rather than a single sticker band.
     this._clouds = [];
@@ -573,6 +563,10 @@ export class GameEngine {
     }
 
     // ===== Decorative non-collidable map detail =====
+    // Trees + benches are tracked so we can hide them on the night map
+    // (the dark scene reads cleaner without daytime greenery in view).
+    // Lampposts stay visible — perfect for night ambience.
+    this._dayDecorations = [];
     // Trees scattered in safe zones
     const treeSpots = [
       [22, 22], [-22, 22], [22, -22], [-22, -22],
@@ -584,9 +578,11 @@ export class GameEngine {
       const trunk = this._outlined(new THREE.CylinderGeometry(0.18, 0.22, 1.4, 8), 0x5a3722, 1.06);
       trunk.position.set(x, 0.7, z);
       this.scene.add(trunk);
+      this._dayDecorations.push(trunk);
       const foliage = this._outlined(new THREE.SphereGeometry(0.85, 10, 8), 0x3aa84a, 1.06);
       foliage.position.set(x, 1.8, z);
       this.scene.add(foliage);
+      this._dayDecorations.push(foliage);
     });
 
     // Lampposts at strategic spots
@@ -620,6 +616,7 @@ export class GameEngine {
       benchGroup.position.set(x, 0, z);
       benchGroup.rotation.y = rot;
       this.scene.add(benchGroup);
+      this._dayDecorations.push(benchGroup);
     });
 
     // Floor decals: POW / BAM painted patches at spawn points
@@ -806,9 +803,15 @@ export class GameEngine {
 
     if (!ob.crate && ob.h >= 2.5) {
       // Add windows and roof line as flat painted planes on each face
-      const faceTex = this._makeBuildingFaceTexture(ob);
-      // 4 side faces
-      const planeMat = new THREE.MeshBasicMaterial({ map: faceTex, transparent: true });
+      const faceTex = this._makeBuildingFaceTexture(ob, this._isNight);
+      // 4 side faces — additive blending at night so the windows visibly
+      // pop against the dark scene (acts like a poor man's bloom).
+      const planeMat = new THREE.MeshBasicMaterial({
+        map: faceTex,
+        transparent: true,
+        blending: this._isNight ? THREE.AdditiveBlending : THREE.NormalBlending,
+        depthWrite: false,
+      });
       const addFace = (w, h, x, y, z, rotY) => {
         const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), planeMat);
         m.position.set(x, y, z);
@@ -860,7 +863,8 @@ export class GameEngine {
     const palette =
       arena.map_id === "crossfire" ? [0x2e5fa3, 0x9b3a3f, 0xe6a230, 0x4a4a4a, 0x5f8a3e] :
       arena.map_id === "shoreline" ? [0x8b5a2b, 0xc28e5c, 0x6b3a1a, 0x2f8fbf, 0x4a4a4a] :
-      /* downtown / default */       [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
+      arena.map_id === "downtown"  ? [0x3a4a7a, 0x2a3a6a, 0x4a5a8a, 0x2a2a3a, 0x3a3a4a] :  // night-tinted concrete
+      /* default */                  [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
     const colored = arena.obstacles.map((ob, i) => {
       const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
       // Deterministic color pick per obstacle so all clients agree.
@@ -872,6 +876,9 @@ export class GameEngine {
       };
     });
     this.obstacles = colored;
+    // Day-night theme MUST be applied before building meshes so the face
+    // textures pick up the correct night/day variant. Downtown = night.
+    this._applyDayNight(arena.map_id === "downtown");
     this.obstacles.forEach((o) => this._buildBuilding(o));
     // Per-map ground theme — replace the floor material when the map calls
     // for a non-grass aesthetic (e.g. shoreline → sand). Grass blades stay
@@ -882,6 +889,9 @@ export class GameEngine {
       let newMat;
       if (arena.map_id === "shoreline") {
         newMat = new THREE.MeshToonMaterial({ color: 0xe8c98a, gradientMap: this.toonMap });
+      } else if (arena.map_id === "downtown") {
+        // Dark asphalt for the night city look.
+        newMat = new THREE.MeshToonMaterial({ color: 0x1a1f2e, gradientMap: this.toonMap });
       } else {
         // Default grass texture
         newMat = new THREE.MeshToonMaterial({ map: this._makeGrassTexture(), gradientMap: this.toonMap });
@@ -893,21 +903,164 @@ export class GameEngine {
       }
     }
     if (Array.isArray(this._grassBlades)) {
-      const showBlades = arena.map_id !== "shoreline";
+      // Hide grass blades on shoreline (beach) and downtown (night city) —
+      // neither aesthetic wants tall green tufts.
+      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown";
       this._grassBlades.forEach((b) => { b.visible = showBlades; });
     }
   }
 
-  _makeBuildingFaceTexture(ob) {
+  /* Swap the scene's sky / sun / lighting between day and night themes.
+     Called from _rebuildArenaFromServer when the map changes. Also runs
+     once at init with night=false to set up the default daytime look. */
+  _applyDayNight(night) {
+    if (this._isNight === night) return;
+    this._isNight = night;
+
+    // 1) Sky gradient — regenerate the canvas texture for whichever theme.
+    const sc = document.createElement("canvas");
+    sc.width = 8; sc.height = 512;
+    const ctx = sc.getContext("2d");
+    const grd = ctx.createLinearGradient(0, 0, 0, 512);
+    if (night) {
+      grd.addColorStop(0.00, "#03081f");
+      grd.addColorStop(0.30, "#0a1438");
+      grd.addColorStop(0.60, "#162a5e");
+      grd.addColorStop(0.85, "#3a2a55");   // distant city glow tint
+      grd.addColorStop(1.00, "#1a1230");
+    } else {
+      grd.addColorStop(0.00, "#0E1C4A");
+      grd.addColorStop(0.18, "#1B3A8C");
+      grd.addColorStop(0.36, "#3F7BD8");
+      grd.addColorStop(0.55, "#7CC3F0");
+      grd.addColorStop(0.75, "#C7E6F7");
+      grd.addColorStop(0.86, "#FFE4B5");
+      grd.addColorStop(0.94, "#FFB07A");
+      grd.addColorStop(1.00, "#E66D4D");
+    }
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, 8, 512);
+    const skyTex = new THREE.CanvasTexture(sc);
+    skyTex.colorSpace = THREE.SRGBColorSpace;
+    if (this._sky) {
+      const old = this._sky.material.map;
+      this._sky.material.map = skyTex;
+      this._sky.material.needsUpdate = true;
+      old?.dispose?.();
+    }
+    // 2) Renderer clear-color + fog tinting.
+    this.scene.background = new THREE.Color(night ? 0x0a1438 : 0x7cc3f0);
+    this.scene.fog = new THREE.Fog(night ? 0x162a5e : 0xc7e6f7, 80, 145);
+
+    // 3) Lights — dim sun + hemi at night, cool blue tinted, low intensity.
+    if (this._sun) {
+      this._sun.intensity = night ? 0.35 : 1.4;
+      this._sun.color.set(night ? 0x6f86d6 : 0xffffff);
+    }
+    if (this._hemi) {
+      this._hemi.intensity = night ? 0.45 : 1.0;
+      this._hemi.color.set(night ? 0x1c2a55 : 0xfff2a8);
+      this._hemi.groundColor.set(night ? 0x080c1c : 0x4c7d3a);
+    }
+    if (this._ambientFill) {
+      // Tiny ambient lift at night so players aren't pitch black.
+      this._ambientFill.intensity = night ? 0.18 : (this._ambientFill.intensity > 0 ? this._ambientFill.intensity : 0.0);
+      this._ambientFill.color.set(night ? 0x8aa0e0 : 0xffffff);
+    }
+
+    // 4) Sun visuals — hide the disc + halos at night; show a moon + stars.
+    const sunMeshes = [this._sunDisc, this._sunHaloInner, this._sunHaloOuter, this._sunGlow];
+    sunMeshes.forEach((m) => { if (m) m.visible = !night; });
+
+    // Lazy-build moon + stars once; toggle visibility on subsequent calls.
+    if (night) {
+      if (!this._moon) {
+        const moon = new THREE.Mesh(
+          new THREE.CircleGeometry(7, 32),
+          new THREE.MeshBasicMaterial({ color: 0xf2eed0 }),
+        );
+        moon.position.set(-60, 52, -110);
+        moon.lookAt(0, 30, 0);
+        this.scene.add(moon);
+        this._moon = moon;
+        const halo = new THREE.Mesh(
+          new THREE.CircleGeometry(12, 32),
+          new THREE.MeshBasicMaterial({ color: 0xa9c4ff, transparent: true, opacity: 0.35, depthWrite: false }),
+        );
+        halo.position.copy(moon.position).multiplyScalar(0.998);
+        halo.lookAt(0, 30, 0);
+        this.scene.add(halo);
+        this._moonHalo = halo;
+      }
+      if (!this._stars) {
+        const starGeo = new THREE.BufferGeometry();
+        const verts = [];
+        // 220 random stars on the upper hemisphere
+        for (let i = 0; i < 220; i++) {
+          const u = Math.random();
+          const v = Math.random();
+          const theta = 2 * Math.PI * u;
+          const phi = Math.acos(2 * v - 1) * 0.5;  // upper half only
+          const r = 150;
+          verts.push(
+            r * Math.sin(phi) * Math.cos(theta),
+            r * Math.cos(phi) + 5,
+            r * Math.sin(phi) * Math.sin(theta),
+          );
+        }
+        starGeo.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+        const starMat = new THREE.PointsMaterial({
+          color: 0xffffff,
+          size: 1.4,
+          sizeAttenuation: false,
+          transparent: true,
+          opacity: 0.95,
+        });
+        this._stars = new THREE.Points(starGeo, starMat);
+        this.scene.add(this._stars);
+      }
+      this._moon.visible = true;
+      this._moonHalo.visible = true;
+      this._stars.visible = true;
+    } else {
+      if (this._moon) this._moon.visible = false;
+      if (this._moonHalo) this._moonHalo.visible = false;
+      if (this._stars) this._stars.visible = false;
+    }
+
+    // 5) Clouds — tone down at night.
+    if (Array.isArray(this._clouds)) {
+      this._clouds.forEach((c) => { if (c) c.visible = !night; });
+    }
+
+    // 6) Trees + benches — hide at night so the dark scene reads cleanly.
+    // Lampposts intentionally stay visible (their bulb glows yellow).
+    if (Array.isArray(this._dayDecorations)) {
+      this._dayDecorations.forEach((d) => { if (d) d.visible = !night; });
+    }
+  }
+
+  _makeBuildingFaceTexture(ob, night = false) {
     const c = document.createElement("canvas");
     c.width = 256; c.height = 256;
     const ctx = c.getContext("2d");
     ctx.clearRect(0, 0, 256, 256);
-    // Border outline
-    ctx.strokeStyle = "#0A0A0A";
-    ctx.lineWidth = 5;
-    ctx.strokeRect(4, 4, 248, 248);
-    // Windows in 2x2 grid
+    // Border outline — skipped at night so additive blending doesn't draw
+    // a black halo around the building face.
+    if (!night) {
+      ctx.strokeStyle = "#0A0A0A";
+      ctx.lineWidth = 5;
+      ctx.strokeRect(4, 4, 248, 248);
+    }
+    // Deterministic per-obstacle "lit / dark" pattern so all clients see
+    // the same neighbours-are-asleep variety.
+    const seed = Math.abs(((ob.x * 1000) | 0) ^ ((ob.z * 1000) | 0) ^ ((ob.h * 1000) | 0));
+    const isLit = (r, c2) => {
+      // ~70% lit at night, 100% lit during the day.
+      if (!night) return true;
+      const v = ((seed + r * 31 + c2 * 17) * 2654435761) >>> 0;
+      return (v % 100) < 70;
+    };
+    // Windows in 2x2 or 3x3 grid
     const cols = ob.h > 5 ? 3 : 2;
     const rows = ob.h > 5 ? 3 : 2;
     const margin = 32;
@@ -919,20 +1072,48 @@ export class GameEngine {
         const y = margin + r * cellH + cellH * 0.2;
         const w = cellW * 0.64;
         const h = cellH * 0.6;
-        // Window frame
-        ctx.fillStyle = "#0A0A0A";
-        ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
-        // Glass — yellow lit
-        ctx.fillStyle = (r + cIdx) % 2 === 0 ? "#FFD700" : "#FFE680";
-        ctx.fillRect(x, y, w, h);
-        // Cross frame
-        ctx.fillStyle = "#0A0A0A";
-        ctx.fillRect(x + w / 2 - 1.5, y, 3, h);
-        ctx.fillRect(x, y + h / 2 - 1.5, w, 3);
+        const lit = isLit(r, cIdx);
+        if (night) {
+          if (lit) {
+            // Glow halo behind the window — soft warm gradient so additive
+            // blending produces a luminous halo against the dark scene.
+            const cx = x + w / 2;
+            const cy = y + h / 2;
+            const halo = ctx.createRadialGradient(cx, cy, w * 0.15, cx, cy, w * 1.1);
+            halo.addColorStop(0.0, "rgba(255,224,120,0.95)");
+            halo.addColorStop(0.6, "rgba(255,180,60,0.35)");
+            halo.addColorStop(1.0, "rgba(255,160,40,0.0)");
+            ctx.fillStyle = halo;
+            ctx.fillRect(x - w * 0.5, y - h * 0.5, w * 2, h * 2);
+            // Bright window core
+            ctx.fillStyle = "#FFE08A";
+            ctx.fillRect(x, y, w, h);
+            // Subtle cross frame (dark, so it shows up against the bright pane)
+            ctx.fillStyle = "rgba(40,28,10,0.55)";
+            ctx.fillRect(x + w / 2 - 1.5, y, 3, h);
+            ctx.fillRect(x, y + h / 2 - 1.5, w, 3);
+          } else {
+            // Unlit window — just a tiny dark square (almost invisible
+            // under additive blending; intentional, gives the building
+            // some "asleep" floors).
+            ctx.fillStyle = "rgba(20,20,30,0.5)";
+            ctx.fillRect(x, y, w, h);
+          }
+        } else {
+          // Daytime variant (unchanged behaviour)
+          ctx.fillStyle = "#0A0A0A";
+          ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
+          ctx.fillStyle = (r + cIdx) % 2 === 0 ? "#FFD700" : "#FFE680";
+          ctx.fillRect(x, y, w, h);
+          ctx.fillStyle = "#0A0A0A";
+          ctx.fillRect(x + w / 2 - 1.5, y, 3, h);
+          ctx.fillRect(x, y + h / 2 - 1.5, w, 3);
+        }
       }
     }
-    // Door at bottom center (if tall enough)
-    if (ob.h >= 3) {
+    // Door at bottom center (if tall enough). Hidden at night so additive
+    // blending doesn't draw a dark rectangle over the building base.
+    if (!night && ob.h >= 3) {
       const dw = 50, dh = 70;
       const dx = 128 - dw / 2;
       const dy = 256 - dh - 12;
@@ -940,7 +1121,6 @@ export class GameEngine {
       ctx.fillRect(dx - 4, dy - 4, dw + 8, dh + 8);
       ctx.fillStyle = "#5a3722";
       ctx.fillRect(dx, dy, dw, dh);
-      // handle
       ctx.fillStyle = "#FFD700";
       ctx.fillRect(dx + dw - 12, dy + dh / 2 - 3, 6, 6);
     }
