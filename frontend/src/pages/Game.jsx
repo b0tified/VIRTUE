@@ -26,6 +26,9 @@ export default function Game() {
   const { username: spectateTarget } = useParams();
   const rawMode = spectateTarget ? "spectate" : searchParams.get("mode");
   const partyId = searchParams.get("party_id") || null;
+  // Forced map id for practice / offline runs — set by the lobby's map
+  // selector. Ignored for real-WS modes (server picks).
+  const mapIdParam = searchParams.get("map") || null;
   const mode = spectateTarget
     ? "spectate"
     : rawMode === "ranked"
@@ -319,7 +322,7 @@ export default function Game() {
     // Offline / Practice → local simulation (no network required).
     // Everything else → real WebSocket.
     const sock = offlineCapable
-      ? new LocalSim({ ...sockHandlers, user, mode })
+      ? new LocalSim({ ...sockHandlers, user, mode, mapId: mapIdParam })
       : new GameSocket(sockHandlers);
     sockRef.current = sock;
     // Expose socket on window for E2E test injection of synthetic

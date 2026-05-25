@@ -182,6 +182,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Lobby's MatchLoadingScreen render + `loadingMode` state removed (now lives at App root).
 - 🧪 Verified live: events fire in correct order (loading → loaded), preview maps surface during the gap, server's actual map is revealed once welcome lands, overlay dismisses cleanly. Lint clean across 4 touched files.
 
+### Iteration 20 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Third map added — "SHORELINE" (beach theme)** — Open sandy plaza with two wooden piers (N/S) leading to seaside shacks, four tall lifeguard towers at the inner corners, wide beach huts on the E/W axis, scattered midfield rocks, 8 palm-trunk pillars, and a central shipwreck. Engine now applies a per-map ground swap: shoreline uses a sandy tan floor with grass blades hidden; other maps keep the original grass texture. Per-map obstacle palette adds a wood/sand variant. Files: `server.py` MAP_C, `localSim.js` MAP_C, `mapsMeta.js` MAP_SHORELINE, `engine.js` `_rebuildArenaFromServer` ground swap.
+- ✅ **Practice map selector** — New `PracticeMapSelector.jsx` modal opens when the player clicks PRACTICE RANGE or OFFLINE VS AI. Renders 4 cards: RANDOM (shuffle icon) + 3 map previews (DOWNTOWN / CROSSFIRE / SHORELINE) using the existing MapPreview SVG component. Selecting a map appends `?map=<id>` to the route; Game.jsx now parses `map` from search params and forwards to LocalSim. LocalSim's `_pickMap` honours the forced id or rolls random.
+- Random-pick path remains the default for all other modes (casual / ranked / party) — selector is practice-only.
+- 🧪 Verified live: SELECT MAP modal renders 4 cards correctly, picking SHORELINE → confirm starts the game with sandy ground + beach obstacles + URL `?mode=practice&map=shoreline`. Engine arena state shows `map_id: 'shoreline', current: 'shoreline'`. Lint clean on all 7 touched/new files.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

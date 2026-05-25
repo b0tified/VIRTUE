@@ -122,8 +122,60 @@ export const MAP_CROSSFIRE = {
   ],
 };
 
-export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE];
+export const MAP_SHORELINE = {
+  map_id: "shoreline",
+  name: "SHORELINE",
+  size: 50,
+  tagline: "Sandy plaza · piers + lifeguard towers · palms.",
+  palette: {
+    bg: "#e8c98a",       // warm sand
+    border: "#0A0A0A",
+    obstacle: "#8b5a2b", // weathered wood
+    crate: "#5a3a1e",    // dark driftwood
+    accent: "#2f8fbf",   // ocean blue for landmark / piers
+  },
+  obstacles: [
+    // Piers
+    { x: 0, z: 22, w: 4, h: 2, d: 16 },
+    { x: 0, z: -22, w: 4, h: 2, d: 16 },
+    { x: 0, z: 30, w: 6, h: 4, d: 4 },
+    { x: 0, z: -30, w: 6, h: 4, d: 4 },
+    // Lifeguard towers
+    { x: 20, z: 20, w: 2.5, h: 7, d: 2.5 },
+    { x: -20, z: 20, w: 2.5, h: 7, d: 2.5 },
+    { x: 20, z: -20, w: 2.5, h: 7, d: 2.5 },
+    { x: -20, z: -20, w: 2.5, h: 7, d: 2.5 },
+    // Beach huts
+    { x: 26, z: 0, w: 4, h: 3, d: 8 },
+    { x: -26, z: 0, w: 4, h: 3, d: 8 },
+    // Rocks
+    { x: 8, z: 6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -8, z: 6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 8, z: -6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -8, z: -6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 12, z: 0, w: 1.6, h: 1.6, d: 1.6 },
+    { x: -12, z: 0, w: 1.6, h: 1.6, d: 1.6 },
+    // Palms
+    { x: 14, z: 12, w: 1.2, h: 6, d: 1.2 },
+    { x: -14, z: 12, w: 1.2, h: 6, d: 1.2 },
+    { x: 14, z: -12, w: 1.2, h: 6, d: 1.2 },
+    { x: -14, z: -12, w: 1.2, h: 6, d: 1.2 },
+    { x: 6, z: 16, w: 1.2, h: 6, d: 1.2 },
+    { x: -6, z: 16, w: 1.2, h: 6, d: 1.2 },
+    { x: 6, z: -16, w: 1.2, h: 6, d: 1.2 },
+    { x: -6, z: -16, w: 1.2, h: 6, d: 1.2 },
+    // Shipwreck center
+    { x: 0, z: 0, w: 7, h: 1.6, d: 4 },
+    ..._PERIMETER,
+  ],
+};
+
+export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE];
 
 export function pickRandomMapMeta() {
   return MAPS_META[Math.floor(Math.random() * MAPS_META.length)];
+}
+
+export function getMapMetaById(id) {
+  return MAPS_META.find((m) => m.map_id === id) || null;
 }

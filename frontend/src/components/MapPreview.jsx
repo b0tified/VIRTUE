@@ -7,7 +7,7 @@
    matches the in-game "north is up" convention. */
 import { Crosshair } from "lucide-react";
 
-export default function MapPreview({ map, size = 280 }) {
+export default function MapPreview({ map, size = 280, fill = false }) {
   if (!map) return null;
   // Footprint in arena coordinates ([-50, 50] each axis for our maps).
   const half = (map.size || 50) + 4;
@@ -22,10 +22,16 @@ export default function MapPreview({ map, size = 280 }) {
     { x: 35, z: -35 }, { x: -35, z: -35 },
   ];
 
+  // When `fill` is true, render at 100% of the parent — used by the
+  // practice map selector cards (responsive aspect-square containers).
+  const containerStyle = fill
+    ? { width: "100%", height: "100%" }
+    : { width: size, height: size };
+
   return (
     <div
       className="relative inline-block border-pow-thick bg-[#0A0A0A]"
-      style={{ width: size, height: size }}
+      style={containerStyle}
       data-testid={`map-preview-${map.map_id}`}
     >
       <svg

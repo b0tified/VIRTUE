@@ -1456,9 +1456,82 @@ MAP_B = {
 
 MAPS = [MAP_A, MAP_B]
 
+# Map C — "SHORELINE" — beach theme. Open sandy plaza with two wooden
+# piers thrusting in from north/south, four tall lifeguard towers at the
+# corners, scattered rock clusters in the midfield, two beach huts on
+# the diagonals, and palm-tree pillars dotting the playfield. Plays loose
+# and open compared to DOWNTOWN's tight cover and CROSSFIRE's corridors.
+MAP_C = {
+    "map_id": "shoreline",
+    "name": "SHORELINE",
+    "size": 50,
+    "obstacles": [
+        # Two wooden piers extending from N and S — long but narrow ramps
+        {"x":  0,  "z":  22, "w": 4, "h": 2, "d": 16},  # north pier
+        {"x":  0,  "z": -22, "w": 4, "h": 2, "d": 16},  # south pier
+        # Pier-end shacks (short cabins at the seaward ends)
+        {"x":  0,  "z":  30, "w": 6, "h": 4, "d": 4},
+        {"x":  0,  "z": -30, "w": 6, "h": 4, "d": 4},
+
+        # Four tall lifeguard towers at the inner corners (narrow but tall —
+        # great sight-perch but easy to flank around).
+        {"x":  20, "z":  20, "w": 2.5, "h": 7, "d": 2.5},
+        {"x": -20, "z":  20, "w": 2.5, "h": 7, "d": 2.5},
+        {"x":  20, "z": -20, "w": 2.5, "h": 7, "d": 2.5},
+        {"x": -20, "z": -20, "w": 2.5, "h": 7, "d": 2.5},
+
+        # Beach huts — wide low cover on the E/W axis
+        {"x":  26, "z":  0, "w": 4, "h": 3, "d": 8},
+        {"x": -26, "z":  0, "w": 4, "h": 3, "d": 8},
+
+        # Midfield rock clusters (scattered small cubes)
+        {"x":  8,  "z":  6,  "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  -8, "z":  6,  "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  8,  "z": -6,  "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  -8, "z": -6,  "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  12, "z":  0,  "w": 1.6, "h": 1.6, "d": 1.6},
+        {"x":  -12, "z":  0, "w": 1.6, "h": 1.6, "d": 1.6},
+
+        # Palm trunks — tall narrow pillars dotting the edges
+        {"x":  14, "z":  12, "w": 1.2, "h": 6, "d": 1.2},
+        {"x": -14, "z":  12, "w": 1.2, "h": 6, "d": 1.2},
+        {"x":  14, "z": -12, "w": 1.2, "h": 6, "d": 1.2},
+        {"x": -14, "z": -12, "w": 1.2, "h": 6, "d": 1.2},
+        {"x":  6,  "z":  16, "w": 1.2, "h": 6, "d": 1.2},
+        {"x": -6,  "z":  16, "w": 1.2, "h": 6, "d": 1.2},
+        {"x":  6,  "z": -16, "w": 1.2, "h": 6, "d": 1.2},
+        {"x": -6,  "z": -16, "w": 1.2, "h": 6, "d": 1.2},
+
+        # Central "shipwreck" — wide low debris pile players can vault around
+        {"x":  0,  "z":  0,  "w": 7, "h": 1.6, "d": 4},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (32, 0), (-32, 0), (0, 38), (0, -38),
+        (28, 28), (-28, 28), (28, -28), (-28, -28),
+        (18, 0), (-18, 0),
+    ],
+    "healthpacks": [
+        (0.0, 8.0), (0.0, -8.0),     # midfield, behind the wreck
+        (10.0, 12.0), (-10.0, 12.0), # under the palms
+        (10.0, -12.0), (-10.0, -12.0),
+        (24.0, 0.0), (-24.0, 0.0),   # behind the beach huts
+    ],
+}
+
+MAPS = [MAP_A, MAP_B, MAP_C]
+
 def random_map() -> dict:
-    """Pick a random map for a new match. Both maps are equally likely."""
+    """Pick a random map for a new match. All maps are equally likely."""
     return random.choice(MAPS)
+
+def get_map_by_id(map_id: Optional[str]) -> Optional[dict]:
+    """Look up a map by id. Returns None if not found or input falsy."""
+    if not map_id:
+        return None
+    for m in MAPS:
+        if m.get("map_id") == map_id:
+            return m
+    return None
 
 # Default ARENA stays defined as MAP_A for any legacy code paths that
 # still reference the module-level constant (e.g. early-tier helpers).

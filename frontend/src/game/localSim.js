@@ -116,13 +116,62 @@ const MAP_B = {
   ],
 };
 
-const MAPS = [MAP_A, MAP_B];
+const MAP_C = {
+  map_id: "shoreline",
+  name: "SHORELINE",
+  size: 50,
+  obstacles: [
+    // Wooden piers
+    { x: 0, z: 22, w: 4, h: 2, d: 16 },
+    { x: 0, z: -22, w: 4, h: 2, d: 16 },
+    // Pier-end shacks
+    { x: 0, z: 30, w: 6, h: 4, d: 4 },
+    { x: 0, z: -30, w: 6, h: 4, d: 4 },
+    // Lifeguard towers
+    { x: 20, z: 20, w: 2.5, h: 7, d: 2.5 },
+    { x: -20, z: 20, w: 2.5, h: 7, d: 2.5 },
+    { x: 20, z: -20, w: 2.5, h: 7, d: 2.5 },
+    { x: -20, z: -20, w: 2.5, h: 7, d: 2.5 },
+    // Beach huts
+    { x: 26, z: 0, w: 4, h: 3, d: 8 },
+    { x: -26, z: 0, w: 4, h: 3, d: 8 },
+    // Midfield rocks
+    { x: 8, z: 6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -8, z: 6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 8, z: -6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -8, z: -6, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 12, z: 0, w: 1.6, h: 1.6, d: 1.6 },
+    { x: -12, z: 0, w: 1.6, h: 1.6, d: 1.6 },
+    // Palm trunks
+    { x: 14, z: 12, w: 1.2, h: 6, d: 1.2 },
+    { x: -14, z: 12, w: 1.2, h: 6, d: 1.2 },
+    { x: 14, z: -12, w: 1.2, h: 6, d: 1.2 },
+    { x: -14, z: -12, w: 1.2, h: 6, d: 1.2 },
+    { x: 6, z: 16, w: 1.2, h: 6, d: 1.2 },
+    { x: -6, z: 16, w: 1.2, h: 6, d: 1.2 },
+    { x: 6, z: -16, w: 1.2, h: 6, d: 1.2 },
+    { x: -6, z: -16, w: 1.2, h: 6, d: 1.2 },
+    // Central wreckage
+    { x: 0, z: 0, w: 7, h: 1.6, d: 4 },
+    ..._PERIMETER,
+  ],
+  spawn_points: [
+    [32, 0], [-32, 0], [0, 38], [0, -38],
+    [28, 28], [-28, 28], [28, -28], [-28, -28],
+    [18, 0], [-18, 0],
+  ],
+};
+
+const MAPS = [MAP_A, MAP_B, MAP_C];
 
 // Active arena for this LocalSim run — re-rolled on each instance below.
 let ARENA = MAP_A;
 let SPAWN_POINTS = MAP_A.spawn_points;
-function _pickMap() {
-  const m = MAPS[Math.floor(Math.random() * MAPS.length)];
+function _pickMap(forcedId) {
+  // If the caller (practice map selector) requested a specific map, honour
+  // that instead of rolling randomly.
+  let m = forcedId ? MAPS.find((mp) => mp.map_id === forcedId) : null;
+  if (!m) m = MAPS[Math.floor(Math.random() * MAPS.length)];
   ARENA = m;
   SPAWN_POINTS = m.spawn_points;
   return m;
@@ -324,12 +373,15 @@ class LocalPlayer {
 }
 
 export class LocalSim {
-  constructor({ onMessage, onClose, onOpen, user, mode } = {}) {
+  constructor({ onMessage, onClose, onOpen, user, mode, mapId } = {}) {
     this.onMessage = onMessage || (() => {});
     this.onClose = onClose || (() => {});
     this.onOpen = onOpen || (() => {});
     this.user = user || { username: "You" };
     this.mode = mode || "offline"; // "offline" | "practice"
+    // Optional forced map id ("downtown" | "crossfire" | "shoreline").
+    // Set by the practice map selector. If null, _pickMap() rolls random.
+    this.mapId = mapId || null;
     this.players = new Map();
     this.me = null;
     this.pendingEvents = [];
@@ -338,9 +390,9 @@ export class LocalSim {
   }
 
   connect() {
-    // Pick a random map for this local match (also reassigns module-level
-    // ARENA + SPAWN_POINTS used by the helper functions).
-    _pickMap();
+    // Pick a map for this local match — honours the constructor's mapId
+    // override (practice mode map selector), otherwise rolls random.
+    _pickMap(this.mapId);
     // Create local player
     const me = new LocalPlayer({
       id: genId("p"),

@@ -13,6 +13,7 @@ import LobbyBackground from "@/components/LobbyBackground";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
+import PracticeMapSelector from "@/components/PracticeMapSelector";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
 
@@ -30,6 +31,9 @@ export default function Lobby() {
   const [showFriends, setShowFriends] = useState(false);
   const [showShop, setShowShop] = useState(false);
   const [showProgression, setShowProgression] = useState(false);
+  // When non-null, the practice map selector is open. Value is the mode
+  // it will launch on confirm: "practice" | "offline".
+  const [practiceSelectorMode, setPracticeSelectorMode] = useState(null);
   // Rank-up celebration overlay. Triggered by a global `virtue-rankup` event
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
@@ -431,7 +435,7 @@ export default function Lobby() {
             </button>
             <button
               type="button"
-              onClick={() => navigateToMatch(nav, "/play?mode=practice", { mode: "offline", username: user?.username })}
+              onClick={() => setPracticeSelectorMode("practice")}
               className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
               data-testid="lobby-practice-button"
             >
@@ -439,7 +443,7 @@ export default function Lobby() {
             </button>
             <button
               type="button"
-              onClick={() => navigateToMatch(nav, "/play?mode=offline", { mode: "offline", username: user?.username })}
+              onClick={() => setPracticeSelectorMode("offline")}
               className="btn-pow bg-[#06A35F] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
               data-testid="lobby-offline-button"
             >
@@ -497,6 +501,21 @@ export default function Lobby() {
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
       <ShopModal open={showShop} onClose={() => setShowShop(false)} />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
+      <PracticeMapSelector
+        open={!!practiceSelectorMode}
+        mode={practiceSelectorMode || "practice"}
+        onClose={() => setPracticeSelectorMode(null)}
+        onSelect={(mapId) => {
+          const selectedMode = practiceSelectorMode;
+          setPracticeSelectorMode(null);
+          const mapQuery = mapId ? `&map=${mapId}` : "";
+          navigateToMatch(
+            nav,
+            `/play?mode=${selectedMode}${mapQuery}`,
+            { mode: "offline", username: user?.username },
+          );
+        }}
+      />
       {/* MatchLoadingScreen now lives at the App root so it persists across
           the Lobby → /play route change (see App.js). */}
 

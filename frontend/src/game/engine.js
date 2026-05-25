@@ -315,13 +315,15 @@ export class GameEngine {
   // -------- Arena --------
   _buildArena() {
     const SIZE = 50;
-    // Grass floor
+    // Grass floor — referenced via this._floor for per-map ground swaps
+    // (e.g. shoreline switches to a sandy tan look).
     const floorGeo = new THREE.PlaneGeometry(SIZE * 2, SIZE * 2, 32, 32);
     const grassTex = this._makeGrassTexture();
     const floorMat = new THREE.MeshToonMaterial({ map: grassTex, gradientMap: this.toonMap });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
+    this._floor = floor;
 
     // A few "grass blade" sprite-decals (taller, with wind sway in update())
     const bladeGeo = new THREE.ConeGeometry(0.07, 0.85, 4);
@@ -854,10 +856,11 @@ export class GameEngine {
         }
       });
     }
-    // Color palette is per-map so the two arenas feel visually distinct.
-    const palette = arena.map_id === "crossfire"
-      ? [0x2e5fa3, 0x9b3a3f, 0xe6a230, 0x4a4a4a, 0x5f8a3e]
-      : [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
+    // Color palette is per-map so the arenas feel visually distinct.
+    const palette =
+      arena.map_id === "crossfire" ? [0x2e5fa3, 0x9b3a3f, 0xe6a230, 0x4a4a4a, 0x5f8a3e] :
+      arena.map_id === "shoreline" ? [0x8b5a2b, 0xc28e5c, 0x6b3a1a, 0x2f8fbf, 0x4a4a4a] :
+      /* downtown / default */       [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
     const colored = arena.obstacles.map((ob, i) => {
       const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
       // Deterministic color pick per obstacle so all clients agree.
@@ -870,6 +873,29 @@ export class GameEngine {
     });
     this.obstacles = colored;
     this.obstacles.forEach((o) => this._buildBuilding(o));
+    // Per-map ground theme — replace the floor material when the map calls
+    // for a non-grass aesthetic (e.g. shoreline → sand). Grass blades stay
+    // visible on green-grounded maps and are hidden on sand to avoid the
+    // odd "grass on the beach" look.
+    if (this._floor) {
+      const oldMat = this._floor.material;
+      let newMat;
+      if (arena.map_id === "shoreline") {
+        newMat = new THREE.MeshToonMaterial({ color: 0xe8c98a, gradientMap: this.toonMap });
+      } else {
+        // Default grass texture
+        newMat = new THREE.MeshToonMaterial({ map: this._makeGrassTexture(), gradientMap: this.toonMap });
+      }
+      this._floor.material = newMat;
+      if (oldMat) {
+        if (oldMat.map && oldMat.map !== newMat.map) oldMat.map.dispose?.();
+        oldMat.dispose?.();
+      }
+    }
+    if (Array.isArray(this._grassBlades)) {
+      const showBlades = arena.map_id !== "shoreline";
+      this._grassBlades.forEach((b) => { b.visible = showBlades; });
+    }
   }
 
   _makeBuildingFaceTexture(ob) {
