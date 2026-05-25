@@ -172,6 +172,57 @@ class AudioBus {
     crackle.stop(crackleStart + 0.2);
   }
 
+  /* Looping rain-on-wet-streets ambient. Idempotent: calling start when
+     already running is a no-op; stop fades out cleanly. Volume is very
+     low so it sits under the gun + UI sounds and acts as atmosphere. */
+  rainAmbient(on) {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    if (on) {
+      if (this._rainAmbient && !this._rainAmbient.ended) return; // already running
+      // Looping white-noise buffer (2s) filtered through a high-shelf so
+      // it reads as soft hissing rather than full-spectrum static.
+      const dur = 2.0;
+      const sampleCount = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < sampleCount; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      // High-pass to remove low rumble (we already have thunder for that)
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 1800;
+      // Band-pass-style notch so it sounds like wet asphalt hissing
+      const bp = ctx.createBiquadFilter();
+      bp.type = "peaking";
+      bp.frequency.value = 4500;
+      bp.Q.value = 0.7;
+      bp.gain.value = 4;
+      // Volume — quiet
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      g.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 1.2);
+      src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(this.sfxGain);
+      src.start();
+      this._rainAmbient = src;
+      this._rainAmbientGain = g;
+    } else if (this._rainAmbient) {
+      try {
+        const g = this._rainAmbientGain;
+        if (g) {
+          g.gain.cancelScheduledValues(ctx.currentTime);
+          g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+        }
+        const src = this._rainAmbient;
+        setTimeout(() => { try { src.stop(); } catch {} }, 900);
+      } catch {}
+      this._rainAmbient = null;
+      this._rainAmbientGain = null;
+    }
+  }
+
   _hashId(id) {
     if (!id) return 0;
     let h = 0;

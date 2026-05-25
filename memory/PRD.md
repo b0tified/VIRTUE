@@ -214,6 +214,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Lightning re-scheduled: now driven by `_thunderCueAt` instead of `_lightningNextAt`. When the cue fires, `audioBus.thunder()` plays AND the visual flash is armed to peak 0.8s later (matching the crackle in the audio). Next cue scheduled 6-18s out.
 - 🧪 Verified live: night is clearly brighter (player can see the full road + buildings + opponents); rain is now subtle dots/streaks scattered rather than dense; thunder code path active (audioBus.thunder() called when cue fires). Lint clean.
 
+### Iteration 25 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Puddle reflections on DOWNTOWN** — 12 lazy-built decorative ellipse planes scattered across the asphalt. Each renders a soft radial gradient (warm yellow center + cool blue-gray mid + transparent edge) mimicking window-glow reflection without actual mirror raycasts. Animated per frame: subtle scale pulse (1.4Hz, ±4%) + opacity flicker (2.7Hz, ±8%) so they read as gently rippling water. Lightning strikes briefly boost puddle opacity by +0.25 so reflections "catch" the flash.
+- Toned down after first pass: normal blending instead of additive, opacity 0.55 (was 0.85), narrower size, softer gradient — so puddles read as wet asphalt patches rather than glow spots.
+- ✅ **Looping rain-on-wet-streets hiss** — New `audioBus.rainAmbient(true|false)`. White-noise buffer (2s, looped) → high-pass at 1800Hz → peaking bandpass at 4500Hz → gentle 1.2s gain fade-in to 0.05. Idempotent (start while running is a no-op); stop fades out cleanly over 800ms before stopping the source. Engine calls `rainAmbient(true)` when night activates and `rainAmbient(false)` when leaving night.
+- 🧪 Verified live: puddles visible as faint reflections at distance; building window halos still dominant; rain ambient code path active. Lint clean.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

@@ -1043,7 +1043,8 @@ export class GameEngine {
       this._dayDecorations.forEach((d) => { if (d) d.visible = !night; });
     }
 
-    // 7) Weather (rain + lightning) — only on the downtown night map.
+    // 7) Weather (rain + lightning + puddles + ambient hiss) — only on
+    // the downtown night map.
     // Lazy-build the rain particle system the first time night activates.
     if (night) {
       if (!this._rain) {
@@ -1086,6 +1087,57 @@ export class GameEngine {
         this.scene.add(this._rain);
       }
       this._rain.visible = true;
+
+      // Puddles — lazy-built once. Flat thin ellipses scattered around the
+      // arena, painted with a soft yellow-window-glow tint so they read as
+      // reflections of the city lights without actual mirror raycasts.
+      if (!this._puddles) {
+        const puddleSpots = [
+          [-12, 8, 2.4, 1.4], [10, 18, 3.0, 1.8], [22, -8, 2.0, 1.2],
+          [-18, -16, 2.6, 1.6], [16, 2, 2.2, 1.3], [-26, 6, 3.2, 1.8],
+          [4, -22, 2.4, 1.5], [-8, 24, 2.2, 1.4], [28, 14, 1.8, 1.2],
+          [-30, -8, 2.4, 1.5], [0, -12, 3.4, 2.0], [12, -32, 2.4, 1.5],
+        ];
+        // Procedural puddle texture — soft cool reflection with a faint
+        // warm hint in the center (echoing the window glow without
+        // overpowering). Designed to read as a wet patch, not a glow.
+        const pc = document.createElement("canvas");
+        pc.width = 128; pc.height = 128;
+        const pctx = pc.getContext("2d");
+        const pg = pctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+        pg.addColorStop(0.00, "rgba(255, 224, 130, 0.22)");
+        pg.addColorStop(0.30, "rgba(140, 160, 220, 0.32)");
+        pg.addColorStop(0.70, "rgba(60, 70, 110, 0.22)");
+        pg.addColorStop(1.00, "rgba(20, 24, 44, 0.0)");
+        pctx.fillStyle = pg;
+        pctx.fillRect(0, 0, 128, 128);
+        const puddleTex = new THREE.CanvasTexture(pc);
+        puddleTex.colorSpace = THREE.SRGBColorSpace;
+        this._puddles = new THREE.Group();
+        this._puddleEntries = [];
+        puddleSpots.forEach(([x, z, w, d]) => {
+          const geo = new THREE.PlaneGeometry(w, d);
+          const mat = new THREE.MeshBasicMaterial({
+            map: puddleTex,
+            transparent: true,
+            depthWrite: false,
+            opacity: 0.55,
+          });
+          const m = new THREE.Mesh(geo, mat);
+          m.rotation.x = -Math.PI / 2;
+          // Lift slightly above the floor to avoid z-fighting.
+          m.position.set(x, 0.02, z);
+          m.rotation.z = Math.random() * Math.PI;
+          this._puddles.add(m);
+          this._puddleEntries.push({ mesh: m, baseOpacity: 0.55, phase: Math.random() * Math.PI * 2, ripple: Math.random() * Math.PI * 2 });
+        });
+        this.scene.add(this._puddles);
+      }
+      this._puddles.visible = true;
+
+      // Looping rain-on-wet-streets hiss
+      try { audioBus.rainAmbient(true); } catch {}
+
       // Reset lightning scheduling. We schedule a "thunder cue" first
       // (4-10s away). When the cue fires, we play the audio rumble AND
       // arm the visual flash to peak ~0.8s later — matching the audio.
@@ -1094,7 +1146,9 @@ export class GameEngine {
       this._lightningActiveUntil = 0;
     } else {
       if (this._rain) this._rain.visible = false;
+      if (this._puddles) this._puddles.visible = false;
       this._lightningActiveUntil = 0;
+      try { audioBus.rainAmbient(false); } catch {}
     }
   }
 
@@ -1132,6 +1186,23 @@ export class GameEngine {
         if (arr[i3 + 2] < cz - 55) arr[i3 + 2] += 110;
       }
       pos.needsUpdate = true;
+    }
+
+    // --- Puddles: subtle ripple via scale pulse + opacity flicker. Also
+    // brighten momentarily during a lightning flash so the reflection
+    // catches the strike.
+    if (this._puddleEntries) {
+      const tt = performance.now() / 1000;
+      const flashBoost = this._lightningStart > 0 && tt < this._lightningActiveUntil
+        ? Math.max(0, 1 - (tt - this._lightningStart) / 0.4)
+        : 0;
+      for (let i = 0; i < this._puddleEntries.length; i++) {
+        const e = this._puddleEntries[i];
+        const s = 1 + Math.sin(tt * 1.4 + e.phase) * 0.04;
+        e.mesh.scale.set(s, 1, s);
+        // Gentle opacity flicker + lightning catch
+        e.mesh.material.opacity = e.baseOpacity * (0.9 + Math.sin(tt * 2.7 + e.ripple) * 0.08) + flashBoost * 0.25;
+      }
     }
 
     // --- Lightning + thunder: every 6-18s we play a low rumble (~1.4s
