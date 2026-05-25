@@ -72,6 +72,10 @@ export default function Game() {
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showGameFriends, setShowGameFriends] = useState(false);
   const pingRef = useRef({ lastSent: 0, value: 0 });
+  // Timeout id for the 15s auto-fallback after match_end. Stored in a ref so
+  // the Play Again / Lobby buttons can cancel it (otherwise the page would
+  // still bounce to lobby 15s after a successful in-place Play Again).
+  const matchEndFallbackRef = useRef(null);
 
   // Setup engine + socket
   useEffect(() => {
@@ -264,8 +268,11 @@ export default function Game() {
           // Auto-fallback: if the user doesn't press any button on the
           // Victory/Defeat screen, drop them back to lobby after 15s. The
           // new screen has explicit Play Again + Back to Lobby buttons so
-          // this just guards against AFK / closed tab.
-          setTimeout(() => {
+          // this just guards against AFK / closed tab. We stash the id so
+          // the buttons can cancel it (see onPlayAgain / onLobby below).
+          if (matchEndFallbackRef.current) clearTimeout(matchEndFallbackRef.current);
+          matchEndFallbackRef.current = setTimeout(() => {
+            matchEndFallbackRef.current = null;
             try { document.exitPointerLock?.(); } catch {}
             nav("/lobby", { replace: true });
           }, 15000);
@@ -414,6 +421,11 @@ export default function Game() {
       clearInterval(intervalId);
       clearInterval(pingId);
       clearInterval(statsId);
+      // Clear the 15s auto-fallback timer if it was armed.
+      if (matchEndFallbackRef.current) {
+        clearTimeout(matchEndFallbackRef.current);
+        matchEndFallbackRef.current = null;
+      }
       document.removeEventListener("pointerlockchange", onLockChange);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
@@ -521,6 +533,13 @@ export default function Game() {
         onExit={handleExit}
         engineRef={engineRef}
         onPlayAgain={() => {
+          // Cancel the 15s auto-fallback so a successful in-place Play
+          // Again (casual / party / practice) doesn't yank the user to
+          // lobby half a minute later.
+          if (matchEndFallbackRef.current) {
+            clearTimeout(matchEndFallbackRef.current);
+            matchEndFallbackRef.current = null;
+          }
           // For casual / party / practice the next match_start will fire
           // server-side after the 10s intermission; just dismiss the
           // overlay so the player can keep playing in-place. Ranked
@@ -534,6 +553,10 @@ export default function Game() {
           }
         }}
         onLobby={() => {
+          if (matchEndFallbackRef.current) {
+            clearTimeout(matchEndFallbackRef.current);
+            matchEndFallbackRef.current = null;
+          }
           try { document.exitPointerLock?.(); } catch {}
           nav("/lobby", { replace: true });
         }}

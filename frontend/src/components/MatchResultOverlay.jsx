@@ -65,7 +65,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onPlayAg
 
   return (
     <div
-      className="absolute inset-0 z-50 overflow-hidden flex items-center justify-center px-4 py-6"
+      className="absolute inset-0 z-50 overflow-hidden flex items-center justify-center px-4 py-6 pointer-events-auto"
       data-testid="match-end-overlay"
       data-result={isVictory ? "victory" : "defeat"}
       style={{
