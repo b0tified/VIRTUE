@@ -217,26 +217,15 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           stroke for the number so it stays legible over busy scenes. */}
       <div className="absolute bottom-6 left-6 z-20" data-testid="hud-health">
         <div
-          className={`relative px-4 pt-2 pb-3 border-pow shadow-pow-sm flex flex-col gap-2 min-w-[260px] ${
+          className={`relative px-4 pt-2 pb-3 flex flex-col gap-2 min-w-[260px] ${
             hud.hp <= 25 && hud.alive ? "anim-lowhp-pulse" : ""
           }`}
-          style={{
-            // Use the player's HP to drive a subtle background gradient —
-            // healthy = dark+green tint, low = dark+red tint, invuln = blue.
-            background: hud.invuln
-              ? "linear-gradient(135deg, #0055FFee 0%, #0a1a4aee 100%)"
-              : hud.hp <= 25
-                ? "linear-gradient(135deg, #2a0608ee 0%, #0a0a0aee 100%)"
-                : hud.hp <= 50
-                  ? "linear-gradient(135deg, #2a1a00ee 0%, #0a0a0aee 100%)"
-                  : "linear-gradient(135deg, #0a2a16ee 0%, #0a0a0aee 100%)",
-            color: "#fff",
-          }}
+          style={{ color: "#fff" }}
         >
           {/* Top row: heart icon, big HP number, status label */}
           <div className="flex items-center gap-3">
             <div
-              className="relative w-10 h-10 flex items-center justify-center border-2 border-white/30"
+              className="relative w-10 h-10 flex items-center justify-center"
               style={{
                 background: hud.invuln ? "#FFD700" : "#E62429",
                 boxShadow: hud.hp <= 25 ? "0 0 14px #E62429" : "0 0 8px rgba(230,36,41,0.5)",
@@ -265,7 +254,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
               to read state at a glance vs. a continuous fill. All segments
               share the same color (based on current HP) so the bar reads
               as "X bars remaining" rather than a static gradient. */}
-          <div className="flex gap-0.5 h-4 border-2 border-black" style={{ background: "#000" }}>
+          <div className="flex gap-1 h-4">
             {[0, 20, 40, 60, 80].map((threshold) => {
               const segPct = Math.max(0, Math.min(20, hud.hp - threshold)) / 20;
               const segColor = hud.invuln
@@ -274,7 +263,11 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                 : hud.hp > 25 ? "#FFD700"
                 : "#E62429";
               return (
-                <div key={threshold} className="flex-1 relative overflow-hidden">
+                <div
+                  key={threshold}
+                  className="flex-1 relative overflow-hidden"
+                  style={{ background: "rgba(0,0,0,0.55)" }}
+                >
                   <div
                     className="absolute inset-0"
                     style={{
