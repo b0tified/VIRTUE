@@ -157,28 +157,97 @@ function SkinCard({ skin, coins, busy, onBuy, onEquip }) {
       >
         {/* Aura disc behind the figure */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-32 h-6 rounded-full" style={auraStyle} />
-        {/* Mini humanoid (CSS only) */}
-        <div className="relative mb-2" style={{ width: 76, height: 130 }}>
+        {/* Cape (renders behind the body) */}
+        {skin.cape != null && (
+          <div
+            className="absolute border-2 border-black"
+            style={{
+              width: 50,
+              height: 80,
+              bottom: 20,
+              left: "50%",
+              transform: "translateX(-50%) rotate(2deg)",
+              background: colorHex(skin.cape),
+              zIndex: 0,
+            }}
+          />
+        )}
+        {/* Mini humanoid (CSS only) — layered: head + helmet + visor + torso
+            + chest stripe + emblem + belt + shoulder pads + legs + knee
+            stripes. Mirrors the THREE.js humanoid layout in /game/engine.js
+            so the preview reads honestly. */}
+        <div className="relative mb-2" style={{ width: 76, height: 130, zIndex: 1 }}>
           {/* Head */}
           <div
             className="absolute left-1/2 -translate-x-1/2 rounded-full border-2 border-black"
             style={{ width: 28, height: 28, top: 0, background: colorHex(skin.head) }}
           />
-          {/* Mask band */}
+          {/* Helmet skull cap (upper half only) */}
+          {skin.helmet != null && (
+            <div
+              className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
+              style={{
+                width: 30,
+                height: 16,
+                top: -1,
+                background: colorHex(skin.helmet),
+                borderRadius: "16px 16px 4px 4px",
+              }}
+            />
+          )}
+          {/* Visor band (overrides default black mask if visor defined) */}
           <div
             className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
-            style={{ width: 30, height: 6, top: 10, background: "#0A0A0A" }}
+            style={{
+              width: 30,
+              height: 6,
+              top: 10,
+              background: skin.visor != null ? colorHex(skin.visor) : "#0A0A0A",
+              boxShadow: skin.visor != null ? `0 0 6px ${colorHex(skin.visor)}` : "none",
+            }}
           />
           {/* Torso */}
           <div
             className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
             style={{ width: 42, height: 44, top: 30, background: colorHex(skin.body) }}
           />
+          {/* Chest stripe (vertical) */}
+          {skin.stripe != null && (
+            <div
+              className="absolute left-1/2 -translate-x-1/2"
+              style={{
+                width: 8,
+                height: 38,
+                top: 33,
+                background: colorHex(skin.stripe),
+              }}
+            />
+          )}
           {/* Emblem */}
           <div
             className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
             style={{ width: 14, height: 10, top: 42, background: colorHex(skin.accent) }}
           />
+          {/* Belt */}
+          {skin.belt != null && (
+            <div
+              className="absolute left-1/2 -translate-x-1/2 border-2 border-black"
+              style={{ width: 42, height: 6, top: 70, background: colorHex(skin.belt) }}
+            />
+          )}
+          {/* Shoulder pads — wider than the body, attached at the top */}
+          {skin.shoulder != null && (
+            <>
+              <div
+                className="absolute border-2 border-black"
+                style={{ width: 14, height: 12, top: 28, left: -4, background: colorHex(skin.shoulder) }}
+              />
+              <div
+                className="absolute border-2 border-black"
+                style={{ width: 14, height: 12, top: 28, right: -4, background: colorHex(skin.shoulder) }}
+              />
+            </>
+          )}
           {/* Arms */}
           <div
             className="absolute border-2 border-black"
@@ -197,6 +266,19 @@ function SkinCard({ skin, coins, busy, onBuy, onEquip }) {
             className="absolute border-2 border-black"
             style={{ width: 14, height: 40, top: 76, right: 20, background: colorHex(skin.leg) }}
           />
+          {/* Knee stripes */}
+          {skin.stripe != null && (
+            <>
+              <div
+                className="absolute"
+                style={{ width: 14, height: 4, top: 96, left: 20, background: colorHex(skin.stripe) }}
+              />
+              <div
+                className="absolute"
+                style={{ width: 14, height: 4, top: 96, right: 20, background: colorHex(skin.stripe) }}
+              />
+            </>
+          )}
         </div>
         {/* Rarity chip */}
         <div

@@ -331,14 +331,71 @@ COINS_PER_LEVEL = 100  # awarded once per level the player reaches.
 #   - "spin":   rotating dual-tone ring
 #   - "flicker": sharp on/off flicker (ghost effect)
 SKINS_CATALOG: List[dict] = [
-    {"id": "default",  "name": "Recruit",       "price": 0,    "rarity": "common",    "body": 0xe62429, "leg": 0x1a1a1a, "head": 0xf2c08a, "accent": 0xffd700, "aura": 0x000000, "aura_mode": "none"},
-    {"id": "azure",    "name": "Azure Ranger",  "price": 200,  "rarity": "common",    "body": 0x0055ff, "leg": 0x0a2a6b, "head": 0xf2c08a, "accent": 0x9adcff, "aura": 0x4ab8ff, "aura_mode": "pulse"},
-    {"id": "neon",     "name": "Neon Cyan",     "price": 500,  "rarity": "rare",      "body": 0x00cfff, "leg": 0x004b6b, "head": 0xf2c08a, "accent": 0xffffff, "aura": 0x00ffff, "aura_mode": "pulse"},
-    {"id": "crimson",  "name": "Crimson Rogue", "price": 800,  "rarity": "rare",      "body": 0x6b0010, "leg": 0x1a0306, "head": 0xf2c08a, "accent": 0xff3a3a, "aura": 0xff1a1a, "aura_mode": "spin"},
-    {"id": "ghost",    "name": "Ghost White",   "price": 1200, "rarity": "epic",      "body": 0xeeeeee, "leg": 0x9aa0a8, "head": 0xeeeeee, "accent": 0x6cb0ff, "aura": 0xffffff, "aura_mode": "flicker"},
-    {"id": "verdant",  "name": "Verdant Hunter","price": 1500, "rarity": "epic",      "body": 0x1d6b29, "leg": 0x0d3a16, "head": 0xf2c08a, "accent": 0xe8ff7a, "aura": 0x6cff5e, "aura_mode": "pulse"},
-    {"id": "void",     "name": "Void Walker",   "price": 2000, "rarity": "legendary", "body": 0x14002a, "leg": 0x000000, "head": 0xb88be0, "accent": 0xd400ff, "aura": 0xb000ff, "aura_mode": "spin"},
-    {"id": "golden",   "name": "Golden Apex",   "price": 3000, "rarity": "legendary", "body": 0xffc700, "leg": 0x6b4d00, "head": 0xf2c08a, "accent": 0xffffff, "aura": 0xffd700, "aura_mode": "spin"},
+    # ─── Free / unlock skins ────────────────────────────────────────────
+    {"id": "default",  "name": "Recruit",        "price": 0,    "rarity": "common",    "obtain": "free",
+     "body": 0xe62429, "leg": 0x1a1a1a, "head": 0xf2c08a, "accent": 0xffd700,
+     "helmet": None,    "visor": None,     "shoulder": None,  "stripe": None,    "belt": 0x4a2a0a, "cape": None,
+     "aura": 0x000000, "aura_mode": "none"},
+
+    {"id": "mech",     "name": "Mech Recruit",   "price": 0,    "rarity": "rare",      "obtain": "first_match",
+     "body": 0x6f7886, "leg": 0x383e48, "head": 0x6f7886, "accent": 0x00e5ff,
+     "helmet": 0x4a525c, "visor": 0x00e5ff, "shoulder": 0x383e48, "stripe": 0x00e5ff, "belt": 0x2a2f37, "cape": None,
+     "aura": 0x00b8d4, "aura_mode": "pulse"},
+
+    # ─── Common ─────────────────────────────────────────────────────────
+    {"id": "azure",    "name": "Azure Ranger",   "price": 200,  "rarity": "common",    "obtain": "shop",
+     "body": 0x0055ff, "leg": 0x0a2a6b, "head": 0xf2c08a, "accent": 0x9adcff,
+     "helmet": 0x0a2a6b, "visor": 0xffffff, "shoulder": 0x9adcff, "stripe": 0x9adcff, "belt": 0x9adcff, "cape": None,
+     "aura": 0x4ab8ff, "aura_mode": "pulse"},
+
+    # ─── Rare ───────────────────────────────────────────────────────────
+    {"id": "neon",     "name": "Neon Cyan",      "price": 500,  "rarity": "rare",      "obtain": "shop",
+     "body": 0x00cfff, "leg": 0x004b6b, "head": 0xf2c08a, "accent": 0xffffff,
+     "helmet": 0x004b6b, "visor": 0xff00d4, "shoulder": 0x00ffff, "stripe": 0xff00d4, "belt": 0x002a3a, "cape": None,
+     "aura": 0x00ffff, "aura_mode": "pulse"},
+
+    {"id": "crimson",  "name": "Crimson Rogue",  "price": 800,  "rarity": "rare",      "obtain": "shop",
+     "body": 0x6b0010, "leg": 0x1a0306, "head": 0xf2c08a, "accent": 0xff3a3a,
+     "helmet": 0x2a0307, "visor": 0xff3a3a, "shoulder": 0xff3a3a, "stripe": 0xff3a3a, "belt": 0x0a0000, "cape": 0x3a0008,
+     "aura": 0xff1a1a, "aura_mode": "spin"},
+
+    # ─── Epic ───────────────────────────────────────────────────────────
+    {"id": "ghost",    "name": "Ghost White",    "price": 1200, "rarity": "epic",      "obtain": "shop",
+     "body": 0xeeeeee, "leg": 0x9aa0a8, "head": 0xeeeeee, "accent": 0x6cb0ff,
+     "helmet": 0xc8cdd2, "visor": 0x6cb0ff, "shoulder": 0xffffff, "stripe": 0x6cb0ff, "belt": 0x9aa0a8, "cape": 0xffffff,
+     "aura": 0xffffff, "aura_mode": "flicker"},
+
+    {"id": "verdant",  "name": "Verdant Hunter", "price": 1500, "rarity": "epic",      "obtain": "shop",
+     "body": 0x1d6b29, "leg": 0x0d3a16, "head": 0xf2c08a, "accent": 0xe8ff7a,
+     "helmet": 0x0d3a16, "visor": 0xe8ff7a, "shoulder": 0x6cff5e, "stripe": 0xe8ff7a, "belt": 0x4a3a1a, "cape": 0x2a5a16,
+     "aura": 0x6cff5e, "aura_mode": "pulse"},
+
+    # ─── Legendary ──────────────────────────────────────────────────────
+    {"id": "void",     "name": "Void Walker",    "price": 2000, "rarity": "legendary", "obtain": "shop",
+     "body": 0x14002a, "leg": 0x000000, "head": 0xb88be0, "accent": 0xd400ff,
+     "helmet": 0x000000, "visor": 0xd400ff, "shoulder": 0xd400ff, "stripe": 0xd400ff, "belt": 0x05000a, "cape": 0x1a002a,
+     "aura": 0xb000ff, "aura_mode": "spin"},
+
+    {"id": "golden",   "name": "Golden Apex",    "price": 3000, "rarity": "legendary", "obtain": "shop",
+     "body": 0xffc700, "leg": 0x6b4d00, "head": 0xf2c08a, "accent": 0xffffff,
+     "helmet": 0x6b4d00, "visor": 0xffffff, "shoulder": 0xffd700, "stripe": 0xffffff, "belt": 0x4a3500, "cape": 0xffd700,
+     "aura": 0xffd700, "aura_mode": "spin"},
+
+    # ─── Season-pass exclusive (not in shop) ────────────────────────────
+    {"id": "solar",    "name": "Solar Inferno",  "price": 0,    "rarity": "epic",      "obtain": "pass_tier_10",
+     "body": 0xff5500, "leg": 0x6b1a00, "head": 0xf2c08a, "accent": 0xffd700,
+     "helmet": 0x6b1a00, "visor": 0xffd700, "shoulder": 0xff8a00, "stripe": 0xffd700, "belt": 0x3a0a00, "cape": 0xff8a00,
+     "aura": 0xff8a00, "aura_mode": "pulse"},
+
+    {"id": "cyber",    "name": "Cyber Wraith",   "price": 0,    "rarity": "epic",      "obtain": "pass_tier_20",
+     "body": 0x1a1a3a, "leg": 0x05051a, "head": 0xbac4d6, "accent": 0x00ffaa,
+     "helmet": 0x05051a, "visor": 0x00ffaa, "shoulder": 0x00ffaa, "stripe": 0x00ffaa, "belt": 0x0a0a2a, "cape": 0x00ffaa,
+     "aura": 0x00ffaa, "aura_mode": "flicker"},
+
+    {"id": "quantum",  "name": "Quantum Reaver", "price": 0,    "rarity": "legendary", "obtain": "pass_tier_30",
+     "body": 0x4b0082, "leg": 0x1a0033, "head": 0xc8a8ff, "accent": 0xffffff,
+     "helmet": 0x1a0033, "visor": 0xffffff, "shoulder": 0xff00ff, "stripe": 0xffffff, "belt": 0x4b0082, "cape": 0xff00ff,
+     "aura": 0xff00ff, "aura_mode": "spin"},
 ]
 SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 
@@ -643,13 +700,21 @@ class SkinEquipIn(BaseModel):
 
 @api.get("/shop/skins")
 async def shop_skins(user: dict = Depends(get_current_user)):
-    """Returns the full skin catalog with ownership flags + the user's coin
-    balance, so the shop UI can render the grid in one round-trip."""
+    """Returns the shop-purchasable skin catalog (excludes pass-only and
+    other earn-only skins) with ownership flags + the user's coin balance.
+    Earn-only skins (mech, season pass tiers) still appear if owned so
+    players can equip them, but the shop tab doesn't surface unowned ones
+    since they're not buyable here."""
     await credit_level_coins(user)
     owned = set(user.get("owned_skins", []) or [])
     owned.add("default")  # always free
     items = []
     for s in SKINS_CATALOG:
+        # Hide unowned non-shop skins from the storefront so they don't
+        # look buyable. Earn-only skins (mech, pass_*) only appear after
+        # they're owned (then the user can equip them).
+        if s.get("obtain") not in ("shop", "free") and s["id"] not in owned:
+            continue
         items.append({
             **s,
             "owned": s["id"] in owned,
@@ -671,6 +736,9 @@ async def shop_buy(payload: SkinBuyIn, user: dict = Depends(get_current_user)):
     skin = SKINS_BY_ID.get(payload.skin_id)
     if not skin:
         raise HTTPException(status_code=404, detail="Skin not found.")
+    if skin.get("obtain") not in ("shop",):
+        # Earn-only skins (mech, season pass) can't be purchased.
+        raise HTTPException(status_code=403, detail="This skin can't be purchased.")
     owned = set(user.get("owned_skins", []) or [])
     owned.add("default")
     if skin["id"] in owned:
@@ -708,6 +776,299 @@ async def equip_skin(payload: SkinEquipIn, user: dict = Depends(get_current_user
     )
     user["selected_skin"] = skin["id"]
     return public_user(user)
+
+
+# -------------------------------------------------------------------
+# Progression: Lifetime Challenges, Daily Challenges, Season Pass
+# -------------------------------------------------------------------
+# Lifetime challenges (6 big ones) — completion is calculated against
+# `stats` so progress is implicit. Each grants a coin reward (and a
+# splash of season XP for free) when claimed. Claims are tracked on the
+# user under `claimed_challenges`.
+LIFETIME_CHALLENGES: List[dict] = [
+    {"id": "first_blood",  "name": "First Blood",  "desc": "Get your first kill.",                       "metric": "stats.kills",  "goal": 1,   "coins": 50,   "season_xp": 25},
+    {"id": "bloodlust",    "name": "Bloodlust",    "desc": "Eliminate 25 enemies across all matches.",   "metric": "stats.kills",  "goal": 25,  "coins": 200,  "season_xp": 50},
+    {"id": "massacre",     "name": "Massacre",     "desc": "Eliminate 100 enemies — true mayhem.",       "metric": "stats.kills",  "goal": 100, "coins": 500,  "season_xp": 100},
+    {"id": "veteran",      "name": "Veteran",      "desc": "Play 25 matches to completion.",             "metric": "stats.matches","goal": 25,  "coins": 250,  "season_xp": 75},
+    {"id": "champion",     "name": "Champion",     "desc": "Win 5 ranked or quick matches.",             "metric": "stats.wins",   "goal": 5,   "coins": 300,  "season_xp": 75},
+    {"id": "apex",         "name": "Apex",         "desc": "Reach account Level 10.",                    "metric": "level",        "goal": 10,  "coins": 1000, "season_xp": 200},
+]
+
+# Daily challenge pool. 3 are picked at random per day. Progress is the
+# difference between the player's stats today and a snapshot captured when
+# the day rolled over. `level` is special-cased (compared to today's start
+# level rather than a delta).
+DAILY_CHALLENGES_POOL: List[dict] = [
+    {"id": "d_kills_5",    "name": "Warm Up",        "desc": "Get 5 kills today.",         "metric": "stats.kills",   "goal": 5,  "coins": 25, "season_xp": 50},
+    {"id": "d_kills_10",   "name": "On Fire",        "desc": "Get 10 kills today.",        "metric": "stats.kills",   "goal": 10, "coins": 25, "season_xp": 50},
+    {"id": "d_kills_20",   "name": "Rampage",        "desc": "Get 20 kills today.",        "metric": "stats.kills",   "goal": 20, "coins": 25, "season_xp": 50},
+    {"id": "d_match_1",    "name": "Suit Up",        "desc": "Play 1 match today.",        "metric": "stats.matches", "goal": 1,  "coins": 25, "season_xp": 50},
+    {"id": "d_match_3",    "name": "Triple Threat",  "desc": "Play 3 matches today.",      "metric": "stats.matches", "goal": 3,  "coins": 25, "season_xp": 50},
+    {"id": "d_win_1",      "name": "Top Frag",       "desc": "Win 1 match today.",         "metric": "stats.wins",    "goal": 1,  "coins": 25, "season_xp": 50},
+]
+DAILY_PICKS_PER_DAY = 3
+
+# Season pass — 30 tiers. Each tier costs 100 season XP to unlock; rewards
+# alternate coin grants with three skin tiers (10/20/30). The track resets
+# every season (not implemented yet — for now it's perpetual).
+SEASON_XP_PER_TIER = 100
+SEASON_MAX_TIER = 30
+
+
+def _season_tiers() -> List[dict]:
+    """Returns the static reward layout for the 30-tier pass. Rebuilt on
+    each call so the source of truth lives in code, not the DB."""
+    tiers: List[dict] = []
+    for i in range(1, SEASON_MAX_TIER + 1):
+        if i == 30:
+            tiers.append({"tier": i, "reward_type": "skin",  "reward_skin": "quantum", "reward_label": "Quantum Reaver"})
+        elif i == 20:
+            tiers.append({"tier": i, "reward_type": "skin",  "reward_skin": "cyber",   "reward_label": "Cyber Wraith"})
+        elif i == 10:
+            tiers.append({"tier": i, "reward_type": "skin",  "reward_skin": "solar",   "reward_label": "Solar Inferno"})
+        elif i % 5 == 0:
+            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 500,      "reward_label": "+500 Coins"})
+        else:
+            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 100,      "reward_label": "+100 Coins"})
+    return tiers
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _challenge_progress(user: dict, ch: dict, snapshot: Optional[dict] = None) -> int:
+    """Resolve the current numeric progress of `user` against challenge `ch`.
+
+    For daily challenges, `snapshot` holds the stats values at start-of-day
+    and progress = current - snapshot (clamped at 0). For lifetime
+    challenges, snapshot is None and progress is the raw metric value.
+    """
+    metric = ch["metric"]
+    if metric == "level":
+        cur = compute_level(user.get("stats", {}))["level"]
+        return int(cur)
+    # stats.X path
+    parts = metric.split(".")
+    val: Any = user
+    for p in parts:
+        if isinstance(val, dict):
+            val = val.get(p, 0)
+        else:
+            val = 0
+            break
+    val = int(val or 0)
+    if snapshot is not None:
+        snap_val = int((snapshot or {}).get(parts[-1], 0))
+        return max(0, val - snap_val)
+    return val
+
+
+async def _ensure_daily_state(user: dict) -> dict:
+    """Roll the user's daily-challenge state forward to today if needed.
+
+    Picks `DAILY_PICKS_PER_DAY` distinct challenge IDs, snapshots the
+    current stats so progress = today's delta, and persists the bundle.
+    Idempotent — re-calls on the same day are no-ops."""
+    today = _today_utc()
+    ds = user.get("daily_state") or {}
+    if ds.get("date") == today and isinstance(ds.get("challenges"), list) and len(ds["challenges"]) == DAILY_PICKS_PER_DAY:
+        return ds
+    # Roll over: pick fresh challenges + snapshot stats.
+    pool_ids = [c["id"] for c in DAILY_CHALLENGES_POOL]
+    picks = random.sample(pool_ids, k=min(DAILY_PICKS_PER_DAY, len(pool_ids)))
+    stats = user.get("stats", {}) or {}
+    snapshot = {
+        "kills":   int(stats.get("kills",   0) or 0),
+        "deaths":  int(stats.get("deaths",  0) or 0),
+        "matches": int(stats.get("matches", 0) or 0),
+        "wins":    int(stats.get("wins",    0) or 0),
+    }
+    new_state = {
+        "date": today,
+        "challenges": picks,
+        "snapshot": snapshot,
+        "claimed": {},
+    }
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"daily_state": new_state}})
+    user["daily_state"] = new_state
+    return new_state
+
+
+async def _grant_first_match_skin(user_id: str) -> None:
+    """Awards the free Mech Recruit skin the moment the player records
+    their very first match. Idempotent — wrapped in a $addToSet so repeat
+    calls are no-ops, and gated on `stats.matches` BEFORE this match was
+    booked (the caller does the check)."""
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$addToSet": {"owned_skins": "mech"}},
+    )
+
+
+@api.get("/progression")
+async def progression(user: dict = Depends(get_current_user)):
+    """Bundle endpoint — returns lifetime challenge progress, today's
+    daily challenges, and the 30-tier season pass state in one round-trip.
+    The frontend ProgressionModal pulls everything from here."""
+    await credit_level_coins(user)
+    daily_state = await _ensure_daily_state(user)
+    claimed_lifetime: List[str] = list(user.get("claimed_challenges") or [])
+    # Lifetime challenges.
+    lifetime_out = []
+    for ch in LIFETIME_CHALLENGES:
+        prog = _challenge_progress(user, ch)
+        completed = prog >= ch["goal"]
+        claimed = ch["id"] in claimed_lifetime
+        lifetime_out.append({**ch, "progress": prog, "completed": completed, "claimed": claimed})
+    # Daily challenges (snapshot-relative).
+    by_id = {c["id"]: c for c in DAILY_CHALLENGES_POOL}
+    claimed_daily = (daily_state.get("claimed") or {})
+    daily_out = []
+    for cid in daily_state.get("challenges", []):
+        ch = by_id.get(cid)
+        if not ch:
+            continue
+        prog = _challenge_progress(user, ch, daily_state.get("snapshot"))
+        completed = prog >= ch["goal"]
+        daily_out.append({**ch, "progress": prog, "completed": completed, "claimed": bool(claimed_daily.get(cid))})
+    # Season pass.
+    season_xp = int(user.get("season_xp", 0) or 0)
+    season_tier = min(SEASON_MAX_TIER, season_xp // SEASON_XP_PER_TIER)
+    season_xp_in_tier = season_xp - season_tier * SEASON_XP_PER_TIER if season_tier < SEASON_MAX_TIER else 0
+    tiers = _season_tiers()
+    claimed_tiers = set(int(t) for t in (user.get("claimed_season_tiers") or []))
+    for t in tiers:
+        t["unlocked"] = t["tier"] <= season_tier
+        t["claimed"]  = t["tier"] in claimed_tiers
+    return {
+        "lifetime": lifetime_out,
+        "daily": {
+            "date": daily_state.get("date"),
+            "challenges": daily_out,
+        },
+        "season": {
+            "xp": season_xp,
+            "tier": season_tier,
+            "xp_in_tier": season_xp_in_tier,
+            "xp_per_tier": SEASON_XP_PER_TIER,
+            "max_tier": SEASON_MAX_TIER,
+            "tiers": tiers,
+        },
+        "coins": int(user.get("coins", 0) or 0),
+    }
+
+
+class ProgressionClaimIn(BaseModel):
+    kind: str = Field(pattern="^(challenge|daily|season)$")
+    id: Optional[str] = None
+    tier: Optional[int] = None
+
+
+@api.post("/progression/claim")
+async def progression_claim(payload: ProgressionClaimIn, user: dict = Depends(get_current_user)):
+    """Claim a completed challenge / daily / season tier and pocket the
+    reward. Each claim is one-shot and persisted to the user document so
+    re-claims fail with 409."""
+    await credit_level_coins(user)
+    inc: Dict[str, int] = {}
+    set_ops: Dict[str, Any] = {}
+    add_to_set: Dict[str, Any] = {}
+    label = ""
+    granted = {"coins": 0, "season_xp": 0, "skin": None}
+
+    if payload.kind == "challenge":
+        ch = next((c for c in LIFETIME_CHALLENGES if c["id"] == payload.id), None)
+        if not ch:
+            raise HTTPException(status_code=404, detail="Challenge not found.")
+        claimed = list(user.get("claimed_challenges") or [])
+        if ch["id"] in claimed:
+            raise HTTPException(status_code=409, detail="Already claimed.")
+        prog = _challenge_progress(user, ch)
+        if prog < ch["goal"]:
+            raise HTTPException(status_code=400, detail=f"Not yet — {prog}/{ch['goal']}.")
+        inc["coins"]     = int(ch.get("coins", 0) or 0)
+        inc["season_xp"] = int(ch.get("season_xp", 0) or 0)
+        add_to_set["claimed_challenges"] = ch["id"]
+        granted["coins"]     = inc["coins"]
+        granted["season_xp"] = inc["season_xp"]
+        label = f"{ch['name']} — claimed!"
+
+    elif payload.kind == "daily":
+        daily_state = await _ensure_daily_state(user)
+        cid = payload.id
+        if not cid or cid not in (daily_state.get("challenges") or []):
+            raise HTTPException(status_code=404, detail="Not one of today's challenges.")
+        if (daily_state.get("claimed") or {}).get(cid):
+            raise HTTPException(status_code=409, detail="Already claimed.")
+        ch = next((c for c in DAILY_CHALLENGES_POOL if c["id"] == cid), None)
+        if not ch:
+            raise HTTPException(status_code=404, detail="Challenge not found.")
+        prog = _challenge_progress(user, ch, daily_state.get("snapshot"))
+        if prog < ch["goal"]:
+            raise HTTPException(status_code=400, detail=f"Not yet — {prog}/{ch['goal']}.")
+        new_state = dict(daily_state)
+        new_state["claimed"] = {**(daily_state.get("claimed") or {}), cid: True}
+        set_ops["daily_state"] = new_state
+        inc["coins"]     = int(ch.get("coins", 0) or 0)
+        inc["season_xp"] = int(ch.get("season_xp", 0) or 0)
+        granted["coins"]     = inc["coins"]
+        granted["season_xp"] = inc["season_xp"]
+        label = f"{ch['name']} — daily claimed!"
+
+    elif payload.kind == "season":
+        tier = int(payload.tier or 0)
+        if tier < 1 or tier > SEASON_MAX_TIER:
+            raise HTTPException(status_code=400, detail="Invalid tier.")
+        season_xp = int(user.get("season_xp", 0) or 0)
+        unlocked = season_xp // SEASON_XP_PER_TIER
+        if tier > unlocked:
+            raise HTTPException(status_code=400, detail=f"Tier {tier} not unlocked yet.")
+        claimed_tiers = set(int(t) for t in (user.get("claimed_season_tiers") or []))
+        if tier in claimed_tiers:
+            raise HTTPException(status_code=409, detail="Tier already claimed.")
+        layout = _season_tiers()
+        reward = next((t for t in layout if t["tier"] == tier), None)
+        if not reward:
+            raise HTTPException(status_code=404, detail="Tier reward missing.")
+        if reward["reward_type"] == "coins":
+            inc["coins"] = int(reward.get("reward_coins", 0))
+            granted["coins"] = inc["coins"]
+        elif reward["reward_type"] == "skin":
+            sid = reward["reward_skin"]
+            add_to_set["owned_skins"] = sid
+            granted["skin"] = sid
+        label = f"Season Pass Tier {tier} — {reward['reward_label']}"
+        # Build the update doc — both 'owned_skins' and 'claimed_season_tiers'
+        # go through $addToSet, but Mongo only accepts one $addToSet stage,
+        # so we merge them into a single ops object.
+        update_ops: Dict[str, Any] = {}
+        if inc:
+            update_ops["$inc"] = inc
+        if set_ops:
+            update_ops["$set"] = set_ops
+        ats: Dict[str, Any] = {}
+        if "owned_skins" in add_to_set:
+            ats["owned_skins"] = add_to_set["owned_skins"]
+        ats["claimed_season_tiers"] = tier
+        update_ops["$addToSet"] = ats
+        await db.users.update_one({"_id": user["_id"]}, update_ops)
+        fresh = await db.users.find_one({"_id": user["_id"]})
+        return {"ok": True, "label": label, "granted": granted, "user": public_user(fresh) if fresh else None}
+
+    # Common write path for challenge + daily.
+    update_ops = {}
+    if inc:
+        update_ops["$inc"] = inc
+    if set_ops:
+        update_ops["$set"] = set_ops
+    if add_to_set:
+        update_ops["$addToSet"] = add_to_set
+    if update_ops:
+        await db.users.update_one({"_id": user["_id"]}, update_ops)
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    return {"ok": True, "label": label, "granted": granted, "user": public_user(fresh) if fresh else None}
+
 
 
 class AvatarIn(BaseModel):
@@ -2203,6 +2564,7 @@ class GameRoom:
                 now = datetime.now(timezone.utc)
                 mode = "ranked" if self.is_ranked else ("offline" if getattr(self, "is_offline", False) else "casual")
                 docs = []
+                first_match_grants: List[str] = []
                 for entry, pl in zip(placements, real_players):
                     docs.append({
                         "user_id": pl.user_id,
@@ -2218,8 +2580,31 @@ class GameRoom:
                         "is_placement": entry.get("is_placement", False),
                         "ended_at": now,
                     })
+                    # Free Mech skin grant — fires when the player's matches
+                    # count was still 0 going into this match. The stats.matches
+                    # $inc was already issued above, so we re-read via the doc.
+                    try:
+                        udoc = await db.users.find_one(
+                            {"_id": ObjectId(pl.user_id)},
+                            {"stats.matches": 1, "owned_skins": 1},
+                        )
+                        prior_matches = int(((udoc or {}).get("stats") or {}).get("matches", 0) or 0)
+                        owned = set((udoc or {}).get("owned_skins") or [])
+                        # `stats.matches` was incremented to N this round, so
+                        # this was the player's first match if N == 1.
+                        if prior_matches == 1 and "mech" not in owned:
+                            first_match_grants.append(pl.user_id)
+                    except Exception:
+                        pass
                 if docs:
                     await db.match_history.insert_many(docs)
+                # Issue mech-skin grants outside the doc loop so failures
+                # don't roll back the match record.
+                for uid in first_match_grants:
+                    try:
+                        await _grant_first_match_skin(uid)
+                    except Exception:
+                        pass
         except Exception as e:
             logger.warning("match_history insert failed: %s", e)
 

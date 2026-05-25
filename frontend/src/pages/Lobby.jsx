@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -12,6 +12,7 @@ import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
+import ProgressionModal from "@/components/ProgressionModal";
 import { useQueue } from "@/context/QueueContext";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
@@ -27,6 +28,7 @@ export default function Lobby() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [showShop, setShowShop] = useState(false);
+  const [showProgression, setShowProgression] = useState(false);
   // Rank-up celebration overlay. Triggered by a global `virtue-rankup` event
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
@@ -293,6 +295,14 @@ export default function Lobby() {
             <span className="flex items-center gap-2"><ShoppingBag size={18} strokeWidth={3} /><span className="hidden sm:inline">SHOP</span></span>
           </button>
           <button
+            onClick={() => setShowProgression(true)}
+            className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
+            data-testid="lobby-progression-button"
+            title="Season Pass, Challenges & Dailies"
+          >
+            <span className="flex items-center gap-2"><Sparkles size={18} strokeWidth={3} /><span className="hidden sm:inline">PASS</span></span>
+          </button>
+          <button
             onClick={() => setShowFriends(true)}
             className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
             data-testid="lobby-friends-button"
@@ -446,6 +456,7 @@ export default function Lobby() {
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
       <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
       <ShopModal open={showShop} onClose={() => setShowShop(false)} />
+      <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
 
       {/* Rank-up celebration — fires after a tier-skip redeem. The overlay
           self-dismisses after ~6.5s and can be clicked through. */}

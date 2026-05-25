@@ -1263,6 +1263,14 @@ export class GameEngine {
     const skin = (typeof skinOrColor === "number")
       ? { body: skinOrColor, leg: 0x1a1a1a, head: 0xf2c08a, accent: 0xffd700, aura: 0x000000, aura_mode: "none" }
       : (skinOrColor || skinById("default"));
+    // Optional details — falsy/undefined means "skip this layer", keeping
+    // legacy skins backward-compatible.
+    const helmet   = skin.helmet   ?? null;
+    const visor    = skin.visor    ?? null;
+    const shoulder = skin.shoulder ?? null;
+    const stripe   = skin.stripe   ?? null;
+    const belt     = skin.belt     ?? null;
+    const cape     = skin.cape     ?? null;
     const group = new THREE.Group();
     const bodyMeshes = [];
 
@@ -1278,19 +1286,62 @@ export class GameEngine {
       return g;
     };
 
-    // ----- Upper body (static) -----
+    // ----- Head + helmet -----
     const head = push(new THREE.SphereGeometry(0.32, 14, 10), skin.head, 1.06);
     head.position.y = 1.65;
     group.add(head);
-    const mask = push(new THREE.BoxGeometry(0.62, 0.14, 0.02), 0x0a0a0a, 1.02);
+    if (helmet != null) {
+      // Skull cap that covers the top + back of the head (slightly bigger
+      // than the head sphere). Sits on top, leaving the face exposed.
+      const cap = push(new THREE.SphereGeometry(0.345, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), helmet, 1.06);
+      cap.position.y = 1.65;
+      group.add(cap);
+    }
+    // Visor stripe — overrides the default black mask color when defined.
+    const mask = push(new THREE.BoxGeometry(0.62, 0.14, 0.02), visor != null ? visor : 0x0a0a0a, 1.02);
     mask.position.set(0, 1.7, 0.3);
     group.add(mask);
+
+    // ----- Torso -----
     const torso = push(new THREE.BoxGeometry(0.7, 0.9, 0.42), skin.body, 1.05);
     torso.position.y = 1.05;
     group.add(torso);
+    // Vertical chest stripe — runs from collar to belt, narrow.
+    if (stripe != null) {
+      const stripeMesh = push(new THREE.BoxGeometry(0.16, 0.78, 0.02), stripe, 1.04);
+      stripeMesh.position.set(0, 1.05, 0.215);
+      group.add(stripeMesh);
+    }
+    // Hero emblem — accent square on the chest.
     const emblem = push(new THREE.BoxGeometry(0.32, 0.18, 0.02), skin.accent, 1.04);
-    emblem.position.set(0, 1.15, 0.22);
+    emblem.position.set(0, 1.15, 0.225);
     group.add(emblem);
+    // Belt — horizontal trim at the waist.
+    if (belt != null) {
+      const beltMesh = push(new THREE.BoxGeometry(0.74, 0.1, 0.44), belt, 1.04);
+      beltMesh.position.y = 0.62;
+      group.add(beltMesh);
+    }
+    // Shoulder pads — chunky asymmetric blocks sticking out from each
+    // shoulder. Visually they're attached to the body, not the arms, so
+    // they don't swing with arm animation (more "armored" feel).
+    if (shoulder != null) {
+      const padGeo = new THREE.BoxGeometry(0.34, 0.22, 0.36);
+      const padL = push(padGeo, shoulder, 1.06);
+      padL.position.set(-0.5, 1.45, 0);
+      group.add(padL);
+      const padR = push(padGeo, shoulder, 1.06);
+      padR.position.set(0.5, 1.45, 0);
+      group.add(padR);
+    }
+    // Cape — flat rectangle hanging off the upper back. Slight angle so
+    // it doesn't clip into legs in idle.
+    if (cape != null) {
+      const capeMesh = push(new THREE.BoxGeometry(0.62, 1.05, 0.04), cape, 1.05);
+      capeMesh.position.set(0, 0.95, -0.22);
+      capeMesh.rotation.x = 0.04;
+      group.add(capeMesh);
+    }
 
     // ----- Arms (pivot groups for swing) -----
     const armGeo = new THREE.BoxGeometry(0.22, 0.7, 0.22);
@@ -1304,6 +1355,12 @@ export class GameEngine {
       const sleeveG = push(armGeo, skin.body, 1.05);
       sleeveG.position.y = -0.35; // half of arm length so top is at pivot
       pivot.add(sleeveG);
+      // Optional sleeve cuff in the accent color near the wrist.
+      if (stripe != null) {
+        const cuff = push(new THREE.BoxGeometry(0.24, 0.08, 0.24), stripe, 1.05);
+        cuff.position.y = -0.66;
+        pivot.add(cuff);
+      }
       const handG = push(handGeo, skin.head, 1.08);
       handG.position.set(0, -0.78, 0);
       pivot.add(handG);
@@ -1337,6 +1394,12 @@ export class GameEngine {
       const lg = push(legGeo, skin.leg, 1.05);
       lg.position.y = -0.42;
       pivot.add(lg);
+      // Knee stripe — small horizontal trim band on each leg.
+      if (stripe != null) {
+        const knee = push(new THREE.BoxGeometry(0.26, 0.06, 0.3), stripe, 1.05);
+        knee.position.y = -0.58;
+        pivot.add(knee);
+      }
       const bt = push(bootGeo, 0x0a0a0a, 1.05);
       bt.position.set(0, -0.85, 0.04);
       pivot.add(bt);

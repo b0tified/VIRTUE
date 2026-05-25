@@ -101,6 +101,14 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 ### Iteration 13 — **THIS SESSION (2026-02-24)**
 - ✅ **Respawn animation** — New `RespawnOverlay.jsx` plays a ~1.1s comic-style flash whenever the local player transitions dead → alive. Effects: white-out revive flash → expanding blue + red rings → rotating sparkle ring → "RESPAWN!" banner pop with lightning bolts → rotating yellow halftone burst. New `audioBus.respawnSfx()` plays a swept-saw "WHOOSH-ZING" + two-note chime under it. Triggered from `engine.js` `onLocalUpdate({type:"respawn"})` on the alive-edge; Game.jsx listens, clears the killer card + damage markers, sets `respawnAt` timestamp. CSS keyframes added to `index.css`. Engine exposed on `window.__virtueEngine` for e2e/debug.
 
+### Iteration 16 — **THIS SESSION (2026-02-24)**
+- ✅ **Detailed skin layers** — every skin now has 6 optional layers in addition to body/leg/head/accent: `helmet` (skull cap), `visor` (lit eye band), `shoulder` (pads), `stripe` (chest + sleeve cuff + knee bands), `belt`, `cape`. Engine renders each layer conditionally. Shop preview rebuilt to mirror the new layout. All 8 shop skins upgraded with new decals.
+- ✅ **Mech Recruit (free first-match skin)** — new `mech` skin granted on first completed match via end-match flow + idempotent `$addToSet`.
+- ✅ **3 pass-only skins** — `solar` (T10), `cyber` (T20), `quantum` (T30). Hidden from shop until owned.
+- ✅ **6 Lifetime Challenges** — First Blood, Bloodlust, Massacre, Veteran, Champion, Apex. Progress vs `stats`; claims grant coins + season XP.
+- ✅ **Daily Challenges (3/day, +50 SXP + 25 coins each)** — random picks from 6-challenge pool, snapshot at UTC roll-over so progress = today's delta.
+- ✅ **30-tier Season Pass** — 100 SXP/tier (3000 total). Rewards alternate coins / +500/5 / skins at T10/T20/T30. Endpoints `GET /api/progression`, `POST /api/progression/claim`. New `ProgressionModal.jsx` (Season/Daily/Challenges tabs).
+
 ### Iteration 15 — **THIS SESSION (2026-02-24)**
 - ✅ **In-game currency (COINS)** — new `coins` + `coins_credited_for_level` fields on user. Auto-credited 100/level on `/api/auth/me` and `/api/profile/me` (idempotent). Only earnable through level-ups + new redeem codes (`COINTOSS` +250, `COINSHOWER` +1000, `JACKPOT` +5000). No earn from matches by design.
 - ✅ **Skin shop** — new `SKINS_CATALOG` (8 skins: Recruit free, Azure/Neon/Crimson/Ghost/Verdant/Void/Golden 200→3000). Endpoints `GET /api/shop/skins`, `POST /api/shop/buy`, `POST /api/profile/me/skin`. Frontend `ShopModal.jsx` + lobby SHOP button + coin badge. Cards have CSS-only humanoid preview + animated aura behind.
