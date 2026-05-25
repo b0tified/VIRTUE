@@ -265,11 +265,11 @@ export default function Game() {
               newPoints: mine.new_points ?? 0,
             });
           }
-          // Auto-fallback: if the user doesn't press any button on the
-          // Victory/Defeat screen, drop them back to lobby after 15s. The
-          // new screen has explicit Play Again + Back to Lobby buttons so
-          // this just guards against AFK / closed tab. We stash the id so
-          // the buttons can cancel it (see onPlayAgain / onLobby below).
+          // Auto-fallback: if the user doesn't press the Back to Lobby
+          // button on the Victory/Defeat screen, drop them back to lobby
+          // after 15s. The new screen has an explicit Back to Lobby
+          // button so this just guards against AFK / closed tab. We
+          // stash the id so the button can cancel it (see onLobby below).
           if (matchEndFallbackRef.current) clearTimeout(matchEndFallbackRef.current);
           matchEndFallbackRef.current = setTimeout(() => {
             matchEndFallbackRef.current = null;
