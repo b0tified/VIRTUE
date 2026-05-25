@@ -428,6 +428,11 @@ export class GameEngine {
       { x: -14, z: 4, w: 1.6, h: 1.6, d: 1.6, color: 0xff7b00, crate: true },
     ];
 
+    // All "building"-style obstacles live inside this group so we can tear
+    // them down + rebuild on a map change (a new arena pushed via welcome
+    // or match_start).
+    this._buildingsGroup = new THREE.Group();
+    this.scene.add(this._buildingsGroup);
     this.obstacles.forEach((ob) => this._buildBuilding(ob));
 
     // Center floating "VIRTUE" sign
@@ -821,7 +826,50 @@ export class GameEngine {
       g.add(roof);
     }
 
-    this.scene.add(g);
+    this._buildingsGroup.add(g);
+  }
+
+  /* Rebuild the world geometry from a server-supplied arena (`msg.arena`).
+     Called on welcome AND on match_start when a new map is selected. The
+     server only ships geometry (x/z/w/h/d) — colors + "crate" tagging are
+     derived locally so two clients see the same skyline. */
+  _rebuildArenaFromServer(arena) {
+    if (!arena || !Array.isArray(arena.obstacles)) return;
+    const sameMap = this._currentMapId && this._currentMapId === arena.map_id;
+    if (sameMap) return;
+    this._currentMapId = arena.map_id || "default";
+    // Tear down existing building meshes — dispose geometries/materials we
+    // own. Textures created via _makeBuildingFaceTexture are also disposed.
+    while (this._buildingsGroup.children.length) {
+      const child = this._buildingsGroup.children[0];
+      this._buildingsGroup.remove(child);
+      child.traverse?.((n) => {
+        if (n.geometry) n.geometry.dispose?.();
+        if (n.material) {
+          const mats = Array.isArray(n.material) ? n.material : [n.material];
+          mats.forEach((m) => {
+            if (m.map && m.map.dispose) m.map.dispose();
+            m.dispose?.();
+          });
+        }
+      });
+    }
+    // Color palette is per-map so the two arenas feel visually distinct.
+    const palette = arena.map_id === "crossfire"
+      ? [0x2e5fa3, 0x9b3a3f, 0xe6a230, 0x4a4a4a, 0x5f8a3e]
+      : [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
+    const colored = arena.obstacles.map((ob, i) => {
+      const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
+      // Deterministic color pick per obstacle so all clients agree.
+      const seed = Math.abs(((ob.x * 1000) | 0) ^ ((ob.z * 1000) | 0) ^ i);
+      return {
+        ...ob,
+        color: isCrate ? 0xff7b00 : palette[seed % palette.length],
+        crate: isCrate,
+      };
+    });
+    this.obstacles = colored;
+    this.obstacles.forEach((o) => this._buildBuilding(o));
   }
 
   _makeBuildingFaceTexture(ob) {
@@ -1572,8 +1620,19 @@ export class GameEngine {
       // Cache the arena so client-side beam raycasts can clip against
       // obstacles (mirrors server occlusion so the beam visually terminates
       // at the wall, not 80m beyond it).
-      if (msg.arena) this._arena = msg.arena;
+      if (msg.arena) {
+        this._arena = msg.arena;
+        // Rebuild visible world geometry if the server selected a map
+        // different from what we currently have rendered. No-op if same.
+        this._rebuildArenaFromServer(msg.arena);
+      }
       return;
+    }
+    // match_start may carry a new arena (server re-rolls the map on each
+    // intermission reset). Swap to it before the next round begins.
+    if (msg.type === "match_start" && msg.arena) {
+      this._arena = msg.arena;
+      this._rebuildArenaFromServer(msg.arena);
     }
     if (msg.type === "state" && this.isSpectator && this.spectateTargetId) {
       // Lock camera to the spectate target in *first-person* — we see

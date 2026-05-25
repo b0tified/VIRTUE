@@ -5,7 +5,30 @@
    Public API mirrors GameSocket: connect(token, mode), send(msg), close(),
    onOpen/onMessage/onClose callbacks. */
 
-const ARENA = {
+/* Local maps mirror server.py's MAP_A / MAP_B. Both share the same
+   50-unit footprint + outer perimeter buildings so the skyline reads as
+   the same city; only the inner cover layout differs. A random map is
+   picked each time LocalSim is constructed so offline-vs-AI also cycles
+   through both arenas. */
+
+const _PERIMETER = [
+  { x: 42, z: 42, w: 5, h: 6, d: 5 },
+  { x: -42, z: 42, w: 5, h: 7, d: 5 },
+  { x: 42, z: -42, w: 5, h: 5, d: 5 },
+  { x: -42, z: -42, w: 5, h: 8, d: 5 },
+  { x: 12, z: 38, w: 3, h: 4, d: 6 },
+  { x: -12, z: 38, w: 3, h: 5, d: 6 },
+  { x: 12, z: -38, w: 3, h: 5, d: 6 },
+  { x: -12, z: -38, w: 3, h: 4, d: 6 },
+  { x: 38, z: 12, w: 6, h: 4, d: 3 },
+  { x: 38, z: -12, w: 6, h: 5, d: 3 },
+  { x: -38, z: 12, w: 6, h: 4, d: 3 },
+  { x: -38, z: -12, w: 6, h: 6, d: 3 },
+];
+
+const MAP_A = {
+  map_id: "downtown",
+  name: "DOWNTOWN",
   size: 50,
   obstacles: [
     { x: 0, z: 0, w: 6, h: 8, d: 6 },
@@ -37,26 +60,73 @@ const ARENA = {
     { x: -4, z: -14, w: 1.6, h: 1.6, d: 1.6 },
     { x: 14, z: -4, w: 1.6, h: 1.6, d: 1.6 },
     { x: -14, z: 4, w: 1.6, h: 1.6, d: 1.6 },
-    { x: 42, z: 42, w: 5, h: 6, d: 5 },
-    { x: -42, z: 42, w: 5, h: 7, d: 5 },
-    { x: 42, z: -42, w: 5, h: 5, d: 5 },
-    { x: -42, z: -42, w: 5, h: 8, d: 5 },
-    { x: 12, z: 38, w: 3, h: 4, d: 6 },
-    { x: -12, z: 38, w: 3, h: 5, d: 6 },
-    { x: 12, z: -38, w: 3, h: 5, d: 6 },
-    { x: -12, z: -38, w: 3, h: 4, d: 6 },
-    { x: 38, z: 12, w: 6, h: 4, d: 3 },
-    { x: 38, z: -12, w: 6, h: 5, d: 3 },
-    { x: -38, z: 12, w: 6, h: 4, d: 3 },
-    { x: -38, z: -12, w: 6, h: 6, d: 3 },
+    ..._PERIMETER,
+  ],
+  spawn_points: [
+    [35, 35], [-35, 35], [35, -35], [-35, -35],
+    [0, 40], [0, -40], [40, 0], [-40, 0],
+    [22, -2], [-22, 2],
   ],
 };
 
-const SPAWN_POINTS = [
-  [35, 35], [-35, 35], [35, -35], [-35, -35],
-  [0, 40], [0, -40], [40, 0], [-40, 0],
-  [22, -2], [-22, 2],
-];
+const MAP_B = {
+  map_id: "crossfire",
+  name: "CROSSFIRE",
+  size: 50,
+  obstacles: [
+    // Corridor walls
+    { x: 6,  z: 0,  w: 2, h: 4, d: 20 },
+    { x: -6, z: 0,  w: 2, h: 4, d: 20 },
+    { x: 0,  z: 6,  w: 20, h: 4, d: 2 },
+    { x: 0,  z: -6, w: 20, h: 4, d: 2 },
+    // Diagonal pillars
+    { x: 12,  z: 12,  w: 3, h: 5, d: 3 },
+    { x: -12, z: 12,  w: 3, h: 5, d: 3 },
+    { x: 12,  z: -12, w: 3, h: 5, d: 3 },
+    { x: -12, z: -12, w: 3, h: 5, d: 3 },
+    // Mid-ring sniper nests
+    { x: 22,  z: 0,  w: 3, h: 6, d: 4 },
+    { x: -22, z: 0,  w: 3, h: 6, d: 4 },
+    { x: 0,   z: 22, w: 4, h: 6, d: 3 },
+    { x: 0,   z: -22, w: 4, h: 6, d: 3 },
+    // Corner courtyards (L-shapes)
+    { x: 28,  z: 22,  w: 6, h: 3, d: 2 },
+    { x: 22,  z: 28,  w: 2, h: 3, d: 6 },
+    { x: -28, z: 22,  w: 6, h: 3, d: 2 },
+    { x: -22, z: 28,  w: 2, h: 3, d: 6 },
+    { x: 28,  z: -22, w: 6, h: 3, d: 2 },
+    { x: 22,  z: -28, w: 2, h: 3, d: 6 },
+    { x: -28, z: -22, w: 6, h: 3, d: 2 },
+    { x: -22, z: -28, w: 2, h: 3, d: 6 },
+    // Crates
+    { x: 10, z: 18, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -10, z: 18, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 10, z: -18, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -10, z: -18, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 18, z: 10, w: 1.8, h: 1.8, d: 1.8 },
+    { x: 18, z: -10, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -18, z: 10, w: 1.8, h: 1.8, d: 1.8 },
+    { x: -18, z: -10, w: 1.8, h: 1.8, d: 1.8 },
+    ..._PERIMETER,
+  ],
+  spawn_points: [
+    [0, 30], [0, -30], [30, 0], [-30, 0],
+    [32, 32], [-32, 32], [32, -32], [-32, -32],
+    [16, 0], [-16, 0],
+  ],
+};
+
+const MAPS = [MAP_A, MAP_B];
+
+// Active arena for this LocalSim run — re-rolled on each instance below.
+let ARENA = MAP_A;
+let SPAWN_POINTS = MAP_A.spawn_points;
+function _pickMap() {
+  const m = MAPS[Math.floor(Math.random() * MAPS.length)];
+  ARENA = m;
+  SPAWN_POINTS = m.spawn_points;
+  return m;
+}
 const PLAYER_RADIUS = 0.5;
 const PLAYER_HEIGHT = 1.8;
 const BOT_MAX_HP = 80;
@@ -268,6 +338,9 @@ export class LocalSim {
   }
 
   connect() {
+    // Pick a random map for this local match (also reassigns module-level
+    // ARENA + SPAWN_POINTS used by the helper functions).
+    _pickMap();
     // Create local player
     const me = new LocalPlayer({
       id: genId("p"),

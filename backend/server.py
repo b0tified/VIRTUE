@@ -1306,7 +1306,38 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
 # -------------------------------------------------------------------
 # Arena
 # -------------------------------------------------------------------
-ARENA = {
+# -------------------------------------------------------------------
+# Maps — two distinct arena layouts. Rooms pick one at random on init
+# and again on each match reset, so the same lobby cycles through both.
+# Both maps share the same 50-unit footprint + outer perimeter buildings
+# so the skyline reads as the same city; the inner cover layout is what
+# changes. The currently-active map is stored on each GameRoom (`self.arena`)
+# and shipped to the client via the welcome payload so it can rebuild
+# obstacles + healthpacks accordingly.
+# -------------------------------------------------------------------
+
+# Outer perimeter buildings — shared by every map for visual continuity.
+_PERIMETER_BUILDINGS = [
+    {"x": 42,  "z": 42,  "w": 5, "h": 6, "d": 5},
+    {"x": -42, "z": 42,  "w": 5, "h": 7, "d": 5},
+    {"x": 42,  "z": -42, "w": 5, "h": 5, "d": 5},
+    {"x": -42, "z": -42, "w": 5, "h": 8, "d": 5},
+    {"x": 12,  "z": 38,  "w": 3, "h": 4, "d": 6},
+    {"x": -12, "z": 38,  "w": 3, "h": 5, "d": 6},
+    {"x": 12,  "z": -38, "w": 3, "h": 5, "d": 6},
+    {"x": -12, "z": -38, "w": 3, "h": 4, "d": 6},
+    {"x": 38,  "z": 12,  "w": 6, "h": 4, "d": 3},
+    {"x": 38,  "z": -12, "w": 6, "h": 5, "d": 3},
+    {"x": -38, "z": 12,  "w": 6, "h": 4, "d": 3},
+    {"x": -38, "z": -12, "w": 6, "h": 6, "d": 3},
+]
+
+# Map A — "DOWNTOWN" — the OG layout: central mega-tower, 4 small ring
+# platforms, asymmetric quadrants, scattered crates. Tight cover near
+# the center, longer sightlines toward the edges.
+MAP_A = {
+    "map_id": "downtown",
+    "name": "DOWNTOWN",
     "size": 50,
     "obstacles": [
         # Center mega tower + ring of low platforms
@@ -1351,29 +1382,88 @@ ARENA = {
         {"x": -4, "z": -14, "w": 1.6, "h": 1.6, "d": 1.6},
         {"x": 14, "z": -4, "w": 1.6, "h": 1.6, "d": 1.6},
         {"x": -14, "z": 4, "w": 1.6, "h": 1.6, "d": 1.6},
-
-        # Perimeter / corner buildings (used to be visual-only client extras —
-        # now collidable on both ends so players can't phase through them).
-        {"x": 42, "z": 42, "w": 5, "h": 6, "d": 5},
-        {"x": -42, "z": 42, "w": 5, "h": 7, "d": 5},
-        {"x": 42, "z": -42, "w": 5, "h": 5, "d": 5},
-        {"x": -42, "z": -42, "w": 5, "h": 8, "d": 5},
-        {"x": 12, "z": 38, "w": 3, "h": 4, "d": 6},
-        {"x": -12, "z": 38, "w": 3, "h": 5, "d": 6},
-        {"x": 12, "z": -38, "w": 3, "h": 5, "d": 6},
-        {"x": -12, "z": -38, "w": 3, "h": 4, "d": 6},
-        {"x": 38, "z": 12, "w": 6, "h": 4, "d": 3},
-        {"x": 38, "z": -12, "w": 6, "h": 5, "d": 3},
-        {"x": -38, "z": 12, "w": 6, "h": 4, "d": 3},
-        {"x": -38, "z": -12, "w": 6, "h": 6, "d": 3},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (35, 35), (-35, 35), (35, -35), (-35, -35),
+        (0, 40), (0, -40), (40, 0), (-40, 0),
+        (22, -2), (-22, 2),
+    ],
+    "healthpacks": [
+        (12.0, 0.0), (-12.0, 0.0), (0.0, 12.0), (0.0, -12.0),
+        (8.0, 8.0), (-8.0, -8.0), (8.0, -8.0), (-8.0, 8.0),
     ],
 }
 
-SPAWN_POINTS = [
-    (35, 35), (-35, 35), (35, -35), (-35, -35),
-    (0, 40), (0, -40), (40, 0), (-40, 0),
-    (22, -2), (-22, 2),
-]
+# Map B — "CROSSFIRE" — long bisecting corridor walls form a "#"-style
+# grid with diagonal pillars in the gaps. Plays very differently from
+# DOWNTOWN: longer sightlines along the corridors, choke points at the
+# wall ends, big open midfield instead of a central tower.
+MAP_B = {
+    "map_id": "crossfire",
+    "name": "CROSSFIRE",
+    "size": 50,
+    "obstacles": [
+        # Two long N-S corridor walls (left + right of center)
+        {"x":  6,  "z":  0,  "w": 2, "h": 4, "d": 20},
+        {"x": -6,  "z":  0,  "w": 2, "h": 4, "d": 20},
+        # Two long E-W corridor walls
+        {"x":  0,  "z":  6,  "w": 20, "h": 4, "d": 2},
+        {"x":  0,  "z": -6,  "w": 20, "h": 4, "d": 2},
+
+        # Diagonal pillars in the four corner gaps of the inner grid
+        {"x": 12,  "z":  12, "w": 3, "h": 5, "d": 3},
+        {"x": -12, "z":  12, "w": 3, "h": 5, "d": 3},
+        {"x": 12,  "z": -12, "w": 3, "h": 5, "d": 3},
+        {"x": -12, "z": -12, "w": 3, "h": 5, "d": 3},
+
+        # Mid-ring sniper nests (taller, narrower)
+        {"x": 22,  "z":  0,  "w": 3, "h": 6, "d": 4},
+        {"x": -22, "z":  0,  "w": 3, "h": 6, "d": 4},
+        {"x":  0,  "z":  22, "w": 4, "h": 6, "d": 3},
+        {"x":  0,  "z": -22, "w": 4, "h": 6, "d": 3},
+
+        # Corner courtyards — L-shaped covers
+        {"x":  28, "z":  22, "w": 6, "h": 3, "d": 2},
+        {"x":  22, "z":  28, "w": 2, "h": 3, "d": 6},
+        {"x": -28, "z":  22, "w": 6, "h": 3, "d": 2},
+        {"x": -22, "z":  28, "w": 2, "h": 3, "d": 6},
+        {"x":  28, "z": -22, "w": 6, "h": 3, "d": 2},
+        {"x":  22, "z": -28, "w": 2, "h": 3, "d": 6},
+        {"x": -28, "z": -22, "w": 6, "h": 3, "d": 2},
+        {"x": -22, "z": -28, "w": 2, "h": 3, "d": 6},
+
+        # Scattered crates near corridor ends
+        {"x":  10, "z":  18, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x": -10, "z":  18, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  10, "z": -18, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x": -10, "z": -18, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  18, "z":  10, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x":  18, "z": -10, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x": -18, "z":  10, "w": 1.8, "h": 1.8, "d": 1.8},
+        {"x": -18, "z": -10, "w": 1.8, "h": 1.8, "d": 1.8},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (0, 30),  (0, -30),  (30, 0),  (-30, 0),
+        (32, 32), (-32, 32), (32, -32), (-32, -32),
+        (16, 0),  (-16, 0),
+    ],
+    "healthpacks": [
+        (0.0, 0.0),   # center plaza
+        (15.0, 0.0), (-15.0, 0.0), (0.0, 15.0), (0.0, -15.0),
+        (20.0, 20.0), (-20.0, -20.0), (20.0, -20.0), (-20.0, 20.0),
+    ],
+}
+
+MAPS = [MAP_A, MAP_B]
+
+def random_map() -> dict:
+    """Pick a random map for a new match. Both maps are equally likely."""
+    return random.choice(MAPS)
+
+# Default ARENA stays defined as MAP_A for any legacy code paths that
+# still reference the module-level constant (e.g. early-tier helpers).
+# Rooms always read from `self.arena` instead.
+ARENA = MAP_A
 
 PLAYER_RADIUS = 0.5
 PLAYER_HEIGHT = 1.8
@@ -1394,18 +1484,10 @@ HEALTH_REGEN_PER_SEC = 18.0   # ~5.6s to full from 0
 HEALTHPACK_HEAL = 50
 HEALTHPACK_PICKUP_RADIUS = 1.4
 HEALTHPACK_RESPAWN_SECONDS = 20.0
-# Hand-picked spawn points spread across the arena. Y is fixed at 0.5
-# (floor + small lift so the model sits visibly above the ground).
-HEALTHPACK_POSITIONS: List[tuple] = [
-    (12.0, 0.0),
-    (-12.0, 0.0),
-    (0.0, 12.0),
-    (0.0, -12.0),
-    (8.0, 8.0),
-    (-8.0, -8.0),
-    (8.0, -8.0),
-    (-8.0, 8.0),
-]
+# Per-map healthpack spawn positions are now defined inside each map dict
+# (MAP_A/MAP_B). The module-level constant is kept only as a legacy fallback
+# for any callsite that still imports it; rooms read from `self.arena`.
+HEALTHPACK_POSITIONS: List[tuple] = MAP_A["healthpacks"]
 SHOT_DAMAGE = 25
 LASER_DAMAGE = 8
 BOT_SHOT_DAMAGE = 16
@@ -1524,8 +1606,11 @@ PLACEMENT_MATCHES = 5
 PLACEMENT_MULTIPLIER = 2
 
 
-def random_spawn():
-    return random.choice(SPAWN_POINTS)
+def random_spawn(arena: Optional[dict] = None):
+    """Return a random (x, z) spawn point for the given arena (or the
+    legacy global ARENA when not supplied)."""
+    points = (arena or ARENA).get("spawn_points") or ARENA["spawn_points"]
+    return random.choice(points)
 
 
 # -------------------------------------------------------------------
@@ -1739,12 +1824,19 @@ class GameRoom:
         # quick-play seconds before match_end no longer dumps the overlay
         # on a fresh player.
         self.match_num = 0
-        # Healthpack state — one entry per static position. `available`
-        # toggles when a player picks one up; `respawn_at` is the wall
-        # clock time at which it pops back. Initially all available.
-        self.healthpacks: List[dict] = [
+        # Per-room arena. Picked at init from MAPS and rerolled on each
+        # match reset so the same lobby cycles through the available maps.
+        # Shipped to clients in the welcome payload + via the next match_start.
+        self.arena: dict = random_map()
+        # Healthpack state — one entry per map healthpack position.
+        self.healthpacks: List[dict] = self._build_healthpacks()
+
+    def _build_healthpacks(self) -> List[dict]:
+        """(Re)build healthpack state from the current arena. Used on init
+        and on each match reset (so a map change spawns fresh packs)."""
+        return [
             {"id": f"hp_{i}", "x": float(x), "z": float(z), "available": True, "respawn_at": 0.0}
-            for i, (x, z) in enumerate(HEALTHPACK_POSITIONS)
+            for i, (x, z) in enumerate(self.arena.get("healthpacks") or HEALTHPACK_POSITIONS)
         ]
 
     def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None):
@@ -1778,6 +1870,10 @@ class GameRoom:
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name
             bot.rank_tier = t_idx
+        # Reposition the bot to a spawn from THIS room's arena.
+        bx, bz = random_spawn(self.arena)
+        bot.x = float(bx)
+        bot.z = float(bz)
         self.players[bot.id] = bot
         logger.info("Bot spawned: %s (%s) diff=%.2f%s%s", name, bot.id, bot.difficulty,
                     " [disguised]" if disguised else "",
@@ -1785,6 +1881,13 @@ class GameRoom:
         return bot
 
     async def add(self, player: Player):
+        # Reposition the player onto a spawn point from THIS room's arena —
+        # Player.__init__ used the global default spawn list, which may not
+        # exist on the room's current map.
+        if not getattr(player, "is_spectator", False):
+            sx, sz = random_spawn(self.arena)
+            player.x = float(sx)
+            player.z = float(sz)
         async with self.lock:
             self.players[player.id] = player
         # Stamp the match this player will participate in. During intermission,
@@ -1811,7 +1914,7 @@ class GameRoom:
         await self._send(player, {
             "type": "welcome",
             "you": player.to_state(),
-            "arena": ARENA,
+            "arena": self.arena,
             "is_ranked": self.is_ranked,
             "match_duration": self.match_duration if self.is_ranked else None,
             "match_start": self.match_start if self.is_ranked else None,
@@ -1900,12 +2003,12 @@ class GameRoom:
                 self.players.pop(p.id, None)
 
     def collides_obstacle(self, x: float, z: float) -> bool:
-        s = ARENA["size"]
+        s = self.arena["size"]
         if x < -s + PLAYER_RADIUS or x > s - PLAYER_RADIUS:
             return True
         if z < -s + PLAYER_RADIUS or z > s - PLAYER_RADIUS:
             return True
-        for ob in ARENA["obstacles"]:
+        for ob in self.arena["obstacles"]:
             hx, hz = ob["w"] / 2 + PLAYER_RADIUS, ob["d"] / 2 + PLAYER_RADIUS
             if abs(x - ob["x"]) < hx and abs(z - ob["z"]) < hz:
                 return True
@@ -1924,7 +2027,7 @@ class GameRoom:
         for i in range(1, steps):
             px = ox + nx * (i * 0.6)
             pz = oz + nz * (i * 0.6)
-            for ob in ARENA["obstacles"]:
+            for ob in self.arena["obstacles"]:
                 hx = ob["w"] / 2
                 hz = ob["d"] / 2
                 if abs(px - ob["x"]) < hx and abs(pz - ob["z"]) < hz:
@@ -1973,7 +2076,7 @@ class GameRoom:
             return tmin if tmin >= 0 else None
 
         occlusion_t = SHOT_RANGE
-        for ob in ARENA["obstacles"]:
+        for ob in self.arena["obstacles"]:
             t = aabb_t(ob)
             if t is not None and t < occlusion_t:
                 occlusion_t = t
@@ -2462,7 +2565,7 @@ class GameRoom:
                 p.alive = False
                 continue
             if not p.alive and now >= p.respawn_at:
-                x, z = random_spawn()
+                x, z = random_spawn(self.arena)
                 p.x, p.z = float(x), float(z)
                 p.y = PLAYER_HEIGHT
                 p.hp = p.max_hp
@@ -2739,11 +2842,16 @@ class GameRoom:
         # Intermission: 10s
         await asyncio.sleep(10.0)
 
+        # Pick a new map for the next match so the same lobby cycles
+        # through the available arenas. Rebuild healthpacks from it.
+        self.arena = random_map()
+        self.healthpacks = self._build_healthpacks()
+
         # Reset for next match
         for p in self.players.values():
             p.kills = 0
             p.deaths = 0
-            x, z = random_spawn()
+            x, z = random_spawn(self.arena)
             p.x, p.z = float(x), float(z)
             p.y = PLAYER_HEIGHT
             p.hp = p.max_hp
@@ -2757,7 +2865,13 @@ class GameRoom:
         self.last_match_end_payload = None
         self.last_match_end_recipients.clear()
         self.match_num += 1
-        await self.broadcast({"type": "match_start", "duration": self.match_duration})
+        # Ship the new arena alongside match_start so clients can rebuild
+        # the world geometry before the round begins.
+        await self.broadcast({
+            "type": "match_start",
+            "duration": self.match_duration,
+            "arena": self.arena,
+        })
 
     async def run(self):
         interval = 1.0 / TICK_RATE

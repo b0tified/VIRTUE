@@ -162,6 +162,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **PLAY AGAIN button removed** from the Victory/Defeat overlay per user request. Single centered BACK TO LOBBY button remains. Unused `onPlayAgain` prop/handler removed from `Hud` + `Game.jsx`. Lobby button still cancels the 15s auto-fallback timer + clears pointer lock.
 - 🧪 12/12 pytest passing (5 new intermission-replay tests + 7 regression match_num tests). 2/2 Playwright flows passing (overlay renders, button removed, Lobby button navigates, auto-fallback fires).
 
+### Iteration 17 — **THIS SESSION (2026-02-25, late)**
+- ✅ **Second arena added — "CROSSFIRE"** — A contrast to the original DOWNTOWN map. Long bisecting corridor walls form a `#`-style grid with diagonal pillars in the gaps, mid-ring sniper nests, L-shaped corner courtyards, and scattered crates. Different sightlines (long corridors + open midfield) vs DOWNTOWN's tower-and-quadrant layout. Different spawn points (more central) + different healthpack positions (center plaza + ring).
+- ✅ **Random map selection** — `GameRoom` picks a random map at init AND on every match-reset, so the same lobby cycles through both arenas. `random_spawn()` + healthpacks now take their data from `self.arena` (per-room) instead of module globals. `MAP_A` (DOWNTOWN) / `MAP_B` (CROSSFIRE) defined in `server.py`. Welcome payload + `match_start` broadcast carry the new arena so clients rebuild geometry on the fly.
+- ✅ **Client engine rebuilds world geometry on map change** — All building meshes live inside a `_buildingsGroup`; `_rebuildArenaFromServer(arena)` tears them down (disposing geometries/materials/textures) and rebuilds from the server-supplied obstacle list. Per-map color palette (CROSSFIRE = blue + red, DOWNTOWN = classic mixed) for visual distinction. Crates auto-tagged from size (≤ 2 on every axis). No-op when map_id is unchanged so a state tick doesn't thrash.
+- ✅ **LocalSim mirrored** — Offline-vs-AI also cycles both maps; `_pickMap()` runs on each LocalSim construct.
+- 🧪 Verified via Playwright: 8 offline attempts saw both `crossfire` and `downtown` with their full obstacle counts (40 / 41) and `_currentMapId` reflecting the rebuilt geometry. Visual confirmation: distinct color palettes + layouts per map.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
