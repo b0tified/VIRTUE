@@ -2699,6 +2699,50 @@ class GameRoom:
                 "ts": now_ms,
             })
 
+    def _reroll_ranked_bots(self):
+        """Pick a fresh set of unique names (and re-randomise avatar +
+        disguise RP within the tier band) for every bot in the room.
+
+        Called between matches in `is_ranked_bot` rooms so the queueing
+        player never sees the same bot identity twice in a row."""
+        tier_idx = int(getattr(self, "_ranked_bot_tier", 0) or 0)
+        player_rp = getattr(self, "_ranked_bot_player_rp", None)
+        bots = [p for p in self.players.values() if p.is_bot]
+        if not bots:
+            return
+        # Build the candidate name pool from the tier list (falls back to
+        # BOT_NAMES). Exclude names currently in use AND each bot's prior
+        # match name so we never repeat or accidentally swap names within
+        # the room.
+        pool = list(TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES)
+        current_names = {b.username for b in bots}
+        candidates = [n for n in pool if n not in current_names]
+        if len(candidates) < len(bots):
+            # Pool exhausted — fall back to the full BOT_NAMES list minus
+            # current names (still avoids same-match repeats).
+            extra = [n for n in BOT_NAMES if n not in current_names and n not in candidates]
+            candidates.extend(extra)
+        random.shuffle(candidates)
+        # Compute the tier RP band once.
+        ti = max(0, min(len(RANK_TIERS) - 1, tier_idx))
+        low = RANK_TIERS[ti][0]
+        high = (RANK_TIERS[ti + 1][0] - 1) if (ti + 1 < len(RANK_TIERS)) else (low + 400)
+        for bot in bots:
+            if candidates:
+                bot.username = candidates.pop()
+            # Re-roll cosmetic disguise so each match feels fresh.
+            bot.avatar = random.randint(0, 4)
+            bot.level = random.randint(5, 11)
+            if player_rp is not None:
+                jitter = random.randint(-20, 20)
+                pts = max(low, min(high, int(player_rp) + jitter))
+            else:
+                pts = random.randint(low, max(low, high))
+            t_idx, t_name = rank_for_points(pts)
+            bot.disguise_rank_points = pts
+            bot.disguise_rank_name = t_name
+            bot.rank_tier = t_idx
+
     async def _update_bots(self, dt: float):
         now_ms = int(time.time() * 1000)
         now_s = time.time()
@@ -3255,6 +3299,13 @@ class GameRoom:
         self.last_match_end_payload = None
         self.last_match_end_recipients.clear()
         self.match_num += 1
+
+        # Ranked-bot rooms reroll bot disguises (name, avatar, rank) on
+        # every new match so the player never faces "Stryker" twice in a
+        # row. Names are sampled without replacement from the tier pool
+        # and explicitly differ from each bot's previous match name.
+        if getattr(self, "is_ranked_bot", False):
+            self._reroll_ranked_bots()
         # Ship the new arena alongside match_start so clients can rebuild
         # the world geometry before the round begins.
         await self.broadcast({
@@ -3345,6 +3396,8 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_r
     room = GameRoom(is_ranked=True, match_duration=120.0)
     room.is_ranked_bot = True
     room.ranked_bot_key = user_id
+    room._ranked_bot_tier = int(tier_idx)
+    room._ranked_bot_player_rp = player_rank_points
     bot_count = ranked_bot_count_for_tier(tier_idx)
     # Ranked bot difficulty scales aggressively with the player's tier so the
     # ladder actually feels harder as you climb: Bronze 1.4 → Grandmaster 2.6.
