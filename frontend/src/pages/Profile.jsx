@@ -11,6 +11,7 @@ import { rankIconFor } from "@/game/rankIcons";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 import { levelFromStats } from "@/game/level";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
+import audioBus from "@/game/audio";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -141,6 +142,13 @@ export default function Profile() {
       }
     })();
     return () => { alive = false; };
+  }, []);
+
+  // Per-tab music — chill lo-fi for the profile page. Stops when the
+  // page unmounts so the lobby music can resume.
+  useEffect(() => {
+    audioBus.startProfileMusic?.();
+    return () => { audioBus.stopMusic?.(); };
   }, []);
 
   return (

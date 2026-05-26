@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
 import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye } from "lucide-react";
+import audioBus from "@/game/audio";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -34,6 +35,14 @@ export default function Leaderboard() {
         setLoading(false);
       }
     })();
+  }, []);
+
+  // Per-tab music — triumphant uptempo synth-pop. Swaps in over whatever
+  // the lobby was playing; restored to lobby music when the user
+  // navigates back (Lobby mounts and re-starts its own loop).
+  useEffect(() => {
+    audioBus.startLeaderboardMusic?.();
+    return () => { audioBus.stopMusic?.(); };
   }, []);
 
   // Re-fetch season every 30s for accurate baseline; local tick every 1s for the timer.

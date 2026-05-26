@@ -845,8 +845,12 @@ class AudioBus {
 
   startLobbyMusic() {
     if (!this._ensure()) return;
-    if (this.musicPlaying) return;
+    if (this.musicTrack === "lobby" && this.musicPlaying) return;
+    // If a different track was playing (e.g. leaderboard / profile),
+    // stop it so the lobby loop replaces it cleanly.
+    if (this.musicPlaying) this.stopLobbyMusic();
     this.musicPlaying = true;
+    this.musicTrack = "lobby";
     const ctx = this.ctx;
 
     // -- Helpers --
@@ -1115,10 +1119,252 @@ class AudioBus {
 
   stopLobbyMusic() {
     this.musicPlaying = false;
+    this.musicTrack = null;
     if (this.musicTimer) {
       clearInterval(this.musicTimer);
       this.musicTimer = null;
     }
+  }
+
+  /* Generic alias — pages don't care which track was playing, they just
+     want to stop whatever music the previous page started. */
+  stopMusic() { this.stopLobbyMusic(); }
+
+  /* Leaderboard music — triumphant uptempo 8-bit synth-pop in C major.
+     Brighter than the lobby loop: square-wave lead, faster bass, sparkle
+     hi-hats. Designed to feel celebratory while reading the rankings.
+     Implementation is self-contained; calling it while another track is
+     playing crossfades by stopping the previous timer first. */
+  startLeaderboardMusic() {
+    if (!this._ensure()) return;
+    if (this.musicTrack === "leaderboard" && this.musicPlaying) return;
+    this.stopLobbyMusic();
+    this.musicPlaying = true;
+    this.musicTrack = "leaderboard";
+    const ctx = this.ctx;
+    const semi = (n) => Math.pow(2, n / 12);
+    const C3 = 130.81;
+    // Triumphant I-V-vi-IV in C: C - G - Am - F (x2)
+    const ROOTS = [0, 7, 9, 5, 0, 7, 9, 5].map((s) => C3 * semi(s));
+    const QUAL  = [[0,4,7],[0,4,7],[0,3,7],[0,4,7],[0,4,7],[0,4,7],[0,3,7],[0,4,7]];
+    const BPM = 110;
+    const beat = 60 / BPM;
+    const sixteenth = beat / 4;
+
+    const leadBus = ctx.createGain(); leadBus.gain.value = 0.14;
+    const leadFilt = ctx.createBiquadFilter();
+    leadFilt.type = "lowpass"; leadFilt.frequency.value = 3200;
+    leadFilt.connect(leadBus); leadBus.connect(this.musicGain);
+    const bassBus = ctx.createGain(); bassBus.gain.value = 0.22;
+    const bassFilt = ctx.createBiquadFilter();
+    bassFilt.type = "lowpass"; bassFilt.frequency.value = 380;
+    bassFilt.connect(bassBus); bassBus.connect(this.musicGain);
+    const padBus = ctx.createGain(); padBus.gain.value = 0.10;
+    padBus.connect(this.musicGain);
+
+    const playSquare = (freq, t, dur, peak) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g); g.connect(leadFilt);
+      osc.start(t); osc.stop(t + dur + 0.02);
+    };
+    const playBass = (root, t) => {
+      // Galloping eighth-note bass on the root
+      for (let i = 0; i < 8; i++) {
+        const tt = t + i * (beat / 2);
+        const osc = ctx.createOscillator();
+        osc.type = "triangle";
+        osc.frequency.value = root * 0.5;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.45, tt);
+        g.gain.exponentialRampToValueAtTime(0.001, tt + (beat * 0.45));
+        osc.connect(g); g.connect(bassFilt);
+        osc.start(tt); osc.stop(tt + beat * 0.5);
+      }
+    };
+    const playPad = (root, triad, t, dur) => {
+      triad.forEach((s) => {
+        const osc = ctx.createOscillator();
+        osc.type = "sawtooth";
+        osc.frequency.value = root * semi(s);
+        osc.detune.value = 4;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.12, t + 0.3);
+        g.gain.setValueAtTime(0.12, t + dur - 0.3);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(g); g.connect(padBus);
+        osc.start(t); osc.stop(t + dur + 0.05);
+      });
+    };
+    const hihat = (t, accent = false) => {
+      const dur = 0.04;
+      const buf = ctx.createBuffer(1, Math.max(2, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1);
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 9000;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(accent ? 0.08 : 0.045, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(hp); hp.connect(g); g.connect(this.musicGain);
+      src.start(t);
+    };
+    const kick = (t) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(140, t);
+      osc.frequency.exponentialRampToValueAtTime(48, t + 0.14);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.4, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(g); g.connect(this.musicGain);
+      osc.start(t); osc.stop(t + 0.2);
+    };
+    // Arpeggio pattern (semitone offsets within the triad — 0, 7, 12, 16)
+    const ARP = [0, 7, 12, 16, 12, 7, 16, 7, 0, 7, 12, 16, 19, 16, 12, 7];
+
+    const scheduleBar = (startAt, barIdx) => {
+      const phraseBar = barIdx % 8;
+      const root = ROOTS[phraseBar];
+      const triad = QUAL[phraseBar];
+      playPad(root, triad, startAt, beat * 4);
+      playBass(root, startAt);
+      // Arpeggiated square lead — sixteenth notes
+      for (let i = 0; i < 16; i++) {
+        const s = ARP[i];
+        const f = root * 2 * semi(s);
+        playSquare(f, startAt + i * sixteenth, sixteenth * 0.9, 0.22);
+      }
+      // Drums — 4-on-the-floor with hihat 8ths and snare on 2+4
+      for (let i = 0; i < 4; i++) kick(startAt + i * beat);
+      for (let i = 0; i < 8; i++) hihat(startAt + i * (beat / 2), i % 2 === 0);
+    };
+    const start = ctx.currentTime + 0.15;
+    scheduleBar(start, 0);
+    let nextBar = start + beat * 4;
+    let barIdx = 1;
+    this.musicTimer = setInterval(() => {
+      if (!this.musicPlaying || !this.ctx) return;
+      const cur = this.ctx.currentTime;
+      while (nextBar < cur + 2.0) {
+        scheduleBar(nextBar, barIdx);
+        nextBar += beat * 4;
+        barIdx += 1;
+      }
+    }, 250);
+  }
+
+  /* Profile music — chill lo-fi electric piano. Slower (~72 BPM), minor-key
+     contemplative loop. Uses triangle+sine "Rhodes" stack, soft brush hat,
+     light sub bass on root. No drums on every beat — sparse so the page
+     reads as introspective rather than energetic. */
+  startProfileMusic() {
+    if (!this._ensure()) return;
+    if (this.musicTrack === "profile" && this.musicPlaying) return;
+    this.stopLobbyMusic();
+    this.musicPlaying = true;
+    this.musicTrack = "profile";
+    const ctx = this.ctx;
+    const semi = (n) => Math.pow(2, n / 12);
+    const D3 = 146.83;
+    // Dm - Bb - F - C  (vi-IV-I-V in F major / natural minor in D)
+    const ROOTS = [0, -4, 3, 10, 0, -4, 3, 10].map((s) => D3 * semi(s));
+    const QUAL  = [[0,3,7],[0,4,7],[0,4,7],[0,4,7],[0,3,7],[0,4,7],[0,4,7],[0,4,7]];
+    const BPM = 72;
+    const beat = 60 / BPM;
+
+    const epBus = ctx.createGain(); epBus.gain.value = 0.22;
+    const epFilt = ctx.createBiquadFilter();
+    epFilt.type = "lowpass"; epFilt.frequency.value = 2200;
+    epFilt.connect(epBus); epBus.connect(this.musicGain);
+    const bassBus = ctx.createGain(); bassBus.gain.value = 0.20;
+    const bassFilt = ctx.createBiquadFilter();
+    bassFilt.type = "lowpass"; bassFilt.frequency.value = 320;
+    bassFilt.connect(bassBus); bassBus.connect(this.musicGain);
+
+    // "Rhodes" voice — triangle fundamental + sine partial 2 oct up.
+    const playRhodes = (freq, t, dur, peak = 0.22) => {
+      const o1 = ctx.createOscillator(); o1.type = "triangle"; o1.frequency.value = freq;
+      const o2 = ctx.createOscillator(); o2.type = "sine";     o2.frequency.value = freq * 2;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.02);
+      g.gain.setTargetAtTime(peak * 0.55, t + 0.08, 0.18);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const g2 = ctx.createGain(); g2.gain.value = 0.35;
+      o1.connect(g); o2.connect(g2); g2.connect(g);
+      g.connect(epFilt);
+      o1.start(t); o2.start(t);
+      o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+    };
+    const playChord = (root, triad, t, dur) => {
+      triad.forEach((s) => playRhodes(root * semi(s), t, dur, 0.18));
+    };
+    const playBass = (root, t, dur) => {
+      // One soft sub note per bar with a quick second on beat 3
+      const make = (tt, dd) => {
+        const osc = ctx.createOscillator(); osc.type = "sine"; osc.frequency.value = root * 0.5;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, tt);
+        g.gain.exponentialRampToValueAtTime(0.55, tt + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, tt + dd);
+        osc.connect(g); g.connect(bassFilt);
+        osc.start(tt); osc.stop(tt + dd + 0.05);
+      };
+      make(t, beat * 2);
+      make(t + beat * 2, beat * 2);
+    };
+    const brushHat = (t) => {
+      const dur = 0.09;
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.4);
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 4500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.04, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(hp); hp.connect(g); g.connect(this.musicGain);
+      src.start(t);
+    };
+    // Sparse melody — 4 notes per bar at quarter-then-rest, only on bars 0, 2, 4, 6.
+    const MELODY = [12, 14, 17, 12];
+    const scheduleBar = (startAt, barIdx) => {
+      const phraseBar = barIdx % 8;
+      const root = ROOTS[phraseBar];
+      const triad = QUAL[phraseBar];
+      playChord(root, triad, startAt, beat * 4);
+      playBass(root, startAt, beat * 4);
+      // Brushed hat on the 2 & 4 (back-beat) feels lofi
+      brushHat(startAt + beat * 1);
+      brushHat(startAt + beat * 3);
+      if (phraseBar % 2 === 0) {
+        MELODY.forEach((s, i) => {
+          const tt = startAt + i * beat;
+          playRhodes(root * 2 * semi(s), tt, beat * 0.85, 0.20);
+        });
+      }
+    };
+    const start = ctx.currentTime + 0.15;
+    scheduleBar(start, 0);
+    let nextBar = start + beat * 4;
+    let barIdx = 1;
+    this.musicTimer = setInterval(() => {
+      if (!this.musicPlaying || !this.ctx) return;
+      const cur = this.ctx.currentTime;
+      while (nextBar < cur + 2.0) {
+        scheduleBar(nextBar, barIdx);
+        nextBar += beat * 4;
+        barIdx += 1;
+      }
+    }, 250);
   }
 }
 
