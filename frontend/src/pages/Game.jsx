@@ -74,6 +74,13 @@ export default function Game() {
   const [diedAt, setDiedAt] = useState(null);
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showGameFriends, setShowGameFriends] = useState(false);
+  // Brief green "+HP" flash whenever the server grants on-kill health.
+  const [killHealFlash, setKillHealFlash] = useState(null);
+  useEffect(() => {
+    if (!killHealFlash) return;
+    const t = setTimeout(() => setKillHealFlash(null), 1100);
+    return () => clearTimeout(t);
+  }, [killHealFlash]);
   const pingRef = useRef({ lastSent: 0, value: 0 });
   // Timeout id for the 15s auto-fallback after match_end. Stored in a ref so
   // the Play Again / Lobby buttons can cancel it (otherwise the page would
@@ -89,6 +96,15 @@ export default function Game() {
       onState: (msg) => {
         // Build kill feed
         const newKills = (msg.events || []).filter((e) => e.type === "kill");
+        // Detect a kill_heal event aimed at the local player so we can
+        // flash a green "+30" HP toast.
+        const youId = engineRef.current?.youId;
+        const myHeal = (msg.events || []).find(
+          (e) => e.type === "kill_heal" && e.player_id === youId,
+        );
+        if (myHeal) {
+          setKillHealFlash({ id: Date.now(), amount: myHeal.amount });
+        }
         setHud((h) => {
           let kf = h.killFeed;
           if (newKills.length) {
@@ -663,6 +679,27 @@ export default function Game() {
       <RespawnOverlay trigger={respawnAt} />
       {/* Comic K.O. burst, plays for ~1.4s when the local player dies. */}
       <DeathOverlay trigger={diedAt} />
+      {/* Green "+HP" flash whenever the server grants kill-heal. Floats
+          up + fades in ~1.1s. Pointer-events:none so it never blocks the
+          game canvas. */}
+      {killHealFlash && (
+        <div
+          key={killHealFlash.id}
+          className="absolute z-30 left-1/2 top-[58%] -translate-x-1/2 pointer-events-none"
+          data-testid="kill-heal-flash"
+        >
+          <div
+            className="font-display text-5xl text-pow-shadow-lg"
+            style={{
+              color: "#06D6A0",
+              textShadow: "0 0 8px rgba(6,214,160,0.65), 2px 4px 0 rgba(0,0,0,0.85)",
+              animation: "killheal-float 1.1s ease-out forwards",
+            }}
+          >
+            +{killHealFlash.amount} HP
+          </div>
+        </div>
+      )}
       <TouchControls
         engineRef={engineRef}
         onShoot={() => {}}

@@ -665,6 +665,19 @@ export class LocalSim {
     victim.hp = 0;
     victim.deaths += 1;
     killer.kills += 1;
+    // On-kill heal — restore 30 HP (capped) and emit a kill_heal event
+    // so the local HUD plays the green "+HP" toast in offline mode too.
+    const prevHp = killer.hp || 0;
+    killer.hp = Math.min(killer.max_hp || 100, prevHp + 30);
+    const healAmount = killer.hp - prevHp;
+    if (killer.alive && healAmount > 0) {
+      this.pendingEvents.push({
+        type: "kill_heal",
+        player_id: killer.id,
+        hp: killer.hp,
+        amount: healAmount,
+      });
+    }
     victim.respawn_at = performance.now() + 3000;
     this.pendingEvents.push({
       type: "kill",
