@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2 } from "lucide-react";
+import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2, Flag, X, Check } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import PlayerCard from "@/components/PlayerCard";
 import MatchResultOverlay from "@/components/MatchResultOverlay";
 import settingsStore from "@/game/settings";
+import api from "@/api";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -58,6 +59,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
+  // Active player-report target (cleared on submit or close). Lives at
+  // HUD root so the modal renders above the scoreboard overlay.
+  const [reportTarget, setReportTarget] = useState(null);
 
   // React to live graphics settings (HUD scale, crosshair, toggles).
   useEffect(() => settingsStore.subscribe(setGfx), []);
@@ -447,9 +451,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
             <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
               <div className="col-span-1">#</div>
               <div className="col-span-1"></div>
-              <div className="col-span-6">Player</div>
+              <div className="col-span-4">Player</div>
               <div className="col-span-2 text-right">Kills</div>
               <div className="col-span-2 text-right">Deaths</div>
+              <div className="col-span-2 text-right opacity-60">·</div>
             </div>
             {hud.players.map((p, i) => (
               <div
@@ -469,9 +474,21 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                     <PlatformIcon platform={p.platform} />
                   )}
                 </div>
-                <div className="col-span-6 font-anton uppercase">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
+                <div className="col-span-4 font-anton uppercase truncate">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
                 <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
                 <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
+                <div className="col-span-2 flex justify-end">
+                  {p.id !== hud.youId && !p.is_bot && (
+                    <button
+                      onClick={() => setReportTarget(p)}
+                      className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-[10px] flex items-center gap-1"
+                      data-testid={`scoreboard-report-${i}`}
+                      title={`Report ${p.username}`}
+                    >
+                      <Flag size={11} strokeWidth={3} /> REPORT
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {hud.players.length === 0 && (
@@ -479,6 +496,12 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
             )}
           </div>
         </div>
+      )}
+      {reportTarget && (
+        <ReportPlayerModal
+          target={reportTarget}
+          onClose={() => setReportTarget(null)}
+        />
       )}
     </div>
   );
@@ -691,4 +714,127 @@ function DamageDirectionLayer({ markers, enabled, engineRef }) {
     </div>
   );
 }
+
+const REPORT_REASONS = [
+  { id: "cheating",       label: "Cheating / Aimbot" },
+  { id: "harassment",     label: "Harassment / Toxic Chat" },
+  { id: "griefing",       label: "Griefing / Team Killing" },
+  { id: "offensive_name", label: "Offensive Username" },
+  { id: "other",          label: "Other" },
+];
+
+/* Modal that lets a player file a moderation report against another
+   in-match player. Submitted reports persist on the backend (deduped per
+   reporter/target/reason within 1 hour). Modal closes after success and
+   auto-dismisses any error within 4s. */
+function ReportPlayerModal({ target, onClose }) {
+  const [reason, setReason] = useState(REPORT_REASONS[0].id);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(null); // {kind:'ok'|'err', text}
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      const { data } = await api.post("/reports/player", {
+        reported_username: target.username,
+        reason,
+        note: note.trim() || null,
+      });
+      setStatus({ kind: "ok", text: data?.deduped ? "Already on file — thanks." : "Report submitted. Thanks!" });
+      setTimeout(onClose, 1400);
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Couldn't file the report.";
+      setStatus({ kind: "err", text: typeof msg === "string" ? msg : "Couldn't file the report." });
+      setTimeout(() => setStatus(null), 4000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      data-testid="report-player-modal"
+    >
+      <div className="card-pow p-0 w-full max-w-md">
+        <div className="bg-[#E62429] text-white px-4 py-3 flex items-center justify-between">
+          <div className="font-display text-2xl flex items-center gap-2">
+            <Flag size={20} strokeWidth={3} /> REPORT PLAYER
+          </div>
+          <button
+            onClick={onClose}
+            className="btn-pow bg-black text-white [&]:px-2 [&]:py-1"
+            data-testid="report-close-btn"
+          >
+            <X size={14} strokeWidth={3} />
+          </button>
+        </div>
+        <div className="bg-white p-4 space-y-3">
+          <div className="font-anton uppercase tracking-widest text-sm">
+            Reporting: <span className="text-[#E62429]">{target.username}</span>
+          </div>
+          <div className="space-y-1.5">
+            {REPORT_REASONS.map((r) => (
+              <label
+                key={r.id}
+                className={`flex items-center gap-2 border-pow-thin px-3 py-2 cursor-pointer ${reason === r.id ? "bg-[#FFE680]" : "bg-neutral-50"}`}
+                data-testid={`report-reason-${r.id}`}
+              >
+                <input
+                  type="radio"
+                  name="report-reason"
+                  value={r.id}
+                  checked={reason === r.id}
+                  onChange={() => setReason(r.id)}
+                  className="accent-[#E62429]"
+                />
+                <span className="font-anton uppercase text-sm">{r.label}</span>
+              </label>
+            ))}
+          </div>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value.slice(0, 500))}
+            placeholder="Optional note (max 500 chars)"
+            className="w-full border-pow-thin bg-neutral-50 p-2 text-sm font-mono"
+            rows={3}
+            data-testid="report-note-input"
+          />
+          {status && (
+            <div
+              className={`flex items-center gap-2 px-3 py-2 border-pow-thin ${
+                status.kind === "ok" ? "bg-[#E4F7EC] text-[#0a4f2a]" : "bg-[#FFE4E4] text-[#7a1115]"
+              }`}
+              data-testid="report-status"
+            >
+              {status.kind === "ok" ? <Check size={14} strokeWidth={3} /> : <Flag size={14} strokeWidth={3} />}
+              <span className="font-anton uppercase tracking-widest text-xs">{status.text}</span>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 btn-pow bg-neutral-200 text-black"
+              data-testid="report-cancel-btn"
+            >
+              CANCEL
+            </button>
+            <button
+              onClick={submit}
+              disabled={busy}
+              className="flex-1 btn-pow bg-[#E62429] text-white"
+              data-testid="report-submit-btn"
+            >
+              {busy ? "SENDING…" : "SUBMIT"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 

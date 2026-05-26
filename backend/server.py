@@ -3853,6 +3853,77 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
     return rows
 
 
+# ─── Player reports ─────────────────────────────────────────────────────
+# Players can flag opponents from the in-match scoreboard. Reports are
+# stored in the `reports` collection and rate-limited per (reporter,
+# reported, reason) tuple to 1 / hour to prevent spam. Admin review UX is
+# out of scope here — this just gives players an outlet.
+REPORT_REASONS = {"cheating", "harassment", "griefing", "offensive_name", "other"}
+
+
+class PlayerReportIn(BaseModel):
+    reported_username: str = Field(min_length=2, max_length=30)
+    reason: str = Field(min_length=2, max_length=30)
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+@api.post("/reports/player")
+async def report_player(payload: PlayerReportIn, user: dict = Depends(get_current_user)):
+    """File a moderation report against another player. Idempotent within
+    1 hour for the same reporter/reported/reason combo (returns the
+    existing entry instead of inserting a duplicate)."""
+    reason = payload.reason.strip().lower()
+    if reason not in REPORT_REASONS:
+        raise HTTPException(status_code=400, detail=f"Invalid reason. Must be one of: {sorted(REPORT_REASONS)}")
+    reported_username = payload.reported_username.strip()
+    if reported_username.lower() == (user.get("username") or "").lower():
+        raise HTTPException(status_code=400, detail="You can't report yourself.")
+    target = await db.users.find_one(
+        {"username": {"$regex": f"^{reported_username}$", "$options": "i"}},
+        {"_id": 1, "username": 1},
+    )
+    if not target:
+        # Allow bot reports (no DB row) — they still count toward feedback
+        # signal even though there's nothing for admins to action.
+        target = {"_id": None, "username": reported_username}
+    now = datetime.now(timezone.utc)
+    one_hour_ago = now - timedelta(hours=1)
+    # Idempotency: if same reporter / target / reason within last hour,
+    # return existing.
+    existing = await db.reports.find_one({
+        "reporter_id": str(user["_id"]),
+        "reported_username": target["username"],
+        "reason": reason,
+        "created_at": {"$gte": one_hour_ago},
+    }, {"_id": 0})
+    if existing:
+        return {"ok": True, "deduped": True, "report": {
+            "reported_username": existing["reported_username"],
+            "reason": existing["reason"],
+            "created_at": existing["created_at"].isoformat() if isinstance(existing.get("created_at"), datetime) else existing.get("created_at"),
+        }}
+    doc = {
+        "reporter_id": str(user["_id"]),
+        "reporter_username": user.get("username", ""),
+        "reported_user_id": str(target["_id"]) if target.get("_id") else None,
+        "reported_username": target["username"],
+        "reason": reason,
+        "note": (payload.note or "").strip() or None,
+        "created_at": now,
+        "status": "open",
+    }
+    await db.reports.insert_one(doc)
+    logger.info(
+        "Player report filed: reporter=%s target=%s reason=%s",
+        user.get("username"), target["username"], reason,
+    )
+    return {"ok": True, "deduped": False, "report": {
+        "reported_username": doc["reported_username"],
+        "reason": doc["reason"],
+        "created_at": doc["created_at"].isoformat(),
+    }}
+
+
 # Party endpoints (require friendship; backed by in-memory PARTY_* state above).
 class PartyInviteIn(BaseModel):
     username: str = Field(min_length=2, max_length=30)
