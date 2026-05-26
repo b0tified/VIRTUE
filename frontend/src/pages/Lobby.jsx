@@ -290,7 +290,7 @@ export default function Lobby() {
     <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
       <LobbyBackground imageUrl={LOBBY_BG} />
 
-      <header className="relative z-10 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-2 md:py-3">
+      <header className="relative z-20 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-2 md:py-3">
         {/* Left side intentionally empty — the large VIRTUE logo lives in
             the main column below so the header reads as a thin utility bar. */}
         <div />
