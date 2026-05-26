@@ -47,7 +47,7 @@ export default function SeasonTrailer({ onComplete, durationMs = 4600 }) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] overflow-hidden bg-black select-none"
+      className="fixed inset-0 z-[9999] overflow-hidden bg-black select-none"
       style={{ animation: "trailer-fade-out 0.5s ease-out forwards", animationDelay: `${durationMs - 500}ms` }}
       data-testid="season-trailer"
     >

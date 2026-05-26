@@ -14,7 +14,6 @@ import FriendsModal from "@/components/FriendsModal";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import RespawnOverlay from "@/components/RespawnOverlay";
 import DeathOverlay from "@/components/DeathOverlay";
-import SeasonTrailer from "@/components/SeasonTrailer";
 import { useQueue } from "@/context/QueueContext";
 import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
 
@@ -91,16 +90,6 @@ export default function Game() {
   const [showGameFriends, setShowGameFriends] = useState(false);
   // Brief green "+HP" flash whenever the server grants on-kill health.
   const [killHealFlash, setKillHealFlash] = useState(null);
-  // Admin-only Season 2 trailer — plays once per browser session before
-  // the first match drops. Skip if already seen so back-to-back matches
-  // don't keep replaying it. Non-admins skip entirely.
-  const [showSeasonTrailer, setShowSeasonTrailer] = useState(() => {
-    if (user?.role !== "admin") return false;
-    try {
-      if (sessionStorage.getItem("virtue.s2_trailer_seen") === "1") return false;
-    } catch {}
-    return true;
-  });
   useEffect(() => {
     if (!killHealFlash) return;
     const t = setTimeout(() => setKillHealFlash(null), 1100);
@@ -114,9 +103,6 @@ export default function Game() {
 
   // Setup engine + socket
   useEffect(() => {
-    // Block engine init until the admin Season trailer dismisses — so
-    // the cinematic isn't interrupted by camera shake / loading screen.
-    if (showSeasonTrailer) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -519,7 +505,7 @@ export default function Game() {
       audioBus.laserBeamStop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSeasonTrailer]);
+  }, []);
 
   // Auto-skip the click-to-lock overlay on touch devices (no pointer lock there).
   useEffect(() => {
@@ -707,17 +693,6 @@ export default function Game() {
       <RespawnOverlay trigger={respawnAt} />
       {/* Comic K.O. burst, plays for ~1.4s when the local player dies. */}
       <DeathOverlay trigger={diedAt} />
-      {/* Admin-only Season 2 pre-game cinematic. Renders above
-          everything else (z-200). Dismissing it lets the engine setup
-          effect run. */}
-      {showSeasonTrailer && (
-        <SeasonTrailer
-          onComplete={() => {
-            try { sessionStorage.setItem("virtue.s2_trailer_seen", "1"); } catch {}
-            setShowSeasonTrailer(false);
-          }}
-        />
-      )}
       {/* Green "+HP" flash whenever the server grants kill-heal. Floats
           up + fades in ~1.1s. Pointer-events:none so it never blocks the
           game canvas. */}

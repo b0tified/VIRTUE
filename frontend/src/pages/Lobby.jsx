@@ -16,6 +16,7 @@ import ProgressionModal from "@/components/ProgressionModal";
 import PracticeMapSelector from "@/components/PracticeMapSelector";
 import LobbyDailyPanel from "@/components/LobbyDailyPanel";
 import { navigateToMatch } from "@/lib/navigateToMatch";
+import SeasonTrailer from "@/components/SeasonTrailer";
 import { useQueue } from "@/context/QueueContext";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
@@ -39,6 +40,21 @@ export default function Lobby() {
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..target
+  // Admin-only Season 2 cinematic. When set, renders SeasonTrailer; on
+  // its onComplete we fire the deferred navigation. Skips replay via
+  // sessionStorage so back-to-back matches in one session only show it
+  // once. Non-admins never trigger this branch.
+  const [pendingTrailerNav, setPendingTrailerNav] = useState(null); // { url, payload }
+  const playWithTrailer = (url, payload) => {
+    const isAdmin = user?.role === "admin";
+    let seen = false;
+    try { seen = sessionStorage.getItem("virtue.s2_trailer_seen") === "1"; } catch {}
+    if (isAdmin && !seen) {
+      setPendingTrailerNav({ url, payload });
+      return;
+    }
+    navigateToMatch(nav, url, payload);
+  };
   // Latches once the quick-match navigation has been dispatched, so the
   // effect's cleanup never cancels the in-flight nav (see ticker effect).
   const quickNavStartedRef = useRef(false);
@@ -258,7 +274,7 @@ export default function Lobby() {
       // the loading overlay to play through and the nav to fire even
       // though the state change re-triggers this effect.
       setQuickQueueSec(null);
-      navigateToMatch(nav, "/play?mode=casual", { mode: "casual", username: user?.username });
+      playWithTrailer("/play?mode=casual", { mode: "casual", username: user?.username });
       return;
     }
     const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s + 1)), 1000);
@@ -516,8 +532,7 @@ export default function Lobby() {
           const selectedMode = practiceSelectorMode;
           setPracticeSelectorMode(null);
           const mapQuery = mapId ? `&map=${mapId}` : "";
-          navigateToMatch(
-            nav,
+          playWithTrailer(
             `/play?mode=${selectedMode}${mapQuery}`,
             { mode: "offline", username: user?.username },
           );
@@ -525,6 +540,20 @@ export default function Lobby() {
       />
       {/* MatchLoadingScreen now lives at the App root so it persists across
           the Lobby → /play route change (see App.js). */}
+
+      {/* Admin-only Season 2 pre-game cinematic. Triggered by play
+          buttons via `playWithTrailer`; on complete we fire the deferred
+          nav so the loading screen / engine can then take over. */}
+      {pendingTrailerNav && (
+        <SeasonTrailer
+          onComplete={() => {
+            try { sessionStorage.setItem("virtue.s2_trailer_seen", "1"); } catch {}
+            const { url, payload } = pendingTrailerNav;
+            setPendingTrailerNav(null);
+            navigateToMatch(nav, url, payload);
+          }}
+        />
+      )}
 
       {/* Rank-up celebration — fires after a tier-skip redeem. The overlay
           self-dismisses after ~6.5s and can be clicked through. */}
