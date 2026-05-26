@@ -849,6 +849,7 @@ class AudioBus {
     // If a different track was playing (e.g. leaderboard / profile),
     // stop it so the lobby loop replaces it cleanly.
     if (this.musicPlaying) this.stopLobbyMusic();
+    this._restoreMusicGain();
     this.musicPlaying = true;
     this.musicTrack = "lobby";
     const ctx = this.ctx;
@@ -1124,6 +1125,41 @@ class AudioBus {
       clearInterval(this.musicTimer);
       this.musicTimer = null;
     }
+    // Hard-mute the music bus for ~1.5s so any already-scheduled
+    // oscillators / buffer-sources tail out into silence instead of
+    // overlapping with the next track. The next start* method ramps
+    // musicGain back up to the user's chosen volume.
+    if (this.musicGain && this.ctx) {
+      const target = this.musicMuted ? 0 : this._musicVol;
+      const now = this.ctx.currentTime;
+      try {
+        this.musicGain.gain.cancelScheduledValues(now);
+        this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, now);
+        this.musicGain.gain.linearRampToValueAtTime(0, now + 0.06);
+        // Schedule the unmute after the longest tail (~1.5s for victory
+        // chord). startLeaderboardMusic / startProfileMusic both call
+        // _restoreMusicGain() so this also runs immediately on track
+        // swap.
+        this.musicGain.gain.setValueAtTime(0, now + 1.6);
+        this.musicGain.gain.linearRampToValueAtTime(target, now + 1.8);
+      } catch {}
+    }
+  }
+
+  /* Restore the music bus to the user's chosen volume immediately. Called
+     at the top of each start*Music() so the new track doesn't get
+     muted by an in-flight stopLobbyMusic() ramp. */
+  _restoreMusicGain() {
+    if (!this.musicGain || !this.ctx) return;
+    const target = this.musicMuted ? 0 : this._musicVol;
+    const now = this.ctx.currentTime;
+    try {
+      this.musicGain.gain.cancelScheduledValues(now);
+      this.musicGain.gain.setValueAtTime(0.0001, now);
+      this.musicGain.gain.linearRampToValueAtTime(target, now + 0.2);
+    } catch {
+      this.musicGain.gain.value = target;
+    }
   }
 
   /* Generic alias — pages don't care which track was playing, they just
@@ -1139,6 +1175,7 @@ class AudioBus {
     if (!this._ensure()) return;
     if (this.musicTrack === "leaderboard" && this.musicPlaying) return;
     this.stopLobbyMusic();
+    this._restoreMusicGain();
     this.musicPlaying = true;
     this.musicTrack = "leaderboard";
     const ctx = this.ctx;
@@ -1269,6 +1306,7 @@ class AudioBus {
     if (!this._ensure()) return;
     if (this.musicTrack === "profile" && this.musicPlaying) return;
     this.stopLobbyMusic();
+    this._restoreMusicGain();
     this.musicPlaying = true;
     this.musicTrack = "profile";
     const ctx = this.ctx;

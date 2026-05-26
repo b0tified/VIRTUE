@@ -2568,7 +2568,12 @@ export class GameEngine {
     if (this.keys.has(_bind("right", "KeyD"))) mx += 1;
     const sprintKey = _bind("sprint", "ShiftLeft");
     const sprint = this.keys.has(sprintKey) || (sprintKey === "ShiftLeft" && this.keys.has("ShiftRight"));
-    const speed = (sprint ? 8 : 5) * (this.alive ? 1 : 0);
+    // ADS slows movement to ~55% — gives aimed shots a recoil tradeoff and
+    // matches the visual cue (slower bob + zoomed view). Sprint cancels
+    // ADS earlier in setADS so the two never stack.
+    const adsActive = !!this.ads && this.currentWeapon !== "secondary";
+    let speed = (sprint ? 8 : 5) * (this.alive ? 1 : 0);
+    if (adsActive && !sprint) speed *= 0.55;
     const moving = (mx !== 0 || mz !== 0) && this.alive;
 
     if (moving) {
