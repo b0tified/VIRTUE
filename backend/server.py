@@ -527,11 +527,10 @@ async def on_startup():
 
     # Casual / quick-match bots wear human-looking names and disguise as real
     # players (no BOT badge, no -bot platform). Pick a stable random set.
-    # Lowered to difficulty=0.6 so casual bots feel like easy fodder in
-    # the 1-minute Quick Match window (slower fire rate, weaker shots,
-    # wider aim cone). Ranked bots are still tuned per tier below.
+    # difficulty=0.9 — buffed from 0.6 (user feedback: too easy). They still
+    # feel beatable in the 1-minute Quick Match but trade kills now.
     for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
-        game_room.spawn_bot(name, disguised=True, difficulty=0.6)
+        game_room.spawn_bot(name, disguised=True, difficulty=0.9)
     ranked_room.spawn_bot(BOT_NAMES[0] + "-R", disguised=True, difficulty=1.4)
     # Practice room: 2 docile dummy bots that don't shoot back (max_hp low).
     for name in ["DUMMY-A", "DUMMY-B"]:
@@ -3194,7 +3193,10 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
     # ladder actually feels harder as you climb: Bronze 1.4 → Grandmaster 2.6.
     # (Higher diff = faster reactions, better aim, more accurate fire — see
     # the bot tick in GameRoom.tick().)
-    ranked_difficulty = 1.4 + min(6, tier_idx) * 0.2
+    # Buffed base 1.4→1.6 and per-tier scaling 0.2→0.25 — ranked bots now
+    # range 1.60 (Bronze) → 3.10 (Grandmaster/Goonmaster). Earlier players
+    # found them too easy at higher tiers.
+    ranked_difficulty = 1.6 + min(6, tier_idx) * 0.25
     # Tier-aligned name pool — higher tiers get longer / more "competitive"
     # handles (sponsor tags, TTV suffixes, etc.). Falls back to BOT_NAMES if
     # the tier has no custom pool seeded.
@@ -4131,7 +4133,7 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     room.party_id = party_id
     if bot_count > 0:
         for name in random.sample(DISGUISED_BOT_NAMES, bot_count):
-            room.spawn_bot(name, disguised=True, difficulty=0.6)
+            room.spawn_bot(name, disguised=True, difficulty=0.9)
     PARTY_ROOMS[party_id] = room
     PARTY_ROOM_TASKS[party_id] = asyncio.create_task(room.run())
     logger.info("Party room spawned id=%s members=%d bots=%d", party_id, member_count, bot_count)
