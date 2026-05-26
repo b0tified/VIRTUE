@@ -1807,7 +1807,10 @@ class Player:
             self.banner_icon = 0
             self.banner_color = 0
             self.banner_animated = False
-            self.level = 1
+            # Bots show a random level 5-11 on their banner so they read
+            # like established players, not fresh smurfs. Picked once at
+            # spawn time and stays stable for the match.
+            self.level = random.randint(5, 11)
             # Bots pick a random non-default skin to add visual variety
             # to lobbies; biased toward the cheaper tiers so legendary
             # skins still feel rare among bots.
