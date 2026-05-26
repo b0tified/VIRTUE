@@ -1,6 +1,7 @@
 // QueueOverlay — global ranked-queue toast. Mounted once at the App level so
 // the timer + "Match Found!" pop persists across Lobby / Profile / Leaderboard.
 import { Trophy, Loader2, X } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useQueue } from "@/context/QueueContext";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
@@ -12,9 +13,14 @@ function fmtMS(sec) {
 
 export default function QueueOverlay() {
   const q = useQueue();
+  const location = useLocation();
   if (!q) return null;
   const { queueState, waitSec, matchFoundSec, cancelRanked } = q;
   if (!queueState) return null;
+  // Suppress the toast (and the disorienting match-found flash) when the
+  // user is in the middle of a match. The queue itself keeps polling in
+  // the background; cancelling on /play entry is handled in Game.jsx.
+  if (location.pathname.startsWith("/play")) return null;
 
   return (
     <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] w-full max-w-sm px-4" data-testid="queue-toast">

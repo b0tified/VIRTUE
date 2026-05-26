@@ -14,6 +14,7 @@ import FriendsModal from "@/components/FriendsModal";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import RespawnOverlay from "@/components/RespawnOverlay";
 import DeathOverlay from "@/components/DeathOverlay";
+import { useQueue } from "@/context/QueueContext";
 import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
 
 export default function Game() {
@@ -41,6 +42,19 @@ export default function Game() {
     ? "party"
     : "casual";
   const isSpectator = mode === "spectate";
+
+  // If the player joins any in-game mode while a ranked queue is still
+  // active, cancel it. Otherwise a match could pop mid-game and the
+  // "Match Found" toast + auto-nav to /play?mode=ranked would yank
+  // them out of the current match into a loading screen. Ranked mode
+  // itself is the legitimate destination so we skip the cancel there.
+  const queueCtx = useQueue();
+  useEffect(() => {
+    if (mode !== "ranked" && queueCtx?.queueState && !queueCtx.queueState.matched) {
+      queueCtx.cancelRanked?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const [hud, setHud] = useState({
     hp: 100,
