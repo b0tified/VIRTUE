@@ -1125,42 +1125,37 @@ class AudioBus {
       clearInterval(this.musicTimer);
       this.musicTimer = null;
     }
-    // Hard-mute the music bus for ~1.5s so any already-scheduled
-    // oscillators / buffer-sources tail out into silence instead of
-    // overlapping with the next track. The next start* method ramps
-    // musicGain back up to the user's chosen volume.
+    // Hard-cut the *current* music bus: every track schedules audio
+    // 1-2s ahead through `this.musicGain` (captured at schedule time).
+    // Just lowering the gain doesn't help — the old node still emits
+    // any oscillators that were started. So we ramp the old node to 0
+    // over 80ms, disconnect it from master after the tail, and create
+    // a fresh `musicGain` so the next track starts on a clean bus.
     if (this.musicGain && this.ctx) {
-      const target = this.musicMuted ? 0 : this._musicVol;
+      const old = this.musicGain;
       const now = this.ctx.currentTime;
       try {
-        this.musicGain.gain.cancelScheduledValues(now);
-        this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, now);
-        this.musicGain.gain.linearRampToValueAtTime(0, now + 0.06);
-        // Schedule the unmute after the longest tail (~1.5s for victory
-        // chord). startLeaderboardMusic / startProfileMusic both call
-        // _restoreMusicGain() so this also runs immediately on track
-        // swap.
-        this.musicGain.gain.setValueAtTime(0, now + 1.6);
-        this.musicGain.gain.linearRampToValueAtTime(target, now + 1.8);
+        old.gain.cancelScheduledValues(now);
+        old.gain.setValueAtTime(old.gain.value, now);
+        old.gain.linearRampToValueAtTime(0, now + 0.08);
       } catch {}
+      // Disconnect the old bus once everything ramped down so its
+      // already-scheduled audio dies off cleanly (and the GC can reap
+      // it).
+      setTimeout(() => { try { old.disconnect(); } catch {} }, 200);
+      // Create a brand-new music bus at the user's chosen volume so the
+      // next track starts at full level — no overlap.
+      const fresh = this.ctx.createGain();
+      fresh.gain.value = this.musicMuted ? 0 : this._musicVol;
+      fresh.connect(this.master);
+      this.musicGain = fresh;
     }
   }
 
-  /* Restore the music bus to the user's chosen volume immediately. Called
-     at the top of each start*Music() so the new track doesn't get
-     muted by an in-flight stopLobbyMusic() ramp. */
-  _restoreMusicGain() {
-    if (!this.musicGain || !this.ctx) return;
-    const target = this.musicMuted ? 0 : this._musicVol;
-    const now = this.ctx.currentTime;
-    try {
-      this.musicGain.gain.cancelScheduledValues(now);
-      this.musicGain.gain.setValueAtTime(0.0001, now);
-      this.musicGain.gain.linearRampToValueAtTime(target, now + 0.2);
-    } catch {
-      this.musicGain.gain.value = target;
-    }
-  }
+  /* No-op kept for back-compat — the new stopLobbyMusic already builds
+     a fresh musicGain at the right volume, so start*Music doesn't need
+     to do anything special here. */
+  _restoreMusicGain() {}
 
   /* Generic alias — pages don't care which track was playing, they just
      want to stop whatever music the previous page started. */
