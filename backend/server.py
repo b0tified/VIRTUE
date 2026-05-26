@@ -2022,7 +2022,7 @@ class GameRoom:
             for i, (x, z) in enumerate(self.arena.get("healthpacks") or HEALTHPACK_POSITIONS)
         ]
 
-    def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None):
+    def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None, disguise_rank_points: Optional[int] = None):
         bot = Player(ws=None, is_bot=True, bot_name=name)
         bot.is_dummy = False
         # Difficulty scales HP, aim accuracy and fire rate at runtime (see _tick_bots).
@@ -2038,6 +2038,18 @@ class GameRoom:
                 # Casual / generic disguise — keep the original low-rank look so
                 # quick-match bots blend in with new players.
                 pts = random.randint(0, 850)
+            elif disguise_rank_points is not None:
+                # Player's exact-RP disguise. Each bot picks a value within
+                # ±20 of the queueing player so the lobby looks like a
+                # tightly-MMR-matched real game ("DIAMOND 1750" vs your
+                # "DIAMOND 1745") rather than identical numbers (also
+                # uncanny). Clamp to the tier band so we never spill
+                # into the next/prev tier visually.
+                ti = max(0, min(len(RANK_TIERS) - 1, int(disguise_tier_idx)))
+                low = RANK_TIERS[ti][0]
+                high = (RANK_TIERS[ti + 1][0] - 1) if (ti + 1 < len(RANK_TIERS)) else (low + 400)
+                jitter = random.randint(-20, 20)
+                pts = max(low, min(high, int(disguise_rank_points) + jitter))
             else:
                 # Tier-aligned disguise: pick a random point value INSIDE the
                 # band for the given tier. Used by ranked-vs-bots rooms so the
@@ -3317,8 +3329,13 @@ async def cleanup_offline_room_if_empty(user_id: str):
     logger.info("Offline room destroyed for user=%s", user_id)
 
 
-async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoom":
-    """Per-user ranked-vs-bots room — bot count scales with tier (3 for Bronze..Diamond, 1 for Master/GM)."""
+async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_rank_points: Optional[int] = None) -> "GameRoom":
+    """Per-user ranked-vs-bots room — bot count scales with tier (3 for Bronze..Diamond, 1 for Master/GM).
+
+    When `player_rank_points` is provided, every bot's disguise rank is
+    seeded around that value (±20 RP) so the bot banner shows a rank
+    that matches the queueing player's actual rank instead of a random
+    point inside the tier band."""
     room = RANKED_BOT_ROOMS.get(user_id)
     if room is not None:
         return room
@@ -3349,8 +3366,17 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int) -> "GameRoo
         # BOT badge after they kill you. They keep their bot AI internally.
         # `disguise_tier_idx` aligns the bot's visible rank to the lobby's
         # tier so a Diamond player sees DIAMOND-ranked "opponents" instead
-        # of obvious BRONZE placeholders.
-        room.spawn_bot(name, disguised=True, difficulty=ranked_difficulty, disguise_tier_idx=tier_idx)
+        # of obvious BRONZE placeholders. `disguise_rank_points`, when
+        # provided, seeds the visible RP around the queueing player's
+        # actual RP so the bot banner reads ~the same rank, not "DIAMOND
+        # 1820" when the player is "DIAMOND 1750".
+        room.spawn_bot(
+            name,
+            disguised=True,
+            difficulty=ranked_difficulty,
+            disguise_tier_idx=tier_idx,
+            disguise_rank_points=player_rank_points,
+        )
     RANKED_BOT_ROOMS[user_id] = room
     RANKED_BOT_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
     logger.info("Ranked-bot room spawned for user=%s tier=%d bots=%d", user_id, tier_idx, bot_count)
@@ -4557,7 +4583,14 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             # private room via the shared room_key. Solo bot-fills fall back
             # to the caller's own id (same as before).
             shared_key = matched.get("room_key") or u_id
-            room = await get_or_create_ranked_bot_room(shared_key, int(matched.get("tier", 0)))
+            # Pass the queueing player's exact rank_points so the bot
+            # disguise banner matches their real rank (±20) instead of a
+            # random pick from the tier band.
+            room = await get_or_create_ranked_bot_room(
+                shared_key,
+                int(matched.get("tier", 0)),
+                player_rank_points=int(user.get("rank_points", 0) or 0),
+            )
         else:
             room = ranked_room
     elif mode == "practice":
