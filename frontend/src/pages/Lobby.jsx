@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -456,6 +456,11 @@ export default function Lobby() {
             <Link to="/profile" className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-profile-button">
               <span className="flex items-center gap-3"><User size={18} strokeWidth={3} /> PROFILE</span>
             </Link>
+            {user?.role === "admin" && (
+              <Link to="/admin/reports" className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-admin-button">
+                <span className="flex items-center gap-3"><Shield size={18} strokeWidth={3} /> MODERATION</span>
+              </Link>
+            )}
           </div>
 
           {/* Players-online widget moved to the header (top-right). The old

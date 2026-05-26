@@ -11,6 +11,7 @@ import Game from "@/pages/Game";
 import Profile from "@/pages/Profile";
 import Leaderboard from "@/pages/Leaderboard";
 import AuthCallback from "@/pages/AuthCallback";
+import AdminReports from "@/pages/AdminReports";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+            <Route path="/admin/reports" element={<ProtectedRoute><AdminReports /></ProtectedRoute>} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

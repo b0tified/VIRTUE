@@ -583,12 +583,43 @@ async def register(payload: RegisterIn, response: Response):
     return {"user": public_user(user), "access_token": access}
 
 
+def check_ban(user: dict) -> Optional[dict]:
+    """If the user is currently banned/suspended, return a JSON-safe payload
+    describing the ban. Otherwise return None. A suspension automatically
+    expires when datetime.now(UTC) >= ban.until."""
+    ban = user.get("ban") or {}
+    status = ban.get("status")
+    if status not in ("banned", "suspended"):
+        return None
+    if status == "suspended":
+        until = ban.get("until")
+        if isinstance(until, datetime):
+            if datetime.now(timezone.utc) >= until:
+                return None  # expired — caller should clear it
+    return {
+        "status": status,
+        "reason": ban.get("reason") or "Violation of community guidelines",
+        "until": (ban["until"].isoformat() if isinstance(ban.get("until"), datetime) else ban.get("until")),
+        "at": (ban["at"].isoformat() if isinstance(ban.get("at"), datetime) else ban.get("at")),
+        "by": ban.get("by"),
+    }
+
+
 @api.post("/auth/login")
 async def login(payload: LoginIn, response: Response):
     email = payload.email.lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    # Block login while banned/suspended. Expired suspensions auto-clear
+    # below so the next login attempt succeeds.
+    ban = check_ban(user)
+    if ban:
+        # Surface the ban details so the UI can show "Suspended until …"
+        raise HTTPException(status_code=403, detail={"ban": ban, "message": f"Account {ban['status']}"})
+    if user.get("ban", {}).get("status") in ("banned", "suspended"):
+        # Expired suspension — clear it so future tokens are clean.
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"ban": {"status": "active"}}})
     access = create_access_token(str(user["_id"]), user["email"])
     refresh = create_refresh_token(str(user["_id"]))
     set_auth_cookies(response, access, refresh, remember=bool(payload.remember))
@@ -3931,23 +3962,29 @@ async def list_reports(
     limit: int = 50,
 ):
     """List filed player reports. Admin-only (role=='admin'). Returns the
-    most-recent N reports, optionally filtered by status (open / closed)."""
+    most-recent N reports (optionally filtered by status), plus a summary
+    of the most-reported usernames and each reported player's current ban
+    status. Reports include their MongoDB id so they can be closed."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     limit = max(1, min(200, int(limit)))
-    query = {}
+    query: dict = {}
     if status:
         query["status"] = status
-    cursor = db.reports.find(
-        query,
-        {"_id": 0},
-    ).sort("created_at", -1).limit(limit)
+    cursor = db.reports.find(query).sort("created_at", -1).limit(limit)
     rows = []
+    usernames_seen = set()
     async for r in cursor:
+        r["id"] = str(r.pop("_id"))
         if isinstance(r.get("created_at"), datetime):
             r["created_at"] = r["created_at"].isoformat()
+        if isinstance(r.get("closed_at"), datetime):
+            r["closed_at"] = r["closed_at"].isoformat()
+        usernames_seen.add(r.get("reported_username"))
         rows.append(r)
-    # Aggregate count per reported username for the dashboard summary.
+
+    # Aggregate count per reported username (top 20) — used by the
+    # dashboard's "Most-Reported" widget.
     pipeline = [
         {"$group": {"_id": "$reported_username", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
@@ -3955,8 +3992,114 @@ async def list_reports(
     ]
     summary = []
     async for s in db.reports.aggregate(pipeline):
+        usernames_seen.add(s["_id"])
         summary.append({"reported_username": s["_id"], "count": s["count"]})
-    return {"reports": rows, "summary": summary, "total": len(rows)}
+
+    # Resolve each unique reported user's current ban status so the UI
+    # can show "BANNED" / "SUSPENDED UNTIL …" / "ACTIVE" badges without a
+    # second round-trip per row.
+    bans: dict[str, dict] = {}
+    if usernames_seen:
+        async for u in db.users.find(
+            {"username": {"$in": list(usernames_seen)}},
+            {"username": 1, "ban": 1, "_id": 0},
+        ):
+            b = check_ban(u) if u.get("ban") else None
+            if b:
+                bans[u["username"]] = b
+            else:
+                bans[u["username"]] = {"status": "active"}
+    return {"reports": rows, "summary": summary, "total": len(rows), "bans": bans}
+
+
+class BanUserIn(BaseModel):
+    duration_hours: Optional[int] = Field(default=None, ge=1, le=24 * 365)  # None = permanent
+    reason: str = Field(min_length=2, max_length=500)
+    report_id: Optional[str] = None  # if set, close that report at the same time
+
+
+@api.post("/admin/users/{username}/ban")
+async def admin_ban_user(
+    username: str,
+    payload: BanUserIn,
+    user: dict = Depends(get_current_user),
+):
+    """Issue a permanent ban (duration_hours=None) or temporary suspension.
+    Admin-only. If `report_id` is provided, that report is marked
+    `closed` with the resulting action attached so the audit trail
+    matches the moderation decision."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    target = await db.users.find_one({"username": username})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.get("role") == "admin":
+        raise HTTPException(status_code=400, detail="Refusing to ban another admin.")
+    now = datetime.now(timezone.utc)
+    until = now + timedelta(hours=payload.duration_hours) if payload.duration_hours else None
+    ban_doc = {
+        "status": "suspended" if until else "banned",
+        "reason": payload.reason.strip(),
+        "at": now,
+        "until": until,
+        "by": user.get("username"),
+    }
+    await db.users.update_one({"_id": target["_id"]}, {"$set": {"ban": ban_doc}})
+    # Optionally close the report that triggered this action.
+    if payload.report_id:
+        try:
+            from bson import ObjectId
+            await db.reports.update_one(
+                {"_id": ObjectId(payload.report_id)},
+                {"$set": {
+                    "status": "closed",
+                    "closed_at": now,
+                    "closed_by": user.get("username"),
+                    "action": ban_doc["status"],
+                    "action_until": until,
+                }},
+            )
+        except Exception as e:
+            logger.warning("Failed to close report %s after ban: %s", payload.report_id, e)
+    logger.info(
+        "Admin %s issued %s on %s reason=%s until=%s",
+        user.get("username"), ban_doc["status"], username, ban_doc["reason"], until,
+    )
+    return {"ok": True, "ban": {**ban_doc, "at": ban_doc["at"].isoformat(), "until": until.isoformat() if until else None}}
+
+
+@api.post("/admin/users/{username}/unban")
+async def admin_unban_user(username: str, user: dict = Depends(get_current_user)):
+    """Clear any active ban/suspension on the target user."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    target = await db.users.find_one({"username": username})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    await db.users.update_one({"_id": target["_id"]}, {"$set": {"ban": {"status": "active"}}})
+    logger.info("Admin %s unbanned %s", user.get("username"), username)
+    return {"ok": True}
+
+
+@api.post("/admin/reports/{report_id}/close")
+async def admin_close_report(report_id: str, user: dict = Depends(get_current_user)):
+    """Mark a single report as closed without taking a ban action — used
+    for false-positive / no-action-needed cases."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    try:
+        from bson import ObjectId
+        oid = ObjectId(report_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid report id.")
+    now = datetime.now(timezone.utc)
+    res = await db.reports.update_one(
+        {"_id": oid},
+        {"$set": {"status": "closed", "closed_at": now, "closed_by": user.get("username"), "action": "dismissed"}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    return {"ok": True}
 
 
 # Party endpoints (require friendship; backed by in-memory PARTY_* state above).
