@@ -703,7 +703,21 @@ async def google_callback(payload: GoogleCallbackIn, response: Response):
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     await credit_level_coins(user)
-    return public_user(user)
+    payload = public_user(user)
+    # Surface the player's global leaderboard rank when they're in
+    # GOONMASTER (tier 7) — the UI shows it on the lobby PlayerCard.
+    # Computed lazily so we don't pay the count for every lower-tier
+    # user. The same data is exposed via /api/me/leaderboard_rank for
+    # ad-hoc refreshes.
+    if payload.get("rank_tier") == 7:
+        try:
+            higher = await db.users.count_documents({
+                "rank_points": {"$gt": int(user.get("rank_points", 0) or 0)}
+            })
+            payload["leaderboard_rank"] = higher + 1
+        except Exception:
+            payload["leaderboard_rank"] = None
+    return payload
 
 
 @api.post("/auth/refresh")

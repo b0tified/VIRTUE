@@ -292,6 +292,7 @@ export default function Lobby() {
               bannerColor={user.banner_color ?? null}
               bannerAnimated={!!user.banner_animated}
               level={user.level ?? 1}
+              leaderboardRank={user.leaderboard_rank ?? null}
               online
               className="hidden sm:inline-flex"
               testid="lobby-user-card"

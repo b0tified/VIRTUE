@@ -141,6 +141,7 @@ export default function PlayerCard({
   bannerColor = null,
   bannerAnimated = false,
   level = null,
+  leaderboardRank = null, // Goonmaster-only: global leaderboard position (1 = top).
   isBot = false,
   online = false,
   size = "md",
@@ -193,6 +194,17 @@ export default function PlayerCard({
             >
               {isBot ? "BOT" : rankName}
             </span>
+            {/* Goonmaster-only: show the player's global leaderboard
+                position (e.g. "#3") next to the rank pill. */}
+            {!isBot && t === 7 && Number.isFinite(leaderboardRank) && leaderboardRank > 0 && (
+              <span
+                className={`font-anton uppercase tracking-widest px-2 py-0.5 border-2 border-black bg-[#FFD700] text-black ${dims.rank}`}
+                data-testid={`${testid}-leaderboard-rank`}
+                title="Global leaderboard rank"
+              >
+                #{leaderboardRank}
+              </span>
+            )}
             {!isBot && (
               <span className={`font-anton tabular-nums ${dims.points} text-neutral-700`} data-testid={`${testid}-rp`}>
                 {rankPoints} RP

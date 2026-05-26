@@ -110,8 +110,7 @@ export default function Leaderboard() {
         <div className="card-pow p-0 overflow-hidden">
           <div className="grid grid-cols-12 bg-black text-white font-anton uppercase tracking-widest px-4 py-3 text-sm">
             <div className="col-span-1">#</div>
-            <div className="col-span-5">Player</div>
-            <div className="col-span-2 text-right">Kills</div>
+            <div className="col-span-7">Player</div>
             <div className="col-span-2 text-right">Rank</div>
             <div className="col-span-2 text-right">RP</div>
           </div>
@@ -132,7 +131,7 @@ export default function Leaderboard() {
                   data-testid={`leaderboard-row-${i}`}
                 >
                   <div className="col-span-1 font-display text-2xl">{i + 1}</div>
-                  <div className="col-span-5 font-anton uppercase text-lg flex items-center gap-2">
+                  <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2">
                     <span>{r.username}</span>
                     {/* Live status chip — IN MATCH (red, clickable to spectate)
                         > ONLINE (green dot) > nothing for offline rows.
@@ -158,7 +157,6 @@ export default function Leaderboard() {
                       </span>
                     ) : null}
                   </div>
-                  <div className="col-span-2 text-right font-anton text-lg">{r.kills}</div>
                   <div className="col-span-2 text-right">
                     <span
                       className="font-anton uppercase text-sm px-2 py-1"
