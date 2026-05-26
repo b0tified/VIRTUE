@@ -71,7 +71,16 @@ export function AuthProvider({ children }) {
       saveCachedUser(data.user);
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
+      // Surface the structured ban payload (when the backend returns one)
+      // so Login.jsx can render a dedicated "ACCOUNT BANNED" banner with
+      // reason + expiry instead of a generic error string.
+      const detail = e.response?.data?.detail;
+      const ban = detail && typeof detail === "object" ? detail.ban : null;
+      return {
+        ok: false,
+        error: formatApiErrorDetail(detail) || e.message,
+        ban: ban || null,
+      };
     }
   };
 

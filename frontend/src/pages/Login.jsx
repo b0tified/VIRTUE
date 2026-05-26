@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { ShieldAlert, Clock } from "lucide-react";
 
 /* Stripped-down login screen — no decor, no rotation, no extras.
    Just the brand wordmark, two inputs, sign-in button, and a sign-up link. */
@@ -13,17 +14,24 @@ export default function Login() {
     try { return localStorage.getItem("virtue.remember") !== "0"; } catch { return true; }
   });
   const [error, setError] = useState("");
+  const [ban, setBan] = useState(null); // structured ban payload from backend
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setBan(null);
     setLoading(true);
     try { localStorage.setItem("virtue.remember", remember ? "1" : "0"); } catch {}
     const r = await login(email, password, { remember });
     setLoading(false);
     if (r.ok) nav("/lobby");
-    else setError(r.error || "Login failed");
+    else {
+      // Prefer the rich ban banner when the backend returned the
+      // structured `ban` payload; fall back to the generic error toast.
+      if (r.ban) setBan(r.ban);
+      else setError(r.error || "Login failed");
+    }
   };
 
   return (
@@ -70,7 +78,45 @@ export default function Login() {
           />
         </div>
 
-        {error && (
+        {ban && (
+          <div
+            className="border-2 border-[#E62429] rounded overflow-hidden"
+            data-testid="login-ban-banner"
+            role="alert"
+          >
+            <div className="bg-[#E62429] text-white px-3 py-2 flex items-center gap-2 font-anton uppercase tracking-widest text-sm">
+              <ShieldAlert size={16} strokeWidth={3} />
+              ACCOUNT {ban.status === "banned" ? "PERMANENTLY BANNED" : "SUSPENDED"}
+            </div>
+            <div className="bg-[#E62429]/10 text-[#FFB3B3] text-sm px-3 py-3 space-y-2">
+              <div className="text-white">
+                <span className="text-neutral-400 text-xs uppercase tracking-widest">Reason:</span>
+                <div className="text-sm mt-0.5">{ban.reason || "Violation of community guidelines"}</div>
+              </div>
+              {ban.until && (
+                <div className="text-white flex items-start gap-1.5">
+                  <Clock size={13} strokeWidth={3} className="mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="text-neutral-400 text-xs uppercase tracking-widest">Suspension ends:</span>
+                    <div className="text-sm">{new Date(ban.until).toLocaleString()}</div>
+                  </div>
+                </div>
+              )}
+              {!ban.until && ban.status === "banned" && (
+                <div className="text-[#FFD700] text-xs uppercase tracking-widest font-anton">
+                  This sanction has no expiration date.
+                </div>
+              )}
+              {ban.by && (
+                <div className="text-neutral-400 text-[11px] uppercase tracking-widest">
+                  Issued by {ban.by}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {error && !ban && (
           <div
             className="bg-[#E62429]/10 border border-[#E62429]/40 text-[#FF6B6B] text-sm rounded px-3 py-2"
             data-testid="login-error"

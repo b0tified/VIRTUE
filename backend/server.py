@@ -594,13 +594,23 @@ def check_ban(user: dict) -> Optional[dict]:
     if status == "suspended":
         until = ban.get("until")
         if isinstance(until, datetime):
+            # Mongo stores datetimes as naive UTC; coerce so the
+            # comparison below doesn't blow up on offset-naive/aware mix.
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
             if datetime.now(timezone.utc) >= until:
                 return None  # expired — caller should clear it
+    at = ban.get("at")
+    until = ban.get("until")
+    if isinstance(at, datetime) and at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    if isinstance(until, datetime) and until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
     return {
         "status": status,
         "reason": ban.get("reason") or "Violation of community guidelines",
-        "until": (ban["until"].isoformat() if isinstance(ban.get("until"), datetime) else ban.get("until")),
-        "at": (ban["at"].isoformat() if isinstance(ban.get("at"), datetime) else ban.get("at")),
+        "until": until.isoformat() if isinstance(until, datetime) else until,
+        "at": at.isoformat() if isinstance(at, datetime) else at,
         "by": ban.get("by"),
     }
 
