@@ -291,6 +291,53 @@ export default function SettingsModal({ open, onClose }) {
             </p>
           </section>
 
+          {/* Resolution preset — explicit target heights mapped to the
+              render-scale multiplier. Native = device pixel ratio. */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm">Resolution</div>
+              <div className="text-sm tabular-nums" data-testid="settings-resolution-value">
+                {s.resolution || "native"}
+              </div>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {[
+                { id: "720p",   label: "720p",   h: 720 },
+                { id: "900p",   label: "900p",   h: 900 },
+                { id: "1080p",  label: "1080p",  h: 1080 },
+                { id: "1440p",  label: "1440p",  h: 1440 },
+                { id: "native", label: "NATIVE", h: null },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    // Compute the renderScale needed to hit this target
+                    // backing-store height, relative to the current
+                    // window inner-height. Native restores 1.0× DPR.
+                    let scale = 1.0;
+                    if (opt.h) {
+                      const ih = Math.max(1, window.innerHeight || 1080);
+                      scale = Math.max(0.4, Math.min(2.0, opt.h / ih));
+                    }
+                    patch({ resolution: opt.id, renderScale: parseFloat(scale.toFixed(2)) });
+                  }}
+                  className={`btn-pow [&]:px-2 [&]:py-1 [&]:text-[10px] ${
+                    (s.resolution || "native") === opt.id
+                      ? "bg-[#FFD700] text-black"
+                      : "bg-neutral-200 text-neutral-700"
+                  }`}
+                  data-testid={`settings-resolution-${opt.id}-btn`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-1">
+              Lower resolutions boost FPS. Use the slider below for fine control.
+            </p>
+          </section>
+
           {/* Render scale */}
           <section>
             <div className="flex items-center justify-between mb-2">

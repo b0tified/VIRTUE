@@ -20,6 +20,7 @@ const DEFAULTS = Object.freeze({
   mouseSensitivity: 1.0,    // 0.25 - 2.5
   // Extended graphics options ------------------------------------------------
   renderScale: 1.0,         // 0.5 - 1.5 (renderer pixel ratio multiplier)
+  resolution: "native",     // "720p" | "900p" | "1080p" | "1440p" | "native" — preset bound to renderScale
   viewDistance: 140,        // 60 - 200 meters (camera far plane)
   bloom: false,             // toggle screen-space bloom (cheap canvas blur)
   motionBlur: false,        // toggle motion blur on rapid camera turns
