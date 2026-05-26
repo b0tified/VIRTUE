@@ -411,7 +411,17 @@ export default function Game() {
       const kb = settingsStore.get()?.keybinds || {};
       if (e.code === (kb.scoreboard || "Tab")) {
         e.preventDefault();
-        setHud((h) => ({ ...h, showScoreboard: true }));
+        // Toggle the scoreboard (was hold-to-show). When it opens we
+        // release pointer-lock so the user can actually click the
+        // REPORT button on a row. Closing the scoreboard restores the
+        // game (clicking the canvas re-locks the pointer).
+        setHud((h) => {
+          const next = !h.showScoreboard;
+          if (next) {
+            try { document.exitPointerLock?.(); } catch {}
+          }
+          return { ...h, showScoreboard: next };
+        });
       }
       if (e.code === (kb.weapon1 || "Digit1")) {
         engineRef.current?.setWeapon("primary");
@@ -437,8 +447,10 @@ export default function Game() {
       }
     };
     const onKeyUp = (e) => {
-      const kb = settingsStore.get()?.keybinds || {};
-      if (e.code === (kb.scoreboard || "Tab")) setHud((h) => ({ ...h, showScoreboard: false }));
+      // Scoreboard is now toggle-on/off via keydown — keyup is a no-op.
+      // (Pre-toggle behaviour was to close on Tab release, which made it
+      // impossible to click the REPORT button on a row.)
+      void e;
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
@@ -558,6 +570,7 @@ export default function Game() {
         onStart={handleStart}
         onExit={handleExit}
         engineRef={engineRef}
+        onCloseScoreboard={() => setHud((h) => ({ ...h, showScoreboard: false }))}
         onLobby={() => {
           if (matchEndFallbackRef.current) {
             clearTimeout(matchEndFallbackRef.current);

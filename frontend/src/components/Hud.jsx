@@ -55,7 +55,7 @@ function formatTime(seconds) {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
-export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef, onLobby }) {
+export default function Hud({ hud, username, pointerLocked, onStart, onExit, engineRef, onLobby, onCloseScoreboard }) {
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
@@ -446,7 +446,17 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           <div className="card-pow p-0 w-full max-w-3xl">
             <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
               <div className="font-display text-3xl text-[#FFD700]">SCOREBOARD</div>
-              <div className="font-anton uppercase text-sm tracking-widest">Free-For-All</div>
+              <div className="flex items-center gap-3">
+                <div className="font-anton uppercase text-sm tracking-widest">Free-For-All</div>
+                <button
+                  onClick={() => onCloseScoreboard?.()}
+                  className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs flex items-center gap-1"
+                  data-testid="scoreboard-close-btn"
+                  title="Close scoreboard (Tab)"
+                >
+                  <X size={12} strokeWidth={3} /> CLOSE
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
               <div className="col-span-1">#</div>

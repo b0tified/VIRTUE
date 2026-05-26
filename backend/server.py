@@ -3924,6 +3924,41 @@ async def report_player(payload: PlayerReportIn, user: dict = Depends(get_curren
     }}
 
 
+@api.get("/reports/player")
+async def list_reports(
+    user: dict = Depends(get_current_user),
+    status: Optional[str] = None,
+    limit: int = 50,
+):
+    """List filed player reports. Admin-only (role=='admin'). Returns the
+    most-recent N reports, optionally filtered by status (open / closed)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    limit = max(1, min(200, int(limit)))
+    query = {}
+    if status:
+        query["status"] = status
+    cursor = db.reports.find(
+        query,
+        {"_id": 0},
+    ).sort("created_at", -1).limit(limit)
+    rows = []
+    async for r in cursor:
+        if isinstance(r.get("created_at"), datetime):
+            r["created_at"] = r["created_at"].isoformat()
+        rows.append(r)
+    # Aggregate count per reported username for the dashboard summary.
+    pipeline = [
+        {"$group": {"_id": "$reported_username", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 20},
+    ]
+    summary = []
+    async for s in db.reports.aggregate(pipeline):
+        summary.append({"reported_username": s["_id"], "count": s["count"]})
+    return {"reports": rows, "summary": summary, "total": len(rows)}
+
+
 # Party endpoints (require friendship; backed by in-memory PARTY_* state above).
 class PartyInviteIn(BaseModel):
     username: str = Field(min_length=2, max_length=30)
