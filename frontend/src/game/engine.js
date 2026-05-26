@@ -296,6 +296,44 @@ export class GameEngine {
   }
 
   // Try to trigger a shot; if empty, auto-request a reload from the network layer.
+  /* Returns true when the camera's forward ray hits a live opponent
+     player mesh within MAX_DIST. Used by touch auto-fire so we only
+     pull the trigger when the crosshair is actually on a target rather
+     than constantly while the look stick is held.
+
+     Cheap implementation: angular distance to each player; if any are
+     within ~2.5° of the look vector AND within 60m, it's a hit. We
+     skip the dead/self/spectator players. This is intentionally
+     forgiving so mobile players don't have to pixel-aim. */
+  hasEnemyInCrosshair() {
+    if (!this.players || this.players.size === 0) return false;
+    // Forward vector from current yaw/pitch (Three.js convention).
+    const cy = Math.cos(this.pitch);
+    const fx = -Math.sin(this.yaw) * cy;
+    const fy = Math.sin(this.pitch);
+    const fz = -Math.cos(this.yaw) * cy;
+    const camX = this.camera.position.x;
+    const camY = this.camera.position.y;
+    const camZ = this.camera.position.z;
+    const MAX_DIST = 60.0;
+    const COS_THRESHOLD = 0.999; // ~2.5° cone
+    for (const [id, entry] of this.players) {
+      if (id === this.youId) continue;
+      const s = entry.state;
+      if (!s || !s.alive) continue;
+      if (s.is_spectator) continue;
+      // Aim at the chest, not feet — more forgiving.
+      const dx = s.x - camX;
+      const dy = (s.y + 1.0) - camY;
+      const dz = s.z - camZ;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < 0.5 || dist > MAX_DIST) continue;
+      const dot = (dx * fx + dy * fy + dz * fz) / dist;
+      if (dot >= COS_THRESHOLD) return true;
+    }
+    return false;
+  }
+
   _tryShoot(aimYaw, aimPitch) {
     if (this.currentWeapon === "secondary") {
       // melee path
@@ -2964,7 +3002,9 @@ export class GameEngine {
     // ---- Look (RS) ----
     const rx = dz(axes[2] || 0);
     const ry = dz(axes[3] || 0);
-    const sens = 2.6; // rad/sec at full stick
+    // Controller turn speed (rad/sec at full stick). Base 2.6 scaled by
+    // the player's gamepadSensitivity setting (default 1.0, range 0.3-3.0).
+    const sens = 2.6 * (parseFloat(settingsStore.get()?.gamepadSensitivity) || 1.0);
     if (rx) this.yaw -= rx * sens * dt;
     if (ry) this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - ry * sens * dt));
 

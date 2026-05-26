@@ -138,12 +138,17 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     st.touchId = t.identifier;
     st.lastX = t.clientX;
     st.lastY = t.clientY;
-    // Start auto-fire loop if the setting is enabled. Engine cooldown gates
-    // the actual shot rate so calling _tryShoot every 50ms is safe.
+    // Start auto-fire loop if the setting is enabled. The shot only
+    // fires while the crosshair is currently over an enemy — touching
+    // the screen alone is no longer enough. Engine cooldown still gates
+    // the actual shot rate.
     if (autoFireRef.current && !autoFireTimerRef.current) {
       const fire = () => {
         const eng = engineRef.current;
-        if (eng) eng._tryShoot?.(eng.yaw, eng.pitch);
+        if (!eng) return;
+        if (eng.hasEnemyInCrosshair?.()) {
+          eng._tryShoot?.(eng.yaw, eng.pitch);
+        }
       };
       fire();
       autoFireTimerRef.current = setInterval(fire, 50);
@@ -161,7 +166,8 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       const dy = t.clientY - st.lastY;
       st.lastX = t.clientX;
       st.lastY = t.clientY;
-      const sens = 0.005;
+      // Touch look sensitivity setting. Base 0.005 × user multiplier.
+      const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0);
       eng.yaw -= dx * sens;
       eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
     }

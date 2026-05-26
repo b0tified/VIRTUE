@@ -18,6 +18,11 @@ const DEFAULTS = Object.freeze({
   aimAssist: true,
   aimAssistStrength: 0.6,   // 0.0 - 1.0 — applied only when aimAssist is true
   mouseSensitivity: 1.0,    // 0.25 - 2.5
+  // Per-input-method sensitivity. Mouse sens above stays as the master
+  // value used by the engine when reading SENS_KEY in localStorage —
+  // these are the additional sliders for controller + touch look.
+  gamepadSensitivity: 1.0,  // 0.3 - 3.0 (multiplier on base 2.6 rad/sec)
+  touchSensitivity: 1.0,    // 0.3 - 3.0 (multiplier on touch-drag yaw/pitch)
   // Extended graphics options ------------------------------------------------
   renderScale: 1.0,         // 0.5 - 1.5 (renderer pixel ratio multiplier)
   resolution: "native",     // "720p" | "900p" | "1080p" | "1440p" | "native" — preset bound to renderScale

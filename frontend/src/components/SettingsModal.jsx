@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, User as UserIcon, Globe, Gift, Check } from "lucide-react";
+import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, User as UserIcon, Globe, Gift, Check, Gamepad2, Smartphone } from "lucide-react";
 import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
@@ -237,6 +237,56 @@ export default function SettingsModal({ open, onClose }) {
               className="w-full accent-[#E62429]"
               data-testid="settings-sensitivity-slider"
             />
+          </section>
+
+          {/* Controller sensitivity */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm flex items-center gap-2">
+                <Gamepad2 size={14} strokeWidth={3} /> Controller Sensitivity
+              </div>
+              <div className="text-sm tabular-nums" data-testid="settings-gamepad-sens-value">
+                {Number(s.gamepadSensitivity ?? 1.0).toFixed(2)}×
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.3"
+              max="3.0"
+              step="0.05"
+              value={s.gamepadSensitivity ?? 1.0}
+              onChange={(e) => patch({ gamepadSensitivity: parseFloat(e.target.value) })}
+              className="w-full accent-[#9B59B6]"
+              data-testid="settings-gamepad-sens-slider"
+            />
+            <p className="text-[11px] text-neutral-500 mt-1">
+              Right-stick look speed. Higher = faster turn.
+            </p>
+          </section>
+
+          {/* Touch sensitivity */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm flex items-center gap-2">
+                <Smartphone size={14} strokeWidth={3} /> Touch Sensitivity
+              </div>
+              <div className="text-sm tabular-nums" data-testid="settings-touch-sens-value">
+                {Number(s.touchSensitivity ?? 1.0).toFixed(2)}×
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.3"
+              max="3.0"
+              step="0.05"
+              value={s.touchSensitivity ?? 1.0}
+              onChange={(e) => patch({ touchSensitivity: parseFloat(e.target.value) })}
+              className="w-full accent-[#0055FF]"
+              data-testid="settings-touch-sens-slider"
+            />
+            <p className="text-[11px] text-neutral-500 mt-1">
+              Drag the right side of the screen to look around. Higher = faster turn.
+            </p>
           </section>
           </>
           )}
