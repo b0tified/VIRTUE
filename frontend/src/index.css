@@ -828,6 +828,36 @@ html.virtue-no-ui-blur .hud-panel {
   70%  { opacity: 1;   transform: translate(-50%, -36px) scale(1.0); }
   100% { opacity: 0;   transform: translate(-50%, -64px) scale(0.95); }
 }
+/* SeasonTrailer — pre-game cinematic intro. Diagonal meteor → impact
+   flash → shockwave + crater → SEASON 2 wordmark. */
+@keyframes trailer-meteor-fly {
+  0%   { top: 0%;  left: 100%; transform: rotate(225deg) scale(0.6); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { top: 50%; left: 50%;  transform: rotate(225deg) scale(1.0); opacity: 1; }
+  100% { top: 50%; left: 50%;  transform: rotate(225deg) scale(0);   opacity: 0; }
+}
+@keyframes trailer-impact-flash {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes trailer-shockwave {
+  0%   { transform: scale(0.4); opacity: 0.95; border-width: 8px; }
+  100% { transform: scale(14);  opacity: 0;    border-width: 1px; }
+}
+@keyframes trailer-crater {
+  0%   { transform: scale(0.2); opacity: 0; }
+  20%  { transform: scale(0.7); opacity: 0.95; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+@keyframes trailer-title-in {
+  0%   { opacity: 0; transform: translateY(40px) scale(0.85); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+@keyframes trailer-fade-out {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* =============================================================
    Low-HP HUD pulse — drives the health card's red breathing
