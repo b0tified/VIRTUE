@@ -357,8 +357,8 @@ export default function Lobby() {
         </div>
       </header>
 
-      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-8 sm:-mt-12">
-        <div className="lg:col-span-7 -mt-2">
+      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-12 sm:-mt-20 lg:-mt-24">
+        <div className="lg:col-span-7 -mt-4 lg:-mt-8">
           {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
           <h1
             className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
