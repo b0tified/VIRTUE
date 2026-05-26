@@ -13,7 +13,7 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 import bcrypt
 import jwt
@@ -1821,6 +1821,14 @@ class Player:
         self.bot_strafe_t = random.uniform(0, 6.28)
         self.bot_repath_at = 0.0
         self.bot_target_id: Optional[str] = None
+        # Smart-AI bookkeeping (used when difficulty >= 1.5):
+        # - target_locked_until: avoid switching targets every frame
+        # - last_damaged_by: remember who hurt us so we can prioritise them
+        # - target prev pos cache for velocity-based lead aim
+        self.bot_target_locked_until: float = 0.0
+        self.bot_burst_cooldown_until: int = 0
+        self.bot_target_prev_pos: Optional[Tuple[float, float, float]] = None
+        self.bot_target_prev_ts: float = 0.0
         # Weapon state (Overwatch-style)
         self.weapon = "ak47"
         self.ammo: Dict[str, int] = {
@@ -2625,63 +2633,124 @@ class GameRoom:
 
     async def _update_bots(self, dt: float):
         now_ms = int(time.time() * 1000)
+        now_s = time.time()
         for bot in list(self.players.values()):
             if not bot.is_bot or not bot.alive:
                 continue
             # Practice dummies are stationary targets — no movement.
             if getattr(bot, "is_dummy", False):
                 continue
-            # Find target = closest alive other player
+            difficulty = float(getattr(bot, "difficulty", 1.0))
+            smart = difficulty >= 1.5  # ranked-only AI enhancements
+
+            # --- Target selection ---------------------------------------------------
+            # Smart bots lock onto a target for 1.5s before re-evaluating,
+            # and prefer wounded targets / recent attackers over the
+            # closest opponent. Casual bots stick with closest-target.
             target: Optional[Player] = None
-            best = float("inf")
-            for p in self.players.values():
-                if p is bot or not p.alive:
-                    continue
-                d = math.hypot(p.x - bot.x, p.z - bot.z)
-                if d < best:
-                    best = d
-                    target = p
+            if smart and bot.bot_target_id and now_s < bot.bot_target_locked_until:
+                t = self.players.get(bot.bot_target_id)
+                if t and t.alive and not getattr(t, "is_spectator", False):
+                    target = t
+
             if target is None:
-                # Wander
+                best_score = -1.0
+                for p in self.players.values():
+                    if p is bot or not p.alive:
+                        continue
+                    if getattr(p, "is_spectator", False):
+                        continue
+                    d = math.hypot(p.x - bot.x, p.z - bot.z)
+                    if d < 0.5:
+                        continue
+                    if smart:
+                        # Higher score = better target. Closer = better,
+                        # wounded = much better, recent attacker = priority.
+                        score = 100.0 / max(2.0, d)
+                        if p.hp < 60:
+                            score *= 1.6
+                        if p.hp < 30:
+                            score *= 1.4
+                        if bot.last_attacker and bot.last_attacker == p.id:
+                            score *= 1.8
+                        # Slightly prefer humans over other bots so ranked
+                        # bots actually pressure the player.
+                        if not p.is_bot:
+                            score *= 1.15
+                    else:
+                        score = 1000.0 - d  # casual: closest wins
+                    if score > best_score:
+                        best_score = score
+                        target = p
+                if target is not None:
+                    bot.bot_target_id = target.id
+                    bot.bot_target_locked_until = now_s + (1.5 if smart else 0.5)
+                    bot.bot_target_prev_pos = None  # reset velocity cache
+                    bot.bot_target_prev_ts = 0.0
+                else:
+                    bot.bot_target_id = None
+
+            if target is None:
+                # Wander toward arena centre rather than oscillate in place.
                 bot.bot_strafe_t += dt
-                wx = math.cos(bot.bot_strafe_t * 0.4) * 2 * dt
-                wz = math.sin(bot.bot_strafe_t * 0.4) * 2 * dt
-                nx, nz = bot.x + wx, bot.z + wz
-                if not self.collides_obstacle(nx, bot.z):
-                    bot.x = nx
-                if not self.collides_obstacle(bot.x, nz):
-                    bot.z = nz
+                cx, cz = 0.0, 0.0
+                dx0, dz0 = cx - bot.x, cz - bot.z
+                dist0 = math.hypot(dx0, dz0)
+                if dist0 > 1.0:
+                    wx = (dx0 / dist0) * 1.5 * dt
+                    wz = (dz0 / dist0) * 1.5 * dt
+                else:
+                    wx = math.cos(bot.bot_strafe_t * 0.4) * 2 * dt
+                    wz = math.sin(bot.bot_strafe_t * 0.4) * 2 * dt
+                if not self.collides_obstacle(bot.x + wx, bot.z):
+                    bot.x += wx
+                if not self.collides_obstacle(bot.x, bot.z + wz):
+                    bot.z += wz
                 continue
 
-            # Aim at target (head height ~1.6)
-            tx, tz = target.x, target.z
-            ty = target.y - 0.2
+            # --- Aim (with optional lead) -------------------------------------------
+            tx, tz, ty = target.x, target.z, target.y - 0.2
+            # Smart bots lead the target based on its velocity over the
+            # last frame interval. Bullets are effectively instant so the
+            # lead is small but enough to punish strafing players.
+            if smart and bot.bot_target_prev_pos and bot.bot_target_prev_ts > 0:
+                ddt = max(0.05, now_s - bot.bot_target_prev_ts)
+                vx_t = (target.x - bot.bot_target_prev_pos[0]) / ddt
+                vz_t = (target.z - bot.bot_target_prev_pos[2]) / ddt
+                # Lead by ~120ms of motion at high diff; less at mid diff.
+                lead_t = 0.12 * min(1.5, (difficulty - 1.4))
+                tx = target.x + vx_t * lead_t
+                tz = target.z + vz_t * lead_t
+            bot.bot_target_prev_pos = (target.x, target.y, target.z)
+            bot.bot_target_prev_ts = now_s
+
             dx = tx - bot.x
             dz = tz - bot.z
             dist = math.hypot(dx, dz)
             if dist > 0.01:
-                # Match Three.js camera convention used by the raycast — yaw=0 → look -Z, yaw=-π/2 → look +X.
+                # Match Three.js camera convention used by the raycast.
                 bot.yaw = math.atan2(-dx, -dz)
             dy = ty - bot.y
             bot.pitch = max(-1.0, min(1.0, math.atan2(dy, dist) if dist > 0.01 else 0))
 
-            # Move: keep desired distance 12-16
+            # --- Movement -----------------------------------------------------------
             bot.bot_strafe_t += dt
-            move_speed = 4.0 * dt
+            move_speed = (5.0 if smart else 4.0) * dt
             mx_, mz_ = 0.0, 0.0
-            desired = 14.0
+            # Smart bots prefer mid-close range (10-14m) for the AK; old
+            # value 14 made them too easy to long-poke from corners.
+            desired = 12.0 if smart else 14.0
             if dist > desired + 2:
-                # approach
                 if dist > 0.01:
                     mx_, mz_ = dx / dist, dz / dist
             elif dist < desired - 4:
-                # back off
                 if dist > 0.01:
                     mx_, mz_ = -dx / dist, -dz / dist
-            # strafe
-            strafe = math.sin(bot.bot_strafe_t * 1.4) * 0.7
+            # Strafe — smart bots strafe faster and less predictably.
+            strafe_freq = 2.2 if smart else 1.4
+            strafe_amp  = 0.95 if smart else 0.7
+            strafe = math.sin(bot.bot_strafe_t * strafe_freq) * strafe_amp
             if dist > 0.01:
-                # perpendicular dir
                 px, pz = -dz / dist, dx / dist
                 mx_ += px * strafe
                 mz_ += pz * strafe
@@ -2694,33 +2763,40 @@ class GameRoom:
                 if not self.collides_obstacle(nx, bot.z):
                     bot.x = nx
                 else:
-                    # try sideways
-                    bot.bot_strafe_t += 0.3
+                    bot.bot_strafe_t += 0.5  # flip strafe direction sooner
                 if not self.collides_obstacle(bot.x, nz):
                     bot.z = nz
                 else:
-                    bot.bot_strafe_t += 0.3
+                    bot.bot_strafe_t += 0.5
 
-            # Shoot when ready & LoS — with small aim noise (bots are less accurate)
-            # Dummy bots (practice range) never shoot back. Higher-difficulty bots
-            # shoot more frequently AND aim more precisely.
-            if getattr(bot, "is_dummy", False):
-                continue
+            # --- Fire control -------------------------------------------------------
             difficulty = float(getattr(bot, "difficulty", 1.0))
-            # Diff 1.0 → 600ms cooldown, 1.5 → 400ms, 2.0 → 300ms.
             effective_cd = BOT_SHOT_COOLDOWN_MS / max(0.5, difficulty)
-            if now_ms - bot.last_shot_ms >= effective_cd:
+            in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
+            if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
                     bot.last_shot_ms = now_ms
                     orig_yaw, orig_pitch = bot.yaw, bot.pitch
-                    # Diff 1.0 → full noise, 1.5 → 0.66x noise, 2.0 → 0.5x noise.
                     noise = BOT_AIM_NOISE / max(0.5, difficulty)
+                    # Smart bots tighten the cone even more when standing
+                    # still (they're "ADS-ing").
+                    if smart and L < 0.05:
+                        noise *= 0.6
                     bot.yaw += random.uniform(-noise, noise)
                     bot.pitch += random.uniform(-noise * 0.7, noise * 0.7)
-                    # Damage also scales modestly with difficulty (capped to not one-shot).
                     dmg = int(BOT_SHOT_DAMAGE * (0.7 + 0.4 * difficulty))
                     await self._apply_shoot(bot, dmg)
                     bot.yaw, bot.pitch = orig_yaw, orig_pitch
+                    # Smart bots fire in 3-5 round bursts then pause
+                    # 250-400ms to let recoil reset — more lethal but
+                    # more realistic than a constant stream.
+                    if smart:
+                        if not hasattr(bot, "_burst_left"):
+                            bot._burst_left = random.randint(3, 5)
+                        bot._burst_left -= 1
+                        if bot._burst_left <= 0:
+                            bot.bot_burst_cooldown_until = now_ms + random.randint(250, 400)
+                            bot._burst_left = random.randint(3, 5)
 
     async def tick(self):
         now = time.time()

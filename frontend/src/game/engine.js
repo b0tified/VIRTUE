@@ -28,8 +28,13 @@ export class GameEngine {
     this.onShoot = onShoot || (() => {});
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x9ddff6); // sky blue
-    this.scene.fog = new THREE.Fog(0xbfe2ff, 70, 130);
+    // Gradient sky — replaces the flat sky-blue with a vertical
+    // sky→horizon ramp so every map (day and night) gets a richer
+    // backdrop without per-map work.
+    this.scene.background = this._buildSkyGradient(0x9ddff6, 0xeaf6ff);
+    // Push fog start out 40% and end out 50% so distant geometry stays
+    // readable. Per-map overrides in _rebuildArenaFromServer still apply.
+    this.scene.fog = new THREE.Fog(0xbfe2ff, 90, 190);
 
     this.camera = new THREE.PerspectiveCamera(78, canvas.clientWidth / canvas.clientHeight, 0.05, 500);
 
@@ -37,18 +42,27 @@ export class GameEngine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // ACES filmic tone-mapping — slightly richer colours, softer
+    // highlights, deeper shadows than the engine's previous linear
+    // tone-mapping. Combined with toneMappingExposure (set per-FX
+    // preset) this gives every map a more cinematic look.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
 
-    // Toon ramp
-    const gradient = new Uint8Array([60, 130, 200, 255]);
+    // Toon ramp — bumped from 4 to 6 bands for smoother cel-shading
+    // while keeping the comic stepped look. Sharper highlights, richer
+    // mids, deeper shadows.
+    const gradient = new Uint8Array([45, 95, 140, 175, 210, 255]);
     this.toonMap = new THREE.DataTexture(gradient, gradient.length, 1, THREE.RedFormat);
     this.toonMap.needsUpdate = true;
     this.toonMap.magFilter = THREE.NearestFilter;
     this.toonMap.minFilter = THREE.NearestFilter;
 
     // Lights — track refs so day/night swap can adjust intensities.
-    this._hemi = new THREE.HemisphereLight(0xfff2a8, 0x4c7d3a, 1.0);
+    // Warmer sky / richer ground tone for stronger comic-book contrast.
+    this._hemi = new THREE.HemisphereLight(0xffe9b3, 0x3a5d2b, 1.15);
     this.scene.add(this._hemi);
-    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+    const sun = new THREE.DirectionalLight(0xfff3d4, 1.55);
     sun.position.set(40, 60, 30);
     this.scene.add(sun);
     this._sun = sun;
@@ -193,21 +207,59 @@ export class GameEngine {
     // SecurityError that surfaces in the red runtime overlay. On the
     // production app (not in an iframe) this works fine.
     try {
-      const p = this.canvas.requestPointerLock?.();
+      // `unadjustedMovement: true` bypasses OS-level mouse acceleration so
+      // raw mouse deltas match what the player physically moved. This
+      // eliminates the unpredictable acceleration spikes some Windows
+      // setups produce. Falls back to standard pointer-lock when the
+      // browser doesn't support the option (Safari).
+      let p;
+      try {
+        p = this.canvas.requestPointerLock?.({ unadjustedMovement: true });
+      } catch {
+        p = this.canvas.requestPointerLock?.();
+      }
+      // Mark the lock acquisition time so the first ~80ms of mouse events
+      // (which often carry a teleport-sized delta from the unlocked
+      // cursor's last position) get suppressed in _onMouseMove.
+      this._lockAcquiredAt = performance.now();
       // Newer browsers return a Promise; swallow its rejection too.
-      if (p && typeof p.catch === "function") p.catch(() => {});
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // Some browsers reject `unadjustedMovement` — retry plain.
+          try {
+            const p2 = this.canvas.requestPointerLock?.();
+            this._lockAcquiredAt = performance.now();
+            if (p2 && typeof p2.catch === "function") p2.catch(() => {});
+          } catch {}
+        });
+      }
     } catch (err) {
       try {
         window.dispatchEvent(new CustomEvent("virtue-pointerlock-blocked", { detail: { message: String(err?.message || err) } }));
       } catch {}
     }
   }
-  _onPointerLockChange() { this.locked = document.pointerLockElement === this.canvas; }
+  _onPointerLockChange() {
+    this.locked = document.pointerLockElement === this.canvas;
+    if (this.locked) this._lockAcquiredAt = performance.now();
+  }
   _onMouseMove(e) {
     if (!this.locked) return;
+    // Ignore the first 80ms of post-lock mouse events. Browsers
+    // occasionally fire a teleport-sized movementX/Y carry-over right
+    // after acquiring the lock, which yanks the camera unpredictably.
+    if (this._lockAcquiredAt && performance.now() - this._lockAcquiredAt < 80) return;
+    // Hard-clamp per-event deltas to ±200px. A single mousemove should
+    // never legitimately be larger than this (even at extreme sens);
+    // anything bigger is a browser glitch / OS acceleration spike and we
+    // throw it out rather than snap the camera.
+    let dx = e.movementX;
+    let dy = e.movementY;
+    if (dx > 200) dx = 200; else if (dx < -200) dx = -200;
+    if (dy > 200) dy = 200; else if (dy < -200) dy = -200;
     const sens = 0.0022 * this.getSensitivity();
-    this.yaw -= e.movementX * sens;
-    this.pitch -= e.movementY * sens;
+    this.yaw -= dx * sens;
+    this.pitch -= dy * sens;
     this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch));
   }
   _onKeyDown(e) {
@@ -316,6 +368,30 @@ export class GameEngine {
     group.add(outline);
     return group;
   }
+
+  /* Builds a 2-stop vertical gradient as a 2x256 canvas texture so every
+     map gets a richer backdrop than a flat colour. Used as scene.background.
+     Day maps pass bright sky/horizon, night maps pass deep blue/violet.
+     Reused on day/night swap via _applyMapTheme. */
+  _buildSkyGradient(topHex, bottomHex) {
+    const c = document.createElement("canvas");
+    c.width = 2; c.height = 256;
+    const ctx = c.getContext("2d");
+    const top = "#" + (topHex & 0xffffff).toString(16).padStart(6, "0");
+    const bot = "#" + (bottomHex & 0xffffff).toString(16).padStart(6, "0");
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, top);
+    g.addColorStop(0.7, bot);
+    g.addColorStop(1.0, bot);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 2, 256);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    return tex;
+  }
+
 
   // -------- Arena --------
   _buildArena() {
@@ -1041,8 +1117,12 @@ export class GameEngine {
     // 2) Renderer clear-color + fog tinting. At night we push the fog
     // further out + tint it slightly bluer so players can still spot
     // each other across the arena's full 50-unit footprint.
-    this.scene.background = new THREE.Color(night ? 0x1a2348 : 0x7cc3f0);
-    this.scene.fog = new THREE.Fog(night ? 0x243057 : 0xc7e6f7, night ? 110 : 80, night ? 200 : 145);
+    this.scene.background = this._buildSkyGradient(
+      night ? 0x03081f : 0x4a8fd6,
+      night ? 0x1a1230 : 0xeaf6ff,
+    );
+    // Bumped fog distances ~15% for richer depth perception on big maps.
+    this.scene.fog = new THREE.Fog(night ? 0x243057 : 0xc7e6f7, night ? 120 : 95, night ? 220 : 170);
 
     // 3) Lights — brighter night so players can clearly see across the
     // arena. We keep the cool blue tint so the scene still reads as night,
