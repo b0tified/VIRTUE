@@ -526,10 +526,11 @@ export default function Game() {
         className="w-full h-full"
         data-testid="game-canvas"
         onClick={() => {
-          // Replaces the removed click-to-play overlay: clicking anywhere
-          // on the canvas locks the pointer (must be a real user gesture).
-          // Spectators don't need pointer lock — they just watch.
-          if (!pointerLocked && !isSpectator && !showPause) handleStart();
+          // Clicking the canvas locks the pointer (must be a real user
+          // gesture). Skip when any UI overlay is open — pause, scoreboard,
+          // or spectator — so clicks on those overlays don't yank the
+          // cursor back into the game.
+          if (!pointerLocked && !isSpectator && !showPause && !hud.showScoreboard) handleStart();
         }}
       />
       {isSpectator && (

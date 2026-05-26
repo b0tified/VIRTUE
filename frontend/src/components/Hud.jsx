@@ -442,7 +442,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
 
       {/* Scoreboard (Tab) */}
       {hud.showScoreboard && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" data-testid="scoreboard-overlay">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" style={{ pointerEvents: "auto" }} data-testid="scoreboard-overlay">
           <div className="card-pow p-0 w-full max-w-3xl">
             <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
               <div className="font-display text-3xl text-[#FFD700]">SCOREBOARD</div>
@@ -767,6 +767,7 @@ function ReportPlayerModal({ target, onClose }) {
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      style={{ pointerEvents: "auto" }}
       data-testid="report-player-modal"
     >
       <div className="card-pow p-0 w-full max-w-md">
