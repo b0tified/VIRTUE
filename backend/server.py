@@ -1753,11 +1753,35 @@ PLACEMENT_MATCHES = 5
 PLACEMENT_MULTIPLIER = 2
 
 
-def random_spawn(arena: Optional[dict] = None):
+def random_spawn(arena: Optional[dict] = None, *, occupants: Optional[List["Player"]] = None, min_dist: float = 14.0):
     """Return a random (x, z) spawn point for the given arena (or the
-    legacy global ARENA when not supplied)."""
+    legacy global ARENA when not supplied).
+
+    When `occupants` is provided we score every spawn point by its
+    distance to the nearest live opponent and pick a point that's at
+    least `min_dist` metres away. If no point meets the threshold we
+    fall back to the *farthest* available point — never the closest —
+    so respawning into a face-full of bullets stops happening."""
     points = (arena or ARENA).get("spawn_points") or ARENA["spawn_points"]
-    return random.choice(points)
+    if not occupants:
+        return random.choice(points)
+    # Score each point by min-distance to any living, non-spectator opponent.
+    live = [p for p in occupants if getattr(p, "alive", False) and not getattr(p, "is_spectator", False)]
+    if not live:
+        return random.choice(points)
+    scored = []
+    for (sx, sz) in points:
+        nearest = min(math.hypot(p.x - sx, p.z - sz) for p in live)
+        scored.append((nearest, sx, sz))
+    # Candidates that satisfy min_dist — pick one at random for variety.
+    safe = [(n, x, z) for (n, x, z) in scored if n >= min_dist]
+    if safe:
+        n, x, z = random.choice(safe)
+        return (x, z)
+    # No safe point — pick the farthest one we have so respawn isn't right
+    # in someone's lap.
+    scored.sort(reverse=True)
+    return (scored[0][1], scored[0][2])
 
 
 # -------------------------------------------------------------------
@@ -2025,8 +2049,9 @@ class GameRoom:
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name
             bot.rank_tier = t_idx
-        # Reposition the bot to a spawn from THIS room's arena.
-        bx, bz = random_spawn(self.arena)
+        # Reposition the bot to a spawn from THIS room's arena — avoid
+        # placing it right on top of an existing player/bot.
+        bx, bz = random_spawn(self.arena, occupants=list(self.players.values()))
         bot.x = float(bx)
         bot.z = float(bz)
         self.players[bot.id] = bot
@@ -2038,9 +2063,10 @@ class GameRoom:
     async def add(self, player: Player):
         # Reposition the player onto a spawn point from THIS room's arena —
         # Player.__init__ used the global default spawn list, which may not
-        # exist on the room's current map.
+        # exist on the room's current map. Pass occupants so the chosen
+        # spawn is at least 14m from every live opponent.
         if not getattr(player, "is_spectator", False):
-            sx, sz = random_spawn(self.arena)
+            sx, sz = random_spawn(self.arena, occupants=list(self.players.values()))
             player.x = float(sx)
             player.z = float(sz)
         async with self.lock:
@@ -2815,7 +2841,9 @@ class GameRoom:
                 p.alive = False
                 continue
             if not p.alive and now >= p.respawn_at:
-                x, z = random_spawn(self.arena)
+                # Respawn far from every other living player so they
+                # don't drop straight into someone's crosshair.
+                x, z = random_spawn(self.arena, occupants=list(self.players.values()))
                 p.x, p.z = float(x), float(z)
                 p.y = PLAYER_HEIGHT
                 p.hp = p.max_hp
@@ -3161,12 +3189,18 @@ class GameRoom:
         self.arena = random_map()
         self.healthpacks = self._build_healthpacks()
 
-        # Reset for next match
+        # Reset for next match — assign spawn points round-robin from a
+        # shuffled copy of the arena's spawn list so no two players land
+        # on the same point and consecutive players are spread out.
+        spawn_pool = list((self.arena or ARENA).get("spawn_points") or ARENA["spawn_points"])
+        random.shuffle(spawn_pool)
+        spawn_idx = 0
         for p in self.players.values():
             p.kills = 0
             p.deaths = 0
-            x, z = random_spawn(self.arena)
-            p.x, p.z = float(x), float(z)
+            sx, sz = spawn_pool[spawn_idx % len(spawn_pool)]
+            spawn_idx += 1
+            p.x, p.z = float(sx), float(sz)
             p.y = PLAYER_HEIGHT
             p.hp = p.max_hp
             p.alive = True
