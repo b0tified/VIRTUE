@@ -2737,6 +2737,40 @@ export class GameEngine {
         const speed = Math.hypot(dx, dz) / 0.05; // dt between server states is ~50ms
         entry.movingSpeed = entry.movingSpeed * 0.6 + speed * 0.4;
         entry.prevX = p.x; entry.prevZ = p.z;
+        // Remote footstep cadence — drive a footstep SFX (panned via the
+        // 3D-audio path) when this player is actually moving on the ground.
+        // Sprint flag is inferred from the smoothed speed (>5.5 m/s ~=
+        // sprinting; engine.js cap is ~6.0 sprint, ~3.5 walk). Skipped for
+        // the local player (they already get their own footsteps) and for
+        // dead/invuln/spectator entries.
+        if (p.alive && !p.invuln && p.id !== this.youId) {
+          if (entry._footAcc === undefined) entry._footAcc = 0;
+          if (entry._footLastT === undefined) entry._footLastT = performance.now();
+          const nowT = performance.now();
+          const stepDt = Math.min(0.2, (nowT - entry._footLastT) / 1000);
+          entry._footLastT = nowT;
+          const ms = entry.movingSpeed;
+          if (ms > 0.6) {
+            const sprintR = ms > 5.5;
+            const stride = sprintR ? 0.28 : 0.42;
+            entry._footAcc += stepDt;
+            if (entry._footAcc >= stride) {
+              entry._footAcc = 0;
+              // Distance-gate so the lobby isn't a cacophony.
+              const distSq = (p.x - this.position.x) ** 2 + (p.z - this.position.z) ** 2;
+              if (distSq < 900) {
+                this.onLocalUpdate?.({
+                  type: "remote-footstep",
+                  sprint: sprintR,
+                  pos: { x: p.x, y: p.y || 0.1, z: p.z },
+                  distance: Math.sqrt(distSq),
+                });
+              }
+            }
+          } else {
+            entry._footAcc = 0;
+          }
+        }
 
         entry.mesh.position.lerp(new THREE.Vector3(p.x, 0, p.z), 0.5);
         entry.mesh.rotation.y = p.yaw;

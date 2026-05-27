@@ -931,9 +931,13 @@ class AudioBus {
   }
 
   /* -------- Footstep -------- */
-  footstep(sprint = false) {
-    if (!this._ensure()) return;
+  /* Internal footstep builder. `volMul` scales both noise + sub thump
+     (used to make local footsteps much quieter than remote ones so the
+     player can actually HEAR enemy footsteps approaching). `out` lets
+     the caller route the sound through a PannerNode for 3D positioning. */
+  _footstepInner(sprint, volMul, out) {
     const ctx = this.ctx;
+    out = out || this.sfxGain;
     // Short noise pulse with body thump
     const dur = sprint ? 0.07 : 0.09;
     const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
@@ -948,8 +952,8 @@ class AudioBus {
     lp.type = "lowpass";
     lp.frequency.value = sprint ? 1200 : 800;
     const g = ctx.createGain();
-    g.gain.value = sprint ? 0.18 : 0.12;
-    src.connect(lp); lp.connect(g); g.connect(this.sfxGain);
+    g.gain.value = (sprint ? 0.18 : 0.12) * volMul;
+    src.connect(lp); lp.connect(g); g.connect(out);
     src.start();
 
     // sub thump
@@ -958,10 +962,30 @@ class AudioBus {
     osc.frequency.setValueAtTime(110, ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.07);
     const og = ctx.createGain();
-    og.gain.setValueAtTime(sprint ? 0.22 : 0.14, ctx.currentTime);
+    og.gain.setValueAtTime((sprint ? 0.22 : 0.14) * volMul, ctx.currentTime);
     og.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
-    osc.connect(og); og.connect(this.sfxGain);
+    osc.connect(og); og.connect(out);
     osc.start(); osc.stop(ctx.currentTime + 0.1);
+  }
+
+  /* Local-player footstep — much quieter than before so enemy footsteps
+     are audible. Drop to 0.28x of previous volume (≈70% reduction). */
+  footstep(sprint = false) {
+    if (!this._ensure()) return;
+    this._footstepInner(sprint, 0.28, this.sfxGain);
+  }
+
+  /* Remote-player footstep — full base volume + distance attenuation +
+     3D pan when enabled. This is the cue that lets the player hear
+     enemies approaching around corners. */
+  remoteFootstep(sprint = false, distance = 0, pos = null) {
+    if (!this._ensure()) return;
+    const vol = this._distVolume(distance);
+    if (vol <= 0.05) return;
+    const out = (pos && this._audio3D) ? this._spatialOut(pos.x, pos.y ?? 0.1, pos.z) : this.sfxGain;
+    // Slight boost (1.15x) on top of the base envelope so enemy footsteps
+    // are decisively louder than the new quieter local steps.
+    this._footstepInner(sprint, 1.15 * vol, out);
   }
 
   /* -------- Lobby music --------
