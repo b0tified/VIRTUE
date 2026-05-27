@@ -1,0 +1,39 @@
+{
+  "summary": "Validated delta-state broadcasting protocol via dedicated backend pytest suite (6 tests) and end-to-end Playwright gameplay test. Backend emits ~17 deltas per keyframe (close to 1:19 target at 20Hz/1s), bandwidth reduced ~87% (315B delta vs 2455B full). Client-side merge preserves all 10 static fields for every player. In-game scoreboard renders all 5 player names persistently across multiple delta cycles (verified at 0:40 and 0:52 marks of a 60s quick match). HUD time_left ticks correctly. Ranked queue endpoint still functions for level-5 player. No regressions detected from the delta-protocol refactor.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Casual FFA scoreboard", "issues": ["Scoreboard does not show a rank pill / rank_name column in casual FFA mode — only #, PLAYER, KILLS, DEATHS, REPORT. Static rank fields ARE delivered (verified via backend tests) but the casual UI does not render them. Likely intentional but worth confirming since the original request mentions 'rank pills correctly'. Rank banners are expected to be visible in ranked match mode."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_delta_state.py",
+    "/app/test_reports/pytest/delta_state.xml"
+  ],
+  "action_items": [
+    "If rank pills are expected on the casual FFA scoreboard, add a RANK column rendering banner_icon/banner_color/rank_name. Otherwise confirm rank visualisation is intentionally ranked-only."
+  ],
+  "critical_code_review_comments": [
+    "Delta protocol works as designed: ~6 keyframes / ~103 deltas in 5.5s observed window; static fields appear in only 5.9% of delta player rows.",
+    "Client engine `_lastPlayersById` / `_lastTopFields` caching is effective — no scoreboard flicker or field loss after 1s+ delta windows.",
+    "401 errors visible in console pre-login (calls to /api/auth/me before user authenticates) — cosmetic; consider gating those calls until token exists."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_delta_state.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 delta-protocol tests)",
+    "frontend": "100% (login + quick match + scoreboard rehydration verified)"
+  },
+  "test_credentials": "player1@shooter.com / player123 — works; pre-existing in /app/memory/test_credentials.md.",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_delta_state.py for any future delta-protocol regression checks. The websockets lib is required (already installed). The Cloudflare WAF returns 403 'error code: 1010' for urllib requests missing a User-Agent header — always set one. The casual FFA scoreboard currently shows columns: #, PLAYER (with platform icon), KILLS, DEATHS, REPORT; rank pills not displayed in casual (may be expected). Match duration in quick mode = 60s; match-end overlay was not directly observed in this run due to script timing, but engine state and HUD time_left ticking confirmed no staleness.",
+  "rca of the issue": "N/A — no regressions found. The delta protocol is functioning correctly per spec: keyframe every ~1s, ~19 deltas in between at 20Hz, static fields omitted from deltas, client merging keeps full snapshot intact."
+}

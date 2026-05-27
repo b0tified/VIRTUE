@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="6" time="25.271" timestamp="2026-05-27T03:37:23.706740+00:00" hostname="agent-env-25d45d6b-753b-41d1-946d-c22b86c106d9"><testcase classname="test_delta_state" name="test_keyframe_to_delta_ratio" time="6.202" /><testcase classname="test_delta_state" name="test_delta_omits_static_fields" time="4.225" /><testcase classname="test_delta_state" name="test_bandwidth_reduction" time="5.204" /><testcase classname="test_delta_state" name="test_merged_players_have_all_static_fields" time="5.206" /><testcase classname="test_delta_state" name="test_top_level_fields_persist_through_deltas" time="4.230" /><testcase classname="test_delta_state" name="test_ranked_queue_still_works" time="0.073"><failure message="Failed: Ranked queue POST failed: 403 b'error code: 1010'">backend/tests/test_delta_state.py:225: in test_ranked_queue_still_works
+    with urllib.request.urlopen(req, timeout=10) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/urllib/request.py:216: in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/urllib/request.py:525: in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/urllib/request.py:634: in http_response
+    response = self.parent.error(
+/usr/local/lib/python3.11/urllib/request.py:563: in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/urllib/request.py:496: in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+/usr/local/lib/python3.11/urllib/request.py:643: in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+E   urllib.error.HTTPError: HTTP Error 403: Forbidden
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_delta_state.py:230: in test_ranked_queue_still_works
+    pytest.fail(f"Ranked queue POST failed: {e.code} {e.read()!r}")
+E   Failed: Ranked queue POST failed: 403 b'error code: 1010'</failure></testcase></testsuite></testsuites>

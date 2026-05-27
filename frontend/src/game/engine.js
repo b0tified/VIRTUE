@@ -2271,13 +2271,70 @@ export class GameEngine {
         // different from what we currently have rendered. No-op if same.
         this._rebuildArenaFromServer(msg.arena);
       }
+      // Reset delta caches — a fresh welcome implies a new room.
+      this._lastPlayersById = null;
+      this._lastTopFields = null;
       return;
+    }
+    // -----------------------------------------------------------------
+    // Delta-state merging. The server emits a full `state` payload once
+    // per second (keyframe) and `state_delta` payloads in between that
+    // carry only changed fields per player. We merge deltas into a local
+    // cache and synthesize a full `state`-shaped message so the rest of
+    // this method (and downstream consumers via `this.onState`) doesn't
+    // need to know about the wire format. Saves ~50% JSON/CPU server-side
+    // on full lobbies — static fields (username, rank, banner, skin,
+    // mag_size, platform, level) only fly over the wire ~1Hz instead of
+    // 20Hz.
+    // -----------------------------------------------------------------
+    if (msg.type === "state") {
+      // Keyframe — replace the cache.
+      this._lastPlayersById = new Map();
+      for (const p of (msg.players || [])) {
+        this._lastPlayersById.set(p.id, { ...p });
+      }
+      this._lastTopFields = {};
+      for (const k of Object.keys(msg)) {
+        if (k === "type" || k === "players" || k === "events" || k === "t") continue;
+        this._lastTopFields[k] = msg[k];
+      }
+    } else if (msg.type === "state_delta") {
+      if (!this._lastPlayersById) this._lastPlayersById = new Map();
+      if (!this._lastTopFields) this._lastTopFields = {};
+      // Merge per-player diffs into the cache. Each entry already
+      // carries its own `id`, and only changed fields are present.
+      for (const partial of (msg.players || [])) {
+        if (!partial || !partial.id) continue;
+        const prev = this._lastPlayersById.get(partial.id);
+        this._lastPlayersById.set(partial.id, prev ? { ...prev, ...partial } : { ...partial });
+      }
+      for (const id of (msg.removed_ids || [])) {
+        this._lastPlayersById.delete(id);
+      }
+      // Top-level diff — events always travel in full, everything else
+      // is sticky from the last keyframe.
+      for (const k of Object.keys(msg)) {
+        if (k === "type" || k === "players" || k === "events" || k === "removed_ids" || k === "t") continue;
+        this._lastTopFields[k] = msg[k];
+      }
+      // Rebuild a state-shaped message so the rest of this function (and
+      // Game.jsx via this.onState) sees the world as a normal full state.
+      msg = {
+        type: "state",
+        t: msg.t,
+        events: msg.events || [],
+        players: Array.from(this._lastPlayersById.values()),
+        ...this._lastTopFields,
+      };
     }
     // match_start may carry a new arena (server re-rolls the map on each
     // intermission reset). Swap to it before the next round begins.
     if (msg.type === "match_start" && msg.arena) {
       this._arena = msg.arena;
       this._rebuildArenaFromServer(msg.arena);
+      // Stale cache after a map swap — wait for the next keyframe.
+      this._lastPlayersById = null;
+      this._lastTopFields = null;
     }
     if (msg.type === "state" && this.isSpectator && this.spectateTargetId) {
       // Lock camera to the spectate target in *first-person* — we see

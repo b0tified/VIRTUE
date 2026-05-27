@@ -345,14 +345,18 @@ export default function Game() {
           setHud((h) => h.matchEnd ? h : { ...h, matchEnd: null });
           return;
         }
-        if (msg.type === "state") {
+        if (msg.type === "state" || msg.type === "state_delta") {
+          // Top-level HUD fields are only present on the keyframe and
+          // whenever they change in a delta. Merge non-undefined values
+          // and keep previous HUD values otherwise so the bar doesn't
+          // flicker between deltas.
           setHud((h) => ({
             ...h,
-            timeLeft: msg.time_left ?? null,
-            isRanked: !!msg.is_ranked,
-            inQueue: !!msg.in_queue,
-            realCount: msg.real_count ?? 0,
-            minRealPlayers: msg.min_real_players ?? 2,
+            timeLeft: msg.time_left !== undefined ? msg.time_left : h.timeLeft,
+            isRanked: msg.is_ranked !== undefined ? !!msg.is_ranked : h.isRanked,
+            inQueue: msg.in_queue !== undefined ? !!msg.in_queue : h.inQueue,
+            realCount: msg.real_count !== undefined ? msg.real_count : h.realCount,
+            minRealPlayers: msg.min_real_players !== undefined ? msg.min_real_players : h.minRealPlayers,
           }));
         }
         engineRef.current?.applyServerState(msg);
