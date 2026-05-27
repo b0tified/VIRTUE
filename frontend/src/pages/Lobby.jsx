@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -423,6 +423,38 @@ export default function Lobby() {
             title="Audio, sensitivity, install, logout"
           >
             <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
+          </button>
+          {/* Exit to desktop. window.close() succeeds only for windows
+              that were script-opened (e.g. the installed PWA), so we
+              attempt it AND swap the page out for a goodbye screen as a
+              guaranteed fallback that works in normal tabs too. The user
+              gets a clear "you can close this tab now" cue either way. */}
+          <button
+            onClick={() => {
+              if (!window.confirm("Exit VIRTUE and close this tab?")) return;
+              try { audioBus.stopLobbyMusic(); } catch {}
+              try {
+                // Best-effort close — works on PWA / popups / window.opener
+                window.close();
+              } catch {}
+              // Fallback: replace the page with a comic-style goodbye so
+              // the user knows it's safe to close. Uses location.replace
+              // so back-button doesn't bring them back into the lobby.
+              setTimeout(() => {
+                document.body.innerHTML = `
+                  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F4F5;font-family:'Anton',sans-serif">
+                    <div style="text-align:center;padding:2rem 3rem;background:white;border:4px solid #000;box-shadow:8px 8px 0 #000;transform:rotate(-1.5deg)">
+                      <h1 style="font-family:'Bangers',cursive;color:#E62429;font-size:4rem;margin:0;letter-spacing:0.05em">SEE YOU SOON!</h1>
+                      <p style="margin:1rem 0 0;text-transform:uppercase;letter-spacing:0.15em;color:#222">You can safely close this tab.</p>
+                    </div>
+                  </div>`;
+              }, 80);
+            }}
+            className="btn-pow bg-[#222] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
+            data-testid="lobby-exit-button"
+            title="Exit to desktop"
+          >
+            <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /><span className="hidden sm:inline">EXIT</span></span>
           </button>
         </div>
       </header>
