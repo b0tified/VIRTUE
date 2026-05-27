@@ -728,7 +728,6 @@ function DamageDirectionLayer({ markers, enabled, engineRef }) {
 const REPORT_REASONS = [
   { id: "cheating",       label: "Cheating / Aimbot" },
   { id: "harassment",     label: "Harassment / Toxic Chat" },
-  { id: "griefing",       label: "Griefing / Team Killing" },
   { id: "offensive_name", label: "Offensive Username" },
   { id: "other",          label: "Other" },
 ];
