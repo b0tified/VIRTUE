@@ -2388,12 +2388,19 @@ class GameRoom:
         for p in self.players.values():
             if p.id == shooter.id or not p.alive:
                 continue
-            # 3-sphere capsule hitbox: head, torso, legs (each with its own label)
+            # 3-sphere capsule hitbox — bigger + taller per user request.
+            # Head radius 0.55→0.70, sits higher (1.65→1.85) so even tall
+            # players in jump animations get clipped. Torso 0.65→0.85,
+            # centred slightly higher (1.05→1.20). Legs 0.55→0.80, lower
+            # centre (0.45→0.40) so the capsule actually reaches the floor.
+            # Net effect: thicker silhouette overall + about 0.4m taller
+            # total capsule. Headshot calling still works because the head
+            # sphere is the topmost and still tightest of the three.
             base = p.y - PLAYER_HEIGHT
             spheres = [
-                ("head",  p.x, base + 1.65, p.z, 0.55),
-                ("torso", p.x, base + 1.05, p.z, 0.65),
-                ("legs",  p.x, base + 0.45, p.z, 0.55),
+                ("head",  p.x, base + 1.85, p.z, 0.70),
+                ("torso", p.x, base + 1.20, p.z, 0.85),
+                ("legs",  p.x, base + 0.40, p.z, 0.80),
             ]
             for (label, cx, cy, cz, r) in spheres:
                 res = sphere_t(cx, cy, cz, r)
