@@ -622,12 +622,10 @@ export default function Lobby() {
       {quickQueueSec !== null && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="quick-queue-toast">
           <div className="card-pow p-0 overflow-hidden">
-            <div className={`px-4 py-2 flex items-center gap-2 text-white ${foundRealPlayers > 0 ? "bg-[#06A35F]" : "bg-[#E62429]"}`}>
+            <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
               <Loader2 size={18} strokeWidth={3} className="animate-spin" />
               <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="quick-queue-header">
-                {foundRealPlayers > 0
-                  ? `${foundRealPlayers} Player${foundRealPlayers === 1 ? "" : "s"} Found`
-                  : "Searching for players"}
+                Searching for players
               </span>
               <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
                 <X size={16} strokeWidth={3} />
@@ -635,7 +633,7 @@ export default function Lobby() {
             </div>
             <div className="px-4 py-3 bg-white text-center">
               <div
-                className={`font-display text-6xl leading-none tabular-nums ${foundRealPlayers > 0 ? "text-[#06A35F]" : "text-[#E62429]"}`}
+                className="font-display text-6xl leading-none tabular-nums text-[#E62429]"
                 data-testid="quick-queue-timer"
               >
                 {quickQueueSec}
@@ -644,14 +642,6 @@ export default function Lobby() {
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#E62429] text-white">
                   CASUAL · FFA
                 </div>
-                {foundRealPlayers > 0 && (
-                  <div
-                    className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#06A35F] text-white"
-                    data-testid="quick-queue-humans-found"
-                  >
-                    +{foundRealPlayers} HUMAN
-                  </div>
-                )}
               </div>
               <button
                 onClick={cancelQuickQueue}
