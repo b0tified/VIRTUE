@@ -12,7 +12,8 @@ import { useEffect, useState } from "react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 import { skinById } from "@/game/skins";
-import { Coins, Check, X, Lock, Star, Calendar, Trophy, Zap, Flame } from "lucide-react";
+import SeasonTrailer from "@/components/SeasonTrailer";
+import { Coins, Check, X, Lock, Star, Calendar, Trophy, Zap, Flame, Play } from "lucide-react";
 
 const TABS = [
   { key: "season",    label: "Season Pass", icon: Star },
@@ -21,11 +22,14 @@ const TABS = [
 ];
 
 export default function ProgressionModal({ open, onClose }) {
-  const { refreshMe } = useAuth();
+  const { refreshMe, user } = useAuth();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("season");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null); // { kind: 'ok'|'err', text: string }
+  // Admin-only Season 2 cinematic. Triggered by the PLAY TRAILER button
+  // in the Season Pass tab header. Non-admins never see the button.
+  const [showTrailer, setShowTrailer] = useState(false);
 
   const reload = async () => {
     try {
@@ -84,6 +88,18 @@ export default function ProgressionModal({ open, onClose }) {
               <Coins size={14} strokeWidth={3} />
               <span className="font-display text-xl leading-none">{data?.coins ?? 0}</span>
             </div>
+            {user?.role === "admin" && (
+              <button
+                onClick={() => setShowTrailer(true)}
+                className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1.5 [&]:text-sm"
+                data-testid="progression-play-trailer-button"
+                title="Admin only — play the Season 2 cinematic"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Play size={14} strokeWidth={3} /> PLAY TRAILER
+                </span>
+              </button>
+            )}
             <button onClick={onClose} className="text-neutral-400 hover:text-white" data-testid="progression-close">
               <X size={22} strokeWidth={3} />
             </button>
@@ -130,6 +146,11 @@ export default function ProgressionModal({ open, onClose }) {
           )}
         </div>
       </div>
+      {/* Admin-only Season 2 cinematic. Mounted at modal root so it
+          renders on top of the modal backdrop. */}
+      {showTrailer && (
+        <SeasonTrailer onComplete={() => setShowTrailer(false)} />
+      )}
     </div>
   );
 }
