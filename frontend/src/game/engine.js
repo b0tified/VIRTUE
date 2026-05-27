@@ -2958,16 +2958,25 @@ export class GameEngine {
             this._reloadWeapon = null;
           }
         }
-        // Wall pullback: if there's an obstacle within ~0.85m in front of
-        // the camera, retract the weapon along its local Z axis so the
-        // barrel doesn't visibly stick through the wall. Maps distance
-        // d∈[0.25, 0.85] → pullback p∈[max, 0]. At d<0.25 the gun is
-        // basically tucked into the player's chest.
+        // Wall pullback: keep the entire viewmodel behind any obstacle
+        // directly in front of the camera. The AK muzzle / laser emitter
+        // extend ~1.3m in front of the weapon group origin (see
+        // `barrel.position.set(0, 0.03, -0.95)` + muzzle z=-1.25). So we
+        // probe up to 1.6m, compute how far the gun group needs to slide
+        // back along its local +Z to ensure the muzzle stays on the
+        // shooter's side of the wall, then clamp.
+        // gun_muzzle_world_z (camera-space) = baseZ + (-1.3) + wallPullZ
+        // We want: baseZ - 1.3 + wallPullZ >= -wallD + safety
+        // → wallPullZ >= 1.3 - (wallD - baseZ) + safety
+        const BARREL_OFFSET = 1.3;
+        const SAFETY = 0.08;
         let wallPullZ = 0;
-        const wallD = this._forwardObstacleDistance(0.85);
-        if (wallD < 0.85) {
-          const k = Math.max(0, Math.min(1, (0.85 - wallD) / 0.6));
-          wallPullZ = k * 0.32;
+        const wallD = this._forwardObstacleDistance(BARREL_OFFSET + 0.4);
+        if (wallD < BARREL_OFFSET + 0.4) {
+          const needed = BARREL_OFFSET - (wallD - Math.abs(baseZ)) + SAFETY;
+          // Clamp 0..BARREL_OFFSET so the gun never goes further behind
+          // the camera than necessary.
+          wallPullZ = Math.max(0, Math.min(BARREL_OFFSET, needed));
         }
         this._weapon.position.set(baseX + reloadX, baseY + bob + this.recoil * 0.04 + reloadY, baseZ + this.recoil * 0.12 + reloadZ + wallPullZ);
         this._weapon.rotation.x = -this.recoil * 0.22 + reloadRotX;
@@ -2995,12 +3004,15 @@ export class GameEngine {
         // Katana: swing animation
         this.meleeSwing = Math.max(0, this.meleeSwing - dt * 4.5);
         const sw = this.meleeSwing;
-        // Same wall pullback as the gun branch.
+        // Wall pullback. Katana tip sits ~0.7m forward of the weapon
+        // group origin (kat blade tip z = -0.65).
+        const BLADE_OFFSET = 0.7;
+        const SAFETY = 0.08;
         let wallPullZ = 0;
-        const wallD = this._forwardObstacleDistance(0.85);
-        if (wallD < 0.85) {
-          const k = Math.max(0, Math.min(1, (0.85 - wallD) / 0.6));
-          wallPullZ = k * 0.32;
+        const wallD = this._forwardObstacleDistance(BLADE_OFFSET + 0.4);
+        if (wallD < BLADE_OFFSET + 0.4) {
+          const needed = BLADE_OFFSET - (wallD - Math.abs(baseZ)) + SAFETY;
+          wallPullZ = Math.max(0, Math.min(BLADE_OFFSET, needed));
         }
         this._weapon.position.set(baseX - sw * 0.15, baseY + bob + sw * 0.05, baseZ - sw * 0.15 + wallPullZ);
         this._weapon.rotation.set(-sw * 0.6, 0.6 + sw * 0.9, sw * 0.5);

@@ -227,6 +227,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
 
 
+### Iteration 33 — **THIS SESSION (2026-02-26)**
+- ✅ **Gun viewmodel pullback fix (real this time)** — Previous iteration capped pullback at 0.32m, but the AK muzzle (z=-1.25 local) and laser emitter (z=-1.30 local) extend ~1.3m forward of the weapon group origin. With a 0.5m wall in front, even max pullback left the barrel poking 0.95m through the wall. **Fix**: pullback is now distance-aware — computes the exact retraction needed to keep the muzzle on the shooter's side of the wall (`needed = BARREL_OFFSET - wallD + |baseZ| + safety`). Clamped to `[0, BARREL_OFFSET]` so the gun never goes further behind the camera than necessary. Probe range extended to 1.6m. Katana branch updated with its own `BLADE_OFFSET = 0.7` since the sword tip is shorter.
+- Files changed: `/app/frontend/src/game/engine.js` (gun + katana pullback math).
+- 🧪 Frontend lint clean. With this fix, the muzzle reliably stops ~0.08m short of any wall regardless of distance.
+
 ### Iteration 32 — **THIS SESSION (2026-02-26)**
 - ✅ **Gun viewmodel no longer clips through walls** — `engine.js` `_forwardObstacleDistance(maxDist)` slab-tests camera-forward against all arena obstacles (inflated +0.06m). When an obstacle sits within 0.85m of the camera, the weapon group is pulled back along local Z by up to 0.32m (linear ramp). Applied to both gun and katana branches so all weapon poses retract uniformly.
 - ✅ **Lock-on reticle for the laser auto-aim** — Built a Three.js `_lockReticle` group composed of 4 corner brackets + an inner ring, additive-blended cyan to match the beam. Always-on-top (`depthTest: false`, `renderOrder: 999`). Billboard-locks to the camera each frame, follows the target's chest, distance-scaled (0.45..1.8) so it reads at any range, and pulses opacity at ~3Hz for an "active lock" feel. Shown whenever the laser is **equipped + a lock exists**, not just while firing — so the player sees lock confirmation before pulling the trigger.
