@@ -3320,11 +3320,21 @@ class GameRoom:
                     cur_tier_idx, _ = rank_for_points(cur)
                     placement_played_before = int((udoc or {}).get("placement_matches_played", 0) or 0)
                     is_placement = placement_played_before < PLACEMENT_MATCHES
-                    base_delta = compute_rp_delta(placement, cur_tier_idx)
-                    delta = base_delta * PLACEMENT_MULTIPLIER if (is_placement and base_delta > 0) else base_delta
-                    if is_placement and delta < 0:
-                        # Placements soften losses to 0, matching previous behavior.
-                        delta = 0
+                    if is_placement:
+                        # Placement matches: hard "win or lose 100" rule.
+                        # Only 1st place earns RP (+100); every other
+                        # placement loses 100. No tier scaling, no podium
+                        # softening — placement is meant to anchor the
+                        # player's true skill ceiling within the first few
+                        # ranked matches.
+                        if placement == 1:
+                            delta = 100
+                        else:
+                            delta = -100
+                        base_delta = delta
+                    else:
+                        base_delta = compute_rp_delta(placement, cur_tier_idx)
+                        delta = base_delta
                     new_points = max(0, cur + delta)
                     tier_idx, tier_name = rank_for_points(new_points)
                     # Tier delta for the rank-up overlay: rank_change > 0
