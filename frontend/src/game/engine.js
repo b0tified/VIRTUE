@@ -1850,13 +1850,15 @@ export class GameEngine {
   /* Close-range aim assist for the laser. Mirrors the server-side
      `_laser_autoaim_lock` so the visible local beam bends to follow the
      enemy it's actually hitting (server already snaps damage to them).
-     Returns {yaw, pitch} or null if no target in cone. */
-  _laserAutoAimLock(maxRange = 15.0, coneRad = 0.44) {
+     Cone widens further at point-blank (<8m) to match server. Returns
+     {yaw, pitch} or null if no target in cone. */
+  _laserAutoAimLock(maxRange = 22.0, coneRad = 1.05) {
     const cache = this._lastPlayersById;
     if (!cache || !this.youId) return null;
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
     const cosCone = Math.cos(coneRad);
+    const cosConeClose = Math.cos(Math.min(Math.PI - 0.01, coneRad + 0.45));
     let best = null;
     let bestD = maxRange;
     for (const p of cache.values()) {
@@ -1866,9 +1868,10 @@ export class GameEngine {
       const dx = p.x - this.position.x;
       const dz = p.z - this.position.z;
       const d = Math.hypot(dx, dz);
-      if (d < 0.5 || d > maxRange) continue;
+      if (d < 0.3 || d > maxRange) continue;
       const dot = (dx * fx + dz * fz) / d;
-      if (dot < cosCone) continue;
+      const threshold = d < 8.0 ? cosConeClose : cosCone;
+      if (dot < threshold) continue;
       if (d < bestD) { bestD = d; best = p; }
     }
     if (!best) return null;

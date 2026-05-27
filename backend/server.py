@@ -2363,6 +2363,12 @@ class GameRoom:
                 occlusion_t = t
 
         def sphere_t(cx, cy, cz, r):
+            """Returns (t_surface, t_center) — the ray's distance to where
+            it first enters the sphere AND the projection of the sphere's
+            centre onto the ray. The center distance is what we use for
+            occlusion checks so a sphere whose body sits behind a wall
+            (but whose front rim pokes through) is still occluded. Returns
+            None if the ray misses the sphere entirely."""
             mx_, my_, mz_ = ox - cx, oy - cy, oz - cz
             b = mx_ * dx + my_ * dy + mz_ * dz
             c = mx_ * mx_ + my_ * my_ + mz_ * mz_ - r * r
@@ -2374,7 +2380,7 @@ class GameRoom:
                 t = -b + math.sqrt(disc)
             if t < 0 or t > SHOT_RANGE:
                 return None
-            return t
+            return t, -b
 
         best_t = SHOT_RANGE
         best: Optional[Player] = None
@@ -2390,8 +2396,15 @@ class GameRoom:
                 ("legs",  p.x, base + 0.45, p.z, 0.55),
             ]
             for (label, cx, cy, cz, r) in spheres:
-                t = sphere_t(cx, cy, cz, r)
-                if t is not None and t < best_t and t < occlusion_t:
+                res = sphere_t(cx, cy, cz, r)
+                if res is None:
+                    continue
+                t, t_center = res
+                # Occlude on the CENTER of the sphere, not just first
+                # surface touch. Prevents shots from clipping through walls
+                # when a target stands close behind cover — their hitbox
+                # rim used to poke through and register as a hit.
+                if t < best_t and t_center < occlusion_t:
                     best_t = t
                     best = p
                     best_part = label
@@ -2559,26 +2572,29 @@ class GameRoom:
                 if not hit.is_bot and hit.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
-    def _laser_autoaim_lock(self, shooter: Player, *, max_range: float = 15.0, cone_rad: float = 0.44) -> Optional[Tuple[float, float]]:
+    def _laser_autoaim_lock(self, shooter: Player, *, max_range: float = 22.0, cone_rad: float = 1.05) -> Optional[Tuple[float, float]]:
         """Close-range aim-assist for the laser. Snaps the beam to the nearest
-        living opponent that is (1) within `max_range` metres, (2) inside a
-        cone of half-angle `cone_rad` (~25°) from the shooter's current
-        forward, and (3) not behind an obstacle (LOS clear). Returns
-        `(yaw, pitch)` aimed at the target's chest, or `None` if no eligible
-        target exists — in which case the laser falls back to the player's
-        manual aim. Designed to make the laser feel rewarding at hallway
-        ranges without becoming free kills cross-map.
+        living opponent that is (1) within `max_range` metres (22m default),
+        (2) inside a cone of half-angle `cone_rad` from the shooter's forward
+        (60° default — generous), and (3) not behind an obstacle (LOS clear
+        via the existing 2D step-walk). Returns `(yaw, pitch)` aimed at the
+        target's chest, or `None` if no eligible target exists — in which
+        case the laser falls back to manual aim. The cone widens further at
+        very short range (<8m) so point-blank fights basically always lock
+        on, no matter how rough the player's manual aim is.
 
         Cone math mirrors the camera convention used elsewhere: forward is
         `(-sin(yaw), -cos(yaw))` on the XZ plane.
         """
         fx = -math.sin(shooter.yaw)
         fz = -math.cos(shooter.yaw)
+        # Pre-compute cos thresholds for the two distance bands.
         cos_cone = math.cos(cone_rad)
+        cos_cone_close = math.cos(min(math.pi - 0.01, cone_rad + 0.45))  # +25° at <8m
         best: Optional[Player] = None
         best_d = max_range
         for p in self.players.values():
-            if p is shooter or not p.alive or p.is_bot is None:
+            if p is shooter or not p.alive:
                 continue
             if getattr(p, "is_spectator", False):
                 continue
@@ -2589,11 +2605,11 @@ class GameRoom:
             dx = p.x - shooter.x
             dz = p.z - shooter.z
             d = math.hypot(dx, dz)
-            if d < 0.5 or d > max_range:
+            if d < 0.3 or d > max_range:
                 continue
-            # Dot of normalised offset vs forward direction == cos(angle).
             dot = (dx * fx + dz * fz) / d
-            if dot < cos_cone:
+            cone_thresh = cos_cone_close if d < 8.0 else cos_cone
+            if dot < cone_thresh:
                 continue
             if not self._has_los(shooter, p):
                 continue
@@ -2607,7 +2623,6 @@ class GameRoom:
         dz = best.z - shooter.z
         dist = math.hypot(dx, dz)
         dy = (best.y - 0.2) - shooter.y
-        # camera-space yaw: atan2(-dx, -dz)
         yaw = math.atan2(-dx, -dz)
         pitch = max(-1.0, min(1.0, math.atan2(dy, max(0.01, dist))))
         return yaw, pitch
