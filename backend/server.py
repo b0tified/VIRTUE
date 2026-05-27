@@ -2559,6 +2559,59 @@ class GameRoom:
                 if not hit.is_bot and hit.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
+    def _laser_autoaim_lock(self, shooter: Player, *, max_range: float = 15.0, cone_rad: float = 0.44) -> Optional[Tuple[float, float]]:
+        """Close-range aim-assist for the laser. Snaps the beam to the nearest
+        living opponent that is (1) within `max_range` metres, (2) inside a
+        cone of half-angle `cone_rad` (~25°) from the shooter's current
+        forward, and (3) not behind an obstacle (LOS clear). Returns
+        `(yaw, pitch)` aimed at the target's chest, or `None` if no eligible
+        target exists — in which case the laser falls back to the player's
+        manual aim. Designed to make the laser feel rewarding at hallway
+        ranges without becoming free kills cross-map.
+
+        Cone math mirrors the camera convention used elsewhere: forward is
+        `(-sin(yaw), -cos(yaw))` on the XZ plane.
+        """
+        fx = -math.sin(shooter.yaw)
+        fz = -math.cos(shooter.yaw)
+        cos_cone = math.cos(cone_rad)
+        best: Optional[Player] = None
+        best_d = max_range
+        for p in self.players.values():
+            if p is shooter or not p.alive or p.is_bot is None:
+                continue
+            if getattr(p, "is_spectator", False):
+                continue
+            if p.id == shooter.id:
+                continue
+            if time.time() < p.invuln_until:
+                continue
+            dx = p.x - shooter.x
+            dz = p.z - shooter.z
+            d = math.hypot(dx, dz)
+            if d < 0.5 or d > max_range:
+                continue
+            # Dot of normalised offset vs forward direction == cos(angle).
+            dot = (dx * fx + dz * fz) / d
+            if dot < cos_cone:
+                continue
+            if not self._has_los(shooter, p):
+                continue
+            if d < best_d:
+                best_d = d
+                best = p
+        if best is None:
+            return None
+        # Aim at target chest (y - 0.2 mirrors raycast capsule math).
+        dx = best.x - shooter.x
+        dz = best.z - shooter.z
+        dist = math.hypot(dx, dz)
+        dy = (best.y - 0.2) - shooter.y
+        # camera-space yaw: atan2(-dx, -dz)
+        yaw = math.atan2(-dx, -dz)
+        pitch = max(-1.0, min(1.0, math.atan2(dy, max(0.01, dist))))
+        return yaw, pitch
+
     async def _apply_laser_beam(self, shooter: Player, dt: float):
         """Continuous laser beam — applies damage per tick while firing.
         No recoil/spread; one persistent beam-event broadcast at start, hits
@@ -2571,8 +2624,14 @@ class GameRoom:
         damage_this_tick = max(1, int(round(dps * dt)))
         # Heat ramp: 0 → 1 in 3 s of continuous firing, cool: 1 → 0 in 4 s.
         shooter.laser_heat = min(1.0, shooter.laser_heat + dt / 3.0)
+        # Close-range aim assist. Snaps to nearest enemy within 15m + ~25°
+        # cone. Beam events still report the snapped yaw/pitch so the beam
+        # visually goes where it actually hits.
+        aim = self._laser_autoaim_lock(shooter)
+        beam_yaw = aim[0] if aim else shooter.yaw
+        beam_pitch = aim[1] if aim else shooter.pitch
         # Raycast (no spread)
-        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=shooter.yaw, pitch_override=shooter.pitch)
+        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=beam_yaw, pitch_override=beam_pitch)
         # Emit a continuous beam event so clients can render the beam tracer.
         # The 'beam' type is throttled to once per ~6 ticks (300ms) to keep
         # bandwidth down — the client extrapolates between updates.
@@ -2584,7 +2643,7 @@ class GameRoom:
                 "type": "beam",
                 "shooter_id": shooter.id,
                 "x": shooter.x, "y": shooter.y, "z": shooter.z,
-                "yaw": shooter.yaw, "pitch": shooter.pitch,
+                "yaw": beam_yaw, "pitch": beam_pitch,
                 "weapon": "laser",
                 "hit_dist": dist,
             })

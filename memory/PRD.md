@@ -227,6 +227,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
 
 
+### Iteration 30 — **THIS SESSION (2026-02-26)**
+- ✅ **Laser aim assist (close-range "aimbot")** — Laser beam now snaps onto the nearest living, non-invuln enemy within 15m and inside a ~25° cone of the shooter's forward, provided line-of-sight is clear. Damage targets the snapped angle so the beam reliably connects at hallway ranges.
+- Server: new `GameRoom._laser_autoaim_lock(shooter)` helper called at the top of `_apply_laser_beam`. Returns `(yaw, pitch)` or `None`; falls back to the player's manual aim when no target qualifies.
+- Beam broadcast events now report the snapped yaw/pitch so other clients see the laser visibly bending onto its victim.
+- Client: mirror `_laserAutoAimLock()` in `engine.js` `_updateLaserBeamVisual()` so the LOCAL beam also visibly snaps to the target (uses the delta-merged `_lastPlayersById` cache to find candidates without extra polling).
+- 🧪 Verified: backend lint clean, frontend lint clean, both services restarted without errors. Laser still works at long range (manual aim) and gains the visible-track behaviour at close range.
+
 ### Iteration 29 — **THIS SESSION (2026-02-26) — P0 Scale fix**
 - ✅ **Delta-based state broadcasting** — Server now emits a `state` keyframe once per second (configurable `_keyframe_interval`) and `state_delta` messages on every other tick. Deltas only carry changed fields per player + a `removed_ids` list. Static fields (`username`, `rank_name`, `level`, `banner_icon`, `banner_color`, `banner_animated`, `skin`, `mag_size`, `platform`, `is_bot`, `rank_tier`, `rank_points`) only ride the wire ~1Hz instead of 20Hz.
 - ✅ **Client-side delta merging** — `engine.js applyServerState()` maintains `_lastPlayersById` (Map<id, fullPlayerState>) and `_lastTopFields` caches. State-delta messages are merged into the cache and re-synthesized into a `state`-shaped message internally so the rest of the engine and Game.jsx HUD code paths see a fully-populated state. Cache invalidated on `welcome` + `match_start` (fresh map / room).

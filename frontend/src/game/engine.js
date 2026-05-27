@@ -1847,6 +1847,40 @@ export class GameEngine {
     return bestT;
   }
 
+  /* Close-range aim assist for the laser. Mirrors the server-side
+     `_laser_autoaim_lock` so the visible local beam bends to follow the
+     enemy it's actually hitting (server already snaps damage to them).
+     Returns {yaw, pitch} or null if no target in cone. */
+  _laserAutoAimLock(maxRange = 15.0, coneRad = 0.44) {
+    const cache = this._lastPlayersById;
+    if (!cache || !this.youId) return null;
+    const fx = -Math.sin(this.yaw);
+    const fz = -Math.cos(this.yaw);
+    const cosCone = Math.cos(coneRad);
+    let best = null;
+    let bestD = maxRange;
+    for (const p of cache.values()) {
+      if (!p || p.id === this.youId) continue;
+      if (!p.alive) continue;
+      if (p.invuln) continue;
+      const dx = p.x - this.position.x;
+      const dz = p.z - this.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.5 || d > maxRange) continue;
+      const dot = (dx * fx + dz * fz) / d;
+      if (dot < cosCone) continue;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    if (!best) return null;
+    const dx = best.x - this.position.x;
+    const dz = best.z - this.position.z;
+    const dist = Math.hypot(dx, dz);
+    const dy = (best.y - 0.2) - this.position.y;
+    const yaw = Math.atan2(-dx, -dz);
+    const pitch = Math.max(-1.0, Math.min(1.0, Math.atan2(dy, Math.max(0.01, dist))));
+    return { yaw, pitch };
+  }
+
   /* Position the persistent laser-beam cylinders for this frame.
      Returns true if the beam is active and visible. */
   _updateLaserBeamVisual() {
@@ -1866,9 +1900,15 @@ export class GameEngine {
       this._beamCore.visible = false;
       return false;
     }
+    // Apply close-range aim assist. When a target is in cone, the beam
+    // snaps onto them (same logic the server uses for damage), so the
+    // player can see the laser visibly track the enemy.
+    const aim = this._laserAutoAimLock();
+    const beamYaw = aim ? aim.yaw : this.yaw;
+    const beamPitch = aim ? aim.pitch : this.pitch;
     // Origin: a bit forward of the camera so it appears to leave the gun barrel
     const forward = new THREE.Vector3(0, 0, -1).applyEuler(
-      new THREE.Euler(this.pitch, this.yaw, 0, "YXZ")
+      new THREE.Euler(beamPitch, beamYaw, 0, "YXZ")
     );
     const origin = new THREE.Vector3().copy(this.position).add(forward.clone().multiplyScalar(0.6));
     const dist = this._laserCastEnd(origin, forward);
