@@ -31,7 +31,14 @@ class AudioBus {
       this.sfxGain.gain.value = this.sfxMuted ? 0 : this._sfxVol;
       this.sfxGain.connect(this.master);
     }
-    if (this.ctx.state === "suspended") this.ctx.resume();
+    // Browser autoplay policy: AudioContext starts "suspended" until a
+    // user gesture. resume() returns a Promise that resolves whenever
+    // the context actually transitions to "running". Some browsers
+    // (notably Safari) reject if there's no active gesture, which is
+    // fine — the next interaction listener will retry.
+    if (this.ctx.state === "suspended") {
+      this.ctx.resume().catch(() => {});
+    }
     return true;
   }
 

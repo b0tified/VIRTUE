@@ -162,19 +162,40 @@ export default function Lobby() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  // Start lobby music on first user interaction (browser autoplay rules)
+  // Lobby music. Try to start immediately — the user almost always
+  // arrived here by clicking the SIGN IN button, which counts as a user
+  // gesture in the same document, so the AudioContext is already unlocked.
+  // If autoplay is still blocked (e.g. direct-nav / SSR-style first visit),
+  // fall back to the first interaction listener.
   useEffect(() => {
-    const onFirstInteract = () => {
+    let started = false;
+    const tryStart = () => {
+      if (started) return;
       audioBus.startLobbyMusic();
-      document.removeEventListener("click", onFirstInteract);
-      document.removeEventListener("keydown", onFirstInteract);
+      // Verify audio actually started. If the context is still suspended
+      // after the call, defer to the interaction listener below.
+      const ctxState = audioBus.ctx?.state;
+      if (ctxState && ctxState !== "suspended") {
+        started = true;
+        document.removeEventListener("click", tryStart);
+        document.removeEventListener("keydown", tryStart);
+        document.removeEventListener("touchstart", tryStart);
+        document.removeEventListener("pointerdown", tryStart);
+      }
     };
-    document.addEventListener("click", onFirstInteract);
-    document.addEventListener("keydown", onFirstInteract);
+    // Immediate attempt — works whenever the AudioContext is already
+    // unlocked (which is true after login / any prior interaction).
+    tryStart();
+    document.addEventListener("click", tryStart);
+    document.addEventListener("keydown", tryStart);
+    document.addEventListener("touchstart", tryStart);
+    document.addEventListener("pointerdown", tryStart);
     return () => {
       audioBus.stopLobbyMusic();
-      document.removeEventListener("click", onFirstInteract);
-      document.removeEventListener("keydown", onFirstInteract);
+      document.removeEventListener("click", tryStart);
+      document.removeEventListener("keydown", tryStart);
+      document.removeEventListener("touchstart", tryStart);
+      document.removeEventListener("pointerdown", tryStart);
     };
   }, []);
 
