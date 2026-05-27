@@ -227,6 +227,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
 
 
+### Iteration 28 — **THIS SESSION (2026-02-26)**
+- ✅ **Quick Match queue now actively searches for real players** — Backend `GET /api/queue/casual/status` returns live count of OTHER real, non-spectator humans currently in the shared `game_room`. Frontend polls every 1s during the Quick Match countdown.
+- ✅ **Early-complete on human found** — If at least one real player is detected (after ≥1s of "Searching"), the queue completes early and routes the player into the match instead of waiting out the full timer.
+- ✅ **Timer extended 2-9s → 6-12s** — Gives the casual-status poll a real window to surface human opponents before bot-fill takes over. Earlier 2-9s felt cosmetic.
+- ✅ **Toast UI shows "X PLAYER(S) FOUND"** — Header bar turns green and shows `1 PLAYER FOUND` (live count) when humans are detected; falls back to "SEARCHING FOR PLAYERS" otherwise. A small green `+N HUMAN` chip appears next to the CASUAL · FFA badge.
+- 🧪 Verified: `/api/queue/casual/status` returns `{real_players: 0, total_players: 3}` (3 bots, no humans) for a solo session.
+
 ### Iteration 27 — **THIS SESSION (2026-02-26)**
 - ✅ **Shared ranked room filled with 4 bots** — `ranked_room` startup spawn count 1 → 4 (was a lone `VORTEX-R`, now 4 disguised bots at diff 1.9 sampled from `BOT_NAMES`). Real-vs-real ranked matches now read as a full 5-player lobby instead of a 2v1.
 - ✅ **Ranked bot banners adopt joining player's rank** — `GameRoom.add()` re-rolls the `ranked_room` bots' disguise tier + RP using `_reroll_ranked_bots()` whenever a real player joins an empty room. Banners now show the player's tier (Diamond, Master, etc.) ± 20 RP, not the default Bronze.

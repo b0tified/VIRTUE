@@ -3853,6 +3853,23 @@ async def queue_ranked_ack(user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.get("/queue/casual/status")
+async def queue_casual_status(user: dict = Depends(get_current_user)):
+    """Live count of real (non-spectator, non-bot) players currently in
+    the shared casual room. Used by the lobby's Quick Match countdown to
+    show "X PLAYER(S) FOUND" before bot-fill takes over. Excludes the
+    caller themselves so the indicator reads as 'other humans found'."""
+    user_id = str(user["_id"])
+    real_count = 0
+    for p in game_room.players.values():
+        if p.is_bot or getattr(p, "is_spectator", False):
+            continue
+        if p.user_id and str(p.user_id) == user_id:
+            continue
+        real_count += 1
+    return {"real_players": real_count, "total_players": len(game_room.players)}
+
+
 # -------------------------------------------------------------------
 # Party invites & persistent party state.
 #
