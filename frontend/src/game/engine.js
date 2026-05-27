@@ -2727,6 +2727,23 @@ export class GameEngine {
               },
             });
           }
+        } else if (ev.type === "respawn") {
+          // Spawn-in FX — visible to everyone (including the player who
+          // just spawned) so the spawn moment reads clearly. Skipped for
+          // the local player to avoid blinding them in first-person.
+          if (ev.id !== this.youId) {
+            const x = (typeof ev.x === "number") ? ev.x : null;
+            const y = (typeof ev.y === "number") ? ev.y : null;
+            const z = (typeof ev.z === "number") ? ev.z : null;
+            // Fall back to the player's last known mesh position if the
+            // server (an older build) didn't include coords.
+            const meshPos = this.players.get(ev.id)?.mesh?.position;
+            this._spawnRespawnFx(
+              x ?? meshPos?.x ?? 0,
+              y ?? meshPos?.y ?? 1.8,
+              z ?? meshPos?.z ?? 0,
+            );
+          }
         }
       }
       this.onState(msg);
@@ -2782,6 +2799,109 @@ export class GameEngine {
     arc.lookAt(new THREE.Vector3(ev.x, ev.y, ev.z));
     this.scene.add(arc);
     this.bullets.push({ line: arc, life: 0.18 });
+  }
+
+  /* "Beam-in" spawn animation for a remote player. Renders a tall vertical
+     glowing cylinder + a ground halo + an upward shockwave ring that
+     expand and fade over ~0.9s. All three are tracked in `_spawnFx` and
+     advanced per-frame in `_updateSpawnFx`. */
+  _spawnRespawnFx(x, y, z) {
+    if (!this._spawnFx) this._spawnFx = [];
+    // Floor halo — flat disc on the ground, expands outward.
+    const haloGeo = new THREE.RingGeometry(0.4, 0.6, 32);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0x00e8ff,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const halo = new THREE.Mesh(haloGeo, haloMat);
+    halo.rotation.x = -Math.PI / 2;
+    halo.position.set(x, 0.05, z);
+    this.scene.add(halo);
+    // Vertical beam — tall cyan cylinder that shrinks down as the player
+    // "materialises". Inner core + outer glow.
+    const beamGeoOuter = new THREE.CylinderGeometry(0.55, 0.55, 3.6, 16, 1, true);
+    const beamMatOuter = new THREE.MeshBasicMaterial({
+      color: 0x00e8ff,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const beamOuter = new THREE.Mesh(beamGeoOuter, beamMatOuter);
+    beamOuter.position.set(x, 1.8, z);
+    this.scene.add(beamOuter);
+    const beamGeoCore = new THREE.CylinderGeometry(0.18, 0.18, 3.6, 12, 1, true);
+    const beamMatCore = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const beamCore = new THREE.Mesh(beamGeoCore, beamMatCore);
+    beamCore.position.set(x, 1.8, z);
+    this.scene.add(beamCore);
+    // Upward shockwave ring — torus that rises + expands.
+    const ringGeo = new THREE.TorusGeometry(0.6, 0.07, 8, 28);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00e8ff,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 0.2, z);
+    this.scene.add(ring);
+    this._spawnFx.push({
+      halo, beamOuter, beamCore, ring,
+      t: 0,
+      dur: 0.9,
+    });
+  }
+
+  /* Advance any active spawn-in FX. Beam shrinks downward over time
+     (height + opacity → 0), halo expands and fades, ring rises + grows. */
+  _updateSpawnFx(dt) {
+    if (!this._spawnFx || !this._spawnFx.length) return;
+    for (let i = this._spawnFx.length - 1; i >= 0; i--) {
+      const fx = this._spawnFx[i];
+      fx.t += dt;
+      const k = Math.min(1, fx.t / fx.dur); // 0..1
+      // Beam: shrink height + fade out.
+      const beamScale = 1 - k;
+      fx.beamOuter.scale.set(1, Math.max(0.05, beamScale), 1);
+      fx.beamCore.scale.set(1, Math.max(0.05, beamScale), 1);
+      // Anchor beam to ground as it shrinks (centre is bottom + half height).
+      fx.beamOuter.position.y = 1.8 * Math.max(0.05, beamScale);
+      fx.beamCore.position.y = 1.8 * Math.max(0.05, beamScale);
+      fx.beamOuter.material.opacity = 0.45 * (1 - k);
+      fx.beamCore.material.opacity = 0.95 * (1 - k * k);
+      // Halo: expand and fade.
+      const haloR = 0.6 + k * 1.6;
+      fx.halo.scale.set(haloR, haloR, 1);
+      fx.halo.material.opacity = 0.9 * (1 - k);
+      // Ring: rise + grow.
+      fx.ring.position.y = 0.2 + k * 2.4;
+      const ringR = 1 + k * 1.6;
+      fx.ring.scale.set(ringR, ringR, 1);
+      fx.ring.material.opacity = Math.max(0, 1 - k);
+      if (k >= 1) {
+        for (const obj of [fx.halo, fx.beamOuter, fx.beamCore, fx.ring]) {
+          this.scene.remove(obj);
+          obj.geometry?.dispose?.();
+          obj.material?.dispose?.();
+        }
+        this._spawnFx.splice(i, 1);
+      }
+    }
   }
 
   _collides(x, z) {
@@ -3038,6 +3158,9 @@ export class GameEngine {
     // damage + heat ramp are independent (driven by `laser_firing` in the
     // 20Hz input message); this is purely cosmetic.
     this._updateLaserBeamVisual();
+    // Advance spawn-in FX (vertical beam + halo + shockwave) for any
+    // remote players who just respawned.
+    this._updateSpawnFx(dt);
 
     // Animate clouds + birds. Clouds drift in +X with a tiny vertical bob;
     // they wrap around the arena so they appear infinite. Birds circle on a

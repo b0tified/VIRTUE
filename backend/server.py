@@ -3138,7 +3138,7 @@ class GameRoom:
                 p.laser_heat = 0.0
                 p.laser_overheated = False
                 p.laser_firing = False
-                self.events.append({"type": "respawn", "id": p.id})
+                self.events.append({"type": "respawn", "id": p.id, "x": p.x, "y": p.y, "z": p.z})
             if not p.is_bot and p.alive:
                 # Decay spread when not firing (Overwatch-style recoil recovery)
                 cfg = weapon_cfg(p.weapon)
