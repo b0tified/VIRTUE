@@ -202,6 +202,8 @@ export default function Game() {
           audioBus.hurt();
         } else if (ev.type === "remote-shot") {
           audioBus.gunshot(ev.shooterId, ev.distance, ev.weapon || "ak47");
+        } else if (ev.type === "remote-respawn") {
+          audioBus.remoteRespawn?.(ev.distance);
         } else if (ev.type === "you-hit") {
           audioBus.hitmark(!!ev.headshot);
           setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));

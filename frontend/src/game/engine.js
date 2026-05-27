@@ -2738,11 +2738,14 @@ export class GameEngine {
             // Fall back to the player's last known mesh position if the
             // server (an older build) didn't include coords.
             const meshPos = this.players.get(ev.id)?.mesh?.position;
-            this._spawnRespawnFx(
-              x ?? meshPos?.x ?? 0,
-              y ?? meshPos?.y ?? 1.8,
-              z ?? meshPos?.z ?? 0,
-            );
+            const fx_x = x ?? meshPos?.x ?? 0;
+            const fx_y = y ?? meshPos?.y ?? 1.8;
+            const fx_z = z ?? meshPos?.z ?? 0;
+            this._spawnRespawnFx(fx_x, fx_y, fx_z);
+            // Surface a distance for the audio bus so HUD/audio can play
+            // a soft "teleport hum" with proper distance falloff.
+            const dist = Math.hypot(fx_x - this.position.x, fx_z - this.position.z);
+            this.onLocalUpdate?.({ type: "remote-respawn", distance: dist });
           }
         }
       }

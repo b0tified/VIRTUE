@@ -794,6 +794,48 @@ class AudioBus {
     });
   }
 
+  /* Soft "teleport hum" played when ANOTHER player respawns nearby. Falls
+     off with distance using the same curve as gunshots (≈half at 25m,
+     silent past 80m). A short detuned sine pad ramp-up + a quick high
+     shimmer so the player can pick up the directional cue without it
+     being distracting. */
+  remoteRespawn(distance = 0) {
+    if (!this._ensure()) return;
+    const vol = this._distVolume(distance);
+    if (vol <= 0.04) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    // Low hum — two slightly-detuned sines for a "warpy" character.
+    [110, 113.5].forEach((freq) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq * 0.85, now);
+      osc.frequency.exponentialRampToValueAtTime(freq, now + 0.45);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, now);
+      g.gain.linearRampToValueAtTime(0.13 * vol, now + 0.18);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+      osc.connect(g);
+      g.connect(this.sfxGain);
+      osc.start(now);
+      osc.stop(now + 0.9);
+    });
+    // High shimmer — a single bright triangle that rises and fades, gives
+    // the "materialise" finish.
+    const shim = ctx.createOscillator();
+    shim.type = "triangle";
+    shim.frequency.setValueAtTime(1320, now + 0.18);
+    shim.frequency.exponentialRampToValueAtTime(2200, now + 0.42);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0, now + 0.18);
+    sg.gain.linearRampToValueAtTime(0.09 * vol, now + 0.23);
+    sg.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    shim.connect(sg);
+    sg.connect(this.sfxGain);
+    shim.start(now + 0.18);
+    shim.stop(now + 0.6);
+  }
+
   /* -------- Footstep -------- */
   footstep(sprint = false) {
     if (!this._ensure()) return;
