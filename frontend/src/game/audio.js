@@ -1136,15 +1136,11 @@ class AudioBus {
         hihat(startAt + i * (beat / 2), false, false);
       }
 
-      // Lead — quiet melody fragment every 8 bars (not every 4) so the
-      // shortened progression doesn't get melodically repetitive. Half of
-      // RIFF_B, no resolution back to root.
-      if (barIndex % 8 === 3) {
-        RIFF_B.slice(0, 8).forEach((s, i) => {
-          if (s === null) return;
-          playLead(root, s, startAt + i * sixteenth, sixteenth * 1.6);
-        });
-      }
+      // Lead — DISABLED. The distorted saw lead read as a "horn"
+      // fanfare every loop; per user request the melody fragment is
+      // removed entirely. Pad + bass + drums now carry the loop as a
+      // pure ambient bed.
+      // (Was: RIFF_B half-line every 8 bars.)
     };
 
     const start = ctx.currentTime + 0.15;
