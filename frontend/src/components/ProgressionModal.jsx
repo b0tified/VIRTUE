@@ -13,7 +13,17 @@ import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 import { skinById } from "@/game/skins";
 import SeasonTrailer from "@/components/SeasonTrailer";
-import { Coins, Check, X, Lock, Star, Calendar, Trophy, Zap, Flame, Play } from "lucide-react";
+import { Coins, Check, X, Lock, Star, Calendar, Trophy, Zap, Flame, Play, Clock } from "lucide-react";
+
+// Same format helper used by the Leaderboard so the timer reads identically.
+function fmtDHMS(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return { d, h, m, s: r };
+}
 
 const TABS = [
   { key: "season",    label: "Season Pass", icon: Star },
@@ -30,6 +40,10 @@ export default function ProgressionModal({ open, onClose }) {
   // Admin-only Season 2 cinematic. Triggered by the PLAY TRAILER button
   // in the Season Pass tab header. Non-admins never see the button.
   const [showTrailer, setShowTrailer] = useState(false);
+  // Season countdown — shared with the ranked season (same backend doc).
+  // Polled once on open + live-ticked locally so the timer feels alive.
+  const [seasonMeta, setSeasonMeta] = useState(null); // { season_number, seconds_left, length_days }
+  const [tick, setTick] = useState(0);
 
   const reload = async () => {
     try {
@@ -43,7 +57,21 @@ export default function ProgressionModal({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     setToast(null);
+    setTick(0);
     reload();
+    // Fetch the live season countdown from the shared `/season` endpoint —
+    // same one the Leaderboard uses, so timer matches ranked exactly.
+    (async () => {
+      try {
+        const { data } = await api.get("/season");
+        setSeasonMeta(data);
+      } catch {
+        setSeasonMeta(null);
+      }
+    })();
+    // Locally tick every second so the displayed countdown feels live.
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
   }, [open]);
 
   const claim = async (body) => {
@@ -138,7 +166,7 @@ export default function ProgressionModal({ open, onClose }) {
           {!data ? (
             <div className="text-center py-10 text-neutral-500 font-anton uppercase tracking-widest">Loading…</div>
           ) : tab === "season" ? (
-            <SeasonTab season={data.season} busy={busy} onClaim={(tier) => claim({ kind: "season", tier })} />
+            <SeasonTab season={data.season} seasonMeta={seasonMeta} tick={tick} busy={busy} onClaim={(tier) => claim({ kind: "season", tier })} />
           ) : tab === "daily" ? (
             <DailyTab daily={data.daily} busy={busy} onClaim={(id) => claim({ kind: "daily", id })} />
           ) : (
@@ -156,10 +184,56 @@ export default function ProgressionModal({ open, onClose }) {
 }
 
 /* ─── Season Pass tab ──────────────────────────────────────────────── */
-function SeasonTab({ season, busy, onClaim }) {
+function SeasonTab({ season, seasonMeta, tick, busy, onClaim }) {
   const pct = season.tier >= season.max_tier ? 100 : Math.round((season.xp_in_tier / season.xp_per_tier) * 100);
+  // Live-ticked countdown — pulls the base from the API meta and decrements
+  // locally each second so the timer feels alive without spamming requests.
+  const secondsLeft = seasonMeta ? Math.max(0, (seasonMeta.seconds_left || 0) - (tick || 0)) : null;
+  const dhms = secondsLeft !== null ? fmtDHMS(secondsLeft) : null;
   return (
     <div data-testid="progression-season">
+      {/* Season countdown — mirrors the ranked season clock (shared
+          backend doc), so when this hits zero ranks reset too. */}
+      {seasonMeta && (
+        <div
+          className="mb-3 p-3 border-pow shadow-pow-sm bg-black text-white flex items-center justify-between gap-3"
+          data-testid="season-pass-countdown"
+        >
+          <div className="flex items-center gap-2">
+            <div className="inline-block bg-[#E62429] text-white border-pow-thin px-2 py-0.5 font-anton uppercase tracking-widest text-xs rotate-2">
+              SEASON {seasonMeta.season_number}
+            </div>
+            <div className="font-anton uppercase tracking-widest text-xs opacity-70 hidden sm:inline">
+              ends with ranked
+            </div>
+          </div>
+          <div className="flex items-center gap-2 font-anton">
+            <Clock size={14} strokeWidth={3} className="text-[#FFD700]" />
+            {dhms && (
+              <div className="flex items-baseline gap-1 tabular-nums" data-testid="season-pass-countdown-value">
+                {dhms.d > 0 && (
+                  <span>
+                    <span className="font-display text-xl text-[#FFD700]">{dhms.d}</span>
+                    <span className="text-[10px] uppercase tracking-widest opacity-70 ml-0.5">d</span>
+                  </span>
+                )}
+                <span>
+                  <span className="font-display text-xl text-[#FFD700]">{String(dhms.h).padStart(2, "0")}</span>
+                  <span className="text-[10px] uppercase tracking-widest opacity-70 ml-0.5">h</span>
+                </span>
+                <span>
+                  <span className="font-display text-xl text-[#FFD700]">{String(dhms.m).padStart(2, "0")}</span>
+                  <span className="text-[10px] uppercase tracking-widest opacity-70 ml-0.5">m</span>
+                </span>
+                <span>
+                  <span className="font-display text-xl text-[#FFD700]">{String(dhms.s).padStart(2, "0")}</span>
+                  <span className="text-[10px] uppercase tracking-widest opacity-70 ml-0.5">s</span>
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* Top progress strip */}
       <div className="mb-4 p-3 border-pow shadow-pow-sm bg-gradient-to-br from-[#FFD700] to-[#FFA500]">
         <div className="flex items-center justify-between mb-2">
