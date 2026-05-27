@@ -227,6 +227,17 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
 
 
+### Iteration 29 — **THIS SESSION (2026-02-26) — P0 Scale fix**
+- ✅ **Delta-based state broadcasting** — Server now emits a `state` keyframe once per second (configurable `_keyframe_interval`) and `state_delta` messages on every other tick. Deltas only carry changed fields per player + a `removed_ids` list. Static fields (`username`, `rank_name`, `level`, `banner_icon`, `banner_color`, `banner_animated`, `skin`, `mag_size`, `platform`, `is_bot`, `rank_tier`, `rank_points`) only ride the wire ~1Hz instead of 20Hz.
+- ✅ **Client-side delta merging** — `engine.js applyServerState()` maintains `_lastPlayersById` (Map<id, fullPlayerState>) and `_lastTopFields` caches. State-delta messages are merged into the cache and re-synthesized into a `state`-shaped message internally so the rest of the engine and Game.jsx HUD code paths see a fully-populated state. Cache invalidated on `welcome` + `match_start` (fresh map / room).
+- ✅ **Top-level diff** — `time_left`, `is_ranked`, `in_queue`, `real_count`, `min_real_players`, `in_intermission` are diffed against the previous broadcast. `events` always travel in full so kill-feeds fire exactly once. Game.jsx falls back to previous HUD state for any field undefined in a delta.
+- 🧪 **Verified live**:
+  - 87% bandwidth reduction: avg delta 325B vs full state 2461B (`/tmp/test_delta.py`)
+  - Cadence: 6 keyframes / 112 deltas over a 5.7s sample = ~1Hz keyframes, ~19Hz deltas (matches design)
+  - Backend pytest suite `/app/backend/tests/test_delta_state.py`: 6/6 pass
+  - Playwright in-game test: scoreboard names + bot ranks persist across multiple delta cycles, HUD time_left ticks correctly, no regressions in match lifecycle
+- Files changed: `/app/backend/server.py` (GameRoom.__init__, tick state assembly), `/app/frontend/src/game/engine.js` (applyServerState merging), `/app/frontend/src/pages/Game.jsx` (state_delta-aware HUD update)
+
 ### Iteration 28 — **THIS SESSION (2026-02-26)**
 - ✅ **Quick Match queue now actively searches for real players** — Backend `GET /api/queue/casual/status` returns live count of OTHER real, non-spectator humans currently in the shared `game_room`. Frontend polls every 1s during the Quick Match countdown.
 - ✅ **Early-complete on human found** — If at least one real player is detected (after ≥1s of "Searching"), the queue completes early and routes the player into the match instead of waiting out the full timer.
