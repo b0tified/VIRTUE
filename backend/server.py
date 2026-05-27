@@ -407,6 +407,25 @@ SKINS_CATALOG: List[dict] = [
      "helmet": 0x000022, "visor": 0x00ffff, "shoulder": 0xff00ff, "stripe": 0x00ffff, "belt": 0x000022, "cape": 0xff00ff,
      "aura": 0xff00ff, "aura_mode": "comet"},
 
+    # ─── Beach / swimsuit drop ───────────────────────────────────────────
+    # Male: bare-chested surfer. Body == head skin tone so the torso reads
+    # as skin, "leg" is swim trunks, accent is a bright lanyard/tan stripe.
+    # No helmet/visor/cape — beach vibes only. Sandy aura.
+    {"id": "beach_bro", "name": "Beach Bro",      "price": 900,  "rarity": "rare",      "obtain": "shop",
+     "body": 0xf2c08a, "leg": 0xff4a6b, "head": 0xf2c08a, "accent": 0x00d4ff,
+     "helmet": None,   "visor": None,    "shoulder": None,  "stripe": 0xffd700,
+     "belt": 0xffd700, "cape": None,
+     "aura": 0xffd770, "aura_mode": "pulse"},
+
+    # Female: red one-piece + bare legs + cute sunglasses. Body = suit
+    # colour, leg = skin tone, accent = bow / strap detail. Visor =
+    # sunglasses (dark frame). Floral aura.
+    {"id": "sun_goddess", "name": "Sun Goddess",  "price": 950,  "rarity": "rare",      "obtain": "shop",
+     "body": 0xff3a6b, "leg": 0xf2c08a, "head": 0xf2c08a, "accent": 0xffd700,
+     "helmet": None,   "visor": 0x1a1a1a, "shoulder": None,  "stripe": 0xffffff,
+     "belt": 0xffd700, "cape": None,
+     "aura": 0xff80c0, "aura_mode": "spin"},
+
     # ─── Season-pass exclusive (not in shop) ────────────────────────────
     {"id": "solar",    "name": "Solar Inferno",  "price": 0,    "rarity": "epic",      "obtain": "pass_tier_10",
      "body": 0xff5500, "leg": 0x6b1a00, "head": 0xf2c08a, "accent": 0xffd700,
