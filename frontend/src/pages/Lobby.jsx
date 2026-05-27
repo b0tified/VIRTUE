@@ -22,7 +22,7 @@ const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5
 
 export default function Lobby() {
   // logout still available via Settings modal — it pulls its own useAuth().
-  const { user } = useAuth();
+  const { user, refreshMe } = useAuth();
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
@@ -197,6 +197,20 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
+  }, []);
+
+  // Refresh the user payload whenever the Lobby mounts. After completing
+  // a ranked match (where rank_points / rank_tier / level / coins can all
+  // change) the user navigates back here — without an explicit refetch
+  // the UI stays stuck on the stale values from the previous /me call
+  // until a hard refresh. Also re-fetches when the tab is re-focused so
+  // a player who alt-tabbed during a match sees the new values.
+  useEffect(() => {
+    refreshMe?.();
+    const onVis = () => { if (document.visibilityState === "visible") refreshMe?.(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startQuickQueue = () => {
