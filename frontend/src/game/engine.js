@@ -2164,6 +2164,47 @@ export class GameEngine {
     mask.position.set(0, 1.7, 0.3);
     group.add(mask);
 
+    // ----- Face (eyes + mouth) -----
+    // Sit on front of the head sphere, just below the visor band, so each
+    // model reads as an actual character instead of a blank helmet. Eyes
+    // are small white discs with black pupils, mouth is a flat dark
+    // rectangle. Visor-helmeted skins use cyan glowing eyes instead so
+    // they look like a HUD slit. NOT pushed into bodyMeshes so cosmetic
+    // recolour effects don't tint the face.
+    const faceY = 1.62; // just below the visor
+    const faceZ = 0.32; // pushed out slightly forward of head sphere
+    const hasVisor = visor != null;
+    // Eye geometry — small disc planes, billboard-flat against the head.
+    const eyeGeo = new THREE.CircleGeometry(0.045, 14);
+    const eyeMat = new THREE.MeshBasicMaterial({
+      color: hasVisor ? 0x00e8ff : 0xffffff,
+      transparent: true,
+      opacity: 0.98,
+      depthWrite: false,
+    });
+    const pupilGeo = new THREE.CircleGeometry(0.022, 12);
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
+    for (const ex of [-0.12, 0.12]) {
+      const eye = new THREE.Mesh(eyeGeo, eyeMat);
+      eye.position.set(ex, faceY, faceZ);
+      group.add(eye);
+      // No pupils on visor skins — the cyan glow stands on its own.
+      if (!hasVisor) {
+        const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+        pupil.position.set(ex, faceY, faceZ + 0.001);
+        group.add(pupil);
+      }
+    }
+    // Mouth — flat rectangle, a smidge below the eyes. Skipped on
+    // visor-helmeted skins (the visor IS the face on those).
+    if (!hasVisor) {
+      const mouthGeo = new THREE.PlaneGeometry(0.16, 0.025);
+      const mouthMat = new THREE.MeshBasicMaterial({ color: 0x4a2a1a });
+      const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+      mouth.position.set(0, faceY - 0.13, faceZ + 0.001);
+      group.add(mouth);
+    }
+
     // ----- Torso -----
     const torso = push(new THREE.BoxGeometry(0.7, 0.9, 0.42), skin.body, 1.05);
     torso.position.y = 1.05;
