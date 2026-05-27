@@ -14,6 +14,83 @@ class AudioBus {
     this._musicVol = 0.32;
     this._sfxVol = 0.65;
     this._masterVol = 0.9;
+    // 3D / spatial audio. When enabled, SFX with a world position go
+    // through a PannerNode so they stereo-pan + attenuate based on the
+    // listener's location and yaw. The engine drives the listener state
+    // via `updateListener(x, y, z, yaw)` each frame.
+    this._audio3D = true;
+    this._listenerYaw = 0;
+  }
+
+  /* Toggle spatial audio. Off = legacy distance-only volume falloff
+     (one mono gain), on = PannerNode chain. Cheap — just flips a flag;
+     subsequent SFX pick the chosen path. */
+  set3DAudio(on) {
+    this._audio3D = !!on;
+  }
+
+  /* Engine drives this each frame so spatialised SFX have a current
+     listener pose. AudioListener positioning defaults to (0, 0, 0)
+     looking down -Z, which matches our camera convention. */
+  updateListener(x, y, z, yaw) {
+    if (!this.ctx || !this.ctx.listener) return;
+    const L = this.ctx.listener;
+    this._listenerYaw = yaw;
+    // Web Audio: prefer positionX/Y/Z + forwardX/Y/Z setters (newer API),
+    // fall back to setPosition/setOrientation on older Safari.
+    const t = this.ctx.currentTime;
+    if (L.positionX) {
+      L.positionX.setTargetAtTime(x, t, 0.02);
+      L.positionY.setTargetAtTime(y, t, 0.02);
+      L.positionZ.setTargetAtTime(z, t, 0.02);
+      // Forward vector — camera convention (-sin yaw, 0, -cos yaw).
+      const fx = -Math.sin(yaw);
+      const fz = -Math.cos(yaw);
+      L.forwardX.setTargetAtTime(fx, t, 0.02);
+      L.forwardY.setTargetAtTime(0, t, 0.02);
+      L.forwardZ.setTargetAtTime(fz, t, 0.02);
+      L.upX.setTargetAtTime(0, t, 0.02);
+      L.upY.setTargetAtTime(1, t, 0.02);
+      L.upZ.setTargetAtTime(0, t, 0.02);
+    } else if (L.setPosition) {
+      L.setPosition(x, y, z);
+      L.setOrientation(-Math.sin(yaw), 0, -Math.cos(yaw), 0, 1, 0);
+    }
+  }
+
+  /* Build a PannerNode at the given world position. Returns a node that
+     should be the LAST node before sfxGain. Caller is responsible for
+     disposing the chain after the SFX ends — but PannerNode is GC'd as
+     soon as no OscillatorNode/BufferSource references it, so a one-shot
+     SFX can just connect and forget. */
+  _makePanner(x, y, z) {
+    const p = this.ctx.createPanner();
+    p.panningModel = "HRTF";
+    p.distanceModel = "inverse";
+    p.refDistance = 4;       // full volume within 4m
+    p.maxDistance = 80;       // silent past 80m
+    p.rolloffFactor = 1.4;    // steeper falloff than default 1.0
+    p.coneInnerAngle = 360;   // omnidirectional source
+    if (p.positionX) {
+      const t = this.ctx.currentTime;
+      p.positionX.setValueAtTime(x, t);
+      p.positionY.setValueAtTime(y, t);
+      p.positionZ.setValueAtTime(z, t);
+    } else if (p.setPosition) {
+      p.setPosition(x, y, z);
+    }
+    return p;
+  }
+
+  /* Decide the output node for a positional SFX. Returns either a fresh
+     PannerNode (when 3D audio is on AND world position was provided) or
+     the global sfxGain (legacy path). Callers should connect their last
+     gain → returned node, then the returned node already feeds sfxGain. */
+  _spatialOut(x, y, z) {
+    if (!this._audio3D || x === undefined || x === null) return this.sfxGain;
+    const p = this._makePanner(x, y, z);
+    p.connect(this.sfxGain);
+    return p;
   }
 
   _ensure() {
@@ -384,19 +461,27 @@ class AudioBus {
   }
 
   /* -------- Weapon sounds: AK = noisy bang+thump, Laser = futuristic zap -------- */
-  gunshot(shooterId = null, distance = 0, weapon = "ak47") {
+  gunshot(shooterId = null, distance = 0, weapon = "ak47", pos = null) {
     if (!this._ensure()) return;
     const vol = this._distVolume(distance);
     if (vol <= 0.02) return;
+    // 3D-audio path: route to a PannerNode at the shooter's world
+    // position so the shot reads as coming from a specific direction.
+    // Falls back to flat sfxGain when 3D audio is off or position is
+    // missing (e.g. local shots, where pan doesn't matter anyway).
+    const out = (pos && this._audio3D)
+      ? this._spatialOut(pos.x, pos.y ?? 1.6, pos.z)
+      : this.sfxGain;
     if (weapon === "laser") {
-      this._laserShot(vol);
+      this._laserShot(vol, out);
     } else {
-      this._akShot(shooterId, vol);
+      this._akShot(shooterId, vol, out);
     }
   }
 
-  _akShot(shooterId, vol) {
+  _akShot(shooterId, vol, out) {
     const ctx = this.ctx;
+    out = out || this.sfxGain;
     // Per-shooter pitch ratio 0.78 - 1.28 from hash; local shooter gets stable 1.0
     let pitch = 1.0;
     if (shooterId) {
@@ -432,7 +517,7 @@ class AudioBus {
     g.gain.linearRampToValueAtTime(1.0 * vol, ctx.currentTime + 0.005);
     g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
 
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(this.sfxGain);
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(out);
     src.start();
 
     // body thump
@@ -444,13 +529,14 @@ class AudioBus {
     const og = ctx.createGain();
     og.gain.setValueAtTime(0.7 * vol, ctx.currentTime);
     og.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.14);
-    osc.connect(og); og.connect(this.sfxGain);
+    osc.connect(og); og.connect(out);
     osc.start(); osc.stop(ctx.currentTime + 0.16);
   }
 
   /* Laser: short sci-fi "pew" — descending square sweep + bright ring + zap noise. */
-  _laserShot(vol) {
+  _laserShot(vol, out) {
     const ctx = this.ctx;
+    out = out || this.sfxGain;
     const t0 = ctx.currentTime;
     const dur = 0.18;
 
@@ -467,7 +553,7 @@ class AudioBus {
     sg.gain.setValueAtTime(0, t0);
     sg.gain.linearRampToValueAtTime(0.55 * vol, t0 + 0.005);
     sg.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    sweep.connect(sweepFilt); sweepFilt.connect(sg); sg.connect(this.sfxGain);
+    sweep.connect(sweepFilt); sweepFilt.connect(sg); sg.connect(out);
     sweep.start(t0); sweep.stop(t0 + dur + 0.02);
 
     // 2) Bright ringing partial — sine 1760 Hz with slight vibrato
@@ -483,7 +569,7 @@ class AudioBus {
     rg.gain.setValueAtTime(0, t0);
     rg.gain.linearRampToValueAtTime(0.35 * vol, t0 + 0.005);
     rg.gain.exponentialRampToValueAtTime(0.001, t0 + dur + 0.05);
-    ring.connect(rg); rg.connect(this.sfxGain);
+    ring.connect(rg); rg.connect(out);
     ring.start(t0); ring.stop(t0 + dur + 0.07);
     vib.start(t0); vib.stop(t0 + dur + 0.07);
 
@@ -499,7 +585,7 @@ class AudioBus {
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.25 * vol, t0);
     ng.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
-    src.connect(hp); hp.connect(ng); ng.connect(this.sfxGain);
+    src.connect(hp); hp.connect(ng); ng.connect(out);
     src.start(t0);
   }
 
@@ -806,12 +892,13 @@ class AudioBus {
      silent past 80m). A short detuned sine pad ramp-up + a quick high
      shimmer so the player can pick up the directional cue without it
      being distracting. */
-  remoteRespawn(distance = 0) {
+  remoteRespawn(distance = 0, pos = null) {
     if (!this._ensure()) return;
     const vol = this._distVolume(distance);
     if (vol <= 0.04) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
+    const out = (pos && this._audio3D) ? this._spatialOut(pos.x, pos.y ?? 1.6, pos.z) : this.sfxGain;
     // Low hum — two slightly-detuned sines for a "warpy" character.
     [110, 113.5].forEach((freq) => {
       const osc = ctx.createOscillator();
@@ -823,7 +910,7 @@ class AudioBus {
       g.gain.linearRampToValueAtTime(0.13 * vol, now + 0.18);
       g.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
       osc.connect(g);
-      g.connect(this.sfxGain);
+      g.connect(out);
       osc.start(now);
       osc.stop(now + 0.9);
     });
@@ -838,7 +925,7 @@ class AudioBus {
     sg.gain.linearRampToValueAtTime(0.09 * vol, now + 0.23);
     sg.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
     shim.connect(sg);
-    sg.connect(this.sfxGain);
+    sg.connect(out);
     shim.start(now + 0.18);
     shim.stop(now + 0.6);
   }

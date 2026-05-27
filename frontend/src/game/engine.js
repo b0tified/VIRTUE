@@ -2723,7 +2723,7 @@ export class GameEngine {
           this._spawnTracer(ev);
           if (ev.shooter_id !== this.youId) {
             const dist = Math.hypot(ev.x - this.position.x, ev.z - this.position.z);
-            this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist, weapon: ev.weapon || "ak47" });
+            this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist, weapon: ev.weapon || "ak47", pos: { x: ev.x, y: ev.y, z: ev.z } });
           }
         } else if (ev.type === "melee") {
           this._spawnMeleeArc(ev);
@@ -2786,7 +2786,7 @@ export class GameEngine {
             // Surface a distance for the audio bus so HUD/audio can play
             // a soft "teleport hum" with proper distance falloff.
             const dist = Math.hypot(fx_x - this.position.x, fx_z - this.position.z);
-            this.onLocalUpdate?.({ type: "remote-respawn", distance: dist });
+            this.onLocalUpdate?.({ type: "remote-respawn", distance: dist, pos: { x: fx_x, y: fx_y, z: fx_z } });
           }
         }
       }
@@ -3205,6 +3205,9 @@ export class GameEngine {
     // Advance spawn-in FX (vertical beam + halo + shockwave) for any
     // remote players who just respawned.
     this._updateSpawnFx(dt);
+    // Drive the Web Audio listener pose so spatialised SFX pan to the
+    // correct ear based on where the camera is + facing.
+    audioBus.updateListener?.(this.position.x, this.position.y, this.position.z, this.yaw);
 
     // Animate clouds + birds. Clouds drift in +X with a tiny vertical bob;
     // they wrap around the arena so they appear infinite. Birds circle on a

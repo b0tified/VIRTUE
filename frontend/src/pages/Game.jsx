@@ -201,9 +201,9 @@ export default function Game() {
           }));
           audioBus.hurt();
         } else if (ev.type === "remote-shot") {
-          audioBus.gunshot(ev.shooterId, ev.distance, ev.weapon || "ak47");
+          audioBus.gunshot(ev.shooterId, ev.distance, ev.weapon || "ak47", ev.pos || null);
         } else if (ev.type === "remote-respawn") {
-          audioBus.remoteRespawn?.(ev.distance);
+          audioBus.remoteRespawn?.(ev.distance, ev.pos || null);
         } else if (ev.type === "you-hit") {
           audioBus.hitmark(!!ev.headshot);
           setHud((h) => ({ ...h, hitConfirm: Date.now(), hitHeadshot: !!ev.headshot }));
@@ -247,7 +247,11 @@ export default function Game() {
 
     // Apply persisted graphics + FPS-cap settings and keep them live.
     engine.applySettings(settingsStore.get());
-    const unsubSettings = settingsStore.subscribe((s) => engine.applySettings(s));
+    audioBus.set3DAudio?.(settingsStore.get().audio3D !== false);
+    const unsubSettings = settingsStore.subscribe((s) => {
+      engine.applySettings(s);
+      audioBus.set3DAudio?.(s.audio3D !== false);
+    });
     engine.onShoot = () => {
       const w = engine.currentWeapon === "tertiary" ? "laser" : "ak47";
       audioBus.gunshot(engine.youId, 0, w);

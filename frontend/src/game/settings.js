@@ -64,6 +64,12 @@ const DEFAULTS = Object.freeze({
   masterVolume: 0.9,
   musicVolume: 0.32,
   sfxVolume: 0.65,
+  // Spatial / 3D Audio — when on, SFX events that carry a world position
+  // (gunshots, remote spawn hums, melee swings, hit pings) are routed
+  // through a Web Audio PannerNode so they stereo-pan and attenuate
+  // based on the listener's head orientation. Off = legacy distance-only
+  // volume falloff.
+  audio3D: true,
   // Ray-traced lighting (cosmetic). Enables real-time soft shadow maps,
   // an additional directional sun + 3 colored point lights around the map,
   // and a brighter ambient pass for the cel-shaded toon materials. Costs

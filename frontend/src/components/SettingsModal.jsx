@@ -206,6 +206,32 @@ export default function SettingsModal({ open, onClose }) {
               onToggleMute={toggleSfx}
               testid="settings-sfx-volume"
             />
+            {/* 3D Audio — stereo-pan positional SFX based on listener pose.
+                On = HRTF panner per shot/respawn so you can hear which
+                direction enemies are firing from. Off = flat mono falloff
+                (legacy behaviour). */}
+            <div
+              className="flex items-center justify-between pt-1"
+              data-testid="settings-audio-3d-row"
+            >
+              <div className="flex flex-col">
+                <span className="font-anton uppercase tracking-widest text-sm">3D Audio</span>
+                <span className="text-xs text-neutral-400 mt-0.5 max-w-[18rem]">
+                  Stereo-pan in-game sounds based on which direction they're coming from.
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const next = !(s.audio3D !== false);
+                  patch({ audio3D: next });
+                  audioBus.set3DAudio?.(next);
+                }}
+                className={`btn-pow [&]:px-3 [&]:py-1.5 [&]:text-sm ${(s.audio3D !== false) ? "bg-[#06A35F] text-white" : "bg-neutral-800 text-neutral-300"}`}
+                data-testid="settings-audio-3d-toggle"
+              >
+                {(s.audio3D !== false) ? "ON" : "OFF"}
+              </button>
+            </div>
           </section>
           </>
           )}
