@@ -1792,6 +1792,52 @@ export class GameEngine {
     // means they're rendered after camera-attached weapon view-model too.
     this.scene.add(this._beamOuter);
     this.scene.add(this._beamCore);
+    // -----------------------------------------------------------------
+    // Lock-on reticle for the laser auto-aim. A pair of bracket meshes
+    // (4 short corner ticks forming a square) + an inner ring. Tinted
+    // cyan (matches beam) and additively blended so it pops at any
+    // brightness. Hidden by default; positioned at the snap-target's
+    // chest each frame via _updateLockReticle().
+    // -----------------------------------------------------------------
+    const reticleGroup = new THREE.Group();
+    reticleGroup.visible = false;
+    // 4 corner brackets — each is an L drawn from two thin boxes. We
+    // arrange them around a unit square so the entire thing scales by
+    // distance (handled in _updateLockReticle). 0.7m base size.
+    const r = 0.7;
+    const thick = 0.05;
+    const len = 0.28;
+    const brColor = 0x00e8ff;
+    const brMat = new THREE.MeshBasicMaterial({
+      color: brColor,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    const corners = [
+      [+1, +1], [-1, +1], [+1, -1], [-1, -1],
+    ];
+    for (const [sx, sy] of corners) {
+      // horizontal segment
+      const h = new THREE.Mesh(new THREE.PlaneGeometry(len, thick), brMat);
+      h.position.set(sx * (r - len / 2), sy * r, 0);
+      reticleGroup.add(h);
+      // vertical segment
+      const v = new THREE.Mesh(new THREE.PlaneGeometry(thick, len), brMat);
+      v.position.set(sx * r, sy * (r - len / 2), 0);
+      reticleGroup.add(v);
+    }
+    // Inner pulsing ring for extra "lock" feedback.
+    const ringGeo = new THREE.RingGeometry(0.35, 0.42, 32);
+    const ring = new THREE.Mesh(ringGeo, brMat);
+    reticleGroup.add(ring);
+    reticleGroup.renderOrder = 999;
+    this._lockReticle = reticleGroup;
+    this._lockReticleMat = brMat;
+    this.scene.add(reticleGroup);
   }
 
   /* Cast a ray against arena obstacles + other players (capsule approx) and
@@ -1847,6 +1893,44 @@ export class GameEngine {
     return bestT;
   }
 
+  /* Returns the distance (m) from the camera to the nearest obstacle along
+     the camera forward direction, capped at `maxDist`. Used by the
+     viewmodel-pullback logic so the gun doesn't poke through walls when
+     the player is hugging cover. */
+  _forwardObstacleDistance(maxDist = 0.9) {
+    if (!this.obstacles || !this.obstacles.length) return maxDist;
+    // Forward in world space using camera's YXZ rotation:
+    //   forward = (-sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+    const cp = Math.cos(this.pitch);
+    const dx = -Math.sin(this.yaw) * cp;
+    const dy = Math.sin(this.pitch);
+    const dz = -Math.cos(this.yaw) * cp;
+    const ox = this.position.x, oy = this.position.y, oz = this.position.z;
+    let best = maxDist;
+    for (const ob of this.obstacles) {
+      // Slab method against AABB. Slightly inflated (+0.06m) so the gun
+      // visibly retracts before its barrel actually touches the surface.
+      const inf = 0.06;
+      const mnX = ob.x - ob.w / 2 - inf, mxX = ob.x + ob.w / 2 + inf;
+      const mnY = 0 - inf,                mxY = ob.h + inf;
+      const mnZ = ob.z - ob.d / 2 - inf, mxZ = ob.z + ob.d / 2 + inf;
+      let tmin = 0, tmax = maxDist;
+      const slab = (o, d, lo, hi) => {
+        if (Math.abs(d) < 1e-6) return o >= lo && o <= hi;
+        let t1 = (lo - o) / d, t2 = (hi - o) / d;
+        if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; }
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        return tmin <= tmax;
+      };
+      if (!slab(ox, dx, mnX, mxX)) continue;
+      if (!slab(oy, dy, mnY, mxY)) continue;
+      if (!slab(oz, dz, mnZ, mxZ)) continue;
+      if (tmin >= 0 && tmin < best) best = tmin;
+    }
+    return best;
+  }
+
   /* Close-range aim assist for the laser. Mirrors the server-side
      `_laser_autoaim_lock` so the visible local beam bends to follow the
      enemy it's actually hitting (server already snaps damage to them).
@@ -1881,32 +1965,74 @@ export class GameEngine {
     const dy = (best.y - 0.2) - this.position.y;
     const yaw = Math.atan2(-dx, -dz);
     const pitch = Math.max(-1.0, Math.min(1.0, Math.atan2(dy, Math.max(0.01, dist))));
-    return { yaw, pitch };
+    return { yaw, pitch, target: best };
+  }
+
+  /* Drive the lock-on reticle. Positioned at the locked target's chest,
+     billboard-facing the camera, scaled by distance so it stays a
+     readable size on-screen. Pulses opacity for an "active lock" vibe.
+     `aim` is the {yaw, pitch, target} returned by _laserAutoAimLock. */
+  _updateLockReticle(aim) {
+    const ret = this._lockReticle;
+    if (!ret) return;
+    if (!aim || !aim.target) {
+      ret.visible = false;
+      return;
+    }
+    const t = aim.target;
+    // Aim point: torso (mirrors raycast capsule centre).
+    const tx = t.x;
+    const ty = (t.y || 1.8) - 0.2;
+    const tz = t.z;
+    ret.position.set(tx, ty, tz);
+    // Billboard: face the camera.
+    ret.quaternion.copy(this.camera.quaternion);
+    // Distance-scale so the reticle stays ~constant screen size at
+    // typical lock ranges (1-22m). Clamped so very close enemies don't
+    // get a face-eating reticle.
+    const dx = tx - this.position.x;
+    const dy = ty - this.position.y;
+    const dz = tz - this.position.z;
+    const dist = Math.hypot(dx, dy, dz);
+    const scale = Math.max(0.45, Math.min(1.8, dist / 9));
+    ret.scale.setScalar(scale);
+    // Subtle pulse on the additive material — 1.0..0.6 at ~3Hz.
+    if (this._lockReticleMat) {
+      const pulse = 0.75 + 0.25 * Math.sin(performance.now() / 110);
+      this._lockReticleMat.opacity = pulse;
+    }
+    ret.visible = true;
   }
 
   /* Position the persistent laser-beam cylinders for this frame.
      Returns true if the beam is active and visible. */
   _updateLaserBeamVisual() {
-    const active = this.currentWeapon === "tertiary"
-      && this._laserFireHeld
+    const equipped = this.currentWeapon === "tertiary"
       && this.alive
-      && !this.localLaserOverheated
       && !this.isSpectator;
+    const active = equipped
+      && this._laserFireHeld
+      && !this.localLaserOverheated;
     if (!this._beamOuter || !this._beamCore) return false;
     // Emit start/stop edge events so audio + HUD react crisply.
     if (active !== this._beamAudioActive) {
       this._beamAudioActive = active;
       this.onLocalUpdate?.({ type: active ? "laser-beam-start" : "laser-beam-stop" });
     }
+    // Lock-on reticle — shown whenever the laser is equipped and a
+    // candidate target sits inside the auto-aim cone, even if the player
+    // isn't actively firing. Gives the player a clear cue that pulling
+    // the trigger right now will land.
+    const aim = equipped ? this._laserAutoAimLock() : null;
+    this._updateLockReticle(aim);
     if (!active) {
       this._beamOuter.visible = false;
       this._beamCore.visible = false;
       return false;
     }
-    // Apply close-range aim assist. When a target is in cone, the beam
-    // snaps onto them (same logic the server uses for damage), so the
-    // player can see the laser visibly track the enemy.
-    const aim = this._laserAutoAimLock();
+    // Apply close-range aim assist for the beam visual itself. When a
+    // target is in cone, the beam snaps onto them (same logic the server
+    // uses for damage).
     const beamYaw = aim ? aim.yaw : this.yaw;
     const beamPitch = aim ? aim.pitch : this.pitch;
     // Origin: a bit forward of the camera so it appears to leave the gun barrel
@@ -2832,7 +2958,18 @@ export class GameEngine {
             this._reloadWeapon = null;
           }
         }
-        this._weapon.position.set(baseX + reloadX, baseY + bob + this.recoil * 0.04 + reloadY, baseZ + this.recoil * 0.12 + reloadZ);
+        // Wall pullback: if there's an obstacle within ~0.85m in front of
+        // the camera, retract the weapon along its local Z axis so the
+        // barrel doesn't visibly stick through the wall. Maps distance
+        // d∈[0.25, 0.85] → pullback p∈[max, 0]. At d<0.25 the gun is
+        // basically tucked into the player's chest.
+        let wallPullZ = 0;
+        const wallD = this._forwardObstacleDistance(0.85);
+        if (wallD < 0.85) {
+          const k = Math.max(0, Math.min(1, (0.85 - wallD) / 0.6));
+          wallPullZ = k * 0.32;
+        }
+        this._weapon.position.set(baseX + reloadX, baseY + bob + this.recoil * 0.04 + reloadY, baseZ + this.recoil * 0.12 + reloadZ + wallPullZ);
         this._weapon.rotation.x = -this.recoil * 0.22 + reloadRotX;
         this._weapon.rotation.y = adsActive ? 0 : -0.05;
         this._weapon.rotation.z = reloadRotZ;
@@ -2858,7 +2995,14 @@ export class GameEngine {
         // Katana: swing animation
         this.meleeSwing = Math.max(0, this.meleeSwing - dt * 4.5);
         const sw = this.meleeSwing;
-        this._weapon.position.set(baseX - sw * 0.15, baseY + bob + sw * 0.05, baseZ - sw * 0.15);
+        // Same wall pullback as the gun branch.
+        let wallPullZ = 0;
+        const wallD = this._forwardObstacleDistance(0.85);
+        if (wallD < 0.85) {
+          const k = Math.max(0, Math.min(1, (0.85 - wallD) / 0.6));
+          wallPullZ = k * 0.32;
+        }
+        this._weapon.position.set(baseX - sw * 0.15, baseY + bob + sw * 0.05, baseZ - sw * 0.15 + wallPullZ);
         this._weapon.rotation.set(-sw * 0.6, 0.6 + sw * 0.9, sw * 0.5);
       }
       } // end !isSpectator

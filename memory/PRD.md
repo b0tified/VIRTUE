@@ -227,6 +227,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
 
 
+### Iteration 32 — **THIS SESSION (2026-02-26)**
+- ✅ **Gun viewmodel no longer clips through walls** — `engine.js` `_forwardObstacleDistance(maxDist)` slab-tests camera-forward against all arena obstacles (inflated +0.06m). When an obstacle sits within 0.85m of the camera, the weapon group is pulled back along local Z by up to 0.32m (linear ramp). Applied to both gun and katana branches so all weapon poses retract uniformly.
+- ✅ **Lock-on reticle for the laser auto-aim** — Built a Three.js `_lockReticle` group composed of 4 corner brackets + an inner ring, additive-blended cyan to match the beam. Always-on-top (`depthTest: false`, `renderOrder: 999`). Billboard-locks to the camera each frame, follows the target's chest, distance-scaled (0.45..1.8) so it reads at any range, and pulses opacity at ~3Hz for an "active lock" feel. Shown whenever the laser is **equipped + a lock exists**, not just while firing — so the player sees lock confirmation before pulling the trigger.
+- `_laserAutoAimLock` now returns `{ yaw, pitch, target }` (added `target` for the reticle).
+- Files changed: `/app/frontend/src/game/engine.js` (forward-distance helper, weapon pose pullback, reticle setup + update).
+- 🧪 Frontend lint clean. Hot reload picked up the change.
+
 ### Iteration 31 — **THIS SESSION (2026-02-26)**
 - ✅ **Shots no longer pass through walls when player is next to cover** — `raycast_hit` in `server.py` was occluding against the SURFACE-touch t of player hitboxes (sphere first-contact). If a target stood close behind a wall their hitbox rim could poke through, registering as a hit. Now `sphere_t` returns both `t_surface` (visual hit point) and `t_center` (projection of sphere centre), and the occlusion gate uses `t_center < occlusion_t` — i.e., the target body must be on the shooter's side of any wall.
 - ✅ **Laser aim-assist widened to actually catch close enemies** — Cone half-angle 25° → **60°**; range 15m → **22m**; cone widens by another ~25° (to ~85° half-angle) at point-blank (<8m) so brawls basically always snap. Server `_laser_autoaim_lock` + client `_laserAutoAimLock` updated in lock-step so the local beam visual still follows the lock.
