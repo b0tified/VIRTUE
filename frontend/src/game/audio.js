@@ -1071,7 +1071,11 @@ class AudioBus {
     };
 
     const scheduleBar = (startAt, barIndex) => {
-      const phraseBar = barIndex % 8;
+      // Loop length shortened from 8 → 4 bars (Am - F - C - G). The old
+      // bars 5-8 ended on G → E major, which gave the song a clear
+      // "outro" feel every loop. Cycling just the first 4 chords keeps
+      // the texture ambient with no resolution.
+      const phraseBar = barIndex % 4;
       const root = ROOTS[phraseBar];
       const triad = CHORDS[phraseBar];
 
@@ -1090,12 +1094,10 @@ class AudioBus {
         hihat(startAt + i * (beat / 2), false, false);
       }
 
-      // Lead — DISABLED for a seamless continuous loop (the bar-7 riff used
-      // to give the song an audible "ending" that broke the loop). Quiet
-      // melody fragments instead, played every 4 bars so the texture stays
-      // ambient but never resolves.
-      if (phraseBar === 3) {
-        // Half the original RIFF_B, no resolution back to root
+      // Lead — quiet melody fragment every 8 bars (not every 4) so the
+      // shortened progression doesn't get melodically repetitive. Half of
+      // RIFF_B, no resolution back to root.
+      if (barIndex % 8 === 3) {
         RIFF_B.slice(0, 8).forEach((s, i) => {
           if (s === null) return;
           playLead(root, s, startAt + i * sixteenth, sixteenth * 1.6);
