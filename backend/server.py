@@ -5087,7 +5087,22 @@ async def synthetic_online_loop():
 
 @api.get("/leaderboard/ranked")
 async def leaderboard_ranked():
-    cursor = db.users.find({}, {"_id": 0, "username": 1, "rank_points": 1, "stats": 1, "email": 1}).sort([("rank_points", -1)]).limit(50)
+    # Only include players who have actually played at least one ranked
+    # match this season. We track that via `placement_matches_played` —
+    # incremented on every completed ranked match (see end_match flow).
+    # Players who have only ever played Casual/Practice/Offline are
+    # excluded so the board reflects real ranked activity. We also gate
+    # on `rank_points > 0` as a belt-and-suspenders filter for any legacy
+    # accounts that may have been seeded with a non-zero RP without the
+    # placement counter ever firing.
+    query = {
+        "placement_matches_played": {"$gte": 1},
+        "rank_points": {"$gt": 0},
+    }
+    cursor = db.users.find(
+        query,
+        {"_id": 0, "username": 1, "rank_points": 1, "stats": 1, "email": 1, "placement_matches_played": 1},
+    ).sort([("rank_points", -1)]).limit(50)
     rows = []
     async for u in cursor:
         s = u.get("stats", {})
