@@ -1695,7 +1695,12 @@ NUM_BOTS = 3
 RANKED_MIN_REAL_PLAYERS = 1
 QUEUE_BOT_FILL_SEC = 45.0
 QUEUE_BOT_FILL_SEC_HIGH = 120.0  # Master tier (5) and above wait longer
-QUEUE_BOT_FILL_SEC_GOONMASTER = 600.0  # Goonmaster (7) waits 10 minutes before bot-fill
+QUEUE_BOT_FILL_SEC_GOONMASTER = 210.0  # Goonmaster (7) waits ~3.5 minutes
+# Randomization window applied on top of the base — so the actual wait
+# lands somewhere in 2-5 minutes (120-300s) rather than always exactly
+# 210s. Re-rolled per join via `bot_fill_seconds_for_tier()`.
+QUEUE_BOT_FILL_GOONMASTER_MIN = 120.0
+QUEUE_BOT_FILL_GOONMASTER_MAX = 300.0
 QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 
 # -------------------------------------------------------------------
@@ -1743,11 +1748,12 @@ def weapon_cfg(name: str) -> dict:
 
 
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
-    # GOONMASTER (tier 7) waits a long 10 minutes before bot-fill kicks in —
-    # so the highest tier still gets a real-vs-real shot but isn't stuck
-    # in queue forever when no other Goonmaster is online.
+    # GOONMASTER (tier 7): the highest tier still gets a real-vs-real shot
+    # but can't be stuck queueing forever. Per user request, the wait is
+    # randomised in the **2-5 minute** band (120s-300s) — narrower than the
+    # old fixed 10-minute wait so games happen more often.
     if tier_idx >= 7:
-        return QUEUE_BOT_FILL_SEC_GOONMASTER
+        return random.uniform(QUEUE_BOT_FILL_GOONMASTER_MIN, QUEUE_BOT_FILL_GOONMASTER_MAX)
     return QUEUE_BOT_FILL_SEC_HIGH if tier_idx >= QUEUE_HIGH_TIER_MIN else QUEUE_BOT_FILL_SEC
 
 
