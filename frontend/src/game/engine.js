@@ -2133,6 +2133,13 @@ export class GameEngine {
     const stripe   = skin.stripe   ?? null;
     const belt     = skin.belt     ?? null;
     const cape     = skin.cape     ?? null;
+    // Optional new layers:
+    //   hair      — colour int; renders a hair cap + long strands behind head
+    //   bikini    — bool; overrides the chest stripe pattern with a
+    //               horizontal bikini-top bar (uses `stripe` colour for the
+    //               cups + the connecting strap)
+    const hair     = skin.hair     ?? null;
+    const bikini   = !!skin.bikini;
     const group = new THREE.Group();
     const bodyMeshes = [];
 
@@ -2158,6 +2165,37 @@ export class GameEngine {
       const cap = push(new THREE.SphereGeometry(0.345, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), helmet, 1.06);
       cap.position.y = 1.65;
       group.add(cap);
+    }
+    // ----- Hair (optional) -----
+    // Skipped when a helmet is present (the helmet covers hair). Two
+    // parts: a skull-hugging cap (top + sides) and a longer back panel
+    // that drapes between the shoulders so the model reads as having
+    // long hair from any angle.
+    if (hair != null && helmet == null) {
+      // Skull cap — slightly bigger sphere half so it sits over the head
+      // sphere without z-fighting; covers top + back, leaves the face
+      // exposed via a clipping wedge (phiStart/phiLength).
+      const capGeo = new THREE.SphereGeometry(0.35, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.65);
+      const cap = push(capGeo, hair, 1.05);
+      cap.position.y = 1.65;
+      group.add(cap);
+      // Side bangs — two small wedges in front of the ears to frame the
+      // face. Built as thin angled boxes.
+      const bangGeo = new THREE.BoxGeometry(0.08, 0.34, 0.18);
+      [-1, 1].forEach((s) => {
+        const bang = push(bangGeo, hair, 1.04);
+        bang.position.set(s * 0.27, 1.58, 0.18);
+        bang.rotation.z = s * 0.15;
+        group.add(bang);
+      });
+      // Long back panel — flat rectangle that drapes from the back of the
+      // head down between the shoulder blades. Slight outward angle so it
+      // doesn't clip into the torso.
+      const backGeo = new THREE.BoxGeometry(0.5, 0.72, 0.07);
+      const back = push(backGeo, hair, 1.04);
+      back.position.set(0, 1.35, -0.22);
+      back.rotation.x = -0.05;
+      group.add(back);
     }
     // Visor stripe — overrides the default black mask color when defined.
     const mask = push(new THREE.BoxGeometry(0.62, 0.14, 0.02), visor != null ? visor : 0x0a0a0a, 1.02);
@@ -2209,16 +2247,42 @@ export class GameEngine {
     const torso = push(new THREE.BoxGeometry(0.7, 0.9, 0.42), skin.body, 1.05);
     torso.position.y = 1.05;
     group.add(torso);
-    // Vertical chest stripe — runs from collar to belt, narrow.
-    if (stripe != null) {
+    // Vertical chest stripe — runs from collar to belt, narrow. Skipped
+    // when this is a bikini skin (the bikini top below replaces it).
+    if (stripe != null && !bikini) {
       const stripeMesh = push(new THREE.BoxGeometry(0.16, 0.78, 0.02), stripe, 1.04);
       stripeMesh.position.set(0, 1.05, 0.215);
       group.add(stripeMesh);
     }
-    // Hero emblem — accent square on the chest.
-    const emblem = push(new THREE.BoxGeometry(0.32, 0.18, 0.02), skin.accent, 1.04);
-    emblem.position.set(0, 1.15, 0.225);
-    group.add(emblem);
+    // ----- Bikini top (optional) -----
+    // Two cup boxes + a connecting strap across the chest. Uses the
+    // `stripe` colour for the suit fabric. Skipped on non-bikini skins.
+    if (bikini && stripe != null) {
+      const cupGeo = new THREE.BoxGeometry(0.22, 0.18, 0.04);
+      [-1, 1].forEach((s) => {
+        const cup = push(cupGeo, stripe, 1.04);
+        cup.position.set(s * 0.16, 1.32, 0.22);
+        group.add(cup);
+      });
+      // Connecting strap across the chest
+      const strapGeo = new THREE.BoxGeometry(0.42, 0.04, 0.04);
+      const strap = push(strapGeo, stripe, 1.04);
+      strap.position.set(0, 1.32, 0.22);
+      group.add(strap);
+      // Neck tie — thin vertical strap running from the neck down to the
+      // bikini top, sells the "tie-back" look.
+      const tieGeo = new THREE.BoxGeometry(0.04, 0.18, 0.04);
+      const tie = push(tieGeo, stripe, 1.04);
+      tie.position.set(0, 1.5, 0.22);
+      group.add(tie);
+    }
+    // Hero emblem — accent square on the chest. Skipped on bikini skins
+    // (no clothing for a logo).
+    if (!bikini) {
+      const emblem = push(new THREE.BoxGeometry(0.32, 0.18, 0.02), skin.accent, 1.04);
+      emblem.position.set(0, 1.15, 0.225);
+      group.add(emblem);
+    }
     // Belt — horizontal trim at the waist.
     if (belt != null) {
       const beltMesh = push(new THREE.BoxGeometry(0.74, 0.1, 0.44), belt, 1.04);

@@ -417,13 +417,14 @@ SKINS_CATALOG: List[dict] = [
      "belt": 0xffd700, "cape": None,
      "aura": 0xffd770, "aura_mode": "pulse"},
 
-    # Female: red one-piece + bare legs + cute sunglasses. Body = suit
-    # colour, leg = skin tone, accent = bow / strap detail. Visor =
-    # sunglasses (dark frame). Floral aura.
+    # Female: bikini + bare legs + cute sunglasses + long hair. Body =
+    # skin tone (bare torso), bikini fabric uses `stripe` colour (pink),
+    # accent is the gold bow detail. Visor = sunglasses. Floral aura.
     {"id": "sun_goddess", "name": "Sun Goddess",  "price": 950,  "rarity": "rare",      "obtain": "shop",
-     "body": 0xff3a6b, "leg": 0xf2c08a, "head": 0xf2c08a, "accent": 0xffd700,
-     "helmet": None,   "visor": 0x1a1a1a, "shoulder": None,  "stripe": 0xffffff,
-     "belt": 0xffd700, "cape": None,
+     "body": 0xf2c08a, "leg": 0xf2c08a, "head": 0xf2c08a, "accent": 0xffd700,
+     "helmet": None,   "visor": 0x1a1a1a, "shoulder": None,  "stripe": 0xff3a6b,
+     "belt": 0xff3a6b, "cape": None,
+     "hair": 0x6b3a1a, "bikini": True,
      "aura": 0xff80c0, "aura_mode": "spin"},
 
     # ─── Season-pass exclusive (not in shop) ────────────────────────────
