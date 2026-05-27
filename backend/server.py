@@ -532,7 +532,13 @@ async def on_startup():
     # threshold so ranked bots remain a step above.
     for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
         game_room.spawn_bot(name, disguised=True, difficulty=1.15)
-    ranked_room.spawn_bot(BOT_NAMES[0] + "-R", disguised=True, difficulty=1.4)
+    # Shared ranked room: 4 disguised bots so the lobby always feels full
+    # (was 1 — players reported "empty match"). difficulty=1.9 matches the
+    # bronze ranked-bot baseline; per-bot rank disguise is rerolled to the
+    # joining player's actual RP in GameRoom.add() so banners line up.
+    ranked_room_bot_names = random.sample(BOT_NAMES, 4)
+    for nm in ranked_room_bot_names:
+        ranked_room.spawn_bot(nm + "-R", disguised=True, difficulty=1.9)
     # Practice room: 2 docile dummy bots that don't shoot back (max_hp low).
     for name in ["DUMMY-A", "DUMMY-B"]:
         b = practice_room.spawn_bot(name)
@@ -2137,6 +2143,26 @@ class GameRoom:
         # lets end_match target its broadcast precisely so late joiners don't
         # see the previous match's "MATCH OVER" overlay.
         player.joined_match_num = self.match_num + (1 if self.in_intermission else 0)
+        # Shared ranked_room: when a real player joins and they're the only
+        # human, re-disguise the room's bots to match their actual rank
+        # (so opponent banners read e.g. DIAMOND when a DIAMOND player joins,
+        # not the default BRONZE). Avoids re-rolling mid-match if multiple
+        # real players are already there (their ranks may differ).
+        if (
+            self.is_ranked
+            and not getattr(self, "is_ranked_bot", False)
+            and not player.is_bot
+            and not getattr(player, "is_spectator", False)
+            and not had_real_players
+        ):
+            try:
+                rp = int(getattr(player, "rank_points", 0) or 0)
+                t_idx, _ = rank_for_points(rp)
+                self._ranked_bot_tier = t_idx
+                self._ranked_bot_player_rp = rp
+                self._reroll_ranked_bots()
+            except Exception:
+                pass
         # Track non-spectator real players' location for spectate discovery.
         if not player.is_bot and not getattr(player, "is_spectator", False) and player.user_id:
             kind = "ranked" if self.is_ranked else "casual"
@@ -2866,23 +2892,63 @@ class GameRoom:
             bot.bot_strafe_t += dt
             move_speed = (5.0 if smart else 4.0) * dt
             mx_, mz_ = 0.0, 0.0
+            # Cover-seeking: smart bots head behind the nearest obstacle to
+            # break LOS when they're hurt or just took damage. They peek out
+            # to shoot, then duck back. Falls back to the normal range
+            # control when no cover is found.
+            seeking_cover = False
+            if smart and (bot.hp < 45 or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
+                best_cov = None
+                best_cov_d = 1e9
+                for ob in self.arena["obstacles"]:
+                    ox_, oz_ = ob["x"], ob["z"]
+                    # Skip obstacles that are too small to hide behind.
+                    if ob["w"] < 1.0 and ob["d"] < 1.0:
+                        continue
+                    # Cover anchor = obstacle centre offset away from target
+                    # by (half-extent + 1m) so the bot ends up shielded.
+                    tdx, tdz = ox_ - target.x, oz_ - target.z
+                    td = math.hypot(tdx, tdz)
+                    if td < 0.1:
+                        continue
+                    off = max(ob["w"], ob["d"]) * 0.5 + 1.2
+                    cx_ = ox_ + (tdx / td) * off
+                    cz_ = oz_ + (tdz / td) * off
+                    d_bot = math.hypot(cx_ - bot.x, cz_ - bot.z)
+                    if d_bot < best_cov_d:
+                        best_cov_d = d_bot
+                        best_cov = (cx_, cz_)
+                if best_cov is not None and best_cov_d > 0.6:
+                    cdx = best_cov[0] - bot.x
+                    cdz = best_cov[1] - bot.z
+                    cd = math.hypot(cdx, cdz)
+                    if cd > 0.01:
+                        mx_, mz_ = cdx / cd, cdz / cd
+                        seeking_cover = True
             # Smart bots prefer mid-close range (10-14m) for the AK; old
             # value 14 made them too easy to long-poke from corners.
             desired = 12.0 if smart else 14.0
-            if dist > desired + 2:
-                if dist > 0.01:
-                    mx_, mz_ = dx / dist, dz / dist
-            elif dist < desired - 4:
-                if dist > 0.01:
-                    mx_, mz_ = -dx / dist, -dz / dist
+            if not seeking_cover:
+                if dist > desired + 2:
+                    if dist > 0.01:
+                        mx_, mz_ = dx / dist, dz / dist
+                elif dist < desired - 4:
+                    if dist > 0.01:
+                        mx_, mz_ = -dx / dist, -dz / dist
             # Strafe — smart bots strafe faster and less predictably.
-            strafe_freq = 2.2 if smart else 1.4
-            strafe_amp  = 0.95 if smart else 0.7
+            # Buffed: cover-aware ranked bots strafe harder (1.2 amp / 2.6 hz)
+            # so they're never sitting ducks even while peeking from cover.
+            strafe_freq = 2.6 if smart else 1.4
+            strafe_amp  = 1.15 if smart else 0.7
             # Dodge-on-damage: if a smart bot just took damage in the
             # last ~250ms, briefly multiply strafe amplitude so it lunges
             # out of the line of fire instead of trading shots in place.
             if smart and bot.last_damage_at and (now_s - bot.last_damage_at) < 0.25:
                 strafe_amp *= 2.2
+            # While actively repositioning to cover, dampen the strafe so the
+            # bot actually reaches its cover point instead of oscillating.
+            if seeking_cover:
+                strafe_amp *= 0.35
             strafe = math.sin(bot.bot_strafe_t * strafe_freq) * strafe_amp
             if dist > 0.01:
                 px, pz = -dz / dist, dx / dist

@@ -227,6 +227,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified live: lobby renders Daily Challenges panel cleanly on the right; lint clean across backend + frontend.
 
 
+### Iteration 27 — **THIS SESSION (2026-02-26)**
+- ✅ **Shared ranked room filled with 4 bots** — `ranked_room` startup spawn count 1 → 4 (was a lone `VORTEX-R`, now 4 disguised bots at diff 1.9 sampled from `BOT_NAMES`). Real-vs-real ranked matches now read as a full 5-player lobby instead of a 2v1.
+- ✅ **Ranked bot banners adopt joining player's rank** — `GameRoom.add()` re-rolls the `ranked_room` bots' disguise tier + RP using `_reroll_ranked_bots()` whenever a real player joins an empty room. Banners now show the player's tier (Diamond, Master, etc.) ± 20 RP, not the default Bronze.
+- ✅ **Ranked AI: cover-seeking + harder strafe** — Smart bots (`difficulty >= 1.5`) now actively repath to the nearest obstacle that breaks LOS with their target when HP < 45 or after taking damage within 600ms (peek-and-duck behaviour). Strafe freq 2.2→2.6 and amp 0.95→1.15 across the board so they're never sitting still. Cover anchor is computed as obstacle centre offset away from target by `max(w,d)/2 + 1.2m`; strafe amp dampened to 35% while actively closing on cover so they actually arrive.
+- ✅ **VIRTUE logo moved down on PC** — `Lobby.jsx` main grid `lg:-mt-24` → `lg:mt-2` and inner column `lg:-mt-8` → `lg:mt-6`. Hero logo no longer overlaps the header utility bar on desktop. Mobile margins (`-mt-12 sm:-mt-20`) untouched.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
