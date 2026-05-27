@@ -3376,11 +3376,10 @@ RANKED_BOT_ROOM_TASKS: Dict[str, asyncio.Task] = {}
 
 
 def ranked_bot_count_for_tier(tier_idx: int) -> int:
-    if tier_idx >= 7:
-        return 1  # Goonmaster — single elite bot after 10-minute queue wait
-    if tier_idx >= 5:
-        return 1  # Master / Grandmaster
-    return 3  # Bronze..Diamond
+    # All ranked-vs-bots rooms now spawn 4 bots regardless of tier so the
+    # lobby always looks like a full 5-player FFA (player + 4 opponents).
+    # Higher tiers used to only spawn 1, which felt empty.
+    return 4
 
 
 async def get_or_create_offline_room(user_id: str) -> "GameRoom":
