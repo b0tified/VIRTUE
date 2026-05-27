@@ -527,10 +527,11 @@ async def on_startup():
 
     # Casual / quick-match bots wear human-looking names and disguise as real
     # players (no BOT badge, no -bot platform). Pick a stable random set.
-    # difficulty=0.9 — buffed from 0.6 (user feedback: too easy). They still
-    # feel beatable in the 1-minute Quick Match but trade kills now.
+    # difficulty=1.15 — buffed from 0.9 (user feedback: still too easy).
+    # They now hit harder + react quicker, but stay under the 1.5 smart-AI
+    # threshold so ranked bots remain a step above.
     for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
-        game_room.spawn_bot(name, disguised=True, difficulty=0.9)
+        game_room.spawn_bot(name, disguised=True, difficulty=1.15)
     ranked_room.spawn_bot(BOT_NAMES[0] + "-R", disguised=True, difficulty=1.4)
     # Practice room: 2 docile dummy bots that don't shoot back (max_hp low).
     for name in ["DUMMY-A", "DUMMY-B"]:
@@ -2839,12 +2840,14 @@ class GameRoom:
             # Smart bots lead the target based on its velocity over the
             # last frame interval. Bullets are effectively instant so the
             # lead is small but enough to punish strafing players.
+            # Bumped lead constant 0.12→0.18 and cap 1.5→2.0 — high-tier
+            # bots now lead by ~270ms of motion (was ~180ms), making it
+            # very hard to dodge with sustained strafe.
             if smart and bot.bot_target_prev_pos and bot.bot_target_prev_ts > 0:
                 ddt = max(0.05, now_s - bot.bot_target_prev_ts)
                 vx_t = (target.x - bot.bot_target_prev_pos[0]) / ddt
                 vz_t = (target.z - bot.bot_target_prev_pos[2]) / ddt
-                # Lead by ~120ms of motion at high diff; less at mid diff.
-                lead_t = 0.12 * min(1.5, (difficulty - 1.4))
+                lead_t = 0.18 * min(2.0, (difficulty - 1.4))
                 tx = target.x + vx_t * lead_t
                 tz = target.z + vz_t * lead_t
             bot.bot_target_prev_pos = (target.x, target.y, target.z)
@@ -2875,6 +2878,11 @@ class GameRoom:
             # Strafe — smart bots strafe faster and less predictably.
             strafe_freq = 2.2 if smart else 1.4
             strafe_amp  = 0.95 if smart else 0.7
+            # Dodge-on-damage: if a smart bot just took damage in the
+            # last ~250ms, briefly multiply strafe amplitude so it lunges
+            # out of the line of fire instead of trading shots in place.
+            if smart and bot.last_damage_at and (now_s - bot.last_damage_at) < 0.25:
+                strafe_amp *= 2.2
             strafe = math.sin(bot.bot_strafe_t * strafe_freq) * strafe_amp
             if dist > 0.01:
                 px, pz = -dz / dist, dx / dist
@@ -2905,23 +2913,31 @@ class GameRoom:
                     orig_yaw, orig_pitch = bot.yaw, bot.pitch
                     noise = BOT_AIM_NOISE / max(0.5, difficulty)
                     # Smart bots tighten the cone even more when standing
-                    # still (they're "ADS-ing").
+                    # still (they're "ADS-ing"). Stricter than before:
+                    # 60% → 45% of base noise.
                     if smart and L < 0.05:
-                        noise *= 0.6
+                        noise *= 0.45
+                    # Ranked headshot bias — at high diff, ~30% of shots
+                    # explicitly aim at the target's head height instead
+                    # of chest. Players will get clapped fast.
+                    aim_at_head = smart and difficulty >= 2.2 and random.random() < min(0.45, (difficulty - 2.0) * 0.35)
+                    if aim_at_head:
+                        dy_head = (target.y + 0.4) - bot.y  # target.y - 0.2 was chest; +0.4 from chest = head
+                        bot.pitch = max(-1.0, min(1.0, math.atan2(dy_head, max(0.01, dist))))
                     bot.yaw += random.uniform(-noise, noise)
                     bot.pitch += random.uniform(-noise * 0.7, noise * 0.7)
                     dmg = int(BOT_SHOT_DAMAGE * (0.7 + 0.4 * difficulty))
                     await self._apply_shoot(bot, dmg)
                     bot.yaw, bot.pitch = orig_yaw, orig_pitch
                     # Smart bots fire in 3-5 round bursts then pause
-                    # 250-400ms to let recoil reset — more lethal but
-                    # more realistic than a constant stream.
+                    # 200-330ms (was 250-400) to let recoil reset — even
+                    # more lethal cadence at the top tiers.
                     if smart:
                         if not hasattr(bot, "_burst_left"):
                             bot._burst_left = random.randint(3, 5)
                         bot._burst_left -= 1
                         if bot._burst_left <= 0:
-                            bot.bot_burst_cooldown_until = now_ms + random.randint(250, 400)
+                            bot.bot_burst_cooldown_until = now_ms + random.randint(200, 330)
                             bot._burst_left = random.randint(3, 5)
 
     async def tick(self):
@@ -3420,7 +3436,10 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_r
     # Buffed base 1.4→1.6 and per-tier scaling 0.2→0.25 — ranked bots now
     # range 1.60 (Bronze) → 3.10 (Grandmaster/Goonmaster). Earlier players
     # found them too easy at higher tiers.
-    ranked_difficulty = 1.6 + min(6, tier_idx) * 0.25
+    # Buffed difficulty curve — quickplay was easy, ranked at low tiers was
+    # too forgiving. Base 1.6→1.9 and per-tier scaling 0.25→0.30 — ranked
+    # bots now range **1.90 (Bronze) → 3.70 (Grandmaster/Goonmaster)**.
+    ranked_difficulty = 1.9 + min(6, tier_idx) * 0.30
     # Tier-aligned name pool — higher tiers get longer / more "competitive"
     # handles (sponsor tags, TTV suffixes, etc.). Falls back to BOT_NAMES if
     # the tier has no custom pool seeded.
@@ -4366,7 +4385,7 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     room.party_id = party_id
     if bot_count > 0:
         for name in random.sample(DISGUISED_BOT_NAMES, bot_count):
-            room.spawn_bot(name, disguised=True, difficulty=0.9)
+            room.spawn_bot(name, disguised=True, difficulty=1.15)
     PARTY_ROOMS[party_id] = room
     PARTY_ROOM_TASKS[party_id] = asyncio.create_task(room.run())
     logger.info("Party room spawned id=%s members=%d bots=%d", party_id, member_count, bot_count)
