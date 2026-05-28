@@ -5266,20 +5266,42 @@ async def leaderboard_ranked():
     }
     cursor = db.users.find(
         query,
-        {"_id": 0, "username": 1, "rank_points": 1, "stats": 1, "email": 1, "placement_matches_played": 1},
+        {"_id": 1, "username": 1, "rank_points": 1, "stats": 1, "email": 1,
+         "placement_matches_played": 1, "is_seeded": 1},
     ).sort([("rank_points", -1)]).limit(50)
+    # Time-bucketed pseudo-online for seeded accounts: stable for
+    # ~5 minutes (so the same names stay green if a user refreshes), then
+    # rotates naturally. Hash-mixing the bucket with the username keeps
+    # the pattern deterministic per-account without storing state. ~38%
+    # of seeded names appear online at any given moment.
+    bucket = int(time.time() // 300)
     rows = []
     async for u in cursor:
         s = u.get("stats", {})
         pts = int(u.get("rank_points", 0) or 0)
         idx, name = rank_for_points(pts)
+        username = u.get("username", u.get("email", "anon"))
+        user_id = str(u.get("_id"))
+        if u.get("is_seeded"):
+            # Pseudo-online flag. hash() is randomized per-process, so we
+            # use a stable hash that survives across workers.
+            import hashlib
+            h = hashlib.md5(f"{username}:{bucket}".encode()).digest()[0]
+            online = h < 97  # ~38% online (97/256)
+        else:
+            online = is_online(user_id)
         rows.append({
-            "username": u.get("username", u.get("email", "anon")),
+            "username": username,
             "rank_points": pts,
             "rank_tier": idx,
             "rank_name": name,
             "kills": s.get("kills", 0),
             "deaths": s.get("deaths", 0),
+            "online": online,
+            # in_match flag is reserved for true players currently
+            # connected to a ranked room — seeded accounts never appear
+            # in-match (they can't be spectated, the endpoint would 404).
+            "in_match": False,
         })
     return rows
 
