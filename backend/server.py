@@ -940,11 +940,20 @@ DAILY_CHALLENGES_POOL: List[dict] = [
     {"id": "d_kills_5",    "name": "Warm Up",        "desc": "Get 5 kills today.",         "metric": "stats.kills",   "goal": 5,  "coins": 25, "season_xp": 50},
     {"id": "d_kills_10",   "name": "On Fire",        "desc": "Get 10 kills today.",        "metric": "stats.kills",   "goal": 10, "coins": 25, "season_xp": 50},
     {"id": "d_kills_20",   "name": "Rampage",        "desc": "Get 20 kills today.",        "metric": "stats.kills",   "goal": 20, "coins": 25, "season_xp": 50},
+    # Stretch kill challenges — bigger goals, juicier rewards.
+    {"id": "d_kills_35",   "name": "Massacre",       "desc": "Get 35 kills today.",        "metric": "stats.kills",   "goal": 35, "coins": 40, "season_xp": 80},
+    {"id": "d_kills_50",   "name": "Demolition",     "desc": "Get 50 kills today.",        "metric": "stats.kills",   "goal": 50, "coins": 60, "season_xp": 120},
     {"id": "d_match_1",    "name": "Suit Up",        "desc": "Play 1 match today.",        "metric": "stats.matches", "goal": 1,  "coins": 25, "season_xp": 50},
     {"id": "d_match_3",    "name": "Triple Threat",  "desc": "Play 3 matches today.",      "metric": "stats.matches", "goal": 3,  "coins": 25, "season_xp": 50},
+    # New match challenges — drives session length.
+    {"id": "d_match_5",    "name": "Long Haul",      "desc": "Play 5 matches today.",      "metric": "stats.matches", "goal": 5,  "coins": 35, "season_xp": 70},
+    {"id": "d_match_8",    "name": "Iron Will",      "desc": "Play 8 matches today.",      "metric": "stats.matches", "goal": 8,  "coins": 55, "season_xp": 110},
     {"id": "d_win_1",      "name": "Top Frag",       "desc": "Win 1 match today.",         "metric": "stats.wins",    "goal": 1,  "coins": 25, "season_xp": 50},
+    # New win challenges — chase the W.
+    {"id": "d_win_2",      "name": "Back-to-Back",   "desc": "Win 2 matches today.",       "metric": "stats.wins",    "goal": 2,  "coins": 45, "season_xp": 90},
+    {"id": "d_win_3",      "name": "Hat Trick",      "desc": "Win 3 matches today.",       "metric": "stats.wins",    "goal": 3,  "coins": 70, "season_xp": 140},
 ]
-DAILY_PICKS_PER_DAY = 3
+DAILY_PICKS_PER_DAY = 6
 
 # Season pass — 30 tiers. Each tier costs 100 season XP to unlock; rewards
 # alternate coin grants with three skin tiers (10/20/30). The track resets
