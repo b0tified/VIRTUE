@@ -70,7 +70,7 @@ export default function Leaderboard() {
   return (
     <div className="min-h-screen bg-[#F4F4F5] halftone-light p-6 md:p-12" data-testid="leaderboard-page">
       <div className="flex items-center justify-between mb-8">
-        <Link to="/lobby" className="btn-pow bg-white text-black" data-testid="leaderboard-back-button">
+        <Link to="/lobby" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-white text-black select-none" data-testid="leaderboard-back-button">
           <span className="flex items-center gap-2"><ArrowLeft size={18} strokeWidth={3} /> BACK</span>
         </Link>
         <div className="inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 rotate-2">
