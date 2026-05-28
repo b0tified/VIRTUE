@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import settingsStore from "@/game/settings";
 import { skinById } from "@/game/skins";
 import audioBus from "@/game/audio";
@@ -1570,92 +1569,12 @@ export class GameEngine {
   }
 
   // -------- Weapon (FPS held) --------
-  /* Lazy-loads the high-detail AK-74 GLB into the given parent group.
-     Procedural body parts (tagged `userData.procedural`) are hidden as
-     soon as the GLB scene is ready; hands + muzzle flash stay visible
-     on top. Orientation/scale chosen empirically so the GLB barrel
-     lines up with the original muzzle-flash anchor (~1.3m forward of
-     the group origin). Cached on the class so subsequent FPS weapon
-     builds (e.g. respawn into a new arena) reuse the parsed scene. */
-  _loadAkGlb(parentGroup) {
-    const apply = (sourceScene) => {
-      // Clone the cached scene so each weapon group owns its own meshes
-      // (independent materials, no shared-transform pitfalls).
-      const model = sourceScene.clone(true);
-      // First, drop any existing GLB child that a previous apply() may
-      // have left behind (defends against the loader resolving twice if
-      // _loadAkGlb is called more than once on the same group).
-      for (const child of [...parentGroup.children]) {
-        if (child.userData?.akGlbRoot) parentGroup.remove(child);
-      }
-      // Fixed small scale — auto-fit was unreliable across exports (some
-      // models have invisible empty nodes that throw off bounding-box
-      // math). 0.003 brings this particular GLB down to roughly hand-held
-      // size; if a different model is dropped in later, tweak here. The
-      // model wrapper is tagged so we can find/replace it.
-      model.scale.setScalar(0.003);
-      // Orientation — the model exports facing +Z; we want it facing -Z
-      // (camera forward), so 180° spin around Y.
-      model.rotation.set(0, Math.PI, 0);
-      // Position: FPS-held pose — slightly right of centre, dipped below
-      // the camera, pushed forward so the barrel ends ~1.2m in front.
-      model.position.set(0.22, -0.18, -0.55);
-      model.userData.akGlbRoot = true;
-      model.traverse((o) => {
-        if (o.isMesh) {
-          o.castShadow = false;
-          o.receiveShadow = false;
-          // Disable frustum culling on the GLB meshes — at FPS-held scale
-          // (~0.003) some internal nodes may report sub-pixel bounding
-          // spheres that Three.js culls too eagerly.
-          o.frustumCulled = false;
-          o.userData.akGlb = true;
-        }
-      });
-      parentGroup.add(model);
-      // Hide every procedural body part now that the model is on screen.
-      parentGroup.traverse((o) => {
-        if (o.userData?.procedural) o.visible = false;
-      });
-    };
-    if (GameEngine._akGlbScene) {
-      apply(GameEngine._akGlbScene);
-      return;
-    }
-    if (GameEngine._akGlbLoading) {
-      // Another weapon-build is already fetching it — chain on.
-      GameEngine._akGlbLoading.then(apply).catch(() => {});
-      return;
-    }
-    const loader = new GLTFLoader();
-    GameEngine._akGlbLoading = new Promise((resolve) => {
-      loader.load(
-        "/models/ak74.glb",
-        (gltf) => {
-          GameEngine._akGlbScene = gltf.scene;
-          apply(gltf.scene);
-          resolve(gltf.scene);
-        },
-        undefined,
-        () => {
-          // Silent fallback — keep the procedural AK visible.
-          resolve(null);
-        }
-      );
-    });
-  }
-
   _buildWeapon() {
     // Container that holds both primary (AK-47) and secondary (katana)
     const root = new THREE.Group();
 
     // ===== AK-47 =====
     const ak = new THREE.Group();
-    // Procedural fallback body: built first so we have something to render
-    // before the GLB finishes loading. Each body part is tagged
-    // `userData.procedural=true` so `_loadAkGlb()` can hide them en masse
-    // once the high-detail mesh arrives. Hands + muzzle flash sit OUTSIDE
-    // this set so they remain visible on top of the GLB model.
     // Wood stock (rear, slanted down)
     const stock = this._outlined(new THREE.BoxGeometry(0.13, 0.16, 0.5), 0x6b4226);
     stock.position.set(0, -0.04, 0.18);
