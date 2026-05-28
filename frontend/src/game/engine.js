@@ -1582,36 +1582,33 @@ export class GameEngine {
       // Clone the cached scene so each weapon group owns its own meshes
       // (independent materials, no shared-transform pitfalls).
       const model = sourceScene.clone(true);
-      // Auto-fit: compute the model's bounding box and scale so its
-      // longest axis matches `TARGET_LEN` metres (~1.4m, the original
-      // procedural AK's stock-to-muzzle length). This works regardless
-      // of the source units the artist exported in (some GLB exporters
-      // use millimetres / centimetres / metres). Also recentres the
-      // pivot so position offsets behave predictably.
-      const TARGET_LEN = 1.4;
-      // Bounding box must be computed on the un-scaled clone first.
-      model.updateMatrixWorld(true);
-      const bbox = new THREE.Box3().setFromObject(model);
-      const size = new THREE.Vector3();
-      bbox.getSize(size);
-      const longest = Math.max(size.x, size.y, size.z) || 1;
-      const s = TARGET_LEN / longest;
-      model.scale.setScalar(s);
-      // Recenter: shift the model so its bbox centre sits at the origin,
-      // then nudge it to the FPS-held anchor (~0.45m forward, slight dip).
-      const center = new THREE.Vector3();
-      bbox.getCenter(center);
-      model.position.set(-center.x * s, -center.y * s - 0.05, -center.z * s - 0.45);
+      // First, drop any existing GLB child that a previous apply() may
+      // have left behind (defends against the loader resolving twice if
+      // _loadAkGlb is called more than once on the same group).
+      for (const child of [...parentGroup.children]) {
+        if (child.userData?.akGlbRoot) parentGroup.remove(child);
+      }
+      // Fixed small scale — auto-fit was unreliable across exports (some
+      // models have invisible empty nodes that throw off bounding-box
+      // math). 0.003 brings this particular GLB down to roughly hand-held
+      // size; if a different model is dropped in later, tweak here. The
+      // model wrapper is tagged so we can find/replace it.
+      model.scale.setScalar(0.003);
+      // Orientation — the model exports facing +Z; we want it facing -Z
+      // (camera forward), so 180° spin around Y.
       model.rotation.set(0, Math.PI, 0);
-      // Ensure the GLB renders in front of nothing weird: disable any
-      // accidental shadows the artist baked in.
+      // Position: FPS-held pose — slightly right of centre, dipped below
+      // the camera, pushed forward so the barrel ends ~1.2m in front.
+      model.position.set(0.22, -0.18, -0.55);
+      model.userData.akGlbRoot = true;
       model.traverse((o) => {
         if (o.isMesh) {
           o.castShadow = false;
           o.receiveShadow = false;
-          // Outline-pass friendliness: tag GLB meshes so future filters
-          // can find them, but DON'T add the procedural-part outline
-          // since the model already has its own normals/UVs.
+          // Disable frustum culling on the GLB meshes — at FPS-held scale
+          // (~0.003) some internal nodes may report sub-pixel bounding
+          // spheres that Three.js culls too eagerly.
+          o.frustumCulled = false;
           o.userData.akGlb = true;
         }
       });
