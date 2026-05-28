@@ -1696,10 +1696,15 @@ HEALTH_REGEN_PER_SEC = 18.0   # ~5.6s to full from 0
 HEALTHPACK_HEAL = 50
 HEALTHPACK_PICKUP_RADIUS = 1.4
 HEALTHPACK_RESPAWN_SECONDS = 20.0
-# Kill-streak heal — every kill instantly restores HEAL_ON_KILL HP to the
-# attacker (capped at max_hp). Rewards aggressive play and prevents
-# spiral-of-death scenarios where you're locked at low HP between waves.
-HEAL_ON_KILL = 30
+# Kill-streak heal — every kill instantly restores HP to the attacker
+# (capped at max_hp). Bodyshot kills heal 50, headshot kills heal a full
+# 100 (effectively a top-up). Melee/laser kills count as bodyshot unless
+# the final hit landed on the head. Rewards aggressive play + precision.
+HEAL_ON_KILL_BODY = 50
+HEAL_ON_KILL_HEAD = 100
+# Back-compat alias for any legacy tooling that still imports the old
+# name. New code should pass `headshot=` to `_award_kill_heal`.
+HEAL_ON_KILL = HEAL_ON_KILL_BODY
 # Per-map healthpack spawn positions are now defined inside each map dict
 # (MAP_A/MAP_B). The module-level constant is kept only as a legacy fallback
 # for any callsite that still imports it; rooms read from `self.arena`.
@@ -2517,7 +2522,7 @@ class GameRoom:
                 best.hp = 0
                 best.deaths += 1
                 attacker.kills += 1
-                self._award_kill_heal(attacker)
+                self._award_kill_heal(attacker, headshot=False)
                 best.respawn_at = time.time() + 3.0
                 self.events.append({
                     "type": "kill",
@@ -2532,14 +2537,16 @@ class GameRoom:
                 if not best.is_bot and best.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(best.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
-    def _award_kill_heal(self, killer: Player) -> None:
-        """Restore HEAL_ON_KILL HP to the killer (capped at max_hp). Emits
-        a `kill_heal` event so the client can play a green flash. No-op for
-        spectators or already-full players."""
+    def _award_kill_heal(self, killer: Player, *, headshot: bool = False) -> None:
+        """Restore HP to the killer (capped at max_hp). Emits a `kill_heal`
+        event so the client can play a green flash. Headshot kills heal
+        the full HEAL_ON_KILL_HEAD; bodyshot kills (and melee) heal
+        HEAL_ON_KILL_BODY. No-op for spectators or already-full players."""
         if not killer.alive:
             return
+        amount_max = HEAL_ON_KILL_HEAD if headshot else HEAL_ON_KILL_BODY
         prev = int(killer.hp)
-        killer.hp = min(killer.max_hp, prev + HEAL_ON_KILL)
+        killer.hp = min(killer.max_hp, prev + amount_max)
         # Reset out-of-combat regen so the player doesn't get an immediate
         # second tick on top of the kill bonus.
         killer.last_damage_at = 0.0
@@ -2550,6 +2557,7 @@ class GameRoom:
                 "player_id": killer.id,
                 "hp": int(killer.hp),
                 "amount": amount,
+                "headshot": headshot,
             })
 
     async def _apply_shoot(self, shooter: Player, base_damage: int):
@@ -2616,7 +2624,7 @@ class GameRoom:
                 hit.hp = 0
                 hit.deaths += 1
                 shooter.kills += 1
-                self._award_kill_heal(shooter)
+                self._award_kill_heal(shooter, headshot=(body_part == "head" and not shooter.is_bot))
                 hit.respawn_at = time.time() + 3.0
                 self.events.append({
                     "type": "kill",
@@ -2750,7 +2758,7 @@ class GameRoom:
             hit.hp = 0
             hit.deaths += 1
             shooter.kills += 1
-            self._award_kill_heal(shooter)
+            self._award_kill_heal(shooter, headshot=(body_part == "head"))
             hit.respawn_at = time.time() + 3.0
             self.events.append({
                 "type": "kill",
