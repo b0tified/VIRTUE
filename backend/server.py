@@ -4672,11 +4672,19 @@ _SEED_VETERAN_HANDLES = [
 class SeedVeteransIn(BaseModel):
     # Optional: caller can ask for a specific count, default 25. Capped to
     # avoid runaway DB writes if someone retries the call by accident.
-    count: int = Field(default=25, ge=1, le=80)
+    count: int = Field(default=25, ge=1, le=120)
     # Reset existing seeded accounts first? When True we wipe every doc
     # tagged `is_seeded=True` before inserting fresh ones, so re-running
     # the endpoint doesn't pile up stale handles.
     reset: bool = False
+    # Floor for Goonmaster (tier 7) seeds — guarantees the top of the
+    # ladder has at least this many accounts regardless of how the
+    # weighted distribution shakes out. Default 4.
+    min_goonmasters: int = Field(default=4, ge=0, le=20)
+    # Floor applied per-tier index (0=Bronze .. 7=Goonmaster). Skipped
+    # tiers default to 0. Used to top off any thin buckets after the
+    # random fill so the board feels populated.
+    min_per_tier: Dict[int, int] = Field(default_factory=dict)
 
 
 @api.post("/admin/seed/veterans")
@@ -4717,32 +4725,38 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
 
     inserted: List[dict] = []
     now = datetime.now(timezone.utc)
-    for i in range(payload.count):
+
+    # Per-tier RP windows so the "top off" pass can pick a realistic RP
+    # for a specific rank without consulting the weighted bucket list.
+    TIER_RP_WINDOWS = {
+        0: (40,   95),
+        1: (110,  240),
+        2: (260,  490),
+        3: (520,  790),
+        4: (820, 1190),
+        5: (1220, 1690),
+        6: (1720, 2290),
+        7: (2300, 3200),
+    }
+
+    async def _build_and_insert(rp: int):
+        """Build one realistic veteran doc with the given RP and insert
+        it. Returns the inserted-username summary or None on duplicate."""
         base = random.choice(_SEED_VETERAN_HANDLES)
-        # 60% bare handle, 40% handle + numeric suffix so the list reads
-        # as a mix of new and seasoned-name styles.
-        if random.random() < 0.4:
+        if random.random() < 0.4 or any(d["username"] == base for d in inserted) or await db.users.find_one({"username": base}):
+            if not suffix_pool:
+                return None
             username = f"{base}{suffix_pool.pop()}"
         else:
-            # If the bare handle is already taken (by an earlier seed in
-            # this batch or by a real user), fall back to a suffix variant.
-            if any(d["username"] == base for d in inserted) or await db.users.find_one({"username": base}):
-                username = f"{base}{suffix_pool.pop()}"
-            else:
-                username = base
-        lo, hi, _w = random.choices(buckets, weights=weights, k=1)[0]
-        rp = random.randint(lo, hi)
-        # Plausible match history: more matches the higher the tier.
+            username = base
         rank_idx, _name = rank_for_points(rp)
         matches = random.randint(15 + rank_idx * 10, 40 + rank_idx * 35)
         kills = int(matches * random.uniform(2.5 + rank_idx * 0.4, 4.0 + rank_idx * 0.55))
         deaths = max(1, int(kills / random.uniform(0.95 + rank_idx * 0.12, 1.45 + rank_idx * 0.18)))
         wins = max(0, int(matches * random.uniform(0.35 + rank_idx * 0.03, 0.5 + rank_idx * 0.04)))
-        # placement_matches_played guarantees the leaderboard filter
-        # actually surfaces these accounts. Use 5 (= PLACEMENT_MATCHES).
         doc = {
-            "email": f"seed_{username.lower()}_{i}@virtue.seed",
-            "password_hash": "",  # seed accounts are never expected to log in
+            "email": f"seed_{username.lower()}_{int(now.timestamp())}_{len(inserted)}@virtue.seed",
+            "password_hash": "",
             "username": username,
             "role": "user",
             "is_seeded": True,
@@ -4755,10 +4769,32 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         }
         try:
             await db.users.insert_one(doc)
-            inserted.append({"username": username, "rank_points": rp})
+            inserted.append({"username": username, "rank_points": rp, "rank_tier": rank_idx})
+            return inserted[-1]
         except Exception:
-            # Ignore the (rare) duplicate-key race and move on.
+            return None
+
+    # ---- Main weighted fill ------------------------------------------------
+    for _ in range(payload.count):
+        lo, hi, _w = random.choices(buckets, weights=weights, k=1)[0]
+        rp = random.randint(lo, hi)
+        await _build_and_insert(rp)
+
+    # ---- Floor-top-off pass ------------------------------------------------
+    # Combine `min_goonmasters` (tier 7 shortcut) with `min_per_tier` so
+    # the caller can either set just the Goonmaster floor or specify a
+    # per-tier minimum across the board.
+    floors = {7: payload.min_goonmasters}
+    for tier_idx, count_min in (payload.min_per_tier or {}).items():
+        floors[int(tier_idx)] = max(floors.get(int(tier_idx), 0), int(count_min))
+    for tier_idx, need in floors.items():
+        if need <= 0 or tier_idx not in TIER_RP_WINDOWS:
             continue
+        have = sum(1 for d in inserted if d["rank_tier"] == tier_idx)
+        for _ in range(max(0, need - have)):
+            lo, hi = TIER_RP_WINDOWS[tier_idx]
+            await _build_and_insert(random.randint(lo, hi))
+
     return {"ok": True, "inserted": len(inserted), "preview": inserted[:10]}
 
 
