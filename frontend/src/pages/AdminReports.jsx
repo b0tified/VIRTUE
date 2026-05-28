@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -33,6 +33,9 @@ export default function AdminReports() {
   const [busy, setBusy] = useState(false);
   const [actionTarget, setActionTarget] = useState(null); // { report } for ban modal
   const [toast, setToast] = useState(null);
+  // Separate spinner for the Seed Leaderboard action so the main report
+  // table doesn't dim while seeding.
+  const [seedingBusy, setSeedingBusy] = useState(false);
 
   // Route guard: admins only. Players who somehow land here get a soft
   // redirect to lobby (the API also returns 403 so the data fetch fails
@@ -80,6 +83,31 @@ export default function AdminReports() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  /* One-tap leaderboard seeder. Calls the admin endpoint with the same
+     distribution used in preview: 60 veterans + minimum floors per tier
+     (4 Goonmasters, healthy spreads everywhere else). `reset: true` so
+     re-clicking the button refreshes the seeded pool instead of piling
+     up. Surfaces the inserted count in the toast. */
+  const seedLeaderboard = async () => {
+    if (seedingBusy) return;
+    if (!window.confirm("Reset and seed the leaderboard with 60 fake veteran accounts? Existing seeded accounts will be wiped first.")) return;
+    setSeedingBusy(true);
+    try {
+      const { data: res } = await api.post("/admin/seed/veterans", {
+        count: 60,
+        reset: true,
+        min_goonmasters: 4,
+        min_per_tier: { "0": 3, "1": 5, "2": 8, "3": 10, "4": 9, "5": 7, "6": 5, "7": 4 },
+      });
+      setToast({ kind: "ok", text: `Seeded ${res?.inserted ?? "?"} veteran accounts. Leaderboard refreshed.` });
+    } catch (e) {
+      setToast({ kind: "err", text: e?.response?.data?.detail || "Failed to seed leaderboard." });
+    } finally {
+      setSeedingBusy(false);
+    }
+  };
+
+
   const reports = data?.reports || [];
   const summary = data?.summary || [];
   const bans = data?.bans || {};
@@ -103,7 +131,18 @@ export default function AdminReports() {
             <span>MODERATION</span>
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={seedLeaderboard}
+            disabled={seedingBusy}
+            className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs disabled:opacity-60 disabled:cursor-wait"
+            data-testid="seed-leaderboard-btn"
+            title="Reset & seed 60 fake veteran accounts so the leaderboard isn't empty"
+          >
+            <span className="flex items-center gap-1.5">
+              <Sprout size={14} strokeWidth={3} /> {seedingBusy ? "SEEDING…" : "SEED LEADERBOARD"}
+            </span>
+          </button>
           <Filter size={16} strokeWidth={3} />
           {["open", "closed", "all"].map((s) => (
             <button
