@@ -1650,16 +1650,6 @@ export class GameEngine {
     ak.add(flash);
     this._muzzleFlash = flash;
 
-    // Mark every procedural body part so `_loadAkGlb()` can hide them as
-    // soon as the high-detail GLB model is ready. Hands + muzzle flash
-    // are intentionally absent — they remain visible on top of the GLB.
-    for (const part of [stock, receiver, gasTube, handGuard, barrel, muzzle, akMag, grip, fs, rs, trigger]) {
-      part.userData.procedural = true;
-    }
-    // Kick off the async GLB swap. If the load fails the procedural AK
-    // simply stays visible — silent fallback.
-    this._loadAkGlb(ak);
-
     // ===== Katana =====
     const kat = new THREE.Group();
     // Tsuka (handle) wrap
