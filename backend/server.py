@@ -772,7 +772,18 @@ async def refresh_token(request: Request, response: Response):
 # -------------------------------------------------------------------
 @api.get("/leaderboard")
 async def leaderboard():
-    cursor = db.users.find({}, {"username": 1, "rank_points": 1, "stats": 1, "email": 1}).sort([("rank_points", -1), ("stats.kills", -1)]).limit(50)
+    # Same gating as /leaderboard/ranked — exclude players who never
+    # touched ranked so the board reflects real ranked activity.
+    query = {"placement_matches_played": {"$gte": 1}, "rank_points": {"$gt": 0}}
+    cursor = db.users.find(
+        query,
+        {"username": 1, "rank_points": 1, "stats": 1, "email": 1,
+         "placement_matches_played": 1, "is_seeded": 1},
+    ).sort([("rank_points", -1), ("stats.kills", -1)]).limit(50)
+    # Pseudo-online for seeded accounts: stable 5-minute bucket × username
+    # hash. Re-rolls naturally, ~38% appear online at any time.
+    import hashlib
+    bucket = int(time.time() // 300)
     rows = []
     async for u in cursor:
         s = u.get("stats", {})
@@ -780,24 +791,30 @@ async def leaderboard():
         pts = int(u.get("rank_points", 0) or 0)
         idx, name = rank_for_points(pts)
         uid = str(u["_id"])
-        # Surface live state so the leaderboard can show a "Spectate"
-        # button only on rows where the player is actually in a match. The
-        # frontend uses the username (not user id) to route the spectate
-        # request to match `/spectate/{username}`.
-        loc = player_location(uid)
-        in_match = loc is not None and loc.get("kind") in ("casual", "ranked", "party")
+        username = u.get("username", u.get("email", "anon"))
+        # Real players: actual presence. Seeded: deterministic pseudo-online.
+        if u.get("is_seeded"):
+            h = hashlib.md5(f"{username}:{bucket}".encode()).digest()[0]
+            online = h < 97  # ~38% online
+            in_match = False
+            match_kind = None
+        else:
+            loc = player_location(uid)
+            in_match = loc is not None and loc.get("kind") in ("casual", "ranked", "party")
+            match_kind = loc.get("kind") if loc else None
+            online = is_online(uid)
         rows.append({
             "id": uid,
-            "username": u.get("username", u.get("email", "anon")),
+            "username": username,
             "kills": kills,
             "deaths": s.get("deaths", 0),
             "matches": s.get("matches", 0),
             "rank_points": pts,
             "rank_tier": idx,
             "rank_name": name,
-            "online": is_online(uid),
+            "online": online,
             "in_match": in_match,
-            "match_kind": loc.get("kind") if loc else None,
+            "match_kind": match_kind,
         })
     return rows
 
