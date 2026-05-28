@@ -445,7 +445,6 @@ export default function Lobby() {
                   <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F4F5;font-family:'Anton',sans-serif">
                     <div style="text-align:center;padding:2rem 3rem;background:white;border:4px solid #000;box-shadow:8px 8px 0 #000;transform:rotate(-1.5deg)">
                       <h1 style="font-family:'Bangers',cursive;color:#E62429;font-size:4rem;margin:0;letter-spacing:0.05em">SEE YOU SOON!</h1>
-                      <p style="margin:1rem 0 0;text-transform:uppercase;letter-spacing:0.15em;color:#222">You can safely close this tab.</p>
                     </div>
                   </div>`;
               }, 80);
@@ -553,14 +552,14 @@ export default function Lobby() {
             >
               <span className="flex items-center gap-3"><WifiOff size={18} strokeWidth={3} /> OFFLINE VS AI</span>
             </button>
-            <Link to="/leaderboard" className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-leaderboard-button">
+            <Link to="/leaderboard" draggable={false} onDragStart={(e) => e.preventDefault()} className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
-            <Link to="/profile" className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-profile-button">
+            <Link to="/profile" draggable={false} onDragStart={(e) => e.preventDefault()} className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-profile-button">
               <span className="flex items-center gap-3"><User size={18} strokeWidth={3} /> PROFILE</span>
             </Link>
             {user?.role === "admin" && (
-              <Link to="/admin/reports" className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3" data-testid="lobby-admin-button">
+              <Link to="/admin/reports" draggable={false} onDragStart={(e) => e.preventDefault()} className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-admin-button">
                 <span className="flex items-center gap-3"><Shield size={18} strokeWidth={3} /> MODERATION</span>
               </Link>
             )}
