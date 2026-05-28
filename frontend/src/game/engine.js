@@ -1633,6 +1633,73 @@ export class GameEngine {
     const trigger = this._outlined(new THREE.BoxGeometry(0.03, 0.06, 0.04), 0xc0c0c0, 1.12);
     trigger.position.set(0, -0.1, -0.05);
     ak.add(trigger);
+    // ----- Extra detail pass (procedural quality bump) -----
+    // Trigger guard — thin steel ring around the trigger.
+    const tg = this._outlined(new THREE.TorusGeometry(0.055, 0.012, 6, 14), 0x202020, 1.1);
+    tg.rotation.y = Math.PI / 2;
+    tg.position.set(0, -0.11, -0.05);
+    ak.add(tg);
+    // Charging handle (right side, sticks out).
+    const charge = this._outlined(new THREE.BoxGeometry(0.06, 0.03, 0.03), 0x6f6f6f, 1.1);
+    charge.position.set(0.11, 0.08, -0.18);
+    ak.add(charge);
+    // Selector lever (right side, dark steel).
+    const selector = this._outlined(new THREE.BoxGeometry(0.04, 0.05, 0.16), 0x161616, 1.1);
+    selector.position.set(0.09, 0.0, -0.08);
+    ak.add(selector);
+    // Stock comb — small raised cheekpiece on top of the stock.
+    const comb = this._outlined(new THREE.BoxGeometry(0.10, 0.04, 0.32), 0x563517, 1.06);
+    comb.position.set(0, 0.06, 0.20);
+    comb.rotation.x = 0.08;
+    ak.add(comb);
+    // Stock buttplate — thin black cap at the rear.
+    const buttplate = this._outlined(new THREE.BoxGeometry(0.14, 0.18, 0.03), 0x111111, 1.1);
+    buttplate.position.set(0, -0.04, 0.43);
+    buttplate.rotation.x = 0.08;
+    ak.add(buttplate);
+    // Sling swivel — tiny loop under the stock.
+    const swivel = this._outlined(new THREE.TorusGeometry(0.025, 0.006, 6, 10), 0x303030, 1.1);
+    swivel.rotation.x = Math.PI / 2;
+    swivel.position.set(0, -0.14, 0.32);
+    ak.add(swivel);
+    // Dust-cover ribs — two raised lines on top of the receiver.
+    for (const z of [-0.30, -0.18, -0.06]) {
+      const rib = this._outlined(new THREE.BoxGeometry(0.13, 0.012, 0.015), 0x1a1a1a, 1.08);
+      rib.position.set(0, 0.085, z);
+      ak.add(rib);
+    }
+    // Muzzle brake slots — three vertical cuts on the brake (visual only).
+    for (const z of [-1.22, -1.25, -1.28]) {
+      const slot = this._outlined(new THREE.BoxGeometry(0.005, 0.07, 0.025), 0x000000, 1.15);
+      slot.position.set(0, 0.03, z);
+      ak.add(slot);
+    }
+    // Front-sight protective ears (the open hood around the sight post).
+    for (const x of [-0.05, 0.05]) {
+      const ear = this._outlined(new THREE.BoxGeometry(0.01, 0.10, 0.04), 0x0a0a0a, 1.12);
+      ear.position.set(x, 0.19, -1.08);
+      ak.add(ear);
+    }
+    // Rear sight notch — small slit on top of the rear sight block.
+    const rsNotch = this._outlined(new THREE.BoxGeometry(0.018, 0.018, 0.04), 0x000000, 1.2);
+    rsNotch.position.set(0, 0.205, -0.05);
+    ak.add(rsNotch);
+    // Magazine extra curve — third segment to sell the banana shape.
+    const magTip = this._outlined(new THREE.BoxGeometry(0.1, 0.08, 0.10), 0x3a2510);
+    magTip.position.set(0, -0.42, 0.02);
+    magTip.rotation.x = -0.85;
+    akMag.add(magTip);
+    // Mag rib detail — three horizontal lines down the side.
+    for (const y of [-0.15, -0.22, -0.30]) {
+      const mr = this._outlined(new THREE.BoxGeometry(0.105, 0.008, 0.01), 0x261406, 1.08);
+      mr.position.set(0, y, -0.12);
+      akMag.add(mr);
+    }
+    // Pistol-grip checkering — vertical groove on the back of the grip.
+    const gripGroove = this._outlined(new THREE.BoxGeometry(0.005, 0.20, 0.012), 0x1a0a02, 1.12);
+    gripGroove.position.set(0, -0.18, 0.075);
+    gripGroove.rotation.x = -0.32;
+    ak.add(gripGroove);
     // Hand
     const hand = this._outlined(new THREE.SphereGeometry(0.13, 12, 8), 0xf2c08a, 1.08);
     hand.position.set(0, -0.07, 0.02);
@@ -1716,7 +1783,63 @@ export class GameEngine {
     lTip.position.set(0, 0.02, -1.3);
     laser.add(lTip);
     // Track tintable parts so we can flash them red when overheated.
+    // Initialised here (before the extra-detail pass) so that pass can
+    // push more parts onto it.
     this._laserGlowParts = [lCore, ring, lTip];
+    // ----- Extra detail pass (procedural quality bump) -----
+    // Top rail — modular rail running along the upper body.
+    const rail = this._outlined(new THREE.BoxGeometry(0.08, 0.025, 0.55), 0x101418, 1.06);
+    rail.position.set(0, 0.13, -0.36);
+    laser.add(rail);
+    // Rail teeth — small repeating notches on the top rail.
+    for (let i = 0; i < 7; i++) {
+      const tooth = this._outlined(new THREE.BoxGeometry(0.085, 0.008, 0.012), 0x000000, 1.15);
+      tooth.position.set(0, 0.146, -0.62 + i * 0.085);
+      laser.add(tooth);
+    }
+    // Side glow strips — long thin cyan lines on both sides for the
+    // "energy weapon" look. Slight inset into the body.
+    for (const x of [-0.082, 0.082]) {
+      const strip = this._outlined(new THREE.BoxGeometry(0.005, 0.06, 0.5), 0x00d8ff, 1.04);
+      strip.position.set(x, 0.02, -0.36);
+      laser.add(strip);
+      this._laserGlowParts.push(strip);
+    }
+    // Heatsink fins — three thin rings along the barrel.
+    for (const z of [-0.78, -0.92, -1.06]) {
+      const fin = this._outlined(new THREE.TorusGeometry(0.062, 0.012, 6, 12), 0x2a3340, 1.06);
+      fin.rotation.y = Math.PI / 2;
+      fin.position.set(0, 0.02, z);
+      laser.add(fin);
+    }
+    // Coolant pipe — a curved cyan-tinted tube running under the body.
+    const coolant = this._outlined(new THREE.CylinderGeometry(0.012, 0.012, 0.42, 8), 0x00b0e8, 1.06);
+    coolant.rotation.x = Math.PI / 2;
+    coolant.position.set(0.06, -0.08, -0.4);
+    laser.add(coolant);
+    this._laserGlowParts.push(coolant);
+    // Battery cells — three little glowing squares behind the magazine.
+    for (const x of [-0.025, 0, 0.025]) {
+      const cell = this._outlined(new THREE.BoxGeometry(0.018, 0.06, 0.018), 0x00ffd0, 1.08);
+      cell.position.set(x, -0.12, -0.21);
+      laser.add(cell);
+      this._laserGlowParts.push(cell);
+    }
+    // Iron sight / scope rail block — small raised hump on the rail.
+    const scope = this._outlined(new THREE.BoxGeometry(0.06, 0.05, 0.12), 0x161a1f, 1.08);
+    scope.position.set(0, 0.17, -0.15);
+    laser.add(scope);
+    // Trigger guard ring.
+    const lTg = this._outlined(new THREE.TorusGeometry(0.055, 0.012, 6, 14), 0x181818, 1.1);
+    lTg.rotation.y = Math.PI / 2;
+    lTg.position.set(0, -0.11, -0.05);
+    laser.add(lTg);
+    // Lens — a tiny disc inside the emitter ring for depth.
+    const lens = this._outlined(new THREE.CircleGeometry(0.05, 18), 0x99f0ff, 1.06);
+    lens.position.set(0, 0.02, -1.215);
+    lens.rotation.y = Math.PI; // face the camera
+    laser.add(lens);
+    this._laserGlowParts.push(lens);
     // Heat-vent puff — a small additive sprite that pulses when overheated.
     const heatGeom = new THREE.SphereGeometry(0.12, 10, 8);
     const heatMat = new THREE.MeshBasicMaterial({
