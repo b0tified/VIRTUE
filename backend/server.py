@@ -3386,9 +3386,17 @@ class GameRoom:
                     update_set = {"rank_points": new_points}
                     if new_peak > prev_peak:
                         update_set["peak_rank_points"] = new_peak
+                    # First-place finish = a "win" for daily/lifetime
+                    # challenge tracking (`stats.wins`). Without this,
+                    # `stats.wins` stays at 0 forever, which is why the
+                    # "Win N matches today" / "Champion" challenges never
+                    # tick. Players at any placement still get +1 matches.
+                    inc_doc = {"stats.matches": 1, "placement_matches_played": 1}
+                    if placement == 1:
+                        inc_doc["stats.wins"] = 1
                     await db.users.update_one(
                         {"_id": ObjectId(p.user_id)},
-                        {"$set": update_set, "$inc": {"stats.matches": 1, "placement_matches_played": 1}},
+                        {"$set": update_set, "$inc": inc_doc},
                     )
                 except Exception as e:
                     logger.warning("rank update failed: %s", e)
@@ -3488,9 +3496,15 @@ class GameRoom:
                     udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
                     cur_points = int((udoc or {}).get("rank_points", 0) or 0)
                     tier_idx, tier_name = rank_for_points(cur_points)
+                    # First-place finish in a casual match also counts as
+                    # a win for daily/lifetime challenges. See ranked
+                    # branch above — same rationale.
+                    inc_doc = {"stats.matches": 1}
+                    if placement == 1:
+                        inc_doc["stats.wins"] = 1
                     await db.users.update_one(
                         {"_id": ObjectId(p.user_id)},
-                        {"$inc": {"stats.matches": 1}},
+                        {"$inc": inc_doc},
                     )
                 except Exception:
                     pass
