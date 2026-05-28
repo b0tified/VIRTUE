@@ -4650,6 +4650,119 @@ async def admin_close_report(report_id: str, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+# Seed-veteran name pool — cosmetic, used only by the admin seed endpoint
+# below. Mixed style: gamer tags, single-word handles, and a few "esports
+# pro" sounding aliases so the leaderboard reads as a real competitive
+# scene instead of obviously-fake entries.
+_SEED_VETERAN_HANDLES = [
+    # Goonmaster / Grandmaster — top-tier pro / streamer feel
+    "Vyperr", "OmegaZion", "Apex.Velox", "Nyxenith", "Korvax_TV",
+    "Zephyr0", "Hydra_x", "Maelstr0m", "Phantasm", "Eclipse_FN",
+    # Master / Diamond — competitive grinders
+    "neonRipper", "tilted_AI", "icefall42", "Quill.OP", "Shroud_clone",
+    "Cobalt_Rage", "Lunarus", "voidwxlk", "GhostByte", "Karasu_zX",
+    # Platinum / Gold — solid mid-ranked
+    "wraithlight", "VelvetVx", "noctilune", "kestrel.99", "RustClad",
+    "amber_ix", "hexProwler", "Crimson_M", "DustWxlf", "syntaxia",
+    # Silver / lower Gold — sprinkle a few approachable handles
+    "tinytim_xd", "BoxFrag", "QuickJab", "saltyMVP", "rookie__",
+]
+
+
+class SeedVeteransIn(BaseModel):
+    # Optional: caller can ask for a specific count, default 25. Capped to
+    # avoid runaway DB writes if someone retries the call by accident.
+    count: int = Field(default=25, ge=1, le=80)
+    # Reset existing seeded accounts first? When True we wipe every doc
+    # tagged `is_seeded=True` before inserting fresh ones, so re-running
+    # the endpoint doesn't pile up stale handles.
+    reset: bool = False
+
+
+@api.post("/admin/seed/veterans")
+async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_current_user)):
+    """Seed the leaderboard with N pretend-veteran accounts spanning the
+    full rank ladder (Bronze..Goonmaster). All seeded docs are tagged
+    `is_seeded=True` so they can be cleaned up later. RP per account is
+    drawn from a hand-tuned distribution: heavy mid-game (Plat..Diamond),
+    a healthy Master+ population, and a small Goonmaster elite tip so the
+    top of the board doesn't sit empty. Each account also receives a
+    plausible K/D, match count, and `placement_matches_played` so the
+    leaderboard filter `placement_matches_played >= 1 AND rank_points > 0`
+    actually catches them. Admin-only."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if payload.reset:
+        await db.users.delete_many({"is_seeded": True})
+
+    # RP buckets: (low, high, weight). The weights add up to 100 and
+    # produce a long-tail distribution that looks like a real ladder —
+    # most players sit Gold/Plat/Diamond, fewer climb to Master+, only a
+    # handful reach Goonmaster.
+    buckets = [
+        (40,   95,   8),   # late Bronze
+        (110,  240,  12),  # Silver
+        (260,  490,  18),  # Gold
+        (520,  790,  22),  # Platinum
+        (820, 1190,  20),  # Diamond
+        (1220, 1690, 12),  # Master
+        (1720, 2290,  6),  # Grandmaster
+        (2300, 3200,  2),  # Goonmaster
+    ]
+    weights = [b[2] for b in buckets]
+    # Build a shuffled deck of handle suffixes so duplicates within a
+    # single seed run are extremely unlikely.
+    suffix_pool = list(range(100, 999))
+    random.shuffle(suffix_pool)
+
+    inserted: List[dict] = []
+    now = datetime.now(timezone.utc)
+    for i in range(payload.count):
+        base = random.choice(_SEED_VETERAN_HANDLES)
+        # 60% bare handle, 40% handle + numeric suffix so the list reads
+        # as a mix of new and seasoned-name styles.
+        if random.random() < 0.4:
+            username = f"{base}{suffix_pool.pop()}"
+        else:
+            # If the bare handle is already taken (by an earlier seed in
+            # this batch or by a real user), fall back to a suffix variant.
+            if any(d["username"] == base for d in inserted) or await db.users.find_one({"username": base}):
+                username = f"{base}{suffix_pool.pop()}"
+            else:
+                username = base
+        lo, hi, _w = random.choices(buckets, weights=weights, k=1)[0]
+        rp = random.randint(lo, hi)
+        # Plausible match history: more matches the higher the tier.
+        rank_idx, _name = rank_for_points(rp)
+        matches = random.randint(15 + rank_idx * 10, 40 + rank_idx * 35)
+        kills = int(matches * random.uniform(2.5 + rank_idx * 0.4, 4.0 + rank_idx * 0.55))
+        deaths = max(1, int(kills / random.uniform(0.95 + rank_idx * 0.12, 1.45 + rank_idx * 0.18)))
+        wins = max(0, int(matches * random.uniform(0.35 + rank_idx * 0.03, 0.5 + rank_idx * 0.04)))
+        # placement_matches_played guarantees the leaderboard filter
+        # actually surfaces these accounts. Use 5 (= PLACEMENT_MATCHES).
+        doc = {
+            "email": f"seed_{username.lower()}_{i}@virtue.seed",
+            "password_hash": "",  # seed accounts are never expected to log in
+            "username": username,
+            "role": "user",
+            "is_seeded": True,
+            "stats": {"kills": kills, "deaths": deaths, "matches": matches, "wins": wins},
+            "rank_points": rp,
+            "placement_matches_played": PLACEMENT_MATCHES,
+            "level": random.randint(5, 28 + rank_idx * 4),
+            "xp": 0,
+            "created_at": now - timedelta(days=random.randint(7, 120)),
+        }
+        try:
+            await db.users.insert_one(doc)
+            inserted.append({"username": username, "rank_points": rp})
+        except Exception:
+            # Ignore the (rare) duplicate-key race and move on.
+            continue
+    return {"ok": True, "inserted": len(inserted), "preview": inserted[:10]}
+
+
+
 # Party endpoints (require friendship; backed by in-memory PARTY_* state above).
 class PartyInviteIn(BaseModel):
     username: str = Field(min_length=2, max_length=30)
