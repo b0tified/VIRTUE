@@ -142,25 +142,8 @@ export default function Lobby() {
   // single fluctuating "Players online" widget driven client-side; real per-
   // room counts are no longer surfaced in the UI.
 
-  // Combined "Players online" counter — server-driven so every client sees
-  // the same number. The backend drifts the value slowly (~10s cadence) in
-  // [3, 35]; we poll every 6s and update locally.
-  const [displayOnline, setDisplayOnline] = useState(12);
-  useEffect(() => {
-    let alive = true;
-    const fetchOnline = async () => {
-      try {
-        const { data } = await api.get("/");
-        if (!alive) return;
-        if (typeof data?.players_online === "number") {
-          setDisplayOnline(data.players_online);
-        }
-      } catch {}
-    };
-    fetchOnline();
-    const id = setInterval(fetchOnline, 6000);
-    return () => { alive = false; clearInterval(id); };
-  }, []);
+  // Players Online widget removed — the polling that drove the chip was
+  // also removed to avoid a hanging interval the UI no longer uses.
 
   // Lobby music. Try to start immediately — the user almost always
   // arrived here by clicking the SIGN IN button, which counts as a user
@@ -368,17 +351,7 @@ export default function Lobby() {
               testid="lobby-user-card"
             />
           )}
-          {/* Server-driven Players Online chip — same value for every signed-
-              in client; drifts every ~10s via /api/. */}
-          <div
-            className="border-pow shadow-pow-sm px-3 py-2 hidden sm:flex items-center gap-2"
-            style={{ background: "#E62429", color: "#fff" }}
-            data-testid="active-players-online"
-          >
-            <Users size={14} strokeWidth={3} />
-            <span className="font-anton uppercase text-[10px] tracking-widest opacity-90">Online</span>
-            <span className="font-display text-2xl leading-none">{displayOnline}</span>
-          </div>
+          {/* Players Online widget removed per request. */}
           {/* Coin balance — clickable, opens the skin shop. Always visible
               (even on mobile) so the wallet value is glanceable. */}
           <button
