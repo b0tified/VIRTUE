@@ -3122,6 +3122,12 @@ class GameRoom:
                     bot.z = nz
                 else:
                     bot.bot_strafe_t += 0.5
+                # Ranked bots forfeit spawn immunity the moment they start
+                # moving — players were complaining that fresh ranked
+                # bots could push into a fight invulnerable. Casual bots
+                # keep the 3s safety net so the lobby still feels chill.
+                if smart and self.is_ranked and bot.invuln_until > now_s and move_speed > 0:
+                    bot.invuln_until = 0.0
 
             # --- Fire control -------------------------------------------------------
             difficulty = float(getattr(bot, "difficulty", 1.0))
@@ -3129,6 +3135,9 @@ class GameRoom:
             in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
+                    # Firing also forfeits spawn immunity on ranked bots.
+                    if smart and self.is_ranked and bot.invuln_until > now_s:
+                        bot.invuln_until = 0.0
                     bot.last_shot_ms = now_ms
                     orig_yaw, orig_pitch = bot.yaw, bot.pitch
                     noise = BOT_AIM_NOISE / max(0.5, difficulty)
