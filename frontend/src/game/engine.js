@@ -1582,13 +1582,27 @@ export class GameEngine {
       // Clone the cached scene so each weapon group owns its own meshes
       // (independent materials, no shared-transform pitfalls).
       const model = sourceScene.clone(true);
-      // Empirical transform — the GLB exports at a much larger scale
-      // than the procedural AK (whose stock-to-muzzle length is ~1.4m).
-      // 0.04 brings it down to a roughly equivalent FPS-held size. Tweak
-      // here if a different model is dropped in.
-      model.scale.set(0.04, 0.04, 0.04);
+      // Auto-fit: compute the model's bounding box and scale so its
+      // longest axis matches `TARGET_LEN` metres (~1.4m, the original
+      // procedural AK's stock-to-muzzle length). This works regardless
+      // of the source units the artist exported in (some GLB exporters
+      // use millimetres / centimetres / metres). Also recentres the
+      // pivot so position offsets behave predictably.
+      const TARGET_LEN = 1.4;
+      // Bounding box must be computed on the un-scaled clone first.
+      model.updateMatrixWorld(true);
+      const bbox = new THREE.Box3().setFromObject(model);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const longest = Math.max(size.x, size.y, size.z) || 1;
+      const s = TARGET_LEN / longest;
+      model.scale.setScalar(s);
+      // Recenter: shift the model so its bbox centre sits at the origin,
+      // then nudge it to the FPS-held anchor (~0.45m forward, slight dip).
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      model.position.set(-center.x * s, -center.y * s - 0.05, -center.z * s - 0.45);
       model.rotation.set(0, Math.PI, 0);
-      model.position.set(0.0, -0.05, -0.45);
       // Ensure the GLB renders in front of nothing weird: disable any
       // accidental shadows the artist baked in.
       model.traverse((o) => {
