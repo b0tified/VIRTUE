@@ -431,7 +431,7 @@ export default function Lobby() {
               gets a clear "you can close this tab now" cue either way. */}
           <button
             onClick={() => {
-              if (!window.confirm("Exit VIRTUE and close this tab?")) return;
+              if (!window.confirm("Exit VIRTUE?")) return;
               try { audioBus.stopLobbyMusic(); } catch {}
               try {
                 // Best-effort close — works on PWA / popups / window.opener
@@ -552,14 +552,14 @@ export default function Lobby() {
             >
               <span className="flex items-center gap-3"><WifiOff size={18} strokeWidth={3} /> OFFLINE VS AI</span>
             </button>
-            <Link to="/leaderboard" draggable={false} onDragStart={(e) => e.preventDefault()} className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-leaderboard-button">
+            <Link to="/leaderboard" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
-            <Link to="/profile" draggable={false} onDragStart={(e) => e.preventDefault()} className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-profile-button">
+            <Link to="/profile" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-profile-button">
               <span className="flex items-center gap-3"><User size={18} strokeWidth={3} /> PROFILE</span>
             </Link>
             {user?.role === "admin" && (
-              <Link to="/admin/reports" draggable={false} onDragStart={(e) => e.preventDefault()} className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-admin-button">
+              <Link to="/admin/reports" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-admin-button">
                 <span className="flex items-center gap-3"><Shield size={18} strokeWidth={3} /> MODERATION</span>
               </Link>
             )}
