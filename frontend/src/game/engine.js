@@ -1582,11 +1582,11 @@ export class GameEngine {
       // Clone the cached scene so each weapon group owns its own meshes
       // (independent materials, no shared-transform pitfalls).
       const model = sourceScene.clone(true);
-      // Empirical transform — tuned so the muzzle ends up roughly where
-      // the procedural barrel was: ~1.25m forward of the group origin,
-      // sights running along -Z, slight rightward offset matching the
-      // procedural pose.
-      model.scale.set(0.18, 0.18, 0.18);
+      // Empirical transform — the GLB exports at a much larger scale
+      // than the procedural AK (whose stock-to-muzzle length is ~1.4m).
+      // 0.04 brings it down to a roughly equivalent FPS-held size. Tweak
+      // here if a different model is dropped in.
+      model.scale.set(0.04, 0.04, 0.04);
       model.rotation.set(0, Math.PI, 0);
       model.position.set(0.0, -0.05, -0.45);
       // Ensure the GLB renders in front of nothing weird: disable any
