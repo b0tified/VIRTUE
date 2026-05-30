@@ -1118,33 +1118,147 @@ export class GameEngine {
     }
 
     // ── CRASHSITE decorative extras ─────────────────────────────────────
-    // Glowing pulsing core embedded in the central meteor (the big 7x2.4x7
-    // boulder at (0,0)), a few wispy smoke columns rising from impact
-    // marks, and faint scorch rings on the ground.
+    // Jagged 3D meteor rock at center + glowing core/halo on top, animated
+    // flames around the crater, scorch rings, smoke columns, and a ring
+    // of raised earthwork berms outside the perimeter so the player
+    // feels like they're standing in the bottom of a wide divot/crater.
     if (!this._crashsiteExtras) {
       this._crashsiteExtras = new THREE.Group();
       this.scene.add(this._crashsiteExtras);
     }
     this._crashsiteExtras.visible = arena.map_id === "crashsite";
     if (arena.map_id === "crashsite" && this._crashsiteExtras.children.length === 0) {
-      // Glowing meteor core — emissive orb pulsing on top of the centre boulder.
-      const coreGeo = new THREE.SphereGeometry(1.0, 16, 12);
-      const coreMat = new THREE.MeshBasicMaterial({
-        color: 0xff7e2a,
+      // ── Jagged meteor rock (center) ──────────────────────────────────
+      // Sits on top of the 7x2.4x7 collision boulder at (0,0). A big
+      // craggy icosahedron + a few smaller chunks fused around it. Dark
+      // basalt grey base with rim-lit ember veins.
+      const meteorGroup = new THREE.Group();
+      meteorGroup.position.set(0, 1.2, 0);   // base is already raised by the collision boulder
+      // Main craggy boulder — icosahedron stretched non-uniformly + jittered
+      // vertices so it reads as a rough chunk of space rock, not a sphere.
+      const mainGeo = new THREE.IcosahedronGeometry(3.0, 1);
+      {
+        const posAttr = mainGeo.attributes.position;
+        for (let i = 0; i < posAttr.count; i++) {
+          const v = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+          // Random radial jitter ±18% — keeps the silhouette spiky
+          // without making it explode into a star shape.
+          const jitter = 0.82 + Math.random() * 0.36;
+          v.multiplyScalar(jitter);
+          // Flatten slightly along Y so it sits like a squat boulder.
+          v.y *= 0.72;
+          posAttr.setXYZ(i, v.x, v.y, v.z);
+        }
+        mainGeo.computeVertexNormals();
+      }
+      const meteorMat = new THREE.MeshToonMaterial({
+        color: 0x2a1f1c,        // dark basalt
+        gradientMap: this.toonMap,
+      });
+      const mainRock = new THREE.Mesh(mainGeo, meteorMat);
+      mainRock.castShadow = false;
+      meteorGroup.add(mainRock);
+      // Black outline (matches the toon-style outlines used elsewhere)
+      const outlineMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+      const outline = new THREE.Mesh(mainGeo, outlineMat);
+      outline.scale.setScalar(1.04);
+      meteorGroup.add(outline);
+      // Glowing ember veins — additive-blended sphere shells with random
+      // bright spots, layered slightly larger than the rock so the
+      // "cracks" peek through the silhouette edges.
+      const veinTex = (() => {
+        const c = document.createElement("canvas");
+        c.width = 256; c.height = 128;
+        const cx = c.getContext("2d");
+        cx.fillStyle = "#000";
+        cx.fillRect(0, 0, 256, 128);
+        // Scatter bright ember slashes
+        cx.strokeStyle = "#ff7a2a";
+        cx.lineWidth = 2;
+        for (let i = 0; i < 18; i++) {
+          const x = Math.random() * 256;
+          const y = Math.random() * 128;
+          const len = 8 + Math.random() * 24;
+          const ang = Math.random() * Math.PI;
+          cx.globalAlpha = 0.6 + Math.random() * 0.4;
+          cx.beginPath();
+          cx.moveTo(x, y);
+          cx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+          cx.stroke();
+        }
+        // A few bright pinpoint hotspots
+        cx.globalAlpha = 1;
+        cx.fillStyle = "#ffd07a";
+        for (let i = 0; i < 12; i++) {
+          const x = Math.random() * 256;
+          const y = Math.random() * 128;
+          const r = 1 + Math.random() * 2.5;
+          cx.beginPath();
+          cx.arc(x, y, r, 0, Math.PI * 2);
+          cx.fill();
+        }
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      })();
+      const veinMat = new THREE.MeshBasicMaterial({
+        map: veinTex,
         transparent: true,
         opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const veinShell = new THREE.Mesh(mainGeo, veinMat);
+      veinShell.scale.setScalar(1.02);
+      meteorGroup.add(veinShell);
+      this._crashsiteVeins = veinShell;
+
+      // Two smaller chunks fused to the side — adds asymmetry so the
+      // meteor reads as a broken-apart impactor instead of a single orb.
+      const chunkConfigs = [
+        { r: 1.3, x: 2.4,  y: -0.4, z: 1.1,  flatY: 0.65 },
+        { r: 1.0, x: -2.1, y: -0.6, z: -1.6, flatY: 0.70 },
+        { r: 0.8, x: 1.6,  y: -0.9, z: -2.4, flatY: 0.55 },
+      ];
+      for (const cfg of chunkConfigs) {
+        const g = new THREE.IcosahedronGeometry(cfg.r, 1);
+        const pa = g.attributes.position;
+        for (let i = 0; i < pa.count; i++) {
+          const v = new THREE.Vector3().fromBufferAttribute(pa, i);
+          v.multiplyScalar(0.78 + Math.random() * 0.44);
+          v.y *= cfg.flatY;
+          pa.setXYZ(i, v.x, v.y, v.z);
+        }
+        g.computeVertexNormals();
+        const chunk = new THREE.Mesh(g, meteorMat);
+        chunk.position.set(cfg.x, cfg.y, cfg.z);
+        meteorGroup.add(chunk);
+        const ol = new THREE.Mesh(g, outlineMat);
+        ol.scale.setScalar(1.05);
+        ol.position.copy(chunk.position);
+        meteorGroup.add(ol);
+      }
+      this._crashsiteExtras.add(meteorGroup);
+      this._crashsiteMeteor = meteorGroup;
+
+      // Glowing meteor core — emissive orb pulsing at the top of the rock.
+      const coreGeo = new THREE.SphereGeometry(0.7, 16, 12);
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xffb050,
+        transparent: true,
+        opacity: 0.92,
       });
       const core = new THREE.Mesh(coreGeo, coreMat);
-      core.position.set(0, 3.2, 0);
+      core.position.set(0, 4.0, 0);
       this._crashsiteExtras.add(core);
       this._crashsiteCore = core;
       // Outer halo around the core — additive blended for the glow.
       const halo = new THREE.Mesh(
-        new THREE.SphereGeometry(1.6, 16, 12),
+        new THREE.SphereGeometry(1.4, 16, 12),
         new THREE.MeshBasicMaterial({
           color: 0xff4a1a,
           transparent: true,
-          opacity: 0.25,
+          opacity: 0.32,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
         }),
@@ -1153,7 +1267,7 @@ export class GameEngine {
       this._crashsiteExtras.add(halo);
       this._crashsiteHalo = halo;
 
-      // Scorch rings — dark ground decals around scattered impact marks.
+      // ── Scorch rings — dark ground decals at impact spots ─────────────
       const scorchPoints = [
         [10, 12, 3.5], [-10, 12, 3.5], [10, -12, 3.5], [-10, -12, 3.5],
         [18, 0, 2.8], [-18, 0, 2.8], [0, 18, 2.8], [0, -18, 2.8],
@@ -1173,8 +1287,76 @@ export class GameEngine {
         this._crashsiteExtras.add(ring);
       }
 
-      // Smoke columns — three tall faint grey planes rising from the
-      // crater rim. Each is a billboard updated in _updateCrashsiteFx.
+      // ── Animated flames ──────────────────────────────────────────────
+      // Procedural flame texture: warm vertical gradient with flickery
+      // edges. Each flame is a billboarded plane with an animated material
+      // (scale + opacity throb + slight hue shift per frame).
+      const flameTex = (() => {
+        const c = document.createElement("canvas");
+        c.width = 64; c.height = 128;
+        const cx = c.getContext("2d");
+        // Radial flame gradient — bright yellow core fading to red edges
+        const grd = cx.createRadialGradient(32, 96, 4, 32, 80, 60);
+        grd.addColorStop(0.00, "rgba(255,240,180,1.0)");
+        grd.addColorStop(0.25, "rgba(255,180,50,0.95)");
+        grd.addColorStop(0.55, "rgba(230,90,20,0.75)");
+        grd.addColorStop(0.85, "rgba(120,30,10,0.35)");
+        grd.addColorStop(1.00, "rgba(0,0,0,0.0)");
+        cx.fillStyle = grd;
+        cx.fillRect(0, 0, 64, 128);
+        // Soft top fade so the flame tip dissolves cleanly
+        const top = cx.createLinearGradient(0, 0, 0, 60);
+        top.addColorStop(0, "rgba(0,0,0,1)");
+        top.addColorStop(1, "rgba(0,0,0,0)");
+        cx.globalCompositeOperation = "destination-out";
+        cx.fillStyle = top;
+        cx.fillRect(0, 0, 64, 60);
+        cx.globalCompositeOperation = "source-over";
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      })();
+      // Flame placements — clustered around scorch rings + a couple
+      // burning at the crater rim wedges so the player is surrounded
+      // by fire as they fight through the divot.
+      const flamePlacements = [
+        // Around scorch rings (one flame each, varied size/phase)
+        { x: 10,  z: 12,  h: 2.4, w: 1.6, phase: 0.0 },
+        { x: -10, z: 12,  h: 2.0, w: 1.4, phase: 0.7 },
+        { x: 10,  z: -12, h: 2.2, w: 1.5, phase: 1.4 },
+        { x: -10, z: -12, h: 1.8, w: 1.3, phase: 2.1 },
+        { x: 18,  z: 0,   h: 2.6, w: 1.7, phase: 0.3 },
+        { x: -18, z: 0,   h: 2.3, w: 1.5, phase: 1.7 },
+        { x: 0,   z: 18,  h: 2.0, w: 1.4, phase: 1.1 },
+        { x: 0,   z: -18, h: 2.4, w: 1.6, phase: 2.5 },
+        // Burning crater rim wedges (closer to the meteor)
+        { x: 6,   z: 5,   h: 1.6, w: 1.1, phase: 0.5 },
+        { x: -6,  z: -5,  h: 1.5, w: 1.0, phase: 1.9 },
+        { x: 5.5, z: -6,  h: 1.7, w: 1.1, phase: 0.2 },
+        { x: -5.5, z: 6,  h: 1.4, w: 1.0, phase: 2.3 },
+      ];
+      const flames = [];
+      for (const fp of flamePlacements) {
+        const fg = new THREE.PlaneGeometry(fp.w, fp.h);
+        const fm = new THREE.MeshBasicMaterial({
+          map: flameTex,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        });
+        const flame = new THREE.Mesh(fg, fm);
+        flame.position.set(fp.x, fp.h * 0.5 + 0.05, fp.z);
+        flame.userData = {
+          baseW: fp.w, baseH: fp.h, phase: fp.phase,
+          baseX: fp.x, baseZ: fp.z,
+        };
+        flames.push(flame);
+        this._crashsiteExtras.add(flame);
+      }
+      this._crashsiteFlames = flames;
+
+      // ── Smoke columns (over the flames) ─────────────────────────────
       const smokeTex = (() => {
         const c = document.createElement("canvas");
         c.width = 64; c.height = 256;
@@ -1189,17 +1371,66 @@ export class GameEngine {
         return tex;
       })();
       const smokes = [];
-      for (const [x, z] of [[4, 8], [-6, -4], [-3, 9]]) {
+      for (const [x, z] of [[4, 8], [-6, -4], [-3, 9], [10, 12], [-10, -12], [18, 0]]) {
         const sg = new THREE.PlaneGeometry(3.5, 7.5);
         const sm = new THREE.MeshBasicMaterial({
           map: smokeTex, transparent: true, depthWrite: false,
         });
         const s = new THREE.Mesh(sg, sm);
-        s.position.set(x, 4.0, z);
+        s.position.set(x, 5.0, z);
         smokes.push(s);
         this._crashsiteExtras.add(s);
       }
       this._crashsiteSmokes = smokes;
+
+      // ── Crater rim earthworks (the "divot" feel) ──────────────────
+      // A ring of chunky raised earth mounds positioned just outside the
+      // playable arena (radius ~48-56). Each mound is a tilted, scaled
+      // dodecahedron with a flat bottom embedded in the ground — so the
+      // ring reads as a continuous raised berm encircling the player.
+      // Heights vary to break up the silhouette and sell the impression
+      // of standing at the bottom of a wide impact crater.
+      const rimGroup = new THREE.Group();
+      const rimMat = new THREE.MeshToonMaterial({
+        color: 0x2e1f17,      // scorched earth, slightly darker than the floor
+        gradientMap: this.toonMap,
+      });
+      const rimSegments = 28;
+      for (let i = 0; i < rimSegments; i++) {
+        const a = (i / rimSegments) * Math.PI * 2;
+        // Wobble each chunk in/out by ±1.5 so the rim isn't a perfect circle
+        const radius = 50 + Math.sin(a * 3 + 0.5) * 1.6 + (Math.random() - 0.5) * 1.0;
+        const x = Math.cos(a) * radius;
+        const z = Math.sin(a) * radius;
+        // Chunk size: tall enough (4-7m) to occlude horizon, wide enough to
+        // touch its neighbours and read as continuous earth.
+        const scale = 2.6 + Math.random() * 1.4;
+        const heightStretch = 1.4 + Math.random() * 0.8;
+        const geo = new THREE.DodecahedronGeometry(scale, 0);
+        // Flatten the bottom verts so the chunk sits cleanly on the floor.
+        {
+          const pa = geo.attributes.position;
+          for (let v = 0; v < pa.count; v++) {
+            const y = pa.getY(v);
+            if (y < 0) pa.setY(v, y * 0.25);  // squash down
+            else       pa.setY(v, y * heightStretch);
+          }
+          geo.computeVertexNormals();
+        }
+        const chunk = new THREE.Mesh(geo, rimMat);
+        chunk.position.set(x, 0.4, z);
+        chunk.rotation.y = Math.random() * Math.PI;
+        chunk.rotation.x = (Math.random() - 0.5) * 0.2;
+        rimGroup.add(chunk);
+        // Outline
+        const ol = new THREE.Mesh(geo, outlineMat);
+        ol.scale.setScalar(1.03);
+        ol.position.copy(chunk.position);
+        ol.rotation.copy(chunk.rotation);
+        rimGroup.add(ol);
+      }
+      this._crashsiteExtras.add(rimGroup);
+      this._crashsiteRim = rimGroup;
     }
     if (Array.isArray(this._grassBlades)) {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
@@ -3594,9 +3825,20 @@ export class GameEngine {
     // Rain + lightning (no-op on day maps).
     this._updateWeather(dt);
 
-    // CRASHSITE — pulsing meteor core, rising smoke columns, halo throb.
+    // CRASHSITE — pulsing meteor core, rising smoke columns, halo throb,
+    // animated flame flicker + billboard, slow meteor rotation.
     if (this._crashsiteExtras && this._crashsiteExtras.visible) {
       const tt = performance.now() / 1000;
+      // Slow lazy spin of the central meteor rock so the silhouette
+      // shifts as the player circles it.
+      if (this._crashsiteMeteor) {
+        this._crashsiteMeteor.rotation.y += dt * 0.08;
+        this._crashsiteMeteor.rotation.x = Math.sin(tt * 0.15) * 0.04;
+      }
+      // Pulse the ember veins on the rock — hot/cool breathing effect.
+      if (this._crashsiteVeins && this._crashsiteVeins.material) {
+        this._crashsiteVeins.material.opacity = 0.65 + Math.sin(tt * 1.6) * 0.20 + Math.sin(tt * 4.3) * 0.08;
+      }
       // Pulse the emissive core: scale + opacity throb in sync.
       if (this._crashsiteCore) {
         const pulse = 1.0 + Math.sin(tt * 2.4) * 0.10 + Math.sin(tt * 5.7) * 0.04;
@@ -3612,6 +3854,32 @@ export class GameEngine {
           this._crashsiteHalo.material.opacity = 0.22 + Math.sin(tt * 1.7 + 0.4) * 0.10;
         }
       }
+      // Animate flames — billboard toward camera (Y-axis), flicker scale
+      // + opacity using multiple sine harmonics so each flame reads as
+      // a unique source.
+      if (Array.isArray(this._crashsiteFlames)) {
+        const camX = this.position.x, camZ = this.position.z;
+        for (let i = 0; i < this._crashsiteFlames.length; i++) {
+          const fl = this._crashsiteFlames[i];
+          if (!fl) continue;
+          const ud = fl.userData;
+          fl.rotation.y = Math.atan2(camX - ud.baseX, camZ - ud.baseZ);
+          // Compose two flicker waves (fast jitter + slow throb)
+          const fast = Math.sin(tt * 14 + ud.phase * 3.1) * 0.5
+                     + Math.sin(tt * 9.3 + ud.phase) * 0.3
+                     + Math.sin(tt * 21 + ud.phase * 2) * 0.2;
+          const slow = Math.sin(tt * 2.1 + ud.phase) * 0.5;
+          const scaleY = 1.0 + fast * 0.10 + slow * 0.15;
+          const scaleX = 1.0 + Math.sin(tt * 11 + ud.phase * 2.2) * 0.08;
+          fl.scale.set(scaleX, scaleY, 1);
+          if (fl.material) {
+            fl.material.opacity = 0.78 + slow * 0.18 + fast * 0.06;
+          }
+          // Re-anchor base so the flame foot stays glued to the ground
+          // as it scales upward.
+          fl.position.y = (ud.baseH * scaleY) * 0.5 + 0.05;
+        }
+      }
       // Billboard the smoke columns toward the camera (y-axis only so
       // they stay vertical) + drift upward with a gentle horizontal sway.
       if (Array.isArray(this._crashsiteSmokes)) {
@@ -3624,7 +3892,7 @@ export class GameEngine {
           // Subtle horizontal sway so smoke feels alive.
           s.position.x += Math.sin(tt * 0.6 + i) * 0.0025;
           // Slow vertical breathing — never travels far, just bobs.
-          s.position.y = 4.0 + Math.sin(tt * 0.45 + i * 1.3) * 0.35;
+          s.position.y = 5.0 + Math.sin(tt * 0.45 + i * 1.3) * 0.35;
         }
       }
     }
