@@ -12,6 +12,7 @@ import Profile from "@/pages/Profile";
 import Leaderboard from "@/pages/Leaderboard";
 import AuthCallback from "@/pages/AuthCallback";
 import AdminReports from "@/pages/AdminReports";
+import OrientationLock from "@/components/OrientationLock";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <QueueProvider>
+          <OrientationLock />
           <QueueOverlay />
           {/* Match loading overlay lives at the app root so it survives
               the Lobby → /play route change and can stay open until the

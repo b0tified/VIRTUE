@@ -3131,7 +3131,14 @@ class GameRoom:
 
             # --- Fire control -------------------------------------------------------
             difficulty = float(getattr(bot, "difficulty", 1.0))
+            # Ranked-only reaction nerf: tack a small extra cooldown onto
+            # ranked smart bots (the casual / offline ones are unaffected).
+            # Net effect: they pull the trigger ~80ms slower than before
+            # the nerf, which gives a fast-strafing player a real chance
+            # to break LOS before bullets start landing.
             effective_cd = BOT_SHOT_COOLDOWN_MS / max(0.5, difficulty)
+            if smart and self.is_ranked:
+                effective_cd += 80
             in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
@@ -3141,6 +3148,11 @@ class GameRoom:
                     bot.last_shot_ms = now_ms
                     orig_yaw, orig_pitch = bot.yaw, bot.pitch
                     noise = BOT_AIM_NOISE / max(0.5, difficulty)
+                    # Ranked-only accuracy nerf: widen the aim cone by 35%.
+                    # Keeps top-tier ranked bots threatening without their
+                    # shots feeling like aimbot.
+                    if smart and self.is_ranked:
+                        noise *= 1.35
                     # Smart bots tighten the cone even more when standing
                     # still (they're "ADS-ing"). Stricter than before:
                     # 60% → 45% of base noise.
@@ -3148,8 +3160,9 @@ class GameRoom:
                         noise *= 0.45
                     # Ranked headshot bias — at high diff, ~30% of shots
                     # explicitly aim at the target's head height instead
-                    # of chest. Players will get clapped fast.
-                    aim_at_head = smart and difficulty >= 2.2 and random.random() < min(0.45, (difficulty - 2.0) * 0.35)
+                    # of chest. Nerfed by reducing the probability slope
+                    # (0.35 → 0.22) and cap (0.45 → 0.30).
+                    aim_at_head = smart and difficulty >= 2.2 and random.random() < min(0.30, (difficulty - 2.0) * 0.22)
                     if aim_at_head:
                         dy_head = (target.y + 0.4) - bot.y  # target.y - 0.2 was chest; +0.4 from chest = head
                         bot.pitch = max(-1.0, min(1.0, math.atan2(dy_head, max(0.01, dist))))
