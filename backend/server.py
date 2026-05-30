@@ -2252,6 +2252,16 @@ class GameRoom:
         bot.difficulty = max(0.5, float(difficulty))
         bot.max_hp = int(BOT_MAX_HP * bot.difficulty)
         bot.hp = bot.max_hp
+        # Human-like jump state (used only for smart ranked bots — see
+        # `_tick_bots`). `_jump_start_ms` is the t=0 of the current jump
+        # arc; `_jump_next_ms` is the wall-clock time of the next eligible
+        # jump (drawn from a randomized cadence so jumps don't fire on a
+        # robotic interval). `_juke_next_ms` controls movement direction
+        # flips for the same human-feel reason.
+        bot._jump_start_ms = 0
+        bot._jump_next_ms = 0
+        bot._juke_phase = 0.0
+        bot._juke_next_ms = 0
         if disguised:
             bot.disguised = True
             # Match a real-player-looking platform + avatar + tier-aligned rank.
@@ -3250,7 +3260,15 @@ class GameRoom:
             # bot actually reaches its cover point instead of oscillating.
             if seeking_cover:
                 strafe_amp *= 0.35
-            strafe = math.sin(bot.bot_strafe_t * strafe_freq) * strafe_amp
+            # Human-like juke: every 1.5-3s ranked smart bots flip strafe
+            # phase by a random offset so the side-to-side pattern doesn't
+            # read as a pure sine wave. Real players don't strafe in a
+            # metronome — they fake one way then snap the other.
+            if smart and self.is_ranked:
+                if now_ms >= bot._juke_next_ms:
+                    bot._juke_phase += random.uniform(math.pi * 0.6, math.pi * 1.4)
+                    bot._juke_next_ms = now_ms + random.randint(1500, 3000)
+            strafe = math.sin(bot.bot_strafe_t * strafe_freq + bot._juke_phase) * strafe_amp
             if dist > 0.01:
                 px, pz = -dz / dist, dx / dist
                 mx_ += px * strafe
@@ -3276,6 +3294,41 @@ class GameRoom:
                 if smart and self.is_ranked and bot.invuln_until > now_s and move_speed > 0:
                     bot.invuln_until = 0.0
 
+            # --- Human-like jumping (ranked smart bots only) ----------------------
+            # Players bunny-hop and juke-jump constantly in 1v1s — make
+            # ranked bots do the same. Jump arc duration ~650ms, peak
+            # height ~1.2m. Cadence: every 1-3s when LOS is hot, longer
+            # when out of range. A reactive jump also triggers when the
+            # bot takes a hit (to dodge follow-up rounds).
+            if smart and self.is_ranked and bot.alive:
+                in_jump = bot._jump_start_ms > 0 and (now_ms - bot._jump_start_ms) < 650
+                if in_jump:
+                    # Parabolic arc — sin gives a smooth up-and-down with no
+                    # discontinuity. Caps at +1.2m above the player's normal Y.
+                    t = (now_ms - bot._jump_start_ms) / 650.0
+                    bot.y = PLAYER_HEIGHT + math.sin(t * math.pi) * 1.2
+                else:
+                    # Settle back to ground if we were mid-jump and the
+                    # window expired (e.g. after a respawn or stun).
+                    if bot.y != PLAYER_HEIGHT:
+                        bot.y = PLAYER_HEIGHT
+                    if bot._jump_start_ms > 0:
+                        bot._jump_start_ms = 0
+                    # Re-roll the next jump time. Closer fights → more
+                    # frequent hops (1-2s); long-range → calmer (2-4s).
+                    # Damage in the last 0.3s also forces a quick juke
+                    # jump regardless of the cooldown clock.
+                    just_hit = bot.last_damage_at and (now_s - bot.last_damage_at) < 0.3
+                    if just_hit or now_ms >= bot._jump_next_ms:
+                        if just_hit or dist < 18.0:
+                            bot._jump_start_ms = now_ms
+                            bot._jump_next_ms = now_ms + random.randint(900, 2400)
+                        else:
+                            # Out of effective range — just push the next
+                            # window forward without jumping so we don't
+                            # check this every tick.
+                            bot._jump_next_ms = now_ms + random.randint(2000, 4000)
+
             # --- Fire control -------------------------------------------------------
             difficulty = float(getattr(bot, "difficulty", 1.0))
             # Ranked-only reaction nerf: tack a small extra cooldown onto
@@ -3284,8 +3337,11 @@ class GameRoom:
             # the nerf, which gives a fast-strafing player a real chance
             # to break LOS before bullets start landing.
             effective_cd = BOT_SHOT_COOLDOWN_MS / max(0.5, difficulty)
+            # Ranked-only reaction nerf — kept just to give players a brief
+            # window to break LOS, but trimmed to +40ms (was +80ms) per
+            # user feedback that ranked bots felt sluggish.
             if smart and self.is_ranked:
-                effective_cd += 80
+                effective_cd += 40
             in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):

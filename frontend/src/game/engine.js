@@ -3286,7 +3286,14 @@ export class GameEngine {
           }
         }
 
-        entry.mesh.position.lerp(new THREE.Vector3(p.x, 0, p.z), 0.5);
+        // Remote player mesh root is anchored at the ground (y=0). When
+        // the server reports a `y` above the normal PLAYER_HEIGHT (~1.8m)
+        // it means the player is mid-jump — lift the mesh by the delta
+        // so jumping bots/players visibly leave the ground instead of
+        // sliding around at floor level. Clamp at 0 so we never sink.
+        const PLAYER_BASE_Y = 1.8;
+        const meshLift = Math.max(0, (p.y || PLAYER_BASE_Y) - PLAYER_BASE_Y);
+        entry.mesh.position.lerp(new THREE.Vector3(p.x, meshLift, p.z), 0.5);
         entry.mesh.rotation.y = p.yaw;
 
         // Death animation trigger
