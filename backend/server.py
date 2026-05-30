@@ -2723,6 +2723,16 @@ class GameRoom:
             # Damage scaling
             if shooter.is_bot:
                 damage = base_damage
+                # Ranked smart bots apply the weapon's headshot/legs
+                # multipliers so a precision shot is actually rewarded.
+                # Casual/offline bots stay flat — they're meant to be
+                # forgiving practice opponents.
+                if getattr(shooter, "_apply_weapon_mults", False):
+                    if body_part == "head":
+                        damage *= cfg["headshot_mult"]
+                    elif body_part == "legs":
+                        damage *= cfg["legs_mult"]
+                    damage = int(round(damage))
             else:
                 damage = cfg["damage"]
                 if body_part == "head":
@@ -2739,6 +2749,12 @@ class GameRoom:
             hit.hp -= damage
             hit.last_attacker = shooter.id
             hit.last_damage_at = time.time()
+            # Mark headshot in the hit/kill events when:
+            #   • shooter is a real player landing on the head, OR
+            #   • shooter is a ranked smart bot (i.e. `_apply_weapon_mults`)
+            #     landing on the head — so the victim's HUD shows the
+            #     proper headshot indicator + screen flash.
+            head_hit = body_part == "head" and (not shooter.is_bot or getattr(shooter, "_apply_weapon_mults", False))
             self.events.append({
                 "type": "hit",
                 "shooter_id": shooter.id,
@@ -2746,14 +2762,14 @@ class GameRoom:
                 "hp": max(0, hit.hp),
                 "body_part": body_part,
                 "damage": damage,
-                "headshot": body_part == "head" and not shooter.is_bot,
+                "headshot": head_hit,
             })
             if hit.hp <= 0:
                 hit.alive = False
                 hit.hp = 0
                 hit.deaths += 1
                 shooter.kills += 1
-                self._award_kill_heal(shooter, headshot=(body_part == "head" and not shooter.is_bot))
+                self._award_kill_heal(shooter, headshot=head_hit)
                 hit.respawn_at = time.time() + 3.0
                 self.events.append({
                     "type": "kill",
@@ -2761,7 +2777,7 @@ class GameRoom:
                     "victim_id": hit.id,
                     "victim_name": hit.username,
                     "weapon": getattr(shooter, "weapon", "ak47"),
-                    "headshot": body_part == "head" and not shooter.is_bot,
+                    "headshot": head_hit,
                 })
                 if not shooter.is_bot and shooter.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}}))
@@ -3299,7 +3315,22 @@ class GameRoom:
                         bot.pitch = max(-1.0, min(1.0, math.atan2(dy_head, max(0.01, dist))))
                     bot.yaw += random.uniform(-noise, noise)
                     bot.pitch += random.uniform(-noise * 0.7, noise * 0.7)
-                    dmg = int(BOT_SHOT_DAMAGE * (0.7 + 0.4 * difficulty))
+                    # Damage: casual/offline bots use BOT_SHOT_DAMAGE on
+                    # a difficulty curve (gentle for practice). RANKED
+                    # smart bots use the full AK body damage (25) and
+                    # also get the weapon's headshot multiplier applied
+                    # downstream — together with the ~30% head-aim bias
+                    # above, a head shot lands for 25 × 2.0 = 50 damage
+                    # → an aimed AK 2-shots a full-HP player. Body shots
+                    # stay at 25 (4-shot kill) — slower than a real
+                    # player can manage with perfect tracking, so the
+                    # bot is a credible threat without being aimbot.
+                    if smart and self.is_ranked:
+                        bot._apply_weapon_mults = True
+                        dmg = int(weapon_cfg("ak47")["damage"])
+                    else:
+                        bot._apply_weapon_mults = False
+                        dmg = int(BOT_SHOT_DAMAGE * (0.7 + 0.4 * difficulty))
                     await self._apply_shoot(bot, dmg)
                     bot.yaw, bot.pitch = orig_yaw, orig_pitch
                     # Smart bots fire in 3-5 round bursts then pause
