@@ -3516,22 +3516,26 @@ class GameRoom:
                     "placement_matches_total": PLACEMENT_MATCHES,
                 })
             # Append bot rows so the match-end overlay shows the full lobby
-            # in ranked mode too. Bots earn no RP but their kills/deaths +
-            # disguised rank label appear on the scoreboard.
+            # in ranked mode too. Bots' RP is purely cosmetic for the
+            # scoreboard — they don't have a real account, but we compute
+            # a plausible delta from their disguised tier + placement so
+            # the scoreboard reads like a real ranked lobby (every line
+            # shows +N / -N, not just the player).
             for p in all_participants:
                 if not p.is_bot:
                     continue
                 bot_placement = placement_of.get(p.id, total_with_bots)
                 bot_tier_idx = int(getattr(p, "rank_tier", 0) or 0)
                 bot_tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
+                bot_delta = compute_rp_delta(bot_placement, bot_tier_idx)
                 placements.append({
                     "id": p.id,
                     "user_id": "",
                     "username": p.username or p.bot_name or "BOT",
                     "kills": p.kills,
                     "deaths": p.deaths,
-                    "delta": 0,
-                    "base_delta": 0,
+                    "delta": bot_delta,
+                    "base_delta": bot_delta,
                     "new_points": 0,
                     "rank_tier": bot_tier_idx,
                     "rank_name": bot_tier_name,
