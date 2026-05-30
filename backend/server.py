@@ -529,6 +529,23 @@ async def on_startup():
     await db.friendships.create_index([("from_user_id", 1), ("to_user_id", 1)], unique=True)
     await db.friendships.create_index("to_user_id")
     await db.friendships.create_index("from_user_id")
+
+    # One-time migration: backfill `expires_at` on legacy admin-created
+    # redeem codes that pre-date the expiry/cap feature. Default cutoff
+    # is `created_at + 30 days` (or now+30d if `created_at` is missing).
+    # Idempotent — only touches docs missing `expires_at`.
+    try:
+        default_window = timedelta(days=30)
+        async for doc in db.redeem_codes.find({"expires_at": {"$exists": False}}):
+            base = doc.get("created_at")
+            if not isinstance(base, datetime):
+                base = datetime.now(timezone.utc)
+            await db.redeem_codes.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"expires_at": base + default_window}},
+            )
+    except Exception as _migrate_err:
+        logger.warning("redeem_codes expires_at migration failed: %s", _migrate_err)
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@shooter.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
@@ -1363,16 +1380,31 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     # so the admin dashboard can show redemption counts.
     reward = REDEEM_CODES.get(code)
     is_dynamic = False
+    dyn_doc: Optional[dict] = None
     if not reward:
-        dyn = await db.redeem_codes.find_one({"code": code})
-        if dyn:
-            reward = dyn.get("reward") or {}
+        dyn_doc = await db.redeem_codes.find_one({"code": code})
+        if dyn_doc:
+            # Enforce expiry + redemption cap. Both checks intentionally
+            # collapse into the same generic 404 so the surface UX stays
+            # "Invalid or expired code." for any failure mode.
+            now = datetime.now(timezone.utc)
+            exp = dyn_doc.get("expires_at")
+            # Mongo returns naive datetimes; coerce to UTC so the compare
+            # against `now` (tz-aware) doesn't TypeError.
+            if isinstance(exp, datetime) and exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if isinstance(exp, datetime) and exp <= now:
+                raise HTTPException(status_code=404, detail="Invalid or expired code.")
+            max_red = dyn_doc.get("max_redemptions")
+            if max_red is not None and int(dyn_doc.get("redeemed_count", 0) or 0) >= int(max_red):
+                raise HTTPException(status_code=404, detail="Invalid or expired code.")
+            reward = dyn_doc.get("reward") or {}
             # Ensure a human-readable label survives the round trip.
-            if not reward.get("label") and dyn.get("label"):
-                reward = {**reward, "label": dyn.get("label")}
+            if not reward.get("label") and dyn_doc.get("label"):
+                reward = {**reward, "label": dyn_doc.get("label")}
             is_dynamic = True
     if not reward:
-        raise HTTPException(status_code=404, detail="Invalid code.")
+        raise HTTPException(status_code=404, detail="Invalid or expired code.")
     redeemed = list(user.get("redeemed_codes", []) or [])
     if code in redeemed:
         raise HTTPException(status_code=409, detail="Code already redeemed.")
@@ -5071,6 +5103,11 @@ class AdminCodeIn(BaseModel):
     reward_type: str  # one of: xp | rp | coins | min_level | rank_up_tiers | banner_animated
     amount: Optional[int] = None  # required for everything except banner_animated
     label: Optional[str] = None
+    # Optional limits. `expires_at` is an ISO-8601 datetime string (date or
+    # full datetime); `max_redemptions` is a positive int. Either, both,
+    # or neither may be set.
+    expires_at: Optional[str] = None
+    max_redemptions: Optional[int] = None
 
 
 _ALLOWED_REWARD_TYPES = {"xp", "rp", "coins", "min_level", "rank_up_tiers", "banner_animated"}
@@ -5107,13 +5144,44 @@ def _build_reward_from_admin_input(reward_type: str, amount: Optional[int], labe
     return reward
 
 
+def _parse_expires_at(raw: Optional[str]) -> Optional[datetime]:
+    """Parse an admin-supplied expiry string into a tz-aware UTC datetime.
+    Accepts ISO-8601 dates (`2026-12-31`) or full datetimes. Returns None
+    if the input is empty/null. Raises HTTPException(400) on invalid
+    formats or past dates."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    # Accept trailing "Z" by normalising to "+00:00" — fromisoformat doesn't
+    # speak the Z suffix on older Pythons.
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="expires_at must be an ISO-8601 date or datetime.")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    # Promote a bare date (00:00:00) to end-of-day so "2026-12-31" reads as
+    # "expires at the end of Dec 31", not "expires the moment Dec 31 starts".
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+        dt = dt + timedelta(hours=23, minutes=59, seconds=59)
+    now = datetime.now(timezone.utc)
+    if dt <= now:
+        raise HTTPException(status_code=400, detail="expires_at must be in the future.")
+    return dt
+
+
 @api.post("/admin/codes")
 async def admin_create_code(payload: AdminCodeIn, user: dict = Depends(get_current_user)):
     """Create a new dynamic redeem code. Admin-only.
 
     Code rules: 3-20 chars, alphanumeric, case-insensitive (stored upper).
-    Refuses to overwrite hardcoded codes or codes that already exist
-    in the dynamic collection."""
+    Optional `expires_at` (ISO date/datetime, must be in future) and
+    `max_redemptions` (positive int) limits. Refuses to overwrite hardcoded
+    codes or codes that already exist in the dynamic collection."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     code = (payload.code or "").strip().upper()
@@ -5125,6 +5193,14 @@ async def admin_create_code(payload: AdminCodeIn, user: dict = Depends(get_curre
     if existing:
         raise HTTPException(status_code=409, detail="Code already exists.")
     reward = _build_reward_from_admin_input(payload.reward_type, payload.amount, payload.label)
+    expires_at = _parse_expires_at(payload.expires_at)
+    max_redemptions: Optional[int] = None
+    if payload.max_redemptions is not None:
+        if int(payload.max_redemptions) <= 0:
+            raise HTTPException(status_code=400, detail="max_redemptions must be a positive integer.")
+        if int(payload.max_redemptions) > 1_000_000:
+            raise HTTPException(status_code=400, detail="max_redemptions cannot exceed 1,000,000.")
+        max_redemptions = int(payload.max_redemptions)
     now = datetime.now(timezone.utc)
     doc = {
         "code": code,
@@ -5133,6 +5209,8 @@ async def admin_create_code(payload: AdminCodeIn, user: dict = Depends(get_curre
         "created_at": now,
         "created_by": user.get("username") or "admin",
         "redeemed_count": 0,
+        "expires_at": expires_at,           # None = never expires
+        "max_redemptions": max_redemptions, # None = unlimited
     }
     await db.redeem_codes.insert_one(doc)
     # Strip _id from response (ObjectId is not JSON-serializable).
@@ -5144,27 +5222,47 @@ async def admin_create_code(payload: AdminCodeIn, user: dict = Depends(get_curre
         "created_at": now.isoformat(),
         "created_by": doc["created_by"],
         "redeemed_count": 0,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "max_redemptions": max_redemptions,
     }
 
 
 @api.get("/admin/codes")
 async def admin_list_codes(user: dict = Depends(get_current_user)):
-    """List all dynamic admin-created codes (most recent first). Admin-only."""
+    """List all dynamic admin-created codes (most recent first). Admin-only.
+    Includes derived `status` (active | expired | maxed) so the UI can
+    badge each row without computing it client-side."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     out = []
+    now = datetime.now(timezone.utc)
     cursor = db.redeem_codes.find({}, {"_id": 0}).sort("created_at", -1).limit(200)
     async for c in cursor:
         ts = c.get("created_at")
         lts = c.get("last_redeemed_at")
+        exp = c.get("expires_at")
+        # Mongo returns naive datetimes — coerce to UTC for comparison.
+        exp_aware = exp.replace(tzinfo=timezone.utc) if isinstance(exp, datetime) and exp.tzinfo is None else exp
+        max_red = c.get("max_redemptions")
+        count = int(c.get("redeemed_count", 0) or 0)
+        # Status: expired beats maxed beats active (UX choice — admin should
+        # see "expired" if both conditions hit so they replace the code).
+        status = "active"
+        if isinstance(exp_aware, datetime) and exp_aware <= now:
+            status = "expired"
+        elif max_red is not None and count >= int(max_red):
+            status = "maxed"
         out.append({
             "code": c.get("code"),
             "reward": c.get("reward") or {},
             "label": c.get("label") or (c.get("reward") or {}).get("label") or "",
             "created_at": ts.isoformat() if isinstance(ts, datetime) else ts,
             "created_by": c.get("created_by") or "",
-            "redeemed_count": int(c.get("redeemed_count", 0) or 0),
+            "redeemed_count": count,
             "last_redeemed_at": lts.isoformat() if isinstance(lts, datetime) else lts,
+            "expires_at": exp.isoformat() if isinstance(exp, datetime) else None,
+            "max_redemptions": int(max_red) if max_red is not None else None,
+            "status": status,
         })
     return {"codes": out}
 

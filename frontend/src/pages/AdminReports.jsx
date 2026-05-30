@@ -490,7 +490,10 @@ const REWARD_TYPE_OPTIONS = [
 
 function RedeemCodesCard({ setToast }) {
   const [codes, setCodes] = useState(null);   // null = loading
-  const [form, setForm] = useState({ code: "", reward_type: "xp", amount: "100", label: "" });
+  const [form, setForm] = useState({
+    code: "", reward_type: "xp", amount: "100", label: "",
+    expires_at: "", max_redemptions: "",
+  });
   const [creating, setCreating] = useState(false);
   const [deletingCode, setDeletingCode] = useState(null);
 
@@ -525,11 +528,24 @@ function RedeemCodesCard({ setToast }) {
       }
       body.amount = amt;
     }
+    // Optional expiry: HTML date input gives "YYYY-MM-DD" — backend
+    // accepts that and treats as end-of-day.
+    const exp = (form.expires_at || "").trim();
+    if (exp) body.expires_at = exp;
+    // Optional max redemptions
+    if (form.max_redemptions !== "" && form.max_redemptions !== null) {
+      const cap = parseInt(form.max_redemptions, 10);
+      if (!cap || cap <= 0) {
+        setToast?.({ kind: "err", text: "Max redemptions must be a positive integer." });
+        return;
+      }
+      body.max_redemptions = cap;
+    }
     setCreating(true);
     try {
       await api.post("/admin/codes", body);
       setToast?.({ kind: "ok", text: `Code ${code} created.` });
-      setForm({ code: "", reward_type: "xp", amount: "100", label: "" });
+      setForm({ code: "", reward_type: "xp", amount: "100", label: "", expires_at: "", max_redemptions: "" });
       reload();
     } catch (err) {
       setToast?.({ kind: "err", text: err?.response?.data?.detail || "Failed to create code." });
@@ -620,7 +636,31 @@ function RedeemCodesCard({ setToast }) {
             data-testid="redeem-label-input"
           />
         </div>
-        <div className="md:col-span-1">
+        <div className="md:col-span-1 hidden md:block"></div>
+        {/* Row 2: Optional limits + ADD button */}
+        <div className="md:col-span-4">
+          <label className="block font-anton uppercase tracking-widest text-xs mb-1">Expires (optional)</label>
+          <input
+            type="date"
+            value={form.expires_at}
+            onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+            className="w-full border-2 border-black px-2 py-1.5 font-anton text-sm"
+            data-testid="redeem-expires-input"
+          />
+        </div>
+        <div className="md:col-span-4">
+          <label className="block font-anton uppercase tracking-widest text-xs mb-1">Max Redemptions (optional)</label>
+          <input
+            type="number"
+            min="1"
+            value={form.max_redemptions}
+            onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })}
+            placeholder="Unlimited"
+            className="w-full border-2 border-black px-2 py-1.5 font-anton text-sm"
+            data-testid="redeem-max-redemptions-input"
+          />
+        </div>
+        <div className="md:col-span-4">
           <button
             type="submit"
             disabled={creating}
@@ -628,7 +668,7 @@ function RedeemCodesCard({ setToast }) {
             data-testid="redeem-create-btn"
           >
             <span className="flex items-center justify-center gap-1">
-              <Plus size={14} strokeWidth={3} /> {creating ? "..." : "ADD"}
+              <Plus size={14} strokeWidth={3} /> {creating ? "..." : "ADD CODE"}
             </span>
           </button>
         </div>
@@ -645,10 +685,12 @@ function RedeemCodesCard({ setToast }) {
         ) : (
           <div className="divide-y-2 divide-black/10">
             <div className="hidden md:grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-xs border-b-2 border-black">
-              <div className="col-span-3">Code</div>
-              <div className="col-span-3">Reward</div>
-              <div className="col-span-3">Label</div>
+              <div className="col-span-2">Code</div>
+              <div className="col-span-2">Reward</div>
+              <div className="col-span-2">Label</div>
               <div className="col-span-2 text-right">Redemptions</div>
+              <div className="col-span-2 text-right">Expires</div>
+              <div className="col-span-1 text-right">Status</div>
               <div className="col-span-1"></div>
             </div>
             {codes.map((c) => (
@@ -657,17 +699,28 @@ function RedeemCodesCard({ setToast }) {
                 className="grid grid-cols-12 px-4 py-2 items-center text-sm gap-2"
                 data-testid={`redeem-code-row-${c.code}`}
               >
-                <div className="col-span-12 md:col-span-3 font-mono uppercase tracking-wider">
-                  <span className="bg-[#0A0A0A] text-[#FFD700] px-2 py-0.5">{c.code}</span>
+                <div className="col-span-12 md:col-span-2 font-mono uppercase tracking-wider">
+                  <span className={`bg-[#0A0A0A] text-[#FFD700] px-2 py-0.5 ${c.status !== "active" ? "line-through opacity-60" : ""}`}>
+                    {c.code}
+                  </span>
                 </div>
-                <div className="col-span-6 md:col-span-3 font-anton uppercase text-xs">
+                <div className="col-span-6 md:col-span-2 font-anton uppercase text-xs">
                   {summarizeReward(c.reward)}
                 </div>
-                <div className="col-span-6 md:col-span-3 text-xs text-neutral-700 truncate">
+                <div className="col-span-6 md:col-span-2 text-xs text-neutral-700 truncate">
                   {c.label || <span className="text-neutral-400">—</span>}
                 </div>
                 <div className="col-span-6 md:col-span-2 md:text-right font-anton text-base" data-testid={`redeem-code-count-${c.code}`}>
                   {c.redeemed_count}
+                  {c.max_redemptions != null && (
+                    <span className="text-neutral-500 text-xs"> / {c.max_redemptions}</span>
+                  )}
+                </div>
+                <div className="col-span-6 md:col-span-2 md:text-right font-anton text-xs" data-testid={`redeem-code-expires-${c.code}`}>
+                  {formatExpiry(c.expires_at)}
+                </div>
+                <div className="col-span-6 md:col-span-1 md:text-right">
+                  <StatusBadge status={c.status} testid={`redeem-code-status-${c.code}`} />
                 </div>
                 <div className="col-span-6 md:col-span-1 md:text-right">
                   <button
@@ -699,5 +752,42 @@ function summarizeReward(reward) {
   if (reward.rank_up_tiers) parts.push(`+${reward.rank_up_tiers} Tier`);
   if (reward.banner_animated) parts.push("Animated Banner");
   return parts.join(" · ") || "—";
+}
+
+/* Format an ISO expiry timestamp into a short relative string ("5d 4h",
+   "2h 15m", "47s", or "—" if unset). Past dates collapse to "expired"
+   — the status badge handles styling so just the label is enough. */
+function formatExpiry(iso) {
+  if (!iso) return "—";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return "—";
+  if (ms <= 0) return "expired";
+  const s = Math.floor(ms / 1000);
+  if (s < 60)        return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60)        return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48)        return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
+const STATUS_STYLE = {
+  active:  { bg: "#06A35F", text: "#fff",     label: "ACTIVE" },
+  expired: { bg: "#E62429", text: "#fff",     label: "EXPIRED" },
+  maxed:   { bg: "#9B59B6", text: "#fff",     label: "MAXED" },
+};
+
+function StatusBadge({ status, testid }) {
+  const s = STATUS_STYLE[status] || STATUS_STYLE.active;
+  return (
+    <span
+      className="inline-block font-anton uppercase tracking-widest text-[10px] px-2 py-0.5 border-2 border-black"
+      style={{ background: s.bg, color: s.text }}
+      data-testid={testid}
+    >
+      {s.label}
+    </span>
+  );
 }
 
