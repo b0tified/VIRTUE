@@ -4869,23 +4869,10 @@ async def admin_close_report(report_id: str, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
-# Seed-veteran name pool — cosmetic, used only by the admin seed endpoint
-# below. Mixed style: gamer tags, single-word handles, and a few "esports
-# pro" sounding aliases so the leaderboard reads as a real competitive
-# scene instead of obviously-fake entries.
-_SEED_VETERAN_HANDLES = [
-    # Goonmaster / Grandmaster — top-tier pro / streamer feel
-    "Vyperr", "OmegaZion", "Apex.Velox", "Nyxenith", "Korvax_TV",
-    "Zephyr0", "Hydra_x", "Maelstr0m", "Phantasm", "Eclipse_FN",
-    # Master / Diamond — competitive grinders
-    "neonRipper", "tilted_AI", "icefall42", "Quill.OP", "Shroud_clone",
-    "Cobalt_Rage", "Lunarus", "voidwxlk", "GhostByte", "Karasu_zX",
-    # Platinum / Gold — solid mid-ranked
-    "wraithlight", "VelvetVx", "noctilune", "kestrel.99", "RustClad",
-    "amber_ix", "hexProwler", "Crimson_M", "DustWxlf", "syntaxia",
-    # Silver / lower Gold — sprinkle a few approachable handles
-    "tinytim_xd", "BoxFrag", "QuickJab", "saltyMVP", "rookie__",
-]
+# Note: the seed-veteran name pool used to live here as a flat list, but
+# was replaced with `TIERED_BOT_NAMES` lookups inside `_build_and_insert`
+# so seeded leaderboard accounts share names with the in-game ranked bots
+# for the same tier. Keeps the world's character names consistent.
 
 
 class SeedVeteransIn(BaseModel):
@@ -4960,15 +4947,26 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
 
     async def _build_and_insert(rp: int):
         """Build one realistic veteran doc with the given RP and insert
-        it. Returns the inserted-username summary or None on duplicate."""
-        base = random.choice(_SEED_VETERAN_HANDLES)
+        it. Returns the inserted-username summary or None on duplicate.
+
+        Name picking: the base handle is drawn from `TIERED_BOT_NAMES`
+        for the doc's computed rank tier so seeded leaderboard accounts
+        share the **same name pool** that in-game ranked bots use for
+        that tier. That way a player who sees "ApexLumen_T1" pop up on
+        the Master leaderboard also believably bumps into
+        "ApexLumen_T1-R" inside a Master-tier match — the world feels
+        coherent instead of having two disjoint name catalogs."""
+        rank_idx, _name = rank_for_points(rp)
+        # Tier-aligned pool (falls back to all-tiers flat if anything's
+        # missing — defensive only; every tier 0..7 is populated above).
+        pool = TIERED_BOT_NAMES.get(rank_idx) or [n for sub in TIERED_BOT_NAMES.values() for n in sub]
+        base = random.choice(pool)
         if random.random() < 0.4 or any(d["username"] == base for d in inserted) or await db.users.find_one({"username": base}):
             if not suffix_pool:
                 return None
             username = f"{base}{suffix_pool.pop()}"
         else:
             username = base
-        rank_idx, _name = rank_for_points(rp)
         matches = random.randint(15 + rank_idx * 10, 40 + rank_idx * 35)
         kills = int(matches * random.uniform(2.5 + rank_idx * 0.4, 4.0 + rank_idx * 0.55))
         deaths = max(1, int(kills / random.uniform(0.95 + rank_idx * 0.12, 1.45 + rank_idx * 0.18)))

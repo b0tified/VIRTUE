@@ -296,6 +296,7 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - Aim-assist max range **22m → 26m**
   - New `heat_ramp_seconds` / `heat_cool_seconds` config keys so future tweaks live in `WEAPON_CONFIGS["laser"]` rather than scattered constants.
   - 3 regression tests in `tests/test_laser_buff.py` lock the numbers + assert AK body-DPS still exceeds laser DPS so the laser remains a tradeoff, not a strict upgrade.
+- ✅ **Leaderboard seed names share the in-game tier pool** — Replaced the standalone `_SEED_VETERAN_HANDLES` list with `TIERED_BOT_NAMES[rank_idx]` lookups inside `_build_and_insert`. Seeded accounts now draw their base handle from the same per-tier pool that ranked-room bots use, so a player who sees `ApexLumen_T1` climb the Master leaderboard also believably encounters `ApexLumen_T1-R` in a Master match. Verified end-to-end via curl (40-account reseed): every seeded row's username is from the tier pool matching its computed `rank_tier`. 3 regression tests in `tests/test_seed_uses_tiered_bot_names.py`.
 - 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
 - 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors, practice map selector screenshot shows all 4 maps + RANDOM.
 
