@@ -3641,21 +3641,34 @@ class GameRoom:
             if real_players:
                 now = datetime.now(timezone.utc)
                 mode = "ranked" if self.is_ranked else ("offline" if getattr(self, "is_offline", False) else "casual")
+                # Index placements by user_id so each real player gets paired
+                # with their OWN placement entry. Previously we did
+                # `zip(placements, real_players)` — but `placements` is sorted
+                # by kills and contains both real-player AND bot rows mixed
+                # together, so a real player who lost RP could end up paired
+                # with a bot entry whose delta=0 → their match history
+                # silently dropped the RP loss (showed "—" instead of "-60").
+                placements_by_uid = {
+                    entry.get("user_id"): entry
+                    for entry in placements
+                    if entry.get("user_id")
+                }
                 docs = []
                 first_match_grants: List[str] = []
-                for entry, pl in zip(placements, real_players):
+                for pl in real_players:
+                    entry = placements_by_uid.get(pl.user_id) or {}
                     docs.append({
                         "user_id": pl.user_id,
                         "username": pl.username,
                         "mode": mode,
-                        "kills": entry["kills"],
-                        "deaths": entry["deaths"],
+                        "kills": int(entry.get("kills", pl.kills) or 0),
+                        "deaths": int(entry.get("deaths", pl.deaths) or 0),
                         "placement": placement_of.get(pl.id, 1),
                         "total_players": total_with_bots,
-                        "rp_delta": entry["delta"],
-                        "rank_points_after": entry["new_points"],
-                        "rank_name_after": entry["rank_name"],
-                        "is_placement": entry.get("is_placement", False),
+                        "rp_delta": int(entry.get("delta", 0) or 0),
+                        "rank_points_after": int(entry.get("new_points", 0) or 0),
+                        "rank_name_after": entry.get("rank_name") or "BRONZE",
+                        "is_placement": bool(entry.get("is_placement", False)),
                         "ended_at": now,
                     })
                     # Free Mech skin grant — fires when the player's matches
