@@ -276,6 +276,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Ranked AI: cover-seeking + harder strafe** — Smart bots (`difficulty >= 1.5`) now actively repath to the nearest obstacle that breaks LOS with their target when HP < 45 or after taking damage within 600ms (peek-and-duck behaviour). Strafe freq 2.2→2.6 and amp 0.95→1.15 across the board so they're never sitting still. Cover anchor is computed as obstacle centre offset away from target by `max(w,d)/2 + 1.2m`; strafe amp dampened to 35% while actively closing on cover so they actually arrive.
 - ✅ **VIRTUE logo moved down on PC** — `Lobby.jsx` main grid `lg:-mt-24` → `lg:mt-2` and inner column `lg:-mt-8` → `lg:mt-6`. Hero logo no longer overlaps the header utility bar on desktop. Mobile margins (`-mt-12 sm:-mt-20`) untouched.
 
+### Iteration 28 — **THIS SESSION (2026-02-27)**
+- ✅ **CRASHSITE map added to rotation** — New `MAP_D` themed as a meteor impact site: central meteor boulder, 6-piece crater rim, scattered meteor shards, 4 burnt-out outposts at corners, jagged rock pillars in the mid-field, 12 spawn points, 8 healthpacks. Now in `MAPS = [downtown, crossfire, shoreline, crashsite]` and equally weighted in `random_map()`.
+- ✅ **Crashsite atmospherics (frontend)** — Refactored `_applyDayNight(night, mapId)` to accept a theme. Crashsite gets a smoky red/violet sky gradient, heat-haze fog (70→150), warm ember sun + hemi tint, scorched dirt floor (no grass blades), and hides parkland decorations + clouds.
+- ✅ **Crashsite VFX (frontend)** — Pulsing emissive meteor core + additive halo, 8 ground scorch rings, 3 billboarded smoke columns with breathing/sway. Animated every frame via new `_updateCrashsiteFx` path in the main loop.
+- 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
+- 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors.
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).

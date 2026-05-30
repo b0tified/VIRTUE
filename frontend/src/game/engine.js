@@ -999,8 +999,9 @@ export class GameEngine {
     });
     this.obstacles = colored;
     // Day-night theme MUST be applied before building meshes so the face
-    // textures pick up the correct night/day variant. Downtown = night.
-    this._applyDayNight(arena.map_id === "downtown");
+    // textures pick up the correct night/day variant. Downtown = night,
+    // crashsite = dusky red overlay (still day, just tinted).
+    this._applyDayNight(arena.map_id === "downtown", arena.map_id);
     this.obstacles.forEach((o) => this._buildBuilding(o));
     // Per-map ground theme — replace the floor material when the map calls
     // for a non-grass aesthetic (e.g. shoreline → sand). Grass blades stay
@@ -1212,9 +1213,13 @@ export class GameEngine {
   /* Swap the scene's sky / sun / lighting between day and night themes.
      Called from _rebuildArenaFromServer when the map changes. Also runs
      once at init with night=false to set up the default daytime look. */
-  _applyDayNight(night) {
-    if (this._isNight === night) return;
+  _applyDayNight(night, mapId) {
+    // Atmospheric "mode" string used to gate theme-specific overlays
+    // (e.g. CRASHSITE's red dusk sky). null = vanilla day/night.
+    const theme = (mapId === "crashsite") ? "crashsite" : null;
+    if (this._isNight === night && this._currentTheme === theme) return;
     this._isNight = night;
+    this._currentTheme = theme;
 
     // 1) Sky gradient — regenerate the canvas texture for whichever theme.
     const sc = document.createElement("canvas");
@@ -1451,6 +1456,57 @@ export class GameEngine {
       if (this._puddles) this._puddles.visible = false;
       this._lightningActiveUntil = 0;
       try { audioBus.rainAmbient(false); } catch {}
+    }
+
+    // 8) CRASHSITE atmospheric overlay — paint a dusky red/violet sky,
+    // tighten the fog into a heat-haze, and warm-tint the sun so the
+    // whole arena reads as "still smouldering after impact". Applied on
+    // top of the daytime base above (crashsite is night=false).
+    if (theme === "crashsite") {
+      // Rebuild sky with a smoky red-violet gradient unique to crashsite.
+      const sc2 = document.createElement("canvas");
+      sc2.width = 8; sc2.height = 512;
+      const ctx2 = sc2.getContext("2d");
+      const grd2 = ctx2.createLinearGradient(0, 0, 0, 512);
+      grd2.addColorStop(0.00, "#1a0612");   // deep magenta-black overhead
+      grd2.addColorStop(0.25, "#3a0e1f");
+      grd2.addColorStop(0.50, "#7a2018");   // dusky red mid-band
+      grd2.addColorStop(0.72, "#c64a1e");   // smoldering orange
+      grd2.addColorStop(0.88, "#e08040");   // ember haze at horizon
+      grd2.addColorStop(1.00, "#4a1a10");   // dark scorch low
+      ctx2.fillStyle = grd2; ctx2.fillRect(0, 0, 8, 512);
+      const skyTex2 = new THREE.CanvasTexture(sc2);
+      skyTex2.colorSpace = THREE.SRGBColorSpace;
+      if (this._sky) {
+        const old = this._sky.material.map;
+        this._sky.material.map = skyTex2;
+        this._sky.material.color?.setRGB(1, 1, 1);
+        this._sky.material.needsUpdate = true;
+        old?.dispose?.();
+      }
+      this.scene.background = this._buildSkyGradient(0x2a0a14, 0x4a1a10);
+      // Thicker, redder fog gives the heat-haze look — pulled in close
+      // so distant outposts dissolve into smoke.
+      this.scene.fog = new THREE.Fog(0x4a1810, 70, 150);
+      if (this._sun) {
+        this._sun.intensity = 1.15;
+        this._sun.color.set(0xff7a40);     // warm ember sunlight
+      }
+      if (this._hemi) {
+        this._hemi.intensity = 0.9;
+        this._hemi.color.set(0xff5a2a);
+        this._hemi.groundColor.set(0x2a0e08);
+      }
+      if (this._ambientFill) {
+        this._ambientFill.intensity = 0.35;
+        this._ambientFill.color.set(0xff9060);
+      }
+      // Hide the bright sun disc — it'd clash with the smoky red sky.
+      const sunMeshes2 = [this._sunDisc, this._sunHaloInner, this._sunHaloOuter, this._sunGlow];
+      sunMeshes2.forEach((m) => { if (m) m.visible = false; });
+      // Hide day clouds + parkland decorations on crashsite (alien world).
+      if (Array.isArray(this._clouds)) this._clouds.forEach((c) => { if (c) c.visible = false; });
+      if (Array.isArray(this._dayDecorations)) this._dayDecorations.forEach((d) => { if (d) d.visible = false; });
     }
   }
 
@@ -3537,6 +3593,41 @@ export class GameEngine {
     }
     // Rain + lightning (no-op on day maps).
     this._updateWeather(dt);
+
+    // CRASHSITE — pulsing meteor core, rising smoke columns, halo throb.
+    if (this._crashsiteExtras && this._crashsiteExtras.visible) {
+      const tt = performance.now() / 1000;
+      // Pulse the emissive core: scale + opacity throb in sync.
+      if (this._crashsiteCore) {
+        const pulse = 1.0 + Math.sin(tt * 2.4) * 0.10 + Math.sin(tt * 5.7) * 0.04;
+        this._crashsiteCore.scale.setScalar(pulse);
+        if (this._crashsiteCore.material) {
+          this._crashsiteCore.material.opacity = 0.78 + Math.sin(tt * 2.4) * 0.12;
+        }
+      }
+      if (this._crashsiteHalo) {
+        const haloPulse = 1.15 + Math.sin(tt * 1.7 + 0.4) * 0.18;
+        this._crashsiteHalo.scale.setScalar(haloPulse);
+        if (this._crashsiteHalo.material) {
+          this._crashsiteHalo.material.opacity = 0.22 + Math.sin(tt * 1.7 + 0.4) * 0.10;
+        }
+      }
+      // Billboard the smoke columns toward the camera (y-axis only so
+      // they stay vertical) + drift upward with a gentle horizontal sway.
+      if (Array.isArray(this._crashsiteSmokes)) {
+        const camX = this.position.x, camZ = this.position.z;
+        for (let i = 0; i < this._crashsiteSmokes.length; i++) {
+          const s = this._crashsiteSmokes[i];
+          if (!s) continue;
+          const ang = Math.atan2(camX - s.position.x, camZ - s.position.z);
+          s.rotation.y = ang;
+          // Subtle horizontal sway so smoke feels alive.
+          s.position.x += Math.sin(tt * 0.6 + i) * 0.0025;
+          // Slow vertical breathing — never travels far, just bobs.
+          s.position.y = 4.0 + Math.sin(tt * 0.45 + i * 1.3) * 0.35;
+        }
+      }
+    }
 
     // Shoreline ocean ambience — slowly drift the ocean texture so waves
     // appear to roll, and gently pulse the foam strip.
