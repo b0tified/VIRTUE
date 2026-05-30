@@ -23,6 +23,10 @@ const DEFAULTS = Object.freeze({
   // these are the additional sliders for controller + touch look.
   gamepadSensitivity: 1.0,  // 0.3 - 3.0 (multiplier on base 2.6 rad/sec)
   touchSensitivity: 1.0,    // 0.3 - 3.0 (multiplier on touch-drag yaw/pitch)
+  // ADS sensitivity multiplier — applied on top of mouse/controller/touch
+  // sensitivity when the player is aiming down sights. 1.0 = no change,
+  // <1.0 = slower while ADS (typical FPS preference for precision aim).
+  adsSensitivityMultiplier: 1.0, // 0.25 - 2.5
   // Extended graphics options ------------------------------------------------
   renderScale: 1.0,         // 0.5 - 1.5 (renderer pixel ratio multiplier)
   resolution: "native",     // "720p" | "900p" | "1080p" | "1440p" | "native" — preset bound to renderScale

@@ -177,6 +177,16 @@ export class GameEngine {
     localStorage.setItem(SENS_KEY, String(v));
   }
 
+  /* Effective sensitivity multiplier for the current aim state. Returns
+     1.0 normally; when ADS is active (and not on katana/secondary which
+     has no ADS) it multiplies by the user's adsSensitivityMultiplier
+     setting so the camera can be tuned slower for precision aim. */
+  _adsSensFactor() {
+    if (!this.ads || this.currentWeapon === "secondary") return 1.0;
+    const m = parseFloat(settingsStore.get()?.adsSensitivityMultiplier);
+    return Number.isFinite(m) && m > 0 ? m : 1.0;
+  }
+
   start() {
     if (this.running) return;
     this.running = true;
@@ -257,7 +267,7 @@ export class GameEngine {
     let dy = e.movementY;
     if (dx > 200) dx = 200; else if (dx < -200) dx = -200;
     if (dy > 200) dy = 200; else if (dy < -200) dy = -200;
-    const sens = 0.0022 * this.getSensitivity();
+    const sens = 0.0022 * this.getSensitivity() * this._adsSensFactor();
     this.yaw -= dx * sens;
     this.pitch -= dy * sens;
     this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch));
@@ -4104,7 +4114,8 @@ export class GameEngine {
     const ry = dz(axes[3] || 0);
     // Controller turn speed (rad/sec at full stick). Base 2.6 scaled by
     // the player's gamepadSensitivity setting (default 1.0, range 0.3-3.0).
-    const sens = 2.6 * (parseFloat(settingsStore.get()?.gamepadSensitivity) || 1.0);
+    // ADS adds a second multiplier so precision aim can be tuned slower.
+    const sens = 2.6 * (parseFloat(settingsStore.get()?.gamepadSensitivity) || 1.0) * this._adsSensFactor();
     if (rx) this.yaw -= rx * sens * dt;
     if (ry) this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - ry * sens * dt));
 

@@ -167,7 +167,9 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
       st.lastX = t.clientX;
       st.lastY = t.clientY;
       // Touch look sensitivity setting. Base 0.005 × user multiplier.
-      const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0);
+      // Apply the ADS multiplier so touch-aim slows down when aiming.
+      const adsFactor = eng._adsSensFactor ? eng._adsSensFactor() : 1.0;
+      const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0) * adsFactor;
       eng.yaw -= dx * sens;
       eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
     }

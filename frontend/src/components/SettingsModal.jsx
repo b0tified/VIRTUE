@@ -265,6 +265,34 @@ export default function SettingsModal({ open, onClose }) {
             />
           </section>
 
+          {/* ADS sensitivity multiplier — applies on top of mouse/controller/touch
+              when the player is aiming down sights. Standard FPS feature so
+              precision aim can be tuned independently from hip-fire. */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-anton uppercase tracking-widest text-sm flex items-center gap-2">
+                <Mouse size={14} strokeWidth={3} /> ADS Sensitivity
+                <span className="text-[10px] text-neutral-500">(multiplier)</span>
+              </div>
+              <div className="text-sm tabular-nums" data-testid="settings-ads-sens-value">
+                {Number(s.adsSensitivityMultiplier ?? 1.0).toFixed(2)}×
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0.25"
+              max="2.5"
+              step="0.05"
+              value={s.adsSensitivityMultiplier ?? 1.0}
+              onChange={(e) => patch({ adsSensitivityMultiplier: parseFloat(e.target.value) })}
+              className="w-full accent-[#FFD700]"
+              data-testid="settings-ads-sens-slider"
+            />
+            <p className="text-[11px] text-neutral-500 mt-1">
+              Multiplies your sensitivity while aiming down sights. Lower = slower &amp; more precise. Applies to mouse, controller, and touch.
+            </p>
+          </section>
+
           {/* Controller sensitivity */}
           <section>
             <div className="flex items-center justify-between mb-2">
