@@ -1659,6 +1659,75 @@ MAP_C = {
 
 MAPS = [MAP_A, MAP_B, MAP_C]
 
+# Map D — "CRASHSITE" — meteor-impact theme. A massive central crater
+# (ringed by tilted earthworks), shattered fragments of a glowing meteor
+# strewn through the field, three burnt-out outposts on the corners, and
+# a perimeter of cracked rock pillars. Plays elevated and uneven — lots
+# of natural cover lines pointing toward the central crater, encouraging
+# hot-zone fights and crater-edge peeking.
+MAP_D = {
+    "map_id": "crashsite",
+    "name": "CRASHSITE",
+    "size": 50,
+    "obstacles": [
+        # ---- Central meteor & crater rim ------------------------------------
+        # The meteor itself — wide low boulder at dead centre (vault-cover).
+        {"x":  0,   "z":  0,   "w": 7,   "h": 2.4, "d": 7},
+        # Crater rim — 6 angled wedge-walls forming a rough hexagon around
+        # the meteor. Provides peek-and-duck cover in every direction.
+        {"x":  9,   "z":  0,   "w": 1.8, "h": 1.6, "d": 5},
+        {"x": -9,   "z":  0,   "w": 1.8, "h": 1.6, "d": 5},
+        {"x":  4.5, "z":  7.8, "w": 5,   "h": 1.6, "d": 1.8},
+        {"x": -4.5, "z":  7.8, "w": 5,   "h": 1.6, "d": 1.8},
+        {"x":  4.5, "z": -7.8, "w": 5,   "h": 1.6, "d": 1.8},
+        {"x": -4.5, "z": -7.8, "w": 5,   "h": 1.6, "d": 1.8},
+        # ---- Shattered meteor shards (medium scattered cover) ---------------
+        {"x":  14,  "z":  14,  "w": 2.4, "h": 2.2, "d": 2.4},
+        {"x": -14,  "z":  14,  "w": 2.4, "h": 2.2, "d": 2.4},
+        {"x":  14,  "z": -14,  "w": 2.4, "h": 2.2, "d": 2.4},
+        {"x": -14,  "z": -14,  "w": 2.4, "h": 2.2, "d": 2.4},
+        {"x":  18,  "z":  6,   "w": 2.0, "h": 1.8, "d": 2.0},
+        {"x": -18,  "z":  6,   "w": 2.0, "h": 1.8, "d": 2.0},
+        {"x":  18,  "z": -6,   "w": 2.0, "h": 1.8, "d": 2.0},
+        {"x": -18,  "z": -6,   "w": 2.0, "h": 1.8, "d": 2.0},
+        # ---- Burnt-out outposts at the corners ------------------------------
+        # Wide low-walled cover with a tall back wall — like wrecked
+        # research stations evacuated when the meteor hit.
+        {"x":  25,  "z":  25,  "w": 6,   "h": 4,   "d": 2},
+        {"x": -25,  "z":  25,  "w": 6,   "h": 4,   "d": 2},
+        {"x":  25,  "z": -25,  "w": 6,   "h": 4,   "d": 2},
+        {"x": -25,  "z": -25,  "w": 6,   "h": 4,   "d": 2},
+        # Side walls for each outpost (rotated 90° — short stubs).
+        {"x":  22,  "z":  22,  "w": 2,   "h": 4,   "d": 3},
+        {"x": -22,  "z":  22,  "w": 2,   "h": 4,   "d": 3},
+        {"x":  22,  "z": -22,  "w": 2,   "h": 4,   "d": 3},
+        {"x": -22,  "z": -22,  "w": 2,   "h": 4,   "d": 3},
+        # ---- Tall jagged rock pillars dotting the mid-field -----------------
+        {"x":  0,   "z":  18,  "w": 1.4, "h": 5,   "d": 1.4},
+        {"x":  0,   "z": -18,  "w": 1.4, "h": 5,   "d": 1.4},
+        {"x":  18,  "z":  0,   "w": 1.4, "h": 5,   "d": 1.4},
+        {"x": -18,  "z":  0,   "w": 1.4, "h": 5,   "d": 1.4},
+        # Small rock clusters along the diagonal routes.
+        {"x":  10,  "z":  16,  "w": 1.5, "h": 1.5, "d": 1.5},
+        {"x": -10,  "z":  16,  "w": 1.5, "h": 1.5, "d": 1.5},
+        {"x":  10,  "z": -16,  "w": 1.5, "h": 1.5, "d": 1.5},
+        {"x": -10,  "z": -16,  "w": 1.5, "h": 1.5, "d": 1.5},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (28, 28), (-28, 28), (28, -28), (-28, -28),
+        (32, 0), (-32, 0), (0, 32), (0, -32),
+        (20, 12), (-20, 12), (20, -12), (-20, -12),
+    ],
+    "healthpacks": [
+        (0.0, 14.0), (0.0, -14.0),    # mid-field, near the rim pillars
+        (16.0, 0.0), (-16.0, 0.0),
+        (24.0, 18.0), (-24.0, 18.0),  # behind the outposts
+        (24.0, -18.0), (-24.0, -18.0),
+    ],
+}
+
+MAPS = [MAP_A, MAP_B, MAP_C, MAP_D]
+
 def random_map() -> dict:
     """Pick a random map for a new match. All maps are equally likely."""
     return random.choice(MAPS)

@@ -982,6 +982,10 @@ export class GameEngine {
       arena.map_id === "crossfire" ? [0x2e5fa3, 0x9b3a3f, 0xe6a230, 0x4a4a4a, 0x5f8a3e] :
       arena.map_id === "shoreline" ? [0x8b5a2b, 0xc28e5c, 0x6b3a1a, 0x2f8fbf, 0x4a4a4a] :
       arena.map_id === "downtown"  ? [0x3a4a7a, 0x2a3a6a, 0x4a5a8a, 0x2a2a3a, 0x3a3a4a] :  // night-tinted concrete
+      // CRASHSITE: scorched earth + meteor — deep charcoal rock, ember
+      // orange highlights, glowing magenta meteor accents, smoke grey,
+      // a sickly green from the alien core.
+      arena.map_id === "crashsite" ? [0x2a2222, 0xff4a1a, 0xc23a8a, 0x4a3a3a, 0x6a8a3a] :
       /* default */                  [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
     const colored = arena.obstacles.map((ob, i) => {
       const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
@@ -1010,6 +1014,10 @@ export class GameEngine {
       } else if (arena.map_id === "downtown") {
         // Dark asphalt for the night city look.
         newMat = new THREE.MeshToonMaterial({ color: 0x1a1f2e, gradientMap: this.toonMap });
+      } else if (arena.map_id === "crashsite") {
+        // Scorched dirt ground for the meteor crashsite — burnt sienna
+        // with a strong red push to sell the "still hot" vibe.
+        newMat = new THREE.MeshToonMaterial({ color: 0x3a2218, gradientMap: this.toonMap });
       } else {
         // Default grass texture
         newMat = new THREE.MeshToonMaterial({ map: this._makeGrassTexture(), gradientMap: this.toonMap });
@@ -1107,10 +1115,96 @@ export class GameEngine {
       umb.position.set(-12, 0, size + 9);
       this._shorelineExtras.add(umb);
     }
+
+    // ── CRASHSITE decorative extras ─────────────────────────────────────
+    // Glowing pulsing core embedded in the central meteor (the big 7x2.4x7
+    // boulder at (0,0)), a few wispy smoke columns rising from impact
+    // marks, and faint scorch rings on the ground.
+    if (!this._crashsiteExtras) {
+      this._crashsiteExtras = new THREE.Group();
+      this.scene.add(this._crashsiteExtras);
+    }
+    this._crashsiteExtras.visible = arena.map_id === "crashsite";
+    if (arena.map_id === "crashsite" && this._crashsiteExtras.children.length === 0) {
+      // Glowing meteor core — emissive orb pulsing on top of the centre boulder.
+      const coreGeo = new THREE.SphereGeometry(1.0, 16, 12);
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xff7e2a,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.position.set(0, 3.2, 0);
+      this._crashsiteExtras.add(core);
+      this._crashsiteCore = core;
+      // Outer halo around the core — additive blended for the glow.
+      const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(1.6, 16, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xff4a1a,
+          transparent: true,
+          opacity: 0.25,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      halo.position.copy(core.position);
+      this._crashsiteExtras.add(halo);
+      this._crashsiteHalo = halo;
+
+      // Scorch rings — dark ground decals around scattered impact marks.
+      const scorchPoints = [
+        [10, 12, 3.5], [-10, 12, 3.5], [10, -12, 3.5], [-10, -12, 3.5],
+        [18, 0, 2.8], [-18, 0, 2.8], [0, 18, 2.8], [0, -18, 2.8],
+      ];
+      for (const [x, z, r] of scorchPoints) {
+        const ringGeo = new THREE.RingGeometry(r * 0.5, r, 20);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0x1a0e08,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(x, 0.025, z);
+        this._crashsiteExtras.add(ring);
+      }
+
+      // Smoke columns — three tall faint grey planes rising from the
+      // crater rim. Each is a billboard updated in _updateCrashsiteFx.
+      const smokeTex = (() => {
+        const c = document.createElement("canvas");
+        c.width = 64; c.height = 256;
+        const cc = c.getContext("2d");
+        const gradient = cc.createLinearGradient(0, 0, 0, 256);
+        gradient.addColorStop(0.0, "rgba(50,40,40,0.55)");
+        gradient.addColorStop(0.6, "rgba(80,70,70,0.30)");
+        gradient.addColorStop(1.0, "rgba(120,110,110,0.0)");
+        cc.fillStyle = gradient; cc.fillRect(0, 0, 64, 256);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      })();
+      const smokes = [];
+      for (const [x, z] of [[4, 8], [-6, -4], [-3, 9]]) {
+        const sg = new THREE.PlaneGeometry(3.5, 7.5);
+        const sm = new THREE.MeshBasicMaterial({
+          map: smokeTex, transparent: true, depthWrite: false,
+        });
+        const s = new THREE.Mesh(sg, sm);
+        s.position.set(x, 4.0, z);
+        smokes.push(s);
+        this._crashsiteExtras.add(s);
+      }
+      this._crashsiteSmokes = smokes;
+    }
     if (Array.isArray(this._grassBlades)) {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
-      // neither aesthetic wants tall green tufts.
-      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown";
+      // neither aesthetic wants tall green tufts. Also hide on crashsite
+      // (scorched ground) for the same reason.
+      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite";
       this._grassBlades.forEach((b) => { b.visible = showBlades; });
     }
   }
