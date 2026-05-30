@@ -280,8 +280,9 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **CRASHSITE map added to rotation** — New `MAP_D` themed as a meteor impact site: central meteor boulder, 6-piece crater rim, scattered meteor shards, 4 burnt-out outposts at corners, jagged rock pillars in the mid-field, 12 spawn points, 8 healthpacks. Now in `MAPS = [downtown, crossfire, shoreline, crashsite]` and equally weighted in `random_map()`.
 - ✅ **Crashsite atmospherics (frontend)** — Refactored `_applyDayNight(night, mapId)` to accept a theme. Crashsite gets a smoky red/violet sky gradient, heat-haze fog (70→150), warm ember sun + hemi tint, scorched dirt floor (no grass blades), and hides parkland decorations + clouds.
 - ✅ **Crashsite VFX (frontend)** — Pulsing emissive meteor core + additive halo, 8 ground scorch rings, 3 billboarded smoke columns with breathing/sway. Animated every frame via new `_updateCrashsiteFx` path in the main loop.
+- ✅ **Crashsite in Practice + Offline vs AI selectors** — Added `MAP_D` to `localSim.js` and `MAP_CRASHSITE` (with palette tagline) to `mapsMeta.js`. The PracticeMapSelector now shows CRASHSITE as a 4th card alongside RANDOM/DOWNTOWN/CROSSFIRE/SHORELINE for both PRACTICE RANGE and OFFLINE VS AI.
 - 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
-- 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors.
+- 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors, practice map selector screenshot shows all 4 maps + RANDOM.
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

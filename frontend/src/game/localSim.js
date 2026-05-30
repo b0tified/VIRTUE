@@ -162,7 +162,59 @@ const MAP_C = {
   ],
 };
 
-const MAPS = [MAP_A, MAP_B, MAP_C];
+// CRASHSITE — meteor impact site, mirrors server.py MAP_D.
+const MAP_D = {
+  map_id: "crashsite",
+  name: "CRASHSITE",
+  size: 50,
+  obstacles: [
+    // Central meteor boulder
+    { x: 0,    z: 0,    w: 7,   h: 2.4, d: 7 },
+    // Crater rim wedges (rough hexagon around the meteor)
+    { x: 9,    z: 0,    w: 1.8, h: 1.6, d: 5 },
+    { x: -9,   z: 0,    w: 1.8, h: 1.6, d: 5 },
+    { x: 4.5,  z: 7.8,  w: 5,   h: 1.6, d: 1.8 },
+    { x: -4.5, z: 7.8,  w: 5,   h: 1.6, d: 1.8 },
+    { x: 4.5,  z: -7.8, w: 5,   h: 1.6, d: 1.8 },
+    { x: -4.5, z: -7.8, w: 5,   h: 1.6, d: 1.8 },
+    // Shattered meteor shards
+    { x: 14,   z: 14,   w: 2.4, h: 2.2, d: 2.4 },
+    { x: -14,  z: 14,   w: 2.4, h: 2.2, d: 2.4 },
+    { x: 14,   z: -14,  w: 2.4, h: 2.2, d: 2.4 },
+    { x: -14,  z: -14,  w: 2.4, h: 2.2, d: 2.4 },
+    { x: 18,   z: 6,    w: 2.0, h: 1.8, d: 2.0 },
+    { x: -18,  z: 6,    w: 2.0, h: 1.8, d: 2.0 },
+    { x: 18,   z: -6,   w: 2.0, h: 1.8, d: 2.0 },
+    { x: -18,  z: -6,   w: 2.0, h: 1.8, d: 2.0 },
+    // Burnt-out outposts at the corners
+    { x: 25,   z: 25,   w: 6,   h: 4,   d: 2 },
+    { x: -25,  z: 25,   w: 6,   h: 4,   d: 2 },
+    { x: 25,   z: -25,  w: 6,   h: 4,   d: 2 },
+    { x: -25,  z: -25,  w: 6,   h: 4,   d: 2 },
+    { x: 22,   z: 22,   w: 2,   h: 4,   d: 3 },
+    { x: -22,  z: 22,   w: 2,   h: 4,   d: 3 },
+    { x: 22,   z: -22,  w: 2,   h: 4,   d: 3 },
+    { x: -22,  z: -22,  w: 2,   h: 4,   d: 3 },
+    // Tall jagged rock pillars
+    { x: 0,    z: 18,   w: 1.4, h: 5,   d: 1.4 },
+    { x: 0,    z: -18,  w: 1.4, h: 5,   d: 1.4 },
+    { x: 18,   z: 0,    w: 1.4, h: 5,   d: 1.4 },
+    { x: -18,  z: 0,    w: 1.4, h: 5,   d: 1.4 },
+    // Small rock clusters
+    { x: 10,   z: 16,   w: 1.5, h: 1.5, d: 1.5 },
+    { x: -10,  z: 16,   w: 1.5, h: 1.5, d: 1.5 },
+    { x: 10,   z: -16,  w: 1.5, h: 1.5, d: 1.5 },
+    { x: -10,  z: -16,  w: 1.5, h: 1.5, d: 1.5 },
+    ..._PERIMETER,
+  ],
+  spawn_points: [
+    [28, 28], [-28, 28], [28, -28], [-28, -28],
+    [32, 0], [-32, 0], [0, 32], [0, -32],
+    [20, 12], [-20, 12], [20, -12], [-20, -12],
+  ],
+};
+
+const MAPS = [MAP_A, MAP_B, MAP_C, MAP_D];
 
 // Active arena for this LocalSim run — re-rolled on each instance below.
 let ARENA = MAP_A;
