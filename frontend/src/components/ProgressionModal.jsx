@@ -32,13 +32,13 @@ const TABS = [
 ];
 
 export default function ProgressionModal({ open, onClose }) {
-  const { refreshMe, user } = useAuth();
+  const { refreshMe } = useAuth();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("season");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null); // { kind: 'ok'|'err', text: string }
-  // Admin-only Season 2 cinematic. Triggered by the PLAY TRAILER button
-  // in the Season Pass tab header. Non-admins never see the button.
+  // Season 2 cinematic. Triggered by the PLAY TRAILER button in the
+  // Season Pass modal header. Available to every account.
   const [showTrailer, setShowTrailer] = useState(false);
   // Season countdown — shared with the ranked season (same backend doc).
   // Polled once on open + live-ticked locally so the timer feels alive.
@@ -116,18 +116,16 @@ export default function ProgressionModal({ open, onClose }) {
               <Coins size={14} strokeWidth={3} />
               <span className="font-display text-xl leading-none">{data?.coins ?? 0}</span>
             </div>
-            {user?.role === "admin" && (
-              <button
-                onClick={() => setShowTrailer(true)}
-                className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1.5 [&]:text-sm"
-                data-testid="progression-play-trailer-button"
-                title="Admin only — play the Season 2 cinematic"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Play size={14} strokeWidth={3} /> PLAY TRAILER
-                </span>
-              </button>
-            )}
+            <button
+              onClick={() => setShowTrailer(true)}
+              className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1.5 [&]:text-sm"
+              data-testid="progression-play-trailer-button"
+              title="Play the Season 2 cinematic"
+            >
+              <span className="flex items-center gap-1.5">
+                <Play size={14} strokeWidth={3} /> PLAY TRAILER
+              </span>
+            </button>
             <button onClick={onClose} className="text-neutral-400 hover:text-white" data-testid="progression-close">
               <X size={22} strokeWidth={3} />
             </button>
