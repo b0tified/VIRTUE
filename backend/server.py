@@ -1358,7 +1358,19 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     code = (payload.code or "").strip().upper()
     if not code:
         raise HTTPException(status_code=400, detail="Enter a code.")
+    # Look up in the hardcoded catalog first, then fall back to the
+    # admin-created dynamic codes collection. Dynamic codes are tracked
+    # so the admin dashboard can show redemption counts.
     reward = REDEEM_CODES.get(code)
+    is_dynamic = False
+    if not reward:
+        dyn = await db.redeem_codes.find_one({"code": code})
+        if dyn:
+            reward = dyn.get("reward") or {}
+            # Ensure a human-readable label survives the round trip.
+            if not reward.get("label") and dyn.get("label"):
+                reward = {**reward, "label": dyn.get("label")}
+            is_dynamic = True
     if not reward:
         raise HTTPException(status_code=404, detail="Invalid code.")
     redeemed = list(user.get("redeemed_codes", []) or [])
@@ -1432,6 +1444,16 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     if sets:
         update_ops.setdefault("$set", {}).update(sets)
     await db.users.update_one({"_id": user["_id"]}, update_ops)
+    # Track redemption count on dynamic admin-created codes so the admin
+    # dashboard can show how popular each code is.
+    if is_dynamic:
+        try:
+            await db.redeem_codes.update_one(
+                {"code": code},
+                {"$inc": {"redeemed_count": 1}, "$set": {"last_redeemed_at": datetime.now(timezone.utc)}},
+            )
+        except Exception:
+            pass
     fresh = await db.users.find_one({"_id": user["_id"]})
     return {
         "ok": True,
@@ -5032,6 +5054,136 @@ async def _leave_party_internal(user_id: str):
     if not party["members"]:
         PARTIES.pop(party_id, None)
         PARTY_OWNERS.pop(party_id, None)
+
+
+# -------------------------------------------------------------------
+# Admin: Redeem-code creator
+# -------------------------------------------------------------------
+# Hardcoded REDEEM_CODES stay as the seed catalog; admins can create
+# additional one-time-per-user codes that persist in the `redeem_codes`
+# collection and are looked up by the /codes/redeem endpoint.
+
+import re as _re_codes  # local alias to avoid shadowing any earlier `re` usage
+
+
+class AdminCodeIn(BaseModel):
+    code: str
+    reward_type: str  # one of: xp | rp | coins | min_level | rank_up_tiers | banner_animated
+    amount: Optional[int] = None  # required for everything except banner_animated
+    label: Optional[str] = None
+
+
+_ALLOWED_REWARD_TYPES = {"xp", "rp", "coins", "min_level", "rank_up_tiers", "banner_animated"}
+
+
+def _build_reward_from_admin_input(reward_type: str, amount: Optional[int], label: Optional[str]) -> dict:
+    """Translate an admin's (type, amount) selection into the canonical
+    reward dict shape consumed by /codes/redeem. Raises HTTPException on
+    invalid combos so the admin UI shows a clear error toast."""
+    rtype = (reward_type or "").strip().lower()
+    if rtype not in _ALLOWED_REWARD_TYPES:
+        raise HTTPException(status_code=400, detail=f"Reward type must be one of: {', '.join(sorted(_ALLOWED_REWARD_TYPES))}.")
+    reward: Dict[str, object] = {}
+    if rtype == "banner_animated":
+        reward["banner_animated"] = True
+    else:
+        if amount is None or int(amount) <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be a positive integer.")
+        amt = int(amount)
+        # Sanity caps so a typo can't grant 10 million XP.
+        CAPS = {"xp": 100_000, "rp": 7500, "coins": 1_000_000, "min_level": 100, "rank_up_tiers": 7}
+        if amt > CAPS[rtype]:
+            raise HTTPException(status_code=400, detail=f"Amount for {rtype} cannot exceed {CAPS[rtype]}.")
+        reward[rtype] = amt
+    if label:
+        reward["label"] = str(label).strip()[:80]
+    else:
+        # Sensible default label so the redeem toast is never blank.
+        if rtype == "banner_animated":
+            reward["label"] = "Animated Banner Unlock"
+        else:
+            unit = {"xp": "XP", "rp": "RP", "coins": "Coins", "min_level": "Level", "rank_up_tiers": "Tier"}[rtype]
+            reward["label"] = f"+{amount} {unit}"
+    return reward
+
+
+@api.post("/admin/codes")
+async def admin_create_code(payload: AdminCodeIn, user: dict = Depends(get_current_user)):
+    """Create a new dynamic redeem code. Admin-only.
+
+    Code rules: 3-20 chars, alphanumeric, case-insensitive (stored upper).
+    Refuses to overwrite hardcoded codes or codes that already exist
+    in the dynamic collection."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    code = (payload.code or "").strip().upper()
+    if not _re_codes.fullmatch(r"[A-Z0-9]{3,20}", code):
+        raise HTTPException(status_code=400, detail="Code must be 3-20 alphanumeric characters.")
+    if code in REDEEM_CODES:
+        raise HTTPException(status_code=409, detail="That code is already part of the built-in catalog.")
+    existing = await db.redeem_codes.find_one({"code": code})
+    if existing:
+        raise HTTPException(status_code=409, detail="Code already exists.")
+    reward = _build_reward_from_admin_input(payload.reward_type, payload.amount, payload.label)
+    now = datetime.now(timezone.utc)
+    doc = {
+        "code": code,
+        "reward": reward,
+        "label": reward.get("label", ""),
+        "created_at": now,
+        "created_by": user.get("username") or "admin",
+        "redeemed_count": 0,
+    }
+    await db.redeem_codes.insert_one(doc)
+    # Strip _id from response (ObjectId is not JSON-serializable).
+    return {
+        "ok": True,
+        "code": code,
+        "reward": reward,
+        "label": doc["label"],
+        "created_at": now.isoformat(),
+        "created_by": doc["created_by"],
+        "redeemed_count": 0,
+    }
+
+
+@api.get("/admin/codes")
+async def admin_list_codes(user: dict = Depends(get_current_user)):
+    """List all dynamic admin-created codes (most recent first). Admin-only."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    out = []
+    cursor = db.redeem_codes.find({}, {"_id": 0}).sort("created_at", -1).limit(200)
+    async for c in cursor:
+        ts = c.get("created_at")
+        lts = c.get("last_redeemed_at")
+        out.append({
+            "code": c.get("code"),
+            "reward": c.get("reward") or {},
+            "label": c.get("label") or (c.get("reward") or {}).get("label") or "",
+            "created_at": ts.isoformat() if isinstance(ts, datetime) else ts,
+            "created_by": c.get("created_by") or "",
+            "redeemed_count": int(c.get("redeemed_count", 0) or 0),
+            "last_redeemed_at": lts.isoformat() if isinstance(lts, datetime) else lts,
+        })
+    return {"codes": out}
+
+
+@api.delete("/admin/codes/{code}")
+async def admin_delete_code(code: str, user: dict = Depends(get_current_user)):
+    """Delete a dynamic code. Admin-only. The hardcoded built-in catalog
+    can't be deleted via this endpoint — those live in source. Note:
+    deletion does NOT affect users who already redeemed the code (their
+    `redeemed_codes` list is unchanged), but the code can no longer be
+    redeemed by anyone else."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    code_norm = (code or "").strip().upper()
+    result = await db.redeem_codes.delete_one({"code": code_norm})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Code not found.")
+    return {"ok": True, "deleted": code_norm}
+
 
 
 @api.post("/party/invite")

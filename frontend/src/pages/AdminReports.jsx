@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -236,6 +236,11 @@ export default function AdminReports() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Redeem code creator — admin-only one-time-per-user promo codes */}
+      <div className="max-w-6xl mx-auto mt-6">
+        <RedeemCodesCard setToast={setToast} />
       </div>
 
       {actionTarget && (
@@ -468,3 +473,231 @@ function BanActionModal({ report, currentBan, onCancel, onSuccess }) {
     </div>
   );
 }
+
+/* RedeemCodesCard — admin form + list for dynamic redeem codes.
+   - Form: code text, reward type select, amount input, optional label.
+   - List: existing dynamic codes with reward summary, redemption count,
+     and a delete button. Hardcoded built-in codes are not shown here
+     (they live in source and can't be edited via UI). */
+const REWARD_TYPE_OPTIONS = [
+  { value: "xp",              label: "XP",                    needsAmount: true,  unit: "XP" },
+  { value: "rp",              label: "Rank Points",           needsAmount: true,  unit: "RP" },
+  { value: "coins",           label: "Coins",                 needsAmount: true,  unit: "Coins" },
+  { value: "min_level",       label: "Min Level (skip to)",   needsAmount: true,  unit: "Lv" },
+  { value: "rank_up_tiers",   label: "Rank-Up Tiers",         needsAmount: true,  unit: "Tier(s)" },
+  { value: "banner_animated", label: "Animated Banner",       needsAmount: false, unit: "" },
+];
+
+function RedeemCodesCard({ setToast }) {
+  const [codes, setCodes] = useState(null);   // null = loading
+  const [form, setForm] = useState({ code: "", reward_type: "xp", amount: "100", label: "" });
+  const [creating, setCreating] = useState(false);
+  const [deletingCode, setDeletingCode] = useState(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const { data } = await api.get("/admin/codes");
+      setCodes(Array.isArray(data?.codes) ? data.codes : []);
+    } catch (e) {
+      setToast?.({ kind: "err", text: e?.response?.data?.detail || "Failed to load codes." });
+      setCodes([]);
+    }
+  }, [setToast]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const currentTypeMeta = REWARD_TYPE_OPTIONS.find((o) => o.value === form.reward_type) || REWARD_TYPE_OPTIONS[0];
+
+  const submit = async (e) => {
+    e?.preventDefault?.();
+    if (creating) return;
+    const code = (form.code || "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,20}$/.test(code)) {
+      setToast?.({ kind: "err", text: "Code must be 3-20 alphanumeric characters." });
+      return;
+    }
+    const body = { code, reward_type: form.reward_type, label: (form.label || "").trim() || null };
+    if (currentTypeMeta.needsAmount) {
+      const amt = parseInt(form.amount, 10);
+      if (!amt || amt <= 0) {
+        setToast?.({ kind: "err", text: "Amount must be a positive integer." });
+        return;
+      }
+      body.amount = amt;
+    }
+    setCreating(true);
+    try {
+      await api.post("/admin/codes", body);
+      setToast?.({ kind: "ok", text: `Code ${code} created.` });
+      setForm({ code: "", reward_type: "xp", amount: "100", label: "" });
+      reload();
+    } catch (err) {
+      setToast?.({ kind: "err", text: err?.response?.data?.detail || "Failed to create code." });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const deleteCode = async (code) => {
+    if (deletingCode) return;
+    if (!window.confirm(`Delete code "${code}"? Users who already redeemed it keep their reward, but no one else can redeem it.`)) return;
+    setDeletingCode(code);
+    try {
+      await api.delete(`/admin/codes/${encodeURIComponent(code)}`);
+      setToast?.({ kind: "ok", text: `Code ${code} deleted.` });
+      reload();
+    } catch (err) {
+      setToast?.({ kind: "err", text: err?.response?.data?.detail || "Failed to delete code." });
+    } finally {
+      setDeletingCode(null);
+    }
+  };
+
+  return (
+    <div className="card-pow p-0 overflow-hidden" data-testid="admin-redeem-codes-card">
+      <div className="bg-[#9B59B6] text-white px-4 py-2 font-display text-2xl text-pow-shadow flex items-center gap-2">
+        <Ticket size={22} strokeWidth={3} />
+        REDEEM CODES
+        <span className="ml-auto font-anton uppercase tracking-widest text-xs opacity-90">
+          {codes === null ? "…" : `${codes.length} ACTIVE`}
+        </span>
+      </div>
+
+      {/* Create form */}
+      <form
+        onSubmit={submit}
+        className="bg-white p-4 grid grid-cols-1 md:grid-cols-12 gap-3 items-end border-b-2 border-black"
+        data-testid="redeem-code-create-form"
+      >
+        <div className="md:col-span-3">
+          <label className="block font-anton uppercase tracking-widest text-xs mb-1">Code</label>
+          <input
+            type="text"
+            value={form.code}
+            onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
+            placeholder="VIRTUE2026"
+            maxLength={20}
+            className="w-full border-2 border-black px-2 py-1.5 font-mono text-sm uppercase"
+            data-testid="redeem-code-input"
+          />
+        </div>
+        <div className="md:col-span-3">
+          <label className="block font-anton uppercase tracking-widest text-xs mb-1">Reward Type</label>
+          <select
+            value={form.reward_type}
+            onChange={(e) => setForm({ ...form, reward_type: e.target.value })}
+            className="w-full border-2 border-black px-2 py-1.5 font-anton uppercase text-sm bg-white"
+            data-testid="redeem-reward-type-select"
+          >
+            {REWARD_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="md:col-span-2">
+          <label className="block font-anton uppercase tracking-widest text-xs mb-1">
+            Amount {currentTypeMeta.unit && <span className="opacity-60">({currentTypeMeta.unit})</span>}
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            disabled={!currentTypeMeta.needsAmount}
+            className="w-full border-2 border-black px-2 py-1.5 font-anton text-sm disabled:bg-neutral-100 disabled:text-neutral-400"
+            data-testid="redeem-amount-input"
+          />
+        </div>
+        <div className="md:col-span-3">
+          <label className="block font-anton uppercase tracking-widest text-xs mb-1">Label (optional)</label>
+          <input
+            type="text"
+            value={form.label}
+            onChange={(e) => setForm({ ...form, label: e.target.value })}
+            placeholder="e.g. +250 XP — Holiday Bonus"
+            maxLength={80}
+            className="w-full border-2 border-black px-2 py-1.5 text-sm"
+            data-testid="redeem-label-input"
+          />
+        </div>
+        <div className="md:col-span-1">
+          <button
+            type="submit"
+            disabled={creating}
+            className="btn-pow bg-[#06A35F] text-white w-full [&]:px-3 [&]:py-1.5 [&]:text-xs disabled:opacity-60 disabled:cursor-wait"
+            data-testid="redeem-create-btn"
+          >
+            <span className="flex items-center justify-center gap-1">
+              <Plus size={14} strokeWidth={3} /> {creating ? "..." : "ADD"}
+            </span>
+          </button>
+        </div>
+      </form>
+
+      {/* List */}
+      <div className="bg-white" data-testid="redeem-codes-list">
+        {codes === null ? (
+          <div className="p-6 text-center font-anton uppercase tracking-widest text-neutral-500">Loading...</div>
+        ) : codes.length === 0 ? (
+          <div className="p-6 text-center font-anton uppercase tracking-widest text-neutral-500" data-testid="redeem-codes-empty">
+            No custom codes yet. Built-in codes (VIRTUE2026, COINSHOWER, etc.) still work.
+          </div>
+        ) : (
+          <div className="divide-y-2 divide-black/10">
+            <div className="hidden md:grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-xs border-b-2 border-black">
+              <div className="col-span-3">Code</div>
+              <div className="col-span-3">Reward</div>
+              <div className="col-span-3">Label</div>
+              <div className="col-span-2 text-right">Redemptions</div>
+              <div className="col-span-1"></div>
+            </div>
+            {codes.map((c) => (
+              <div
+                key={c.code}
+                className="grid grid-cols-12 px-4 py-2 items-center text-sm gap-2"
+                data-testid={`redeem-code-row-${c.code}`}
+              >
+                <div className="col-span-12 md:col-span-3 font-mono uppercase tracking-wider">
+                  <span className="bg-[#0A0A0A] text-[#FFD700] px-2 py-0.5">{c.code}</span>
+                </div>
+                <div className="col-span-6 md:col-span-3 font-anton uppercase text-xs">
+                  {summarizeReward(c.reward)}
+                </div>
+                <div className="col-span-6 md:col-span-3 text-xs text-neutral-700 truncate">
+                  {c.label || <span className="text-neutral-400">—</span>}
+                </div>
+                <div className="col-span-6 md:col-span-2 md:text-right font-anton text-base" data-testid={`redeem-code-count-${c.code}`}>
+                  {c.redeemed_count}
+                </div>
+                <div className="col-span-6 md:col-span-1 md:text-right">
+                  <button
+                    onClick={() => deleteCode(c.code)}
+                    disabled={deletingCode === c.code}
+                    className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs disabled:opacity-60"
+                    data-testid={`redeem-code-delete-${c.code}`}
+                    title="Delete this code"
+                  >
+                    <Trash2 size={12} strokeWidth={3} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function summarizeReward(reward) {
+  if (!reward || typeof reward !== "object") return "—";
+  const parts = [];
+  if (reward.xp) parts.push(`+${reward.xp} XP`);
+  if (reward.rp) parts.push(`+${reward.rp} RP`);
+  if (reward.coins) parts.push(`+${reward.coins} Coins`);
+  if (reward.min_level) parts.push(`Level ${reward.min_level}`);
+  if (reward.rank_up_tiers) parts.push(`+${reward.rank_up_tiers} Tier`);
+  if (reward.banner_animated) parts.push("Animated Banner");
+  return parts.join(" · ") || "—";
+}
+
