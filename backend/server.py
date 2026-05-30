@@ -1879,20 +1879,26 @@ WEAPON_CONFIGS = {
     },
     "laser": {
         "damage": LASER_DAMAGE,
-        "dps": 60,                 # continuous beam — damage per second
+        "dps": 90,                 # continuous beam — damage per second (buffed from 60)
         "cooldown_ms": LASER_COOLDOWN_MS,
         "mag_size": 60,
         "reload_ms": 1800,
-        "headshot_mult": 1.5,
+        "headshot_mult": 1.75,     # buffed from 1.5 — rewards aim
         "legs_mult": 0.9,
-        "falloff_start": 25.0,
-        "falloff_end": 70.0,
-        "min_damage_mult": 0.6,
+        "falloff_start": 30.0,     # extended from 25m
+        "falloff_end": 85.0,       # extended from 70m
+        "min_damage_mult": 0.65,   # bumped floor from 0.6
         "spread_base": 0.0,
         "spread_per_shot": 0.0,
         "spread_max": 0.0,
         "spread_decay": 1.0,
         "ads_spread_mult": 1.0,
+        # Heat behaviour (seconds). Ramp = how long continuous fire takes
+        # to reach overheat (1.0); cool = how long forced cooldown takes
+        # to return to 0.0 from full overheat. Buffed for longer sustain
+        # and faster recovery.
+        "heat_ramp_seconds": 4.0,  # was 3.0 — more sustained fire
+        "heat_cool_seconds": 3.0,  # was 4.0 — faster recovery
     },
 }
 
@@ -2762,9 +2768,10 @@ class GameRoom:
                 if not hit.is_bot and hit.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
-    def _laser_autoaim_lock(self, shooter: Player, *, max_range: float = 22.0, cone_rad: float = 1.05) -> Optional[Tuple[float, float]]:
+    def _laser_autoaim_lock(self, shooter: Player, *, max_range: float = 26.0, cone_rad: float = 1.05) -> Optional[Tuple[float, float]]:
         """Close-range aim-assist for the laser. Snaps the beam to the nearest
-        living opponent that is (1) within `max_range` metres (22m default),
+        living opponent that is (1) within `max_range` metres (26m default —
+        bumped with the laser buff so mid-range duels track better),
         (2) inside a cone of half-angle `cone_rad` from the shooter's forward
         (60° default — generous), and (3) not behind an obstacle (LOS clear
         via the existing 2D step-walk). Returns `(yaw, pitch)` aimed at the
@@ -2827,8 +2834,9 @@ class GameRoom:
         cfg = weapon_cfg("laser")
         dps = cfg.get("dps", 60)
         damage_this_tick = max(1, int(round(dps * dt)))
-        # Heat ramp: 0 → 1 in 3 s of continuous firing, cool: 1 → 0 in 4 s.
-        shooter.laser_heat = min(1.0, shooter.laser_heat + dt / 3.0)
+        # Heat ramp — configurable per-weapon. Default 4s to overheat.
+        ramp_s = max(0.5, float(cfg.get("heat_ramp_seconds", 4.0)))
+        shooter.laser_heat = min(1.0, shooter.laser_heat + dt / ramp_s)
         # Close-range aim assist. Snaps to nearest enemy within 15m + ~25°
         # cone. Beam events still report the snapped yaw/pitch so the beam
         # visually goes where it actually hits.
@@ -3372,8 +3380,9 @@ class GameRoom:
                         p.laser_overheated = True
                         self.events.append({"type": "overheat", "shooter_id": p.id})
                 else:
-                    # Cool down (1.0 → 0 over 4 s while not firing).
-                    p.laser_heat = max(0.0, p.laser_heat - dt / 4.0)
+                    # Cool down — configurable per-weapon (default 3 s).
+                    cool_s = max(0.5, float(weapon_cfg("laser").get("heat_cool_seconds", 3.0)))
+                    p.laser_heat = max(0.0, p.laser_heat - dt / cool_s)
                     if p.laser_overheated and p.laser_heat <= 0.0:
                         p.laser_overheated = False
 
