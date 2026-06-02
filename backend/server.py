@@ -442,6 +442,34 @@ SKINS_CATALOG: List[dict] = [
      "body": 0x4b0082, "leg": 0x1a0033, "head": 0xc8a8ff, "accent": 0xffffff,
      "helmet": 0x1a0033, "visor": 0xffffff, "shoulder": 0xff00ff, "stripe": 0xffffff, "belt": 0x4b0082, "cape": 0xff00ff,
      "aura": 0xff00ff, "aura_mode": "spin"},
+
+    # ─── Season 2 pass exclusives — METEOR / SPACE theme ────────────────
+    # These unlock only on the Season 2 track. They live in the catalog
+    # from day one so the data shape is identical (the pass tab can
+    # preview them as "Coming in Season 2") but `_season_tiers` only
+    # references them once `season_number >= 2`. That way a user who's
+    # mid-S1 still earns Solar/Cyber/Quantum as they always did, and the
+    # swap is automatic when the season clock rolls over.
+    {"id": "stardust", "name": "Stardust Drifter", "price": 0,   "rarity": "epic",      "obtain": "pass_tier_10_s2",
+     # Deep space drifter — twilight body with starfield glints. Soft
+     # nebula-violet → indigo gradient feel, silver accents.
+     "body": 0x1a1538, "leg": 0x0b0a22, "head": 0xb0a8d8, "accent": 0xc8d4ff,
+     "helmet": 0x0b0a22, "visor": 0x88e0ff, "shoulder": 0x4a3d7a, "stripe": 0x88e0ff, "belt": 0x1a1538, "cape": 0x4a3d7a,
+     "aura": 0x88e0ff, "aura_mode": "flicker"},
+
+    {"id": "crater",   "name": "Crater Forged",   "price": 0,   "rarity": "epic",      "obtain": "pass_tier_20_s2",
+     # Forged-from-meteor-rock — scorched basalt body, molten orange seams.
+     # Reads as a survivor of the impact, armor still smouldering.
+     "body": 0x2a1b14, "leg": 0x110a06, "head": 0xa07a5a, "accent": 0xff6420,
+     "helmet": 0x110a06, "visor": 0xff8a40, "shoulder": 0x5a2a14, "stripe": 0xff6420, "belt": 0x110a06, "cape": 0xff4a10,
+     "aura": 0xff5a1a, "aura_mode": "pulse"},
+
+    {"id": "meteor",   "name": "Meteor Ascendant", "price": 0,  "rarity": "legendary", "obtain": "pass_tier_30_s2",
+     # Cosmic ascension — supernova gold against deep indigo, halo flares
+     # in the legendary slot. The "after-the-impact-came-the-rebirth" vibe.
+     "body": 0x2a1058, "leg": 0x10042a, "head": 0xffe0a8, "accent": 0xffd24a,
+     "helmet": 0x10042a, "visor": 0xffd24a, "shoulder": 0xffaa20, "stripe": 0xffd24a, "belt": 0x4a1a78, "cape": 0xffd24a,
+     "aura": 0xffd24a, "aura_mode": "spin"},
 ]
 SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 
@@ -979,21 +1007,48 @@ SEASON_XP_PER_TIER = 100
 SEASON_MAX_TIER = 30
 
 
-def _season_tiers() -> List[dict]:
-    """Returns the static reward layout for the 30-tier pass. Rebuilt on
-    each call so the source of truth lives in code, not the DB."""
+def _season_tiers(season_number: int = 1) -> List[dict]:
+    """Returns the static reward layout for the 30-tier pass.
+
+    The skin reward at tiers 10/20/30 is themed per season. Season 1
+    shipped the original Solar/Cyber/Quantum lineup; Season 2 swaps in
+    a brand-new METEOR / SPACE themed track (Stardust Drifter, Crater
+    Forged, Meteor Ascendant). The swap is automatic the moment
+    `maybe_reset_season()` bumps the global season_number — players
+    finish S1 with the old skins, and the new pass goes live as the
+    countdown rolls over.
+
+    Rebuilt on each call so the source of truth lives in code, not the DB."""
+    # Season-themed skin lineup for the three milestone tiers (10/20/30).
+    # Add more entries here for future seasons; the modulo at the bottom
+    # cycles through them so a missing season key falls back gracefully.
+    SEASON_SKIN_LINEUPS: Dict[int, Dict[int, Dict[str, str]]] = {
+        1: {
+            10: {"skin": "solar",    "label": "Solar Inferno"},
+            20: {"skin": "cyber",    "label": "Cyber Wraith"},
+            30: {"skin": "quantum",  "label": "Quantum Reaver"},
+        },
+        2: {
+            10: {"skin": "stardust", "label": "Stardust Drifter"},
+            20: {"skin": "crater",   "label": "Crater Forged"},
+            30: {"skin": "meteor",   "label": "Meteor Ascendant"},
+        },
+    }
+    lineup = SEASON_SKIN_LINEUPS.get(int(season_number)) or SEASON_SKIN_LINEUPS[1]
     tiers: List[dict] = []
     for i in range(1, SEASON_MAX_TIER + 1):
-        if i == 30:
-            tiers.append({"tier": i, "reward_type": "skin",  "reward_skin": "quantum", "reward_label": "Quantum Reaver"})
-        elif i == 20:
-            tiers.append({"tier": i, "reward_type": "skin",  "reward_skin": "cyber",   "reward_label": "Cyber Wraith"})
-        elif i == 10:
-            tiers.append({"tier": i, "reward_type": "skin",  "reward_skin": "solar",   "reward_label": "Solar Inferno"})
+        if i in lineup:
+            spec = lineup[i]
+            tiers.append({
+                "tier": i,
+                "reward_type": "skin",
+                "reward_skin": spec["skin"],
+                "reward_label": spec["label"],
+            })
         elif i % 5 == 0:
-            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 500,      "reward_label": "+500 Coins"})
+            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 500, "reward_label": "+500 Coins"})
         else:
-            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 100,      "reward_label": "+100 Coins"})
+            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 100, "reward_label": "+100 Coins"})
     return tiers
 
 
@@ -1076,6 +1131,11 @@ async def progression(user: dict = Depends(get_current_user)):
     daily challenges, and the 30-tier season pass state in one round-trip.
     The frontend ProgressionModal pulls everything from here."""
     await credit_level_coins(user)
+    # Roll the season forward if the timer elapsed — this is what makes
+    # the new pass go live exactly when the countdown hits zero (no
+    # manual swap, no deploy required).
+    season_doc = await maybe_reset_season()
+    season_number = int(season_doc.get("season_number", 1))
     daily_state = await _ensure_daily_state(user)
     claimed_lifetime: List[str] = list(user.get("claimed_challenges") or [])
     # Lifetime challenges.
@@ -1100,7 +1160,7 @@ async def progression(user: dict = Depends(get_current_user)):
     season_xp = int(user.get("season_xp", 0) or 0)
     season_tier = min(SEASON_MAX_TIER, season_xp // SEASON_XP_PER_TIER)
     season_xp_in_tier = season_xp - season_tier * SEASON_XP_PER_TIER if season_tier < SEASON_MAX_TIER else 0
-    tiers = _season_tiers()
+    tiers = _season_tiers(season_number)
     claimed_tiers = set(int(t) for t in (user.get("claimed_season_tiers") or []))
     for t in tiers:
         t["unlocked"] = t["tier"] <= season_tier
@@ -1191,7 +1251,7 @@ async def progression_claim(payload: ProgressionClaimIn, user: dict = Depends(ge
         claimed_tiers = set(int(t) for t in (user.get("claimed_season_tiers") or []))
         if tier in claimed_tiers:
             raise HTTPException(status_code=409, detail="Tier already claimed.")
-        layout = _season_tiers()
+        layout = _season_tiers(int((await maybe_reset_season()).get("season_number", 1)))
         reward = next((t for t in layout if t["tier"] == tier), None)
         if not reward:
             raise HTTPException(status_code=404, detail="Tier reward missing.")

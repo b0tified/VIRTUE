@@ -303,6 +303,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - **Human movement**: Added `_juke_phase` — every 1.5-3s the bot adds a random π-offset to its strafe-phase argument so side-to-side motion stops reading as a pure sine. Real players fake-and-snap; bots now do too.
   - **Reaction time**: Trimmed the ranked-only +80ms cooldown penalty down to +40ms — bots react half-a-step faster without becoming aimbot.
   - 4 regression tests in `tests/test_ranked_bot_humanize.py`.
+- ✅ **Season 2 Pass — Meteor / Space theme (deferred swap)** — Brand-new milestone skins for the next pass, built but **not active** until the current season clock rolls over:
+  - **Tier 10 (Epic) — Stardust Drifter** — deep-space twilight body, nebula-violet → indigo gradient, soft cyan visor + flicker aura
+  - **Tier 20 (Epic) — Crater Forged** — scorched basalt armor with molten orange seams, smouldering pulse aura
+  - **Tier 30 (Legendary) — Meteor Ascendant** — supernova gold against deep indigo, halo-flare cape, gold spin aura
+  - `_season_tiers()` now takes a `season_number` arg with a per-season skin lineup map. `_progression` calls `maybe_reset_season()` first so the moment the timer hits zero, the next request flips the user onto S2 and the meteor pass goes live. No deploy needed at rollover.
+  - Catalog (backend + frontend `skins.js`) has all 3 new skins from day one so the renderer can paint them immediately.
+  - 5 regression tests in `tests/test_season_2_meteor_pass.py` lock both the S1 and S2 layouts.
 - 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
 - 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors, practice map selector screenshot shows all 4 maps + RANDOM.
 

@@ -126,6 +126,27 @@ export const SKINS = [
     body: 0x4b0082, leg: 0x1a0033, head: 0xc8a8ff, accent: 0xffffff,
     helmet: 0x1a0033, visor: 0xffffff, shoulder: 0xff00ff, stripe: 0xffffff, belt: 0x4b0082, cape: 0xff00ff,
     aura: 0xff00ff, aura_mode: "spin" },
+
+  /* ── Season 2 pass exclusives — METEOR / SPACE theme ───────────────
+     These ship in the catalog from day one so the data shape stays
+     identical (the pass tab can preview them). Backend's `_season_tiers()`
+     only references them once season_number >= 2 — meaning the swap to
+     the new pass happens automatically the moment the current season
+     timer hits zero. No deploy required at the rollover. */
+  { id: "stardust", name: "Stardust Drifter", price: 0,   rarity: "epic",      obtain: "pass_tier_10_s2",
+    body: 0x1a1538, leg: 0x0b0a22, head: 0xb0a8d8, accent: 0xc8d4ff,
+    helmet: 0x0b0a22, visor: 0x88e0ff, shoulder: 0x4a3d7a, stripe: 0x88e0ff, belt: 0x1a1538, cape: 0x4a3d7a,
+    aura: 0x88e0ff, aura_mode: "flicker" },
+
+  { id: "crater",   name: "Crater Forged",   price: 0,   rarity: "epic",      obtain: "pass_tier_20_s2",
+    body: 0x2a1b14, leg: 0x110a06, head: 0xa07a5a, accent: 0xff6420,
+    helmet: 0x110a06, visor: 0xff8a40, shoulder: 0x5a2a14, stripe: 0xff6420, belt: 0x110a06, cape: 0xff4a10,
+    aura: 0xff5a1a, aura_mode: "pulse" },
+
+  { id: "meteor",   name: "Meteor Ascendant", price: 0,  rarity: "legendary", obtain: "pass_tier_30_s2",
+    body: 0x2a1058, leg: 0x10042a, head: 0xffe0a8, accent: 0xffd24a,
+    helmet: 0x10042a, visor: 0xffd24a, shoulder: 0xffaa20, stripe: 0xffd24a, belt: 0x4a1a78, cape: 0xffd24a,
+    aura: 0xffd24a, aura_mode: "spin" },
 ];
 
 const BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]));
