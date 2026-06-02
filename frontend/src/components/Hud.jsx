@@ -91,7 +91,11 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
   const showFlash = gfx.showDamageFlash !== false;
   const showKf = gfx.showKillFeed !== false;
   const xhairStyle = gfx.crosshairStyle || "cross";
-  const xhairColor = gfx.crosshairColor || "#FFD700";
+  // Crosshair colour. In TDM, when the local player's reticle is over
+  // a teammate, override the user's preferred colour with a friendly
+  // blue tint — same convention as every team shooter ("don't shoot
+  // your teammate"). Falls back to the user setting otherwise.
+  const xhairColor = hud.crosshairOnTeammate ? "#3aa1ff" : (gfx.crosshairColor || "#FFD700");
 
   return (
     <div
@@ -119,6 +123,19 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           Hidden while aiming down sights (the scope reticle replaces it). */}
       {pointerLocked && hud.alive && !hud.ads && (
         <DynamicCrosshair spread={hud.spread || 0} showHit={showHit} headshot={!!hud.hitHeadshot} style={xhairStyle} color={xhairColor} />
+      )}
+
+      {/* TDM-only friendly-fire hint — small chevron-style tag just below
+          the reticle when the crosshair is on a teammate. Helps players
+          (esp. controller/touch users) avoid wasting bullets on allies. */}
+      {pointerLocked && hud.alive && hud.gameMode === "tdm" && hud.crosshairOnTeammate && (
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-6 px-2 py-0.5 font-anton uppercase tracking-widest text-[10px] pointer-events-none"
+          style={{ color: "#3aa1ff", background: "rgba(10,10,10,0.7)", border: "1px solid #3aa1ff" }}
+          data-testid="hud-friendly-tag"
+        >
+          ▲ TEAMMATE
+        </div>
       )}
 
       {/* Damage vignette */}

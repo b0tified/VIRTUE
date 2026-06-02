@@ -317,6 +317,9 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - **Ranked**: untouched (still FFA only).
   - **HUD**: TDM badge in the top-bar reads "TDM 3V3"; new team-score panel shows `RED N — N BLUE → 30`. `Player.team` surfaced in state delta so future nameplate tinting can hook into it.
   - 12 backend regression tests in `tests/test_tdm_mode.py` (game-mode field, team balance, friendly-fire blocked on all 3 damage paths, early-end arming, dedicated rooms exist, WS handler accepts `?tdm=` param).
+- ✅ **TDM team-aware nameplates + friendly-fire crosshair tint** — Hooked the team data from the state delta into the renderer:
+  - **Nameplates**: `_makeLabel` now takes a `relation` ("team" / "enemy" / "bot") and paints the plate deep blue + a `▲` chevron prefix for teammates, deep red for enemies, legacy purple for FFA bots. Engine's per-tick remote loop rebuilds the sprite whenever the relation changes (e.g. after a TDM rebalance between matches).
+  - **Crosshair**: New `Engine.isCrosshairOnTeammate()` does a 7° forward cone scan against same-team players. HUD overrides the user's preferred crosshair colour with friendly blue when true, and shows a small "▲ TEAMMATE" tag just below the reticle so the cue is unambiguous (helps controller/touch users + colour-blind players).
 - 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
 - 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors, practice map selector screenshot shows all 4 maps + RANDOM.
 

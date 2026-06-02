@@ -2957,9 +2957,13 @@ export class GameEngine {
     const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     this.scene.add(group);
-    const label = this._makeLabel(state.username, state.is_bot);
+    const label = this._makeLabel(state.username, state.is_bot, this._relationFor(state));
     label.position.set(0, 2.3, 0);
     group.add(label);
+    // Stash the relation + label so the per-tick update can rebuild the
+    // sprite if the player's team changes mid-room (e.g. after a TDM
+    // rebalance between matches).
+    label.userData = { relation: this._relationFor(state), username: state.username, isBot: state.is_bot };
     // Spawn-immunity halo — a translucent gold ring + glowing sphere that
     // wraps the player while invuln. Invisible by default; the per-frame
     // update toggles it based on `p.invuln`.
@@ -3012,12 +3016,29 @@ export class GameEngine {
     return entry;
   }
 
-  _makeLabel(text, isBot) {
+  /* Build a billboard label sprite above a remote player. In FFA the
+     background follows the existing bot/human convention (purple/black).
+     In TDM the local player's teammates get a deep-blue plate and
+     enemies get a deep-red plate so the player can identify friend
+     vs foe at a glance — same colour cues used in every team shooter.
+     `relation` is one of:
+       - "self"    (never shown — this is filtered by caller)
+       - "team"    teammate of the local player (TDM only)
+       - "enemy"   opponent (TDM enemy team OR FFA player)
+       - "bot"     FFA bot (preserves the legacy purple plate) */
+  _makeLabel(text, isBot, relation = "enemy") {
     const canvas = document.createElement("canvas");
     canvas.width = 256; canvas.height = 64;
     const ctx = canvas.getContext("2d");
     ctx.font = "bold 30px Anton, sans-serif";
-    ctx.fillStyle = isBot ? "rgba(155,89,182,0.95)" : "rgba(10,10,10,0.9)";
+    // Plate fill — TDM team colours take precedence over the bot tint
+    // so a teammate-bot reads as blue (friendly), not purple (random).
+    let plate;
+    if (relation === "team")       plate = "rgba(36,80,180,0.95)";
+    else if (relation === "enemy") plate = "rgba(180,30,36,0.95)";
+    else if (isBot)                plate = "rgba(155,89,182,0.95)";
+    else                           plate = "rgba(10,10,10,0.9)";
+    ctx.fillStyle = plate;
     ctx.fillRect(0, 0, 256, 64);
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 4;
@@ -3025,7 +3046,12 @@ export class GameEngine {
     ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const prefix = isBot ? "BOT · " : "";
+    // Prefix: in TDM a teammate gets a chevron ▲ so the relationship is
+    // clear even for users with mild colour-blindness. Bot prefix only
+    // shows in FFA where there's no team context.
+    let prefix = "";
+    if (relation === "team")      prefix = "▲ ";
+    else if (relation === "bot")  prefix = "BOT · ";
     ctx.fillText((prefix + text).slice(0, 18).toUpperCase(), 128, 32);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -3034,11 +3060,52 @@ export class GameEngine {
     return spr;
   }
 
+  /* Derive the label "relation" between the local player and a remote
+     state row. Falls back to FFA semantics whenever the server hasn't
+     populated teams (game_mode === "ffa") or the local team is unknown. */
+  _relationFor(p) {
+    if (this._gameMode === "tdm" && this._myTeam && p.team) {
+      return p.team === this._myTeam ? "team" : "enemy";
+    }
+    return p.is_bot ? "bot" : "enemy";
+  }
+
   _hashColor(id) {
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
     const palette = [0xe62429, 0x0055ff, 0xffd700, 0x00b894, 0xff7b00, 0x16a085];
     return palette[h % palette.length];
+  }
+
+  /* TDM-only: is the local player's reticle currently pointing at a
+     teammate within sensible engagement range? Used by the HUD to flip
+     the crosshair to a friendly blue tint so the player knows not to
+     fire. Returns false outside TDM, when the local player has no team
+     yet, when dead, or when no eligible teammate is in front. */
+  isCrosshairOnTeammate() {
+    if (this._gameMode !== "tdm" || !this._myTeam) return false;
+    if (!this.alive) return false;
+    const cosFwd = Math.cos(this.pitch);
+    const fwd = {
+      x: -Math.sin(this.yaw) * cosFwd,
+      y:  Math.sin(this.pitch),
+      z: -Math.cos(this.yaw) * cosFwd,
+    };
+    let bestDot = 0.992;     // ~ 7° cone — wide enough to catch a target around the reticle
+    let bestDist = 60.0;
+    let hit = null;
+    for (const entry of this.players.values()) {
+      if (!entry || !entry.alive) continue;
+      if (entry.team !== this._myTeam) continue;
+      const dx = entry.x - this.position.x;
+      const dy = (entry.y || 1.0) - this.position.y;   // aim around the chest
+      const dz = entry.z - this.position.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > bestDist || dist < 0.5) continue;
+      const dot = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / dist;
+      if (dot > bestDot) { bestDot = dot; bestDist = dist; hit = entry; }
+    }
+    return !!hit;
   }
 
   // -------- Server state --------
@@ -3062,6 +3129,10 @@ export class GameEngine {
       // Reset delta caches — a fresh welcome implies a new room.
       this._lastPlayersById = null;
       this._lastTopFields = null;
+      // TDM context — reset to defaults until the next state frame
+      // tells us otherwise.
+      this._gameMode = "ffa";
+      this._myTeam = null;
       return;
     }
     // -----------------------------------------------------------------
@@ -3165,10 +3236,16 @@ export class GameEngine {
       return;
     }
     if (msg.type === "state") {
+      // Cache top-level TDM context so `_relationFor` can colour nameplates
+      // and the per-tick crosshair-on-teammate check can run without
+      // re-scanning the state every frame.
+      this._gameMode = msg.game_mode || "ffa";
       const seen = new Set();
       for (const p of msg.players) {
         seen.add(p.id);
         if (p.id === this.youId) {
+          // Track our own team so the relation helper has a reference.
+          this._myTeam = p.team || null;
           // Detect server-side respawn: alive transitioned false → true. The
           // server picks a fresh random spawn point when respawning, so the
           // client *must* snap its position to match — otherwise shots are
@@ -3225,6 +3302,21 @@ export class GameEngine {
         entry.lastHp = p.hp;
         entry.x = p.x; entry.y = p.y; entry.z = p.z;
         entry.alive = p.alive; entry.is_bot = p.is_bot;
+        entry.team = p.team || null;
+        // If the team relationship changed (e.g. TDM rebalance between
+        // matches or first state frame after welcome), rebuild this
+        // player's nameplate so the colour + ▲ prefix reflect reality.
+        const newRel = this._relationFor(p);
+        const label = entry.mesh?.children?.find((c) => c?.userData && "relation" in c.userData);
+        if (label && label.userData.relation !== newRel) {
+          const fresh = this._makeLabel(label.userData.username, label.userData.isBot, newRel);
+          fresh.position.copy(label.position);
+          fresh.userData = { relation: newRel, username: label.userData.username, isBot: label.userData.isBot };
+          entry.mesh.remove(label);
+          label.material?.map?.dispose?.();
+          label.material?.dispose?.();
+          entry.mesh.add(fresh);
+        }
         // Spawn-immunity visuals. Pulses the ring + halo while invuln is
         // active so it's unambiguous to other players that they can't damage
         // this target right now.

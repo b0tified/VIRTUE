@@ -162,6 +162,11 @@ export default function Game() {
             gameMode: msg.game_mode || "ffa",
             teamScores: msg.team_scores || null,
             tdmKillTarget: msg.tdm_kill_target || null,
+            // Crosshair currently aimed at a teammate? Engine raycasts
+            // a 7° cone each state frame; HUD tints the reticle blue +
+            // shows a small "TEAMMATE" tag when this is true so the
+            // player knows to hold fire.
+            crosshairOnTeammate: engineRef.current?.isCrosshairOnTeammate?.() || false,
             // Spawn immunity flag — surfaces as a top-of-screen banner so
             // the player knows damage isn't being dealt to them this brief
             // window.
