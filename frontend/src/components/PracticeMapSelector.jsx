@@ -26,11 +26,11 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
       onClick={onClose}
     >
       <div
-        className="card-pow bg-white max-w-3xl w-full p-0 overflow-hidden"
+        className="card-pow bg-white max-w-3xl w-full p-0 overflow-hidden flex flex-col max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="bg-[#9B59B6] text-white px-5 py-3 flex items-center justify-between">
+        {/* Header — pinned. */}
+        <div className="bg-[#9B59B6] text-white px-5 py-3 flex items-center justify-between flex-shrink-0">
           <div>
             <div className="font-display text-2xl sm:text-3xl text-[#FFD700] leading-none">SELECT MAP</div>
             <div className="font-anton uppercase tracking-widest text-xs opacity-90 mt-1">{modeLabel}</div>
@@ -46,32 +46,37 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
           </button>
         </div>
 
-        {/* Game-mode toggle (FFA vs TDM) — placed above the map cards so
-            the user picks their format first, then their arena. */}
-        <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
-          <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2">Game Mode</div>
-          <div className="grid grid-cols-2 gap-3">
-            <ModeCard
-              testid="practice-mode-card-ffa"
-              active={gameMode === "ffa"}
-              onClick={() => setGameMode("ffa")}
-              title="FREE FOR ALL"
-              subtitle="Solo deathmatch · last one standing wins"
-              accent="#E62429"
-            />
-            <ModeCard
-              testid="practice-mode-card-tdm"
-              active={gameMode === "tdm"}
-              onClick={() => setGameMode("tdm")}
-              title="TEAM DEATHMATCH"
-              subtitle="3v3 · first team to 30 kills wins"
-              accent="#9B59B6"
-            />
+        {/* Scrollable body — holds the mode toggle + map grid. Capped
+            by the modal's max-h so the footer with START button stays
+            visible on short viewports (notably mobile landscape, where
+            the orientation lock keeps the screen height ~360-414px). */}
+        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
+          {/* Game-mode toggle (FFA vs TDM) — placed above the map cards so
+              the user picks their format first, then their arena. */}
+          <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
+            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2">Game Mode</div>
+            <div className="grid grid-cols-2 gap-3">
+              <ModeCard
+                testid="practice-mode-card-ffa"
+                active={gameMode === "ffa"}
+                onClick={() => setGameMode("ffa")}
+                title="FREE FOR ALL"
+                subtitle="Solo deathmatch · last one standing wins"
+                accent="#E62429"
+              />
+              <ModeCard
+                testid="practice-mode-card-tdm"
+                active={gameMode === "tdm"}
+                onClick={() => setGameMode("tdm")}
+                title="TEAM DEATHMATCH"
+                subtitle="3v3 · first team to 30 kills wins"
+                accent="#9B59B6"
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Map grid */}
-        <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Map grid */}
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* Random option */}
           <MapCard
             isRandom
@@ -88,10 +93,12 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
               testid={`practice-map-card-${m.map_id}`}
             />
           ))}
+          </div>
         </div>
 
-        {/* Footer / confirm */}
-        <div className="bg-[#FFD700] px-5 py-3 flex items-center justify-between border-t-4 border-black">
+        {/* Footer / confirm — pinned at the bottom so the START button is
+            never clipped on short viewports (mobile landscape esp.). */}
+        <div className="bg-[#FFD700] px-5 py-3 flex items-center justify-between border-t-4 border-black flex-shrink-0 gap-2">
           <div className="font-anton uppercase tracking-widest text-xs">
             {picked
               ? <>SELECTED: <span className="text-[#E62429]">{MAPS_META.find((mp) => mp.map_id === picked)?.name}</span></>
