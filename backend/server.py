@@ -611,14 +611,27 @@ async def on_startup():
             b.is_dummy = True
             b.max_hp = 50
             b.hp = 50
+    # TDM quick-match room: pre-fill with 5 ranked-grade smart bots so the
+    # very first joiner has 6 bodies in the arena (3v3). The team-balancer
+    # will split them across red/blue.
+    tdm_bot_names = random.sample(BOT_NAMES, 5)
+    for nm in tdm_bot_names:
+        tdm_room.spawn_bot(nm + "-T", disguised=False, difficulty=1.45)
+    # TDM practice room: 5 smart bots so the room is immediately playable
+    # at the 3v3 format (player + 5 = 6 total = 3v3).
+    practice_tdm_bot_names = random.sample(BOT_NAMES, 5)
+    for nm in practice_tdm_bot_names:
+        practice_tdm_room.spawn_bot(nm + "-P", disguised=False, difficulty=1.2)
 
     # Initialize season metadata (rank reset every 14 days)
     await get_or_init_season()
     await maybe_reset_season()
 
     asyncio.create_task(game_room.run())
+    asyncio.create_task(tdm_room.run())
     asyncio.create_task(ranked_room.run())
     asyncio.create_task(practice_room.run())
+    asyncio.create_task(practice_tdm_room.run())
     asyncio.create_task(matchmaker_loop())
     asyncio.create_task(season_loop())
     asyncio.create_task(synthetic_online_loop())
@@ -1907,6 +1920,10 @@ BOT_AIM_NOISE = 0.10
 TICK_RATE = 20
 NUM_BOTS = 3
 RANKED_MIN_REAL_PLAYERS = 1
+# TDM mode constants
+TDM_KILL_TARGET = 30        # first team to N kills wins instantly
+TDM_TEAM_SIZE = 3           # each team's max size (3v3)
+TDM_QUICK_MATCH_ROLL = 0.50  # 50% of quick-match rooms become TDM
 QUEUE_BOT_FILL_SEC = 45.0
 QUEUE_BOT_FILL_SEC_HIGH = 120.0  # Master tier (5) and above wait longer
 QUEUE_BOT_FILL_SEC_GOONMASTER = 210.0  # Goonmaster (7) waits ~3.5 minutes
@@ -2148,6 +2165,9 @@ class Player:
         self.laser_firing: bool = False
         # Input platform — "pc", "mobile", "controller" — set by client after connect.
         self.platform: str = "bot" if is_bot else "pc"
+        # TDM team — "red", "blue", or None for FFA. Set by GameRoom on join
+        # when the room is in TDM mode; ignored by FFA logic everywhere else.
+        self.team: Optional[str] = None
 
     def cur_ammo(self) -> int:
         return self.ammo.get(self.weapon, 0)
@@ -2223,6 +2243,8 @@ class Player:
             "banner_color": int(getattr(self, "banner_color", 0) or 0),
             "banner_animated": bool(getattr(self, "banner_animated", False)),
             "skin": getattr(self, "selected_skin", "default") or "default",
+            # TDM only — frontend ignores when null.
+            "team": self.team,
         }
 
     def shooter_payload(self) -> dict:
@@ -2255,7 +2277,7 @@ class Player:
 
 
 class GameRoom:
-    def __init__(self, is_ranked: bool = False, match_duration: float = 300.0):
+    def __init__(self, is_ranked: bool = False, match_duration: float = 300.0, game_mode: str = "ffa"):
         self.players: Dict[str, Player] = {}
         self.events: List[dict] = []
         self.lock = asyncio.Lock()
@@ -2265,6 +2287,17 @@ class GameRoom:
         self.match_start = time.time()
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
+        # Game mode — "ffa" (free-for-all, default) or "tdm" (team
+        # deathmatch 3v3). TDM enables team assignment + friendly-fire
+        # blocking + team scoreboard. Ranked rooms stay FFA only.
+        self.game_mode: str = game_mode if game_mode in ("ffa", "tdm") else "ffa"
+        # Per-team kill totals — populated only in TDM. First team to
+        # `TDM_KILL_TARGET` ends the match instantly; ties broken by
+        # match-time-up score.
+        self.team_scores: Dict[str, int] = {"red": 0, "blue": 0}
+        # One-shot latch so the early-end compression in `_on_team_kill`
+        # only fires once per match. Reset at every `end_match`.
+        self._tdm_early_end_armed: bool = False
         # User ids that already received the live match_end broadcast for the
         # current intermission. Used by add()'s replay branch to avoid
         # double-showing the overlay to a player who finished a match,
@@ -2363,11 +2396,43 @@ class GameRoom:
         bx, bz = random_spawn(self.arena, occupants=list(self.players.values()))
         bot.x = float(bx)
         bot.z = float(bz)
+        # TDM team for bots — assigned the same way as real players so
+        # the room balances naturally as bots are filled in.
+        self._assign_team(bot)
         self.players[bot.id] = bot
         logger.info("Bot spawned: %s (%s) diff=%.2f%s%s", name, bot.id, bot.difficulty,
                     " [disguised]" if disguised else "",
                     f" tier={disguise_tier_idx}" if (disguised and disguise_tier_idx is not None) else "")
         return bot
+
+    def _assign_team(self, player: Player) -> None:
+        """In TDM, balance new joins onto the smaller team. Falls back to
+        random when both teams are equal. No-op in FFA — `player.team`
+        stays None and downstream logic treats every player as an enemy."""
+        if self.game_mode != "tdm":
+            player.team = None
+            return
+        # Count current live (non-spectator) members per team.
+        red  = sum(1 for p in self.players.values() if p.team == "red"  and not getattr(p, "is_spectator", False))
+        blue = sum(1 for p in self.players.values() if p.team == "blue" and not getattr(p, "is_spectator", False))
+        if red < blue:
+            player.team = "red"
+        elif blue < red:
+            player.team = "blue"
+        else:
+            player.team = random.choice(("red", "blue"))
+
+    def _rebalance_teams(self) -> None:
+        """At the start of each TDM match, reassign teams from scratch
+        so an uneven join history doesn't lock the next round into 4v2.
+        Splits players alternately by current position so the layout
+        feels fresh without massive shuffling."""
+        if self.game_mode != "tdm":
+            return
+        order = list(self.players.values())
+        random.shuffle(order)
+        for i, p in enumerate(order):
+            p.team = "red" if i % 2 == 0 else "blue"
 
     async def add(self, player: Player):
         # Reposition the player onto a spawn point from THIS room's arena —
@@ -2387,6 +2452,9 @@ class GameRoom:
                 (not p.is_bot) and (not getattr(p, "is_spectator", False))
                 for p in self.players.values()
             )
+            # Assign a team (TDM only). Done while holding the lock so a
+            # burst of simultaneous joins can't race the head-count.
+            self._assign_team(player)
             self.players[player.id] = player
         # Restart the match clock if this is the first real player to join
         # an empty (or bots-only) room while a match is supposedly in
@@ -2693,6 +2761,9 @@ class GameRoom:
                 continue
             if time.time() < p.invuln_until:
                 continue
+            # TDM friendly-fire — same-team allies can't be melee'd.
+            if self.game_mode == "tdm" and attacker.team and p.team and attacker.team == p.team:
+                continue
             vx = p.x - attacker.x
             vz = p.z - attacker.z
             d = math.hypot(vx, vz)
@@ -2721,6 +2792,7 @@ class GameRoom:
                 best.hp = 0
                 best.deaths += 1
                 attacker.kills += 1
+                self._on_team_kill(attacker)
                 self._award_kill_heal(attacker, headshot=False)
                 best.respawn_at = time.time() + 3.0
                 self.events.append({
@@ -2759,6 +2831,20 @@ class GameRoom:
                 "headshot": headshot,
             })
 
+    def _on_team_kill(self, killer: Player) -> None:
+        """TDM only — credit the killer's team and arm an early match end
+        if their team hit `TDM_KILL_TARGET`. No-op in FFA."""
+        if self.game_mode != "tdm" or not killer.team:
+            return
+        self.team_scores[killer.team] = self.team_scores.get(killer.team, 0) + 1
+        if self.team_scores[killer.team] >= TDM_KILL_TARGET and not self._tdm_early_end_armed:
+            self._tdm_early_end_armed = True
+            # Compress the remaining match time so the existing tick-loop
+            # `match_end` path fires within ~0.5s — no separate code path
+            # needed for the early end, the rest of the game-over plumbing
+            # (placements, broadcasts, intermission) still runs cleanly.
+            self.match_start = time.time() - (self.match_duration - 0.5)
+
     async def _apply_shoot(self, shooter: Player, base_damage: int):
         """Overwatch-style shot resolution: spread cone + falloff + headshot multiplier.
         Bots use base_damage directly; real players use weapon config."""
@@ -2789,6 +2875,12 @@ class GameRoom:
         hit, body_part, dist = self.raycast_hit(shooter, yaw_override=yaw, pitch_override=pitch)
         if hit and hit.alive:
             if time.time() < hit.invuln_until:
+                return
+            # TDM friendly fire — same-team hits deal no damage and emit
+            # nothing (no hit feedback, no kill credit). Bullets pass
+            # through teammates so a player isn't penalised for spraying
+            # into a friendly's back during a chaotic peek.
+            if self.game_mode == "tdm" and shooter.team and hit.team and shooter.team == hit.team:
                 return
             # Damage scaling
             if shooter.is_bot:
@@ -2839,6 +2931,7 @@ class GameRoom:
                 hit.hp = 0
                 hit.deaths += 1
                 shooter.kills += 1
+                self._on_team_kill(shooter)
                 self._award_kill_heal(shooter, headshot=head_hit)
                 hit.respawn_at = time.time() + 3.0
                 self.events.append({
@@ -2950,6 +3043,9 @@ class GameRoom:
             return
         if time.time() < hit.invuln_until:
             return
+        # TDM friendly-fire suppression — same-team beams cannot damage.
+        if self.game_mode == "tdm" and shooter.team and hit.team and shooter.team == hit.team:
+            return
         damage = damage_this_tick
         if body_part == "head":
             damage = int(round(damage * cfg.get("headshot_mult", 1.5)))
@@ -2975,6 +3071,7 @@ class GameRoom:
             hit.hp = 0
             hit.deaths += 1
             shooter.kills += 1
+            self._on_team_kill(shooter)
             self._award_kill_heal(shooter, headshot=(body_part == "head"))
             hit.respawn_at = time.time() + 3.0
             self.events.append({
@@ -3564,6 +3661,10 @@ class GameRoom:
             "in_queue": in_queue,
             "real_count": real_count,
             "min_real_players": RANKED_MIN_REAL_PLAYERS,
+            # TDM-only fields. Frontend ignores when game_mode is "ffa".
+            "game_mode": self.game_mode,
+            "team_scores": dict(self.team_scores) if self.game_mode == "tdm" else None,
+            "tdm_kill_target": TDM_KILL_TARGET if self.game_mode == "tdm" else None,
         }
 
         needs_keyframe = (
@@ -3963,6 +4064,13 @@ class GameRoom:
         self.last_match_end_payload = None
         self.last_match_end_recipients.clear()
         self.match_num += 1
+        # Fresh TDM bookkeeping for the next match.
+        self.team_scores = {"red": 0, "blue": 0}
+        self._tdm_early_end_armed = False
+        # Rebalance teams so a long-running room doesn't drift after
+        # joins/leaves across many rounds.
+        if self.game_mode == "tdm":
+            self._rebalance_teams()
 
         # Ranked-bot rooms reroll bot disguises (name, avatar, rank) on
         # every new match so the player never faces "Stryker" twice in a
@@ -3994,10 +4102,17 @@ class GameRoom:
             await asyncio.sleep(interval)
 
 
-game_room = GameRoom(is_ranked=False, match_duration=60.0)  # 1 minute Quick Match
+game_room = GameRoom(is_ranked=False, match_duration=60.0)  # 1 minute Quick Match (FFA)
+# Dedicated TDM quick-match room — quick-match joins roll into this 50% of
+# the time. Same 60s match length so the casual rotation feel is identical.
+tdm_room = GameRoom(is_ranked=False, match_duration=60.0, game_mode="tdm")
 ranked_room = GameRoom(is_ranked=True, match_duration=120.0)  # 2 minute Ranked
 practice_room = GameRoom(is_ranked=False, match_duration=99999.0)  # Practice never ends
 practice_room.is_practice = True
+# TDM practice room — same never-ending session, but team-mode so users
+# can rehearse the 3v3 format. Pre-filled with smart bots in start_event.
+practice_tdm_room = GameRoom(is_ranked=False, match_duration=99999.0, game_mode="tdm")
+practice_tdm_room.is_practice = True
 
 # Offline-vs-AI: one private room per user, spawned on demand.
 OFFLINE_ROOMS: Dict[str, "GameRoom"] = {}
@@ -4044,6 +4159,42 @@ async def cleanup_offline_room_if_empty(user_id: str):
         task.cancel()
     OFFLINE_ROOMS.pop(user_id, None)
     logger.info("Offline room destroyed for user=%s", user_id)
+
+
+# Offline-vs-AI TDM rooms — separate dict so a user can switch between
+# FFA and TDM offline practice without leaking state between the two.
+OFFLINE_TDM_ROOMS: Dict[str, "GameRoom"] = {}
+OFFLINE_TDM_ROOM_TASKS: Dict[str, asyncio.Task] = {}
+
+
+async def get_or_create_offline_tdm_room(user_id: str) -> "GameRoom":
+    """Per-user 5-minute TDM-3v3 offline room. Pre-filled with 5 smart
+    bots so the very first match is a balanced 3v3."""
+    room = OFFLINE_TDM_ROOMS.get(user_id)
+    if room is not None:
+        return room
+    room = GameRoom(is_ranked=False, match_duration=300.0, game_mode="tdm")
+    room.is_offline = True
+    bot_names = random.sample(BOT_NAMES, 5)
+    for nm in bot_names:
+        room.spawn_bot(f"{nm}-OT", disguised=False, difficulty=1.2)
+    OFFLINE_TDM_ROOMS[user_id] = room
+    OFFLINE_TDM_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
+    logger.info("Offline TDM room spawned for user=%s", user_id)
+    return room
+
+
+async def cleanup_offline_tdm_room_if_empty(user_id: str):
+    room = OFFLINE_TDM_ROOMS.get(user_id)
+    if room is None:
+        return
+    if any(not p.is_bot for p in room.players.values()):
+        return
+    task = OFFLINE_TDM_ROOM_TASKS.pop(user_id, None)
+    if task and not task.done():
+        task.cancel()
+    OFFLINE_TDM_ROOMS.pop(user_id, None)
+    logger.info("Offline TDM room destroyed for user=%s", user_id)
 
 
 async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_rank_points: Optional[int] = None) -> "GameRoom":
@@ -5638,7 +5789,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
 
 # -------------------------------------------------------------------
 @api.websocket("/ws/game")
-async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None)):
+async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None), tdm: Optional[int] = Query(default=0)):
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -5676,9 +5827,17 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         else:
             room = ranked_room
     elif mode == "practice":
-        room = practice_room
+        # Practice supports both FFA and TDM — driven by `?tdm=1` from the
+        # PracticeMapSelector. TDM practice spawns into the dedicated
+        # tdm_room so the dummy bots aren't promoted into 3v3.
+        room = practice_tdm_room if tdm else practice_room
     elif mode == "offline":
-        room = await get_or_create_offline_room(str(user["_id"]))
+        # Offline-vs-AI also honours the TDM flag — the user picks FFA or
+        # TDM at the same selector and we route to a per-user TDM room.
+        if tdm:
+            room = await get_or_create_offline_tdm_room(str(user["_id"]))
+        else:
+            room = await get_or_create_offline_room(str(user["_id"]))
     elif mode == "party":
         if not party_id:
             await websocket.close(code=4400)
@@ -5719,7 +5878,11 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             await websocket.close(code=4404)
             return
     else:
-        room = game_room
+        # Casual / Quick Match. Honour an explicit `?tdm=1`, otherwise
+        # randomly roll TDM half the time so the rotation feels varied
+        # without making FFA rare.
+        wants_tdm = bool(tdm) or (random.random() < TDM_QUICK_MATCH_ROLL)
+        room = tdm_room if wants_tdm else game_room
     await websocket.accept()
     u_id_str = str(user["_id"])
     ONLINE_USERS[u_id_str] = ONLINE_USERS.get(u_id_str, 0) + 1
@@ -5763,6 +5926,7 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             pass
         if mode == "offline":
             await cleanup_offline_room_if_empty(str(user["_id"]))
+            await cleanup_offline_tdm_room_if_empty(str(user["_id"]))
         elif mode == "party" and party_id:
             await cleanup_party_room_if_empty(party_id)
         elif mode == "ranked" and getattr(room, "is_ranked_bot", False):

@@ -156,6 +156,12 @@ export default function Game() {
             laserHeat: you?.laser_heat ?? 0,
             laserOverheated: !!you?.laser_overheated,
             laserFiring: !!you?.laser_firing,
+            // TDM payload — game_mode is "ffa" or "tdm"; team_scores is
+            // {red, blue} only in TDM (null otherwise). HUD switches its
+            // top-bar score badge based on these.
+            gameMode: msg.game_mode || "ffa",
+            teamScores: msg.team_scores || null,
+            tdmKillTarget: msg.tdm_kill_target || null,
             // Spawn immunity flag — surfaces as a top-of-screen banner so
             // the player knows damage isn't being dealt to them this brief
             // window.
@@ -382,15 +388,20 @@ export default function Game() {
     if (offlineCapable) {
       sock.connect();
     } else {
-      sock.connect(
-        accessToken,
-        mode,
+      // `?tdm=1` survives the route hand-off from the lobby's
+      // PracticeMapSelector and tells the server to route this join
+      // into the team-mode room (practice/offline) — and for casual
+      // quick-match, forces TDM rather than letting the 50% roll decide.
+      const tdmFromUrl = searchParams.get("tdm") === "1";
+      const extra =
         mode === "party" && partyId
-          ? { party_id: partyId }
+          ? { party_id: partyId, ...(tdmFromUrl ? { tdm: 1 } : {}) }
           : mode === "spectate" && spectateTarget
           ? { target: spectateTarget }
-          : null
-      );
+          : tdmFromUrl
+          ? { tdm: 1 }
+          : null;
+      sock.connect(accessToken, mode, extra);
     }
 
     // Network send loop @ 20Hz

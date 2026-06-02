@@ -310,6 +310,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - `_season_tiers()` now takes a `season_number` arg with a per-season skin lineup map. `_progression` calls `maybe_reset_season()` first so the moment the timer hits zero, the next request flips the user onto S2 and the meteor pass goes live. No deploy needed at rollover.
   - Catalog (backend + frontend `skins.js`) has all 3 new skins from day one so the renderer can paint them immediately.
   - 5 regression tests in `tests/test_season_2_meteor_pass.py` lock both the S1 and S2 layouts.
+- ✅ **Team Deathmatch 3v3 — in rotation + selectable in practice** — Brand new game mode:
+  - **Backend**: `GameRoom.game_mode` ("ffa" | "tdm"), `team_scores`, `Player.team` ("red" | "blue"), `_assign_team` balances on join, `_rebalance_teams` reshuffles each new match. Friendly fire blocked across all three damage paths (shoot / laser / melee). First team to **30 kills** triggers an early match-end via existing `end_match` plumbing (no new code path).
+  - **Quick match**: 50% of joins randomly roll into a dedicated `tdm_room` instead of the FFA `game_room`. Pre-filled with 5 smart bots so the very first joiner has a balanced 3v3.
+  - **Practice + Offline-vs-AI**: PracticeMapSelector now shows a GAME MODE toggle row above the map cards (FREE FOR ALL ↔ TEAM DEATHMATCH). `?tdm=1` flows through the WS URL into the team-mode room. Offline TDM gets per-user rooms with auto-cleanup.
+  - **Ranked**: untouched (still FFA only).
+  - **HUD**: TDM badge in the top-bar reads "TDM 3V3"; new team-score panel shows `RED N — N BLUE → 30`. `Player.team` surfaced in state delta so future nameplate tinting can hook into it.
+  - 12 backend regression tests in `tests/test_tdm_mode.py` (game-mode field, team balance, friendly-fire blocked on all 3 damage paths, early-end arming, dedicated rooms exist, WS handler accepts `?tdm=` param).
 - 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
 - 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors, practice map selector screenshot shows all 4 maps + RANDOM.
 

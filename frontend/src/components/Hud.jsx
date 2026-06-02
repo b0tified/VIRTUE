@@ -186,9 +186,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
         </div>
       </div>
 
-      {/* Top-center: match timer */}
+      {/* Top-center: match timer (+ TDM team score badge when in team mode) */}
       {(hud.inQueue || hud.timeLeft != null) && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20" data-testid="hud-match-timer">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2" data-testid="hud-match-timer">
           {hud.inQueue ? (
             <div className="hud-panel" style={{ background: "rgba(0,85,255,0.92)" }}>
               <div className="flex items-center gap-3">
@@ -201,8 +201,21 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
             <div className="hud-panel" style={{ background: hud.timeLeft < 30 ? "rgba(230,36,41,0.95)" : (hud.isRanked ? "rgba(0,85,255,0.92)" : "rgba(10,10,10,0.85)") }}>
               <div className="flex items-center gap-3">
                 <Timer size={20} strokeWidth={3} />
-                <span className="text-xs opacity-80">{hud.isRanked ? "RANKED" : "QUICK"}</span>
+                <span className="text-xs opacity-80">{hud.isRanked ? "RANKED" : (hud.gameMode === "tdm" ? "TDM 3V3" : "QUICK")}</span>
                 <span className="font-display text-3xl" data-testid="hud-time-left">{formatTime(hud.timeLeft)}</span>
+              </div>
+            </div>
+          )}
+          {/* TDM team score badge — red on the left, blue on the right.
+              Whichever team is closer to TDM_KILL_TARGET gets a subtle
+              glow so the player can read momentum at a glance. */}
+          {hud.gameMode === "tdm" && hud.teamScores && (
+            <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)", padding: "6px 10px" }} data-testid="hud-tdm-score">
+              <div className="flex items-center gap-3 font-display text-xl tabular-nums">
+                <span style={{ color: "#E62429" }} data-testid="hud-tdm-red">{hud.teamScores.red ?? 0}</span>
+                <span className="text-xs opacity-60 font-anton uppercase tracking-widest">RED · BLUE</span>
+                <span style={{ color: "#3aa1ff" }} data-testid="hud-tdm-blue">{hud.teamScores.blue ?? 0}</span>
+                <span className="text-[10px] opacity-50 font-anton uppercase tracking-widest pl-1">→ {hud.tdmKillTarget || 30}</span>
               </div>
             </div>
           )}

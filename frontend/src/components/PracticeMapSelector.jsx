@@ -13,6 +13,10 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
   // Tracks which card the user has highlighted before confirming. `null`
   // means RANDOM (server-style uniform pick).
   const [picked, setPicked] = useState(null);
+  // Game mode toggle — "ffa" or "tdm". Persists for the lifetime of the
+  // selector modal; we pass it back via onSelect so the caller can put
+  // `tdm=1` in the WS URL.
+  const [gameMode, setGameMode] = useState("ffa");
   if (!open) return null;
   const modeLabel = mode === "practice" ? "PRACTICE RANGE" : "OFFLINE VS AI";
   return (
@@ -42,6 +46,30 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
           </button>
         </div>
 
+        {/* Game-mode toggle (FFA vs TDM) — placed above the map cards so
+            the user picks their format first, then their arena. */}
+        <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
+          <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2">Game Mode</div>
+          <div className="grid grid-cols-2 gap-3">
+            <ModeCard
+              testid="practice-mode-card-ffa"
+              active={gameMode === "ffa"}
+              onClick={() => setGameMode("ffa")}
+              title="FREE FOR ALL"
+              subtitle="Solo deathmatch · last one standing wins"
+              accent="#E62429"
+            />
+            <ModeCard
+              testid="practice-mode-card-tdm"
+              active={gameMode === "tdm"}
+              onClick={() => setGameMode("tdm")}
+              title="TEAM DEATHMATCH"
+              subtitle="3v3 · first team to 30 kills wins"
+              accent="#9B59B6"
+            />
+          </div>
+        </div>
+
         {/* Map grid */}
         <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* Random option */}
@@ -68,10 +96,12 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
             {picked
               ? <>SELECTED: <span className="text-[#E62429]">{MAPS_META.find((mp) => mp.map_id === picked)?.name}</span></>
               : <>SELECTED: <span className="text-[#E62429]">RANDOM</span></>}
+            <span className="ml-2 opacity-60">·</span>
+            <span className="ml-2">{gameMode === "tdm" ? <span className="text-[#9B59B6]">TDM 3V3</span> : <span className="text-[#E62429]">FFA</span>}</span>
           </div>
           <button
             type="button"
-            onClick={() => onSelect(picked)}
+            onClick={() => onSelect(picked, { tdm: gameMode === "tdm" })}
             className="btn-pow bg-[#E62429] text-white [&]:py-2 [&]:px-4"
             data-testid="practice-map-selector-confirm"
           >
@@ -82,6 +112,25 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
         </div>
       </div>
     </div>
+  );
+}
+
+/* Compact mode-toggle card used in the header. Two states: idle (white
+   bordered) and active (filled with the mode's accent colour). Keeps
+   the comic-book border + shadow language consistent with the rest of
+   the lobby's selector UI. */
+function ModeCard({ active, onClick, title, subtitle, accent, testid }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testid}
+      className={`border-2 border-black p-3 text-left transition-transform active:translate-y-px ${active ? "text-white" : "bg-white hover:bg-neutral-100"}`}
+      style={active ? { background: accent, boxShadow: `4px 4px 0 0 #000` } : { boxShadow: `2px 2px 0 0 #00000022` }}
+    >
+      <div className={`font-display text-lg leading-none ${active ? "" : ""}`}>{title}</div>
+      <div className={`font-anton uppercase tracking-widest text-[10px] mt-1 ${active ? "opacity-90" : "opacity-60"}`}>{subtitle}</div>
+    </button>
   );
 }
 

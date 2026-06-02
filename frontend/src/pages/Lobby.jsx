@@ -586,13 +586,16 @@ export default function Lobby() {
         open={!!practiceSelectorMode}
         mode={practiceSelectorMode || "practice"}
         onClose={() => setPracticeSelectorMode(null)}
-        onSelect={(mapId) => {
+        onSelect={(mapId, opts = {}) => {
           const selectedMode = practiceSelectorMode;
           setPracticeSelectorMode(null);
           const mapQuery = mapId ? `&map=${mapId}` : "";
+          // TDM toggle from the selector — pass through to the WS URL so
+          // the server routes the join into the team-mode room.
+          const tdmQuery = opts.tdm ? "&tdm=1" : "";
           navigateToMatch(
             nav,
-            `/play?mode=${selectedMode}${mapQuery}`,
+            `/play?mode=${selectedMode}${mapQuery}${tdmQuery}`,
             { mode: "offline", username: user?.username },
           );
         }}
