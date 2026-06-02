@@ -3070,6 +3070,40 @@ export class GameEngine {
     return p.is_bot ? "bot" : "enemy";
   }
 
+  /* TDM-only: snapshot of the data the minimap needs each frame.
+     Returns null in FFA so the HUD can early-out. Includes the arena
+     outline (size + obstacle footprint), the local player's position +
+     facing yaw + team, and every visible remote with their team. */
+  getMinimapData() {
+    if (this._gameMode !== "tdm") return null;
+    const arena = this._arena;
+    if (!arena) return null;
+    const others = [];
+    for (const entry of this.players.values()) {
+      if (!entry || !entry.alive) continue;
+      others.push({
+        id: entry.id || "",
+        x: entry.x, z: entry.z,
+        team: entry.team || null,
+        is_bot: !!entry.is_bot,
+      });
+    }
+    return {
+      size: arena.size || 50,
+      obstacles: (arena.obstacles || []).map((o) => ({
+        x: o.x, z: o.z, w: o.w, d: o.d,
+      })),
+      you: {
+        x: this.position.x,
+        z: this.position.z,
+        yaw: this.yaw,
+        team: this._myTeam || null,
+        alive: !!this.alive,
+      },
+      others,
+    };
+  }
+
   _hashColor(id) {
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
@@ -3133,6 +3167,8 @@ export class GameEngine {
       // tells us otherwise.
       this._gameMode = "ffa";
       this._myTeam = null;
+      this._teamScores = null;
+      this._tdmKillTarget = null;
       return;
     }
     // -----------------------------------------------------------------
@@ -3239,13 +3275,18 @@ export class GameEngine {
       // Cache top-level TDM context so `_relationFor` can colour nameplates
       // and the per-tick crosshair-on-teammate check can run without
       // re-scanning the state every frame.
-      this._gameMode = msg.game_mode || "ffa";
+      // Deltas only contain CHANGED top fields, so an undefined value
+      // here means "unchanged" — preserve our last cached value rather
+      // than collapsing to FFA. Same pattern for myTeam below.
+      if (msg.game_mode !== undefined) this._gameMode = msg.game_mode || "ffa";
+      if (msg.team_scores !== undefined) this._teamScores = msg.team_scores || null;
+      if (msg.tdm_kill_target !== undefined) this._tdmKillTarget = msg.tdm_kill_target || null;
       const seen = new Set();
       for (const p of msg.players) {
         seen.add(p.id);
         if (p.id === this.youId) {
           // Track our own team so the relation helper has a reference.
-          this._myTeam = p.team || null;
+          if (p.team !== undefined) this._myTeam = p.team || null;
           // Detect server-side respawn: alive transitioned false → true. The
           // server picks a fresh random spawn point when respawning, so the
           // client *must* snap its position to match — otherwise shots are

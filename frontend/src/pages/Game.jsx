@@ -156,17 +156,21 @@ export default function Game() {
             laserHeat: you?.laser_heat ?? 0,
             laserOverheated: !!you?.laser_overheated,
             laserFiring: !!you?.laser_firing,
-            // TDM payload — game_mode is "ffa" or "tdm"; team_scores is
-            // {red, blue} only in TDM (null otherwise). HUD switches its
-            // top-bar score badge based on these.
-            gameMode: msg.game_mode || "ffa",
-            teamScores: msg.team_scores || null,
-            tdmKillTarget: msg.tdm_kill_target || null,
+            // TDM payload — pull from engine's cached state, not the
+            // raw msg, because state DELTAS only include changed top
+            // fields. Reading msg.game_mode directly would collapse to
+            // "ffa" on every tick after the first.
+            gameMode: engineRef.current?._gameMode || "ffa",
+            teamScores: engineRef.current?._teamScores || null,
+            tdmKillTarget: engineRef.current?._tdmKillTarget || null,
             // Crosshair currently aimed at a teammate? Engine raycasts
             // a 7° cone each state frame; HUD tints the reticle blue +
             // shows a small "TEAMMATE" tag when this is true so the
             // player knows to hold fire.
             crosshairOnTeammate: engineRef.current?.isCrosshairOnTeammate?.() || false,
+            // Minimap snapshot — null in FFA. Fed to the TDM minimap
+            // overlay so it can render arena outline + team blips.
+            minimap: engineRef.current?.getMinimapData?.() || null,
             // Spawn immunity flag — surfaces as a top-of-screen banner so
             // the player knows damage isn't being dealt to them this brief
             // window.
@@ -271,7 +275,15 @@ export default function Game() {
     };
     engine.start();
 
-    const offlineCapable = mode === "offline" || mode === "practice";
+    // Practice + Offline normally run on a local sim (no server) for
+    // zero-latency private play. TDM however requires the server's team
+    // logic — friendly-fire suppression, team-balanced spawns, team
+    // score tracking — none of which exist in LocalSim. So when the
+    // user picks TDM in the selector (`?tdm=1`) we fall back to the
+    // real server's dedicated TDM rooms (`tdm_room`, `practice_tdm_room`,
+    // or per-user offline TDM).
+    const wantsTdm = searchParams.get("tdm") === "1";
+    const offlineCapable = !wantsTdm && (mode === "offline" || mode === "practice");
     const sockHandlers = {
       onOpen: () => {
         setHud((h) => ({ ...h, connected: true }));
@@ -397,13 +409,13 @@ export default function Game() {
       // PracticeMapSelector and tells the server to route this join
       // into the team-mode room (practice/offline) — and for casual
       // quick-match, forces TDM rather than letting the 50% roll decide.
-      const tdmFromUrl = searchParams.get("tdm") === "1";
+      // (Reuses `wantsTdm` computed above.)
       const extra =
         mode === "party" && partyId
-          ? { party_id: partyId, ...(tdmFromUrl ? { tdm: 1 } : {}) }
+          ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}) }
           : mode === "spectate" && spectateTarget
           ? { target: spectateTarget }
-          : tdmFromUrl
+          : wantsTdm
           ? { tdm: 1 }
           : null;
       sock.connect(accessToken, mode, extra);

@@ -223,19 +223,28 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
               </div>
             </div>
           )}
-          {/* TDM team score badge — red on the left, blue on the right.
-              Whichever team is closer to TDM_KILL_TARGET gets a subtle
-              glow so the player can read momentum at a glance. */}
+          {/* TDM-only: polished team-kill scoreboard. Two team-coloured
+              columns (RED / BLUE) on either side of a central target
+              indicator. The local player's team gets a gold underline so
+              they always know which column to track. */}
           {hud.gameMode === "tdm" && hud.teamScores && (
-            <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)", padding: "6px 10px" }} data-testid="hud-tdm-score">
-              <div className="flex items-center gap-3 font-display text-xl tabular-nums">
-                <span style={{ color: "#E62429" }} data-testid="hud-tdm-red">{hud.teamScores.red ?? 0}</span>
-                <span className="text-xs opacity-60 font-anton uppercase tracking-widest">RED · BLUE</span>
-                <span style={{ color: "#3aa1ff" }} data-testid="hud-tdm-blue">{hud.teamScores.blue ?? 0}</span>
-                <span className="text-[10px] opacity-50 font-anton uppercase tracking-widest pl-1">→ {hud.tdmKillTarget || 30}</span>
-              </div>
-            </div>
+            <TdmTeamScoreboard
+              red={hud.teamScores.red ?? 0}
+              blue={hud.teamScores.blue ?? 0}
+              target={hud.tdmKillTarget || 30}
+              myTeam={hud.minimap?.you?.team || null}
+            />
           )}
+        </div>
+      )}
+
+      {/* TDM-only: corner minimap with arena outline + team blips.
+          Placed top-left so it doesn't compete with the killfeed (top-right),
+          score/ammo (bottom-right), or health bar (bottom-left). FFA is
+          unaffected — the panel never renders outside team mode. */}
+      {hud.gameMode === "tdm" && hud.minimap && (
+        <div className="absolute top-4 left-4 z-20" data-testid="hud-tdm-minimap">
+          <TdmMinimap data={hud.minimap} />
         </div>
       )}
 
@@ -877,4 +886,113 @@ function ReportPlayerModal({ target, onClose }) {
   );
 }
 
+
+
+/* ──────────────────────────────────────────────────────────────────
+   TDM-only HUD panels
+   ────────────────────────────────────────────────────────────────── */
+
+/* Polished team-kill scoreboard.
+   Two team-coloured columns sandwiching a central "TO 30" target tag.
+   The local player's team gets a gold underline so they always know
+   which side to track. Whichever team is ahead gets a subtle pulse to
+   sell momentum. */
+function TdmTeamScoreboard({ red, blue, target, myTeam }) {
+  const redAhead  = red > blue;
+  const blueAhead = blue > red;
+  const Col = ({ team, value, color, mine, ahead }) => (
+    <div
+      className="flex flex-col items-center px-3 py-1 border-2 border-black"
+      style={{
+        background: ahead ? color : "rgba(10,10,10,0.85)",
+        color: ahead ? "#fff" : color,
+        boxShadow: mine ? "inset 0 -3px 0 0 #FFD700" : undefined,
+        minWidth: 56,
+      }}
+      data-testid={`hud-tdm-${team}-col`}
+    >
+      <span className="font-anton uppercase tracking-widest text-[10px] opacity-80 leading-none">{team}</span>
+      <span className="font-display text-3xl leading-none tabular-nums" data-testid={`hud-tdm-${team}`}>{value}</span>
+    </div>
+  );
+  return (
+    <div className="flex items-center gap-1.5" data-testid="hud-tdm-score">
+      <Col team="red"  value={red}  color="#E62429" mine={myTeam === "red"}  ahead={redAhead} />
+      <div className="font-anton uppercase tracking-widest text-[10px] text-white/80 bg-black/60 border-2 border-black px-2 py-1">
+        FIRST TO<br />
+        <span className="font-display text-base text-[#FFD700] leading-none">{target}</span>
+      </div>
+      <Col team="blue" value={blue} color="#3aa1ff" mine={myTeam === "blue"} ahead={blueAhead} />
+    </div>
+  );
+}
+
+/* Top-down minimap for TDM matches.
+   Renders the arena outline (size + obstacle footprints), the local
+   player as a yellow facing-direction arrow, teammates as blue dots
+   (chevron + outline so they pop), enemies as red dots. The SVG is
+   transformed so world (0,0) sits at the centre of the panel and the
+   ±size/2 extents fit the viewBox. */
+const MAP_PX = 160;       // panel size on screen
+function TdmMinimap({ data }) {
+  if (!data) return null;
+  const half = (data.size || 50) / 2;
+  // Convert world (x,z) to SVG-space (cx,cy). World +z is "north" on the
+  // ground plane in three.js (away from the camera at yaw=0). Render +z
+  // as DOWN on the map (typical convention) so spinning the camera the
+  // same direction also rotates the minimap-correct way.
+  const toSvg = (x, z) => [
+    ((x + half) / data.size) * MAP_PX,
+    ((z + half) / data.size) * MAP_PX,
+  ];
+  // Local-player arrow vertices in svg space (rotate by -yaw so +yaw=look right == arrow points right).
+  const [px, py] = toSvg(data.you.x, data.you.z);
+  // Three.js yaw 0 looks down -Z (UP on map). Convert to SVG rotation:
+  // svgRotate° = -yaw_rad in degrees - 90 (so arrow points up at yaw=0).
+  const arrowDeg = (-data.you.yaw * 180 / Math.PI);
+  return (
+    <div
+      className="card-pow bg-black/70 p-1.5 border-2 border-black"
+      style={{ width: MAP_PX + 12, boxShadow: "3px 3px 0 0 #000" }}
+    >
+      <div className="font-anton uppercase tracking-widest text-[9px] text-[#FFD700] text-center leading-none pb-1">
+        TDM RADAR
+      </div>
+      <svg
+        width={MAP_PX} height={MAP_PX}
+        viewBox={`0 0 ${MAP_PX} ${MAP_PX}`}
+        style={{ background: "rgba(20,18,30,0.92)", display: "block" }}
+        data-testid="hud-tdm-minimap-svg"
+      >
+        {/* Arena floor border. */}
+        <rect x="0.5" y="0.5" width={MAP_PX - 1} height={MAP_PX - 1} fill="none" stroke="#444" strokeWidth="1" />
+        {/* Obstacles — faded grey rectangles. */}
+        {data.obstacles.map((o, i) => {
+          const w = (o.w / data.size) * MAP_PX;
+          const d = (o.d / data.size) * MAP_PX;
+          const [cx, cy] = toSvg(o.x - o.w / 2, o.z - o.d / 2);
+          return <rect key={i} x={cx} y={cy} width={w} height={d} fill="#6b6678" opacity="0.55" />;
+        })}
+        {/* Other players. Teammates blue + chevron, enemies red. */}
+        {data.others.map((p) => {
+          const [cx, cy] = toSvg(p.x, p.z);
+          const isTeam = data.you.team && p.team === data.you.team;
+          const color = isTeam ? "#3aa1ff" : "#E62429";
+          return (
+            <g key={p.id} data-testid={`minimap-dot-${isTeam ? "team" : "enemy"}`}>
+              <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#000" strokeWidth="1" />
+              {isTeam && (
+                <polygon points={`${cx},${cy - 6} ${cx - 3},${cy - 2} ${cx + 3},${cy - 2}`} fill="#3aa1ff" stroke="#000" strokeWidth="0.8" />
+              )}
+            </g>
+          );
+        })}
+        {/* Local-player facing-direction arrow — gold so it pops. */}
+        <g transform={`translate(${px}, ${py}) rotate(${arrowDeg})`} data-testid="minimap-self">
+          <polygon points="0,-7 -5,5 0,2 5,5" fill="#FFD700" stroke="#000" strokeWidth="1" />
+        </g>
+      </svg>
+    </div>
+  );
+}
 
