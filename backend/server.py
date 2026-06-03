@@ -611,17 +611,21 @@ async def on_startup():
             b.is_dummy = True
             b.max_hp = 50
             b.hp = 50
-    # TDM quick-match room: pre-fill with 5 ranked-grade smart bots so the
-    # very first joiner has 6 bodies in the arena (3v3). The team-balancer
-    # will split them across red/blue.
-    tdm_bot_names = random.sample(BOT_NAMES, 5)
+    # TDM quick-match room: pre-fill with 6 disguised smart bots so the
+    # room is permanently at 3v3 strength even with zero real players.
+    # `_maintain_tdm_population` (called on every join/leave) will swap
+    # bots in/out 1-for-1 as humans arrive and depart. Disguised=True so
+    # the lobby reads as a 3v3 of "real" people (DISGUISED_BOT_NAMES are
+    # realistic handles; the BOT badge is suppressed in TDM scoreboard).
+    tdm_bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2)
     for nm in tdm_bot_names:
-        tdm_room.spawn_bot(nm + "-T", disguised=False, difficulty=1.45)
-    # TDM practice room: 5 smart bots so the room is immediately playable
-    # at the 3v3 format (player + 5 = 6 total = 3v3).
-    practice_tdm_bot_names = random.sample(BOT_NAMES, 5)
+        tdm_room.spawn_bot(nm, disguised=True, difficulty=1.45)
+    # TDM practice room: same disguised pre-fill so practice mirrors the
+    # quick-match feel exactly (a bored player solo-grinding bots still
+    # sees 3v3 of "humans" in the scoreboard).
+    practice_tdm_bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2)
     for nm in practice_tdm_bot_names:
-        practice_tdm_room.spawn_bot(nm + "-P", disguised=False, difficulty=1.2)
+        practice_tdm_room.spawn_bot(nm, disguised=True, difficulty=1.2)
 
     # Initialize season metadata (rank reset every 14 days)
     await get_or_init_season()
@@ -2434,6 +2438,49 @@ class GameRoom:
         for i, p in enumerate(order):
             p.team = "red" if i % 2 == 0 else "blue"
 
+    def _maintain_tdm_population(self) -> None:
+        """TDM-only: keep the room at exactly TDM_TEAM_SIZE * 2 = 6
+        combat players by swapping bots in/out as real players come and
+        go. A real-player join always despawns one bot (preferring the
+        team that's now oversized); a real-player leave spawns one
+        replacement bot so the 3v3 feel is preserved between visits.
+
+        Spectators don't count. Caller must hold `self.lock` to keep
+        the head-count consistent with concurrent add/remove operations."""
+        if self.game_mode != "tdm":
+            return
+        target_total = TDM_TEAM_SIZE * 2
+        combat = [p for p in self.players.values() if not getattr(p, "is_spectator", False)]
+        n = len(combat)
+        if n > target_total:
+            # Despawn the surplus. Prefer bots on the team that currently
+            # has more members so the 3v3 split is preserved.
+            excess = n - target_total
+            red_count  = sum(1 for p in combat if p.team == "red")
+            blue_count = sum(1 for p in combat if p.team == "blue")
+            bots = [p for p in combat if p.is_bot]
+            bots.sort(key=lambda b: -(red_count if b.team == "red" else blue_count))
+            for bot in bots[:excess]:
+                self.players.pop(bot.id, None)
+                logger.info("TDM auto-balance: despawned bot %s (team=%s) total=%d→%d",
+                            bot.username, bot.team, n, n - 1)
+                n -= 1
+        elif n < target_total:
+            # Spawn replacement bots so the room stays full.
+            deficit = target_total - n
+            in_use = {p.username for p in self.players.values()}
+            pool = [nm for nm in DISGUISED_BOT_NAMES if nm not in in_use]
+            random.shuffle(pool)
+            for i in range(deficit):
+                name = pool[i] if i < len(pool) else f"shadow_{random.randint(100, 999)}"
+                # Difficulty inherited from the room's seed bots (1.45 for
+                # quick-match TDM, 1.2 for practice). Falls back to 1.4.
+                diff = 1.2 if getattr(self, "is_practice", False) else 1.45
+                self.spawn_bot(name, disguised=True, difficulty=diff)
+                logger.info("TDM auto-balance: spawned bot %s total=%d→%d",
+                            name, n, n + 1)
+                n += 1
+
     async def add(self, player: Player):
         # Reposition the player onto a spawn point from THIS room's arena —
         # Player.__init__ used the global default spawn list, which may not
@@ -2468,6 +2515,10 @@ class GameRoom:
             # burst of simultaneous joins can't race the head-count.
             self._assign_team(player)
             self.players[player.id] = player
+            # TDM 1-for-1 swap: a real-player join displaces one bot so
+            # the room stays at exactly 3v3. No-op in FFA / for bot joins.
+            if self.game_mode == "tdm" and not player.is_bot and not getattr(player, "is_spectator", False):
+                self._maintain_tdm_population()
         # Restart the match clock if this is the first real player to join
         # an empty (or bots-only) room while a match is supposedly in
         # progress. Otherwise the tick loop's `now - match_start >= duration`
@@ -2565,6 +2616,15 @@ class GameRoom:
     async def remove(self, player: Player):
         async with self.lock:
             self.players.pop(player.id, None)
+            # TDM 1-for-1 swap: when a real player leaves, spawn a
+            # replacement bot so the room stays at 3v3 for whoever's left.
+            # No-op in FFA / when a bot or spectator departs.
+            if (
+                self.game_mode == "tdm"
+                and not player.is_bot
+                and not getattr(player, "is_spectator", False)
+            ):
+                self._maintain_tdm_population()
         if not player.is_bot and not getattr(player, "is_spectator", False) and player.user_id:
             PLAYER_LOCATION.pop(player.user_id, None)
         if not getattr(player, "is_spectator", False):
@@ -3280,11 +3340,16 @@ class GameRoom:
             # Smart bots lock onto a target for 1.5s before re-evaluating,
             # and prefer wounded targets / recent attackers over the
             # closest opponent. Casual bots stick with closest-target.
+            # In TDM, teammates are NEVER eligible targets (friendly fire is
+            # already blocked at the damage layer, but a bot aiming at its
+            # own teammate still wastes ammo and reads as broken AI).
             target: Optional[Player] = None
+            is_tdm = self.game_mode == "tdm"
             if smart and bot.bot_target_id and now_s < bot.bot_target_locked_until:
                 t = self.players.get(bot.bot_target_id)
                 if t and t.alive and not getattr(t, "is_spectator", False):
-                    target = t
+                    if not (is_tdm and bot.team and t.team and bot.team == t.team):
+                        target = t
 
             if target is None:
                 best_score = -1.0
@@ -3292,6 +3357,9 @@ class GameRoom:
                     if p is bot or not p.alive:
                         continue
                     if getattr(p, "is_spectator", False):
+                        continue
+                    # TDM: skip same-team allies so bots only engage enemies.
+                    if is_tdm and bot.team and p.team and bot.team == p.team:
                         continue
                     d = math.hypot(p.x - bot.x, p.z - bot.z)
                     if d < 0.5:
@@ -4211,16 +4279,17 @@ OFFLINE_TDM_ROOM_TASKS: Dict[str, asyncio.Task] = {}
 
 
 async def get_or_create_offline_tdm_room(user_id: str) -> "GameRoom":
-    """Per-user 5-minute TDM-3v3 offline room. Pre-filled with 5 smart
-    bots so the very first match is a balanced 3v3."""
+    """Per-user 5-minute TDM-3v3 offline room. Pre-filled with 5 disguised
+    bots so the user (player #6) drops into a balanced 3v3 of "humans".
+    `_maintain_tdm_population` swaps bots in/out if more players ever join."""
     room = OFFLINE_TDM_ROOMS.get(user_id)
     if room is not None:
         return room
     room = GameRoom(is_ranked=False, match_duration=300.0, game_mode="tdm")
     room.is_offline = True
-    bot_names = random.sample(BOT_NAMES, 5)
+    bot_names = random.sample(DISGUISED_BOT_NAMES, 5)
     for nm in bot_names:
-        room.spawn_bot(f"{nm}-OT", disguised=False, difficulty=1.2)
+        room.spawn_bot(nm, disguised=True, difficulty=1.2)
     OFFLINE_TDM_ROOMS[user_id] = room
     OFFLINE_TDM_ROOM_TASKS[user_id] = asyncio.create_task(room.run())
     logger.info("Offline TDM room spawned for user=%s", user_id)

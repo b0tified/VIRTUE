@@ -347,6 +347,9 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Tab-scoreboard split into RED / BLUE sections with per-team kill totals, ally team rises to the top.
 - Remote-player body meshes recoloured by team in TDM (ally = deep blue 0x2858B4, enemy = red 0xC1322B). Local cosmetic skin preserved. Mesh hot-rebuilds on team rebalance.
 - Idle-room bot kill reset: when a TDM/casual room has no real players, `run()` now freezes the match clock and zero-outs all bot kills/deaths every tick so the next human joiner sees a clean 0-0 lobby (was: bots accumulated 50+ kills indefinitely). Regression test in `tests/test_idle_bot_kills_reset.py`.
+- TDM bots no longer target / shoot teammates (`_tick_bots` target loop + locked-target shortcut both skip same-team allies).
+- TDM bots are now disguised with `DISGUISED_BOT_NAMES` + `disguised=True` so the 3v3 lobby reads as "real humans" (no BOT badge, real-looking handles, platform/avatar/rank disguise).
+- TDM rooms maintain exactly 6 combat players via `_maintain_tdm_population()`: every real-player join despawns one bot (preferring oversized teams); every real-player leave spawns one replacement bot. Spectators and FFA rooms untouched. Boot pre-fill upped from 5 → 6 bots so a 0-real lobby is already 3v3. Regression suite in `tests/test_tdm_auto_balance.py`.
 
 ## Tech Notes
 - Hit detection: server-side raycast vs 3-sphere capsule hitboxes.
