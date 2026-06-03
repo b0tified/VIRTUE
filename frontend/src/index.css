@@ -23,6 +23,31 @@ body {
   background-color: var(--pow-white);
   color: var(--pow-black);
   -webkit-font-smoothing: antialiased;
+  /* Game shell: text selection and the native right-click menu are
+     disabled everywhere because the player is interacting with an FPS,
+     not a document. Accidental click-drag on a comic-word banner used
+     to highlight a chunk of the UI in blue and right-clicking to ADS
+     could leak the browser context menu over the canvas. Inputs/
+     textareas opt back in below so login, chat, and codes still work. */
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+}
+body * {
+  /* Stop the long-press image preview on iOS / Android while still
+     letting buttons receive taps. */
+  -webkit-touch-callout: none;
+}
+/* Restore native text-select + caret for actual form fields. Without
+   this the user couldn't double-click to select text in the email/
+   password/redeem-code inputs or paste with right-click. */
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -ms-user-select: text !important;
 }
 
 .font-display { font-family: 'Bangers', 'Anton', cursive; letter-spacing: 0.04em; }
