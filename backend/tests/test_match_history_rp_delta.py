@@ -41,10 +41,14 @@ def test_placement_lookup_uses_user_id_not_position():
 def test_compute_rp_delta_returns_negatives():
     # Make sure the loss curve still produces negatives for non-podium
     # finishers — the data feeding into rp_delta must be real.
-    assert server.compute_rp_delta(5, tier_idx=0) == -10   # Bronze, 5th
-    assert server.compute_rp_delta(5, tier_idx=3) == -40   # Platinum, 5th
-    assert server.compute_rp_delta(5, tier_idx=4) == -60   # Diamond, 5th
-    # Platinum+ also lose for 4th
-    assert server.compute_rp_delta(4, tier_idx=3) == -40
-    # Below platinum, 4th place earns -10 (Bronze loss)
-    assert server.compute_rp_delta(4, tier_idx=0) == -10
+    # New 2026-06 curve: below Masters = -30 for last; Masters+ = -60.
+    assert server.compute_rp_delta(5, tier_idx=0) == -30   # Bronze, 5th → -30
+    assert server.compute_rp_delta(5, tier_idx=3) == -30   # Platinum, 5th → -30 (still below Masters)
+    assert server.compute_rp_delta(5, tier_idx=4) == -30   # Diamond, 5th → -30
+    assert server.compute_rp_delta(5, tier_idx=5) == -60   # Master, 5th → -60
+    assert server.compute_rp_delta(5, tier_idx=7) == -60   # Goonmaster, 5th → -60
+    # 4th-place under Masters is "last" in a 4-player FFA → -30
+    assert server.compute_rp_delta(4, tier_idx=3) == -30
+    assert server.compute_rp_delta(4, tier_idx=0) == -30
+    # 4th-place at Masters+ → -60
+    assert server.compute_rp_delta(4, tier_idx=5) == -60

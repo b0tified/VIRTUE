@@ -606,8 +606,9 @@ export default function Lobby() {
                 </div>
               </div>
             ))}
-            <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-sm">
-              +30 RP (1st) · +15 (2nd) · +5 (3rd) · -10 (lower)
+            <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-xs leading-relaxed">
+              <div>BELOW MASTERS: +30 (1st) · +15 (2nd) · 0 (3rd) · -30 (lower)</div>
+              <div>MASTERS+: +30 (1st) · 0 (2nd) · -60 (3rd) · -60 (lower)</div>
             </div>
           </div>
         </div>

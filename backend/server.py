@@ -265,44 +265,47 @@ RANK_TIERS = [
     (2300, "GOONMASTER"),
 ]
 
-# RP deltas by placement at end of a ranked match. Tiered so that:
-#  - Bronze/Silver use the old generous curve (+30/+15/+5/-10).
-#  - Gold (idx 2) raises loss to -20.
-#  - At Platinum+ (idx >= 3), only 1st place gains RP; 2nd/3rd earn 0,
-#    and losses ramp to -40 / -60 / -60 / -60 / -60 (capped at Diamond+).
+# RP deltas by placement at end of a ranked match. Two simple tiers:
+#  - Below Masters (tier_idx < 5): 1st = +30, 2nd = +15, 3rd = 0, last = -30.
+#  - Masters and above (tier_idx >= 5): 1st = +30, 2nd = 0, 3rd = -60,
+#    last = -60. (Per user policy — "you stay near the top or you bleed".)
 # `compute_rp_delta(placement, tier_idx)` returns the RP delta a player
 # with `tier_idx` rank earns for finishing at `placement` (1-indexed,
 # placement is relative to *all participants* including bots).
-LOSS_BY_TIER = [-10, -10, -20, -40, -60, -60, -60, -60]
+# Masters' tier index in RANK_TIERS. Kept as a named constant so a future
+# tier-list shuffle only needs one edit.
+MASTERS_TIER_IDX = 5
 
 
 def compute_rp_delta(placement: int, tier_idx: int) -> int:
     """RP delta for a single player finishing at `placement` while sitting
     in `tier_idx` going into the match.
 
-    Above Platinum (tier_idx >= 3) ranked is a "first or nothing" race:
-    only 1st place gains points and everyone outside the podium still
-    loses the tier's loss amount. Below Platinum, the original podium
-    rewards (30/15/5) still apply.
+    The curve is intentionally simple now:
+      - Below Masters: +30 / +15 / 0 / -30 (1st through last).
+      - Masters+:      +30 /   0 / -60 / -60 (1st through last).
+
+    "Last" means everyone outside the podium — in a 4-player FFA lobby
+    that's just 4th, in a 6-player TDM that'd be 4th-6th, etc.
     """
-    tier_idx = max(0, min(len(LOSS_BY_TIER) - 1, int(tier_idx)))
-    loss = LOSS_BY_TIER[tier_idx]
-    if tier_idx >= 3:
-        # Platinum and above: only 1st place gains. 2nd & 3rd are "safe"
-        # (no loss, no gain). 4th and below take the full tier loss.
+    tier_idx = max(0, min(len(RANK_TIERS) - 1, int(tier_idx)))
+    if tier_idx >= MASTERS_TIER_IDX:
+        # Masters and above — "you stay near the top or you bleed".
         if placement == 1:
             return 30
-        if placement in (2, 3):
+        if placement == 2:
             return 0
-        return loss
-    # Bronze, Silver, Gold: classic podium curve.
+        if placement == 3:
+            return -60
+        return -60
+    # Below Masters — gentler curve, podium still rewards 2nd place.
     if placement == 1:
         return 30
     if placement == 2:
         return 15
     if placement == 3:
-        return 5
-    return loss
+        return 0
+    return -30
 
 
 def rank_for_points(points: int):
