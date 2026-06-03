@@ -213,6 +213,12 @@ async def maybe_reset_season() -> dict:
     ends_at = start + timedelta(days=SEASON_LENGTH_DAYS)
     if now >= ends_at:
         next_num = int(doc.get("season_number", 1)) + 1
+        # Archive the top-100 ranked players' final standings for this
+        # season BEFORE zeroing everyone's RP. The snapshot doc lives in
+        # `season_archive` keyed by `{season_number}` so a future
+        # "/leaderboard/archive/:N" endpoint can read it back without
+        # ever touching the live users collection.
+        await _archive_season_top_100(int(doc.get("season_number", 1)), start, now)
         # Snapshot current rank into peak_rank_points (only if higher), then reset.
         await db.users.update_many(
             {"rank_points": {"$exists": True}},
@@ -236,6 +242,63 @@ async def maybe_reset_season() -> dict:
         logger.info("Season reset → S%d", next_num)
         doc = {"_id": "season", "season_number": next_num, "season_start": now}
     return doc
+
+
+async def _archive_season_top_100(season_number: int, started_at: datetime, ended_at: datetime) -> None:
+    """Snapshot the top-100 ranked players' final standings for `season_number`
+    into the `season_archive` collection.
+
+    Each archived player row carries name/avatar/rank/RP/match-count at the
+    moment of rollover. Idempotent — re-running on the same season number
+    replaces the existing snapshot rather than appending duplicates.
+    """
+    # Only include players who finished at least one placement and have RP > 0
+    # (matches the live leaderboard filter so the archive looks consistent
+    # with what people saw the day before rollover).
+    cursor = db.users.find(
+        {"placement_matches_played": {"$gte": 1}, "rank_points": {"$gt": 0}},
+        {
+            "username": 1, "rank_points": 1, "stats": 1,
+            "avatar": 1, "banner_icon": 1, "banner_color": 1,
+            "selected_skin": 1,
+        },
+    ).sort([("rank_points", -1), ("stats.kills", -1)]).limit(100)
+    rows: List[dict] = []
+    rank = 0
+    async for u in cursor:
+        rank += 1
+        pts = int(u.get("rank_points", 0) or 0)
+        tier_idx, tier_name = rank_for_points(pts)
+        stats = u.get("stats") or {}
+        rows.append({
+            "rank": rank,
+            "username": u.get("username") or "Player",
+            "rank_points": pts,
+            "rank_tier": tier_idx,
+            "rank_name": tier_name,
+            "kills": int(stats.get("kills", 0) or 0),
+            "matches": int(stats.get("matches", 0) or 0),
+            "wins": int(stats.get("wins", 0) or 0),
+            "avatar": int(u.get("avatar", 0) or 0),
+            "banner_icon": int(u.get("banner_icon", 0) or 0),
+            "banner_color": int(u.get("banner_color", 0) or 0),
+            "selected_skin": u.get("selected_skin") or "default",
+            "user_id": str(u.get("_id")),
+        })
+    # Replace-on-conflict so an admin who manually fires `start_new_season`
+    # multiple times against the same season doesn't accumulate stale rows.
+    await db.season_archive.update_one(
+        {"_id": int(season_number)},
+        {"$set": {
+            "season_number": int(season_number),
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "total_players": len(rows),
+            "top_100": rows,
+        }},
+        upsert=True,
+    )
+    logger.info("Season %d archived → %d player rows", season_number, len(rows))
 
 
 def season_payload(doc: dict) -> dict:
@@ -6257,6 +6320,79 @@ async def leaderboard_ranked():
             "in_match": False,
         })
     return rows
+
+
+@api.get("/leaderboard/archive")
+async def leaderboard_archive_index():
+    """Index of every archived past season — just the metadata, no rows.
+    Used by the Leaderboard UI to populate the "PAST SEASONS" dropdown.
+    Sorted newest-first so the most-recent past season is the default
+    selection in the picker."""
+    cursor = db.season_archive.find(
+        {},
+        {"_id": 1, "season_number": 1, "started_at": 1, "ended_at": 1, "total_players": 1},
+    ).sort([("season_number", -1)])
+    out = []
+    async for d in cursor:
+        out.append({
+            "season_number": int(d.get("season_number", 0) or 0),
+            "started_at": d.get("started_at").isoformat() if isinstance(d.get("started_at"), datetime) else None,
+            "ended_at":   d.get("ended_at").isoformat()   if isinstance(d.get("ended_at"),   datetime) else None,
+            "total_players": int(d.get("total_players", 0) or 0),
+        })
+    return out
+
+
+@api.get("/leaderboard/archive/{season_number}")
+async def leaderboard_archive_season(season_number: int):
+    """Full top-100 archive for a single past season. 404 if the requested
+    season hasn't ended yet (or doesn't exist)."""
+    doc = await db.season_archive.find_one(
+        {"_id": int(season_number)},
+        {"_id": 0},  # drop ObjectId-style key explicitly; _id is the int season_number
+    )
+    if not doc:
+        raise HTTPException(404, "Season archive not found")
+    # Serialize datetimes for JSON. Mongo stores them as bson datetimes.
+    if isinstance(doc.get("started_at"), datetime):
+        doc["started_at"] = doc["started_at"].isoformat()
+    if isinstance(doc.get("ended_at"), datetime):
+        doc["ended_at"]   = doc["ended_at"].isoformat()
+    return doc
+
+
+@api.get("/me/season_history")
+async def me_season_history(user: dict = Depends(get_current_user)):
+    """Return every archived season the signed-in user appeared in
+    (top-100 finish), newest first. Powers the "MY PAST SEASONS" widget
+    on the Profile page. Each row is the user's own placement + RP at
+    the moment the season closed."""
+    uid = str(user.get("_id"))
+    # Use a $elemMatch query so we only pull seasons that contain *this*
+    # user, then filter their row out in Python (small lists ≤ 100 rows
+    # each, cheap to scan).
+    cursor = db.season_archive.find(
+        {"top_100.user_id": uid},
+        {"_id": 0, "season_number": 1, "started_at": 1, "ended_at": 1, "top_100": 1},
+    ).sort([("season_number", -1)])
+    out = []
+    async for d in cursor:
+        rows = d.get("top_100") or []
+        my_row = next((r for r in rows if r.get("user_id") == uid), None)
+        if not my_row:
+            continue
+        out.append({
+            "season_number": int(d.get("season_number", 0) or 0),
+            "started_at": d.get("started_at").isoformat() if isinstance(d.get("started_at"), datetime) else None,
+            "ended_at":   d.get("ended_at").isoformat()   if isinstance(d.get("ended_at"),   datetime) else None,
+            "rank": int(my_row.get("rank", 0) or 0),
+            "rank_points": int(my_row.get("rank_points", 0) or 0),
+            "rank_tier": int(my_row.get("rank_tier", 0) or 0),
+            "rank_name": my_row.get("rank_name") or "BRONZE",
+            "kills": int(my_row.get("kills", 0) or 0),
+            "wins": int(my_row.get("wins", 0) or 0),
+        })
+    return out
 
 
 app.include_router(api)

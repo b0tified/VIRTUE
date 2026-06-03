@@ -144,6 +144,22 @@ export default function Profile() {
     return () => { alive = false; };
   }, []);
 
+  // Past-seasons archive: every season where this user finished top-100
+  // gets a row here. Loads once per profile mount.
+  const [seasonHistory, setSeasonHistory] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/me/season_history");
+        if (alive) setSeasonHistory(Array.isArray(data) ? data : []);
+      } catch {
+        if (alive) setSeasonHistory([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   // Per-tab music — chill lo-fi for the profile page. Stops when the
   // page unmounts so the lobby music can resume.
   useEffect(() => {
@@ -268,6 +284,51 @@ export default function Profile() {
             </>
           )}
         </div>
+
+        {/* Past Seasons — every archived season where the user finished
+            top-100 shows here. Quiet section: only renders when at least
+            one archived placement exists so brand-new accounts don't see
+            a confusing empty card. */}
+        {seasonHistory !== null && seasonHistory.length > 0 && (
+          <div className="card-pow p-0 mt-8 overflow-hidden" data-testid="profile-season-history-card">
+            <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+              <Trophy size={18} strokeWidth={3} className="text-[#FFD700]" />
+              <span className="font-anton uppercase tracking-widest">Past Seasons</span>
+              <span className="opacity-60 text-xs ml-auto">Your top-100 finishes</span>
+            </div>
+            <div className="hidden md:grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
+              <div className="col-span-2">Season</div>
+              <div className="col-span-3">Tier</div>
+              <div className="col-span-2 text-right">Global #</div>
+              <div className="col-span-2 text-right">Final RP</div>
+              <div className="col-span-3 text-right">Kills</div>
+            </div>
+            {seasonHistory.map((s, i) => {
+              const tier = Math.max(0, Math.min(7, s.rank_tier ?? 0));
+              const color = RANK_COLORS[tier];
+              return (
+                <div
+                  key={s.season_number}
+                  className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"}`}
+                  data-testid={`profile-season-row-${s.season_number}`}
+                >
+                  <div className="col-span-2 font-display text-2xl">S{s.season_number}</div>
+                  <div className="col-span-3">
+                    <span
+                      className="font-anton uppercase text-xs px-2 py-1"
+                      style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
+                    >
+                      {s.rank_name || "BRONZE"}
+                    </span>
+                  </div>
+                  <div className="col-span-2 text-right font-display text-xl">#{s.rank}</div>
+                  <div className="col-span-2 text-right font-anton text-lg">{s.rank_points}</div>
+                  <div className="col-span-3 text-right font-anton">{s.kills}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

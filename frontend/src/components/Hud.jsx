@@ -84,9 +84,6 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
   const kills = you?.kills ?? 0;
   const deaths = you?.deaths ?? 0;
 
-  const fpsColor = hud.fps >= 50 ? "#34C759" : hud.fps >= 30 ? "#FFD700" : "#E62429";
-  const pingColor = hud.ping > 0 && hud.ping <= 80 ? "#34C759" : hud.ping <= 200 ? "#FFD700" : "#E62429";
-
   const hudScale = Math.max(0.6, Math.min(1.4, gfx.hudScale ?? 1.0));
   const showFlash = gfx.showDamageFlash !== false;
   const showKf = gfx.showKillFeed !== false;
@@ -169,32 +166,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
         </div>
       )}
 
-      {/* Top-left: FPS / Ping / Username — FPS + Ping are off by default
-          (toggle in Settings → Video). Username + connection chip always show. */}
+      {/* Top-left: Username + connection chip. (FPS/Ping counters
+          removed per user request — they cluttered the HUD with green
+          chips during play.) */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2" data-testid="hud-top-left">
-        {(gfx.showFps || gfx.showPing) && (
-          <div className="flex gap-2">
-            {gfx.showFps && (
-              <div className="hud-panel !py-1 !px-3" data-testid="hud-fps" title="Frames per second">
-                <div className="flex items-center gap-2 text-sm">
-                  <Activity size={14} strokeWidth={3} style={{ color: fpsColor }} />
-                  <span className="opacity-70">FPS</span>
-                  <span className="font-anton" style={{ color: fpsColor }}>{hud.fps}</span>
-                </div>
-              </div>
-            )}
-            {gfx.showPing && (
-              <div className="hud-panel !py-1 !px-3" data-testid="hud-ping" title="Round-trip time to server">
-                <div className="flex items-center gap-2 text-sm">
-                  <Wifi size={14} strokeWidth={3} style={{ color: pingColor }} />
-                  <span className="opacity-70">PING</span>
-                  <span className="font-anton" style={{ color: pingColor }}>{hud.ping}</span>
-                  <span className="opacity-60 text-xs">ms</span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
         <div className="hud-panel">
           <div className="text-[#FFD700]">{username}</div>
         </div>

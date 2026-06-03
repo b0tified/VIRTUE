@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
-import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye } from "lucide-react";
+import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive } from "lucide-react";
 import audioBus from "@/game/audio";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
@@ -21,6 +21,14 @@ export default function Leaderboard() {
   const [loading, setLoading] = useState(true);
   const [season, setSeason] = useState(null); // { season_number, seconds_left, season_ends_at, length_days }
   const [tick, setTick] = useState(0);
+  // CURRENT ↔ ARCHIVE tab. The archive tab loads the list of past
+  // seasons from /leaderboard/archive, then on selection fetches the
+  // full top-100 from /leaderboard/archive/:N.
+  const [tab, setTab] = useState("current"); // 'current' | 'archive'
+  const [archiveIndex, setArchiveIndex] = useState([]); // [{ season_number, started_at, ended_at, total_players }]
+  const [archiveSeason, setArchiveSeason] = useState(null); // selected season_number
+  const [archiveRows, setArchiveRows] = useState([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -67,6 +75,39 @@ export default function Leaderboard() {
   const secondsLeft = season ? Math.max(0, (season.seconds_left || 0) - tick) : 0;
   const { d, h, m, s } = fmtDHMS(secondsLeft);
 
+  // Archive tab: fetch the index of past seasons once, on first open.
+  useEffect(() => {
+    if (tab !== "archive" || archiveIndex.length) return;
+    (async () => {
+      try {
+        const { data } = await api.get("/leaderboard/archive");
+        setArchiveIndex(Array.isArray(data) ? data : []);
+        // Auto-select the most recent past season (newest first).
+        if (data?.length && archiveSeason === null) {
+          setArchiveSeason(data[0].season_number);
+        }
+      } catch {
+        setArchiveIndex([]);
+      }
+    })();
+  }, [tab, archiveIndex.length, archiveSeason]);
+
+  // Fetch the selected past season's top-100 whenever the picker changes.
+  useEffect(() => {
+    if (tab !== "archive" || archiveSeason === null) return;
+    setArchiveLoading(true);
+    (async () => {
+      try {
+        const { data } = await api.get(`/leaderboard/archive/${archiveSeason}`);
+        setArchiveRows(Array.isArray(data?.top_100) ? data.top_100 : []);
+      } catch {
+        setArchiveRows([]);
+      } finally {
+        setArchiveLoading(false);
+      }
+    })();
+  }, [tab, archiveSeason]);
+
   return (
     <div className="min-h-screen bg-[#F4F4F5] halftone-light p-6 md:p-12" data-testid="leaderboard-page">
       <div className="flex items-center justify-between mb-8">
@@ -83,8 +124,33 @@ export default function Leaderboard() {
       <div className="max-w-4xl mx-auto">
         <h1 className="font-display text-6xl uppercase text-[#E62429] text-pow-shadow-lg mb-3">LEADERBOARD</h1>
 
-        {/* Season banner */}
-        {season && (
+        {/* CURRENT ↔ ARCHIVE tab switcher. Archive shows the top-100
+            snapshot we saved on the day each past season ended. */}
+        <div className="flex gap-2 mb-4" data-testid="leaderboard-tab-switcher">
+          <button
+            type="button"
+            onClick={() => setTab("current")}
+            data-testid="leaderboard-tab-current"
+            className={`btn-pow flex items-center gap-2 [&]:py-2 [&]:px-4 [&]:text-sm ${
+              tab === "current" ? "bg-[#E62429] text-white" : "bg-white text-black"
+            }`}
+          >
+            <Trophy size={14} strokeWidth={3} /> CURRENT SEASON
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("archive")}
+            data-testid="leaderboard-tab-archive"
+            className={`btn-pow flex items-center gap-2 [&]:py-2 [&]:px-4 [&]:text-sm ${
+              tab === "archive" ? "bg-[#E62429] text-white" : "bg-white text-black"
+            }`}
+          >
+            <Archive size={14} strokeWidth={3} /> PAST SEASONS
+          </button>
+        </div>
+
+        {/* Season banner (current tab only) */}
+        {tab === "current" && season && (
           <div className="card-pow p-0 mb-6 overflow-hidden -rotate-1" data-testid="season-banner">
             <div className="bg-black text-white px-5 py-3 flex items-center gap-3">
               <div className="inline-block bg-[#E62429] text-white border-pow-thin px-2 py-0.5 font-anton uppercase tracking-widest text-xs rotate-2">
@@ -114,62 +180,73 @@ export default function Leaderboard() {
             <div className="col-span-2 text-right">Rank</div>
             <div className="col-span-2 text-right">RP</div>
           </div>
-          {loading ? (
-            <div className="p-8 font-display text-3xl text-center">LOADING...</div>
-          ) : rows.length === 0 ? (
-            <div className="p-8 font-anton text-center uppercase text-neutral-500">No frags yet. Be the first.</div>
-          ) : (
-            rows.map((r, i) => {
-              const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
-              const color = RANK_COLORS[tier];
-              return (
-                <div
-                  key={r.username + i}
-                  className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center ${
-                    i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white"
-                  }`}
-                  data-testid={`leaderboard-row-${i}`}
-                >
-                  <div className="col-span-1 font-display text-2xl">{i + 1}</div>
-                  <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2">
-                    <span>{r.username}</span>
-                    {/* Live status chip — IN MATCH (red, clickable to spectate)
-                        > ONLINE (green dot) > nothing for offline rows.
-                        Mirrors the FriendsModal status chip pattern. */}
-                    {r.in_match ? (
-                      <button
-                        type="button"
-                        onClick={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
-                        className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform"
-                        data-testid={`leaderboard-spectate-${i}`}
-                        title={`Spectate ${r.username}`}
-                      >
-                        <Eye size={11} strokeWidth={3} />
-                        SPECTATE
-                      </button>
-                    ) : r.online ? (
+          {tab === "current" ? (
+            loading ? (
+              <div className="p-8 font-display text-3xl text-center">LOADING...</div>
+            ) : rows.length === 0 ? (
+              <div className="p-8 font-anton text-center uppercase text-neutral-500">No frags yet. Be the first.</div>
+            ) : (
+              rows.map((r, i) => {
+                const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
+                const color = RANK_COLORS[tier];
+                return (
+                  <div
+                    key={r.username + i}
+                    className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center ${
+                      i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white"
+                    }`}
+                    data-testid={`leaderboard-row-${i}`}
+                  >
+                    <div className="col-span-1 font-display text-2xl">{i + 1}</div>
+                    <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2">
+                      <span>{r.username}</span>
+                      {/* Live status chip — IN MATCH (red, clickable to spectate)
+                          > ONLINE (green dot) > nothing for offline rows.
+                          Mirrors the FriendsModal status chip pattern. */}
+                      {r.in_match ? (
+                        <button
+                          type="button"
+                          onClick={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
+                          className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform"
+                          data-testid={`leaderboard-spectate-${i}`}
+                          title={`Spectate ${r.username}`}
+                        >
+                          <Eye size={11} strokeWidth={3} />
+                          SPECTATE
+                        </button>
+                      ) : r.online ? (
+                        <span
+                          className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F]"
+                          data-testid={`leaderboard-status-${i}`}
+                          data-status="online"
+                        >
+                          ● ONLINE
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="col-span-2 text-right">
                       <span
-                        className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F]"
-                        data-testid={`leaderboard-status-${i}`}
-                        data-status="online"
+                        className="font-anton uppercase text-sm px-2 py-1"
+                        style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
+                        data-testid={`leaderboard-rank-${i}`}
                       >
-                        ● ONLINE
+                        {r.rank_name || "BRONZE"}
                       </span>
-                    ) : null}
+                    </div>
+                    <div className="col-span-2 text-right font-display text-2xl">{r.rank_points ?? 0}</div>
                   </div>
-                  <div className="col-span-2 text-right">
-                    <span
-                      className="font-anton uppercase text-sm px-2 py-1"
-                      style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
-                      data-testid={`leaderboard-rank-${i}`}
-                    >
-                      {r.rank_name || "BRONZE"}
-                    </span>
-                  </div>
-                  <div className="col-span-2 text-right font-display text-2xl">{r.rank_points ?? 0}</div>
-                </div>
-              );
-            })
+                );
+              })
+            )
+          ) : (
+            // Archive view — past-seasons picker + frozen top-100.
+            <ArchiveBody
+              index={archiveIndex}
+              selected={archiveSeason}
+              onSelect={setArchiveSeason}
+              rows={archiveRows}
+              loading={archiveLoading}
+            />
           )}
         </div>
       </div>
@@ -184,6 +261,80 @@ function TimeBlock({ value, unit, pulse = false }) {
         {String(value).padStart(2, "0")}
       </div>
       <div className="font-anton uppercase tracking-widest text-[10px] text-neutral-500 mt-1">{unit}</div>
+    </div>
+  );
+}
+
+/* Archive tab body. Renders a horizontal pill picker of past season
+   numbers (newest-first) plus the frozen top-100 for the selected
+   season. Live "ONLINE / SPECTATE" status chips are intentionally
+   omitted — the rows are historical and players' current status is
+   irrelevant. */
+function ArchiveBody({ index, selected, onSelect, rows, loading }) {
+  if (!index?.length) {
+    return (
+      <div className="p-8 font-anton text-center uppercase text-neutral-500" data-testid="leaderboard-archive-empty">
+        No past seasons have ended yet — Season 1 is still live.
+      </div>
+    );
+  }
+  return (
+    <div data-testid="leaderboard-archive-body">
+      {/* Season picker pills */}
+      <div className="flex flex-wrap gap-2 px-4 py-3 bg-[#FFF8DC] border-t-2 border-black">
+        {index.map((meta) => {
+          const isSel = meta.season_number === selected;
+          return (
+            <button
+              key={meta.season_number}
+              type="button"
+              onClick={() => onSelect(meta.season_number)}
+              data-testid={`archive-pick-${meta.season_number}`}
+              className={`px-3 py-1 font-anton uppercase tracking-widest text-xs border-pow-thin transition-transform ${
+                isSel ? "bg-[#E62429] text-white" : "bg-white text-black hover:translate-y-[-1px]"
+              }`}
+            >
+              SEASON {meta.season_number}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected season's frozen top-100 */}
+      {loading ? (
+        <div className="p-8 font-display text-3xl text-center">LOADING...</div>
+      ) : rows.length === 0 ? (
+        <div className="p-8 font-anton text-center uppercase text-neutral-500">No archived rows for this season.</div>
+      ) : (
+        rows.map((r, i) => {
+          const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
+          const color = RANK_COLORS[tier];
+          return (
+            <div
+              key={(r.user_id || r.username) + i}
+              className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center ${
+                i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white"
+              }`}
+              data-testid={`archive-row-${i}`}
+            >
+              <div className="col-span-1 font-display text-2xl">{r.rank ?? i + 1}</div>
+              <div className="col-span-7 font-anton uppercase text-lg">
+                {r.username}
+              </div>
+              <div className="col-span-2 text-right">
+                <span
+                  className="font-anton uppercase text-sm px-2 py-1"
+                  style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
+                  data-testid={`archive-rank-${i}`}
+                >
+                  {r.rank_name || "BRONZE"}
+                </span>
+              </div>
+              <div className="col-span-2 text-right font-display text-2xl">{r.rank_points ?? 0}</div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
