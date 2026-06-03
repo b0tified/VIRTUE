@@ -12,6 +12,7 @@ import math
 import random
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -2176,6 +2177,16 @@ class Player:
         # TDM team — "red", "blue", or None for FFA. Set by GameRoom on join
         # when the room is in TDM mode; ignored by FFA logic everywhere else.
         self.team: Optional[str] = None
+        # Lag-compensation position history. Each tick appends a snapshot
+        # (timestamp, x, y, z, alive) so `raycast_hit` can rewind every
+        # target's position to the moment the shot was fired on the
+        # client. Capacity 16 = ~800ms at 20Hz — comfortably covers the
+        # 0..300ms RTT window we accept from clients.
+        self.pos_history: deque = deque(maxlen=16)
+        # Last client-reported RTT (ms). Updated whenever the client sends
+        # a `ping_ms` value on a shoot message. Clamped 0..300ms to keep
+        # bad actors from rewinding the world half a second.
+        self.last_ping_ms: int = 0
 
     def cur_ammo(self) -> int:
         return self.ammo.get(self.weapon, 0)
@@ -2758,8 +2769,14 @@ class GameRoom:
                     return False
         return True
 
-    def raycast_hit(self, shooter: Player, yaw_override: Optional[float] = None, pitch_override: Optional[float] = None):
-        """Returns (hit_player, body_part, distance) where body_part in {'head','torso','legs'} or (None, None, None)."""
+    def raycast_hit(self, shooter: Player, yaw_override: Optional[float] = None, pitch_override: Optional[float] = None, at_time: Optional[float] = None):
+        """Returns (hit_player, body_part, distance) where body_part in {'head','torso','legs'} or (None, None, None).
+
+        When `at_time` is provided, every potential target is rewound to
+        its position at that timestamp using `pos_history`. This is the
+        "favor the shooter" lag compensation path: shots are resolved
+        against what the shooter actually saw on screen, not the (~80-
+        150ms) newer state the server now believes."""
         yaw = shooter.yaw if yaw_override is None else yaw_override
         pitch = shooter.pitch if pitch_override is None else pitch_override
         cp = math.cos(pitch)
@@ -2831,6 +2848,22 @@ class GameRoom:
         for p in self.players.values():
             if p.id == shooter.id or not p.alive:
                 continue
+            # Lag-compensation: rewind this target's position to `at_time`
+            # using its pos_history snapshot. Falls back to the current
+            # position when at_time is None or the buffer is empty.
+            tx, ty, tz, t_alive = p.x, p.y, p.z, p.alive
+            if at_time is not None and p.pos_history:
+                # Find the newest snapshot whose timestamp is <= at_time
+                # (binary search isn't worth the imports for a 16-deep
+                # ring buffer — linear scan from the front is fine).
+                for snap_ts, sx, sy, sz, salive in p.pos_history:
+                    if snap_ts <= at_time:
+                        tx, ty, tz, t_alive = sx, sy, sz, salive
+                    else:
+                        break
+            # The target must have been alive at the shot time, not just now.
+            if not t_alive:
+                continue
             # 3-sphere capsule hitbox — bigger + taller per user request.
             # Head radius 0.55→0.70, sits higher (1.65→1.85) so even tall
             # players in jump animations get clipped. Torso 0.65→0.85,
@@ -2839,11 +2872,11 @@ class GameRoom:
             # Net effect: thicker silhouette overall + about 0.4m taller
             # total capsule. Headshot calling still works because the head
             # sphere is the topmost and still tightest of the three.
-            base = p.y - PLAYER_HEIGHT
+            base = ty - PLAYER_HEIGHT
             spheres = [
-                ("head",  p.x, base + 1.85, p.z, 0.70),
-                ("torso", p.x, base + 1.20, p.z, 0.85),
-                ("legs",  p.x, base + 0.40, p.z, 0.80),
+                ("head",  tx, base + 1.85, tz, 0.70),
+                ("torso", tx, base + 1.20, tz, 0.85),
+                ("legs",  tx, base + 0.40, tz, 0.80),
             ]
             for (label, cx, cy, cz, r) in spheres:
                 res = sphere_t(cx, cy, cz, r)
@@ -2966,7 +2999,11 @@ class GameRoom:
 
     async def _apply_shoot(self, shooter: Player, base_damage: int):
         """Overwatch-style shot resolution: spread cone + falloff + headshot multiplier.
-        Bots use base_damage directly; real players use weapon config."""
+        Bots use base_damage directly; real players use weapon config.
+
+        Real-player shots are lag-compensated: every target's position is
+        rewound by (half-RTT + 50ms client interp) to the moment the
+        shooter actually clicked. Bots fire instantly and don't need it."""
         cfg = weapon_cfg(getattr(shooter, "weapon", "ak47"))
         # Compute effective spread (ADS tightens). Bots have no spread.
         if shooter.is_bot:
@@ -2991,7 +3028,17 @@ class GameRoom:
         # Increase shooter's accumulated spread (recoil) for next shot.
         if not shooter.is_bot:
             shooter.spread = min(cfg["spread_max"], shooter.spread + cfg["spread_per_shot"])
-        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=yaw, pitch_override=pitch)
+        # Lag-compensation lookback for real-player shots only. Half RTT
+        # accounts for the network delay between the client clicking and
+        # the server resolving; +50ms covers the client's interp/render
+        # lag (the player sees the world ~one server tick behind). Bots
+        # have zero RTT so we skip the rewind for them.
+        at_time = None
+        if not shooter.is_bot:
+            ping_ms = max(0, min(300, int(getattr(shooter, "last_ping_ms", 0) or 0)))
+            lookback = (ping_ms / 1000.0) / 2.0 + 0.05
+            at_time = time.time() - lookback
+        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=yaw, pitch_override=pitch, at_time=at_time)
         if hit and hit.alive:
             if time.time() < hit.invuln_until:
                 return
@@ -3141,8 +3188,13 @@ class GameRoom:
         aim = self._laser_autoaim_lock(shooter)
         beam_yaw = aim[0] if aim else shooter.yaw
         beam_pitch = aim[1] if aim else shooter.pitch
-        # Raycast (no spread)
-        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=beam_yaw, pitch_override=beam_pitch)
+        # Raycast (no spread). Lag-compensated for real-player beams so
+        # tracking moving targets through latency still registers.
+        at_time = None
+        if not shooter.is_bot:
+            ping_ms = max(0, min(300, int(getattr(shooter, "last_ping_ms", 0) or 0)))
+            at_time = time.time() - ((ping_ms / 1000.0) / 2.0 + 0.05)
+        hit, body_part, dist = self.raycast_hit(shooter, yaw_override=beam_yaw, pitch_override=beam_pitch, at_time=at_time)
         # Emit a continuous beam event so clients can render the beam tracer.
         # The 'beam' type is throttled to once per ~6 ticks (300ms) to keep
         # bandwidth down — the client extrapolates between updates.
@@ -3281,6 +3333,15 @@ class GameRoom:
                 player.yaw = float(msg["yaw"])
             if "pitch" in msg:
                 player.pitch = float(msg["pitch"])
+            # Stash the client-reported RTT so `_apply_shoot` knows how
+            # far back to rewind targets for lag compensation. Clamped
+            # downstream (0..300ms) so a bad actor can't ask the server
+            # to rewind half a second.
+            if "ping_ms" in msg:
+                try:
+                    player.last_ping_ms = int(msg["ping_ms"])
+                except (TypeError, ValueError):
+                    pass
             await self._apply_shoot(player, cfg["damage"])
             # Auto-reload when magazine hits zero
             if player.ammo.get(weapon, 0) == 0:
@@ -3688,6 +3749,13 @@ class GameRoom:
         now = time.time()
         dt = max(0.0, now - self._last_tick)
         self._last_tick = now
+
+        # Lag-compensation snapshot — record every player's current
+        # position so a shot we resolve in N ms can rewind each target's
+        # position to the moment the shooter actually clicked. The
+        # history deque is bounded (maxlen=16) so this stays O(players).
+        for p in self.players.values():
+            p.pos_history.append((now, p.x, p.y, p.z, p.alive))
 
         # Ranked queueing: if not enough real players, pause the match timer
         real_count = sum(1 for p in self.players.values() if not p.is_bot)
@@ -4437,7 +4505,6 @@ MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 # Rolling window (last 10) of how long each match took to fill, per tier.
 # Used by the queue API to give players an estimated wait time. Empty until
 # the matchmaker has seen at least one match in a tier.
-from collections import deque
 RECENT_MATCH_WAITS: Dict[int, "deque[float]"] = {i: deque(maxlen=10) for i in range(len(RANK_TIERS))}
 
 

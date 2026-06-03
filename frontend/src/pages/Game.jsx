@@ -456,7 +456,16 @@ export default function Game() {
       setHud((h) => (h.ads === !!snap.ads ? h : { ...h, ads: !!snap.ads }));
       if (snap.shoot) {
         const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
-        sock.send({ type: "shoot", yaw: snap.shootYaw, pitch: snap.shootPitch, weapon });
+        // Pass our last-measured RTT so the server can lag-compensate the
+        // shot (rewinds each target to where the shooter actually saw
+        // them). Clamped server-side to a safe 0..300ms window.
+        sock.send({
+          type: "shoot",
+          yaw: snap.shootYaw,
+          pitch: snap.shootPitch,
+          weapon,
+          ping_ms: pingRef.current?.value | 0,
+        });
       }
       if (snap.melee) {
         sock.send({ type: "melee", yaw: snap.meleeYaw, pitch: snap.meleePitch });
