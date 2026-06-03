@@ -925,6 +925,24 @@ export default function SettingsModal({ open, onClose }) {
           </div>
           </section>
 
+          {/* Performance indicators */}
+          <section className="space-y-2">
+            <ToggleRow
+              label="Show FPS"
+              note="Tiny frames-per-second counter in the corner."
+              checked={!!s.showFps}
+              onChange={(v) => patch({ showFps: v })}
+              testid="settings-show-fps"
+            />
+            <ToggleRow
+              label="Show Ping"
+              note="Roundtrip latency counter next to FPS."
+              checked={!!s.showPing}
+              onChange={(v) => patch({ showPing: v })}
+              testid="settings-show-ping"
+            />
+          </section>
+
           </>
           )}
 

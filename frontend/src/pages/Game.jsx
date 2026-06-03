@@ -606,6 +606,7 @@ export default function Game() {
           without touching the WebGL renderer — purely CSS so they cost
           virtually nothing on a healthy GPU. */}
       <PostFxLayer />
+      <PerfCounter />
       <canvas
         ref={canvasRef}
         className="w-full h-full"
@@ -884,4 +885,71 @@ function BodyFilter({ filter }) {
     };
   }, [filter]);
   return null;
+}
+
+/* Tiny FPS / ping counter shown in the top-left when enabled. Subscribes to
+   the engine's render tick via requestAnimationFrame for a smoothed FPS, and
+   to the existing ping channel via the global event the engine emits on
+   every pong. Off by default — toggle in Settings → Video. The big green
+   in-HUD chips were removed; this is the small mono fallback that opts in. */
+export function PerfCounter() {
+  const [s, setS] = useState(() => settingsStore.get());
+  const [fps, setFps] = useState(0);
+  const [ping, setPing] = useState(null);
+  useEffect(() => settingsStore.subscribe(setS), []);
+  useEffect(() => {
+    if (!s.showFps) return;
+    let last = performance.now();
+    let acc = 0;
+    let count = 0;
+    let raf;
+    const tick = () => {
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      acc += dt;
+      count += 1;
+      if (acc >= 500) {
+        setFps(Math.round((1000 * count) / acc));
+        acc = 0;
+        count = 0;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [s.showFps]);
+  useEffect(() => {
+    if (!s.showPing) return;
+    const onPing = (e) => {
+      const v = e?.detail;
+      if (typeof v === "number") setPing(Math.round(v));
+    };
+    window.addEventListener("virtue-ping", onPing);
+    return () => window.removeEventListener("virtue-ping", onPing);
+  }, [s.showPing]);
+  if (!s.showFps && !s.showPing) return null;
+  return (
+    <div
+      className="pointer-events-none fixed top-2 left-2 z-30 font-mono text-xs flex gap-2"
+      data-testid="perf-counter"
+    >
+      {s.showFps && (
+        <span
+          className="px-1.5 py-0.5 rounded bg-black/70 text-white tabular-nums"
+          data-testid="perf-fps"
+        >
+          {fps} FPS
+        </span>
+      )}
+      {s.showPing && ping !== null && (
+        <span
+          className="px-1.5 py-0.5 rounded bg-black/70 text-white tabular-nums"
+          data-testid="perf-ping"
+        >
+          {ping} MS
+        </span>
+      )}
+    </div>
+  );
 }
