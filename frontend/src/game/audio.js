@@ -1068,24 +1068,18 @@ class AudioBus {
 
     // -- Buses --
     // Soft pad (low-pass filtered saw). Meteor variant pushes the
-    // cutoff higher and drives a touch of distortion through it so the
-    // pad sits like a "burning sky" wash instead of a clean cushion.
+    // cutoff slightly higher for a brighter "sky" wash but routes
+    // straight through (no overdrive) so the pad stays clean — the
+    // earlier waveshaper made the layer feel grungy / distorted per
+    // user feedback. Detune is also brought in from ±12c → ±9c so the
+    // chorus shimmer is wider than Season 1's ±6c but no longer harsh.
     const padFilt = ctx.createBiquadFilter();
     padFilt.type = "lowpass";
-    padFilt.frequency.value = isMeteor ? 1300 : 950;
-    padFilt.Q.value = isMeteor ? 0.7 : 0.4;
+    padFilt.frequency.value = isMeteor ? 1100 : 950;
+    padFilt.Q.value = isMeteor ? 0.55 : 0.4;
     const padBus = ctx.createGain();
-    padBus.gain.value = isMeteor ? 0.30 : 0.26;
-    if (isMeteor) {
-      // Soft drive in front of the pad bus for that meteor "scorched"
-      // tone — barely audible but it adds warm overtones.
-      const padDrive = ctx.createWaveShaper();
-      padDrive.curve = this._makeDistortionCurve(4);
-      padDrive.oversample = "2x";
-      padFilt.connect(padDrive); padDrive.connect(padBus);
-    } else {
-      padFilt.connect(padBus);
-    }
+    padBus.gain.value = isMeteor ? 0.28 : 0.26;
+    padFilt.connect(padBus);
     padBus.connect(this.musicGain);
 
     // Lead bus with gentle overdrive + slap-back delay
@@ -1100,6 +1094,20 @@ class AudioBus {
     leadDrive.connect(leadFilt); leadFilt.connect(leadBus);
     leadBus.connect(this.musicGain);
 
+    // Clean lead bus — meteor lead riff feeds this instead of the heavy
+    // `leadDrive`/`leadFilt` Season-1 chain. Just a low-passed gain stage
+    // so the sparse melody reads as a wistful sine-ish saw, not a
+    // crunchy fuzz-lead. The delay tap below is shared between both
+    // chains (still adds depth without adding grit).
+    const leadCleanFilt = ctx.createBiquadFilter();
+    leadCleanFilt.type = "lowpass";
+    leadCleanFilt.frequency.value = 1600;
+    leadCleanFilt.Q.value = 0.3;
+    const leadCleanBus = ctx.createGain();
+    leadCleanBus.gain.value = 0.14;
+    leadCleanFilt.connect(leadCleanBus);
+    leadCleanBus.connect(this.musicGain);
+
     const delay = ctx.createDelay(0.6);
     delay.delayTime.value = sixteenth * 3;
     const fb = ctx.createGain();
@@ -1109,6 +1117,7 @@ class AudioBus {
     delay.connect(fb); fb.connect(delay);
     delay.connect(delayMix); delayMix.connect(this.musicGain);
     leadBus.connect(delay);
+    leadCleanBus.connect(delay);
 
     // Bass bus
     const bassFilt = ctx.createBiquadFilter();
@@ -1130,8 +1139,8 @@ class AudioBus {
         const f = root * semi(semiOffset);
         osc1.frequency.value = f;
         osc2.frequency.value = f;
-        osc1.detune.value = isMeteor ? -12 : -6;
-        osc2.detune.value = isMeteor ? +12 : +6;
+        osc1.detune.value = isMeteor ? -9 : -6;
+        osc2.detune.value = isMeteor ? +9 : +6;
         const g = ctx.createGain();
         const peak = 0.28 / (1 + i * 0.2);
         g.gain.setValueAtTime(0.0001, t);
@@ -1294,6 +1303,7 @@ class AudioBus {
       osc.connect(g); g.connect(this.musicGain);
       osc.start(t); osc.stop(t + 1.5);
       // Soft noisy "ember" tail behind the boom (highpassed white noise).
+      // Volume kept low so it reads as air-shimmer, not crackle/static.
       const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.9), ctx.sampleRate);
       const d = buf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.4);
@@ -1301,9 +1311,9 @@ class AudioBus {
       src.buffer = buf;
       const hp = ctx.createBiquadFilter();
       hp.type = "highpass";
-      hp.frequency.value = 800;
+      hp.frequency.value = 1400;
       const gN = ctx.createGain();
-      gN.gain.setValueAtTime(0.12, t);
+      gN.gain.setValueAtTime(0.06, t);
       gN.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
       src.connect(hp); hp.connect(gN); gN.connect(this.musicGain);
       src.start(t);
@@ -1312,7 +1322,9 @@ class AudioBus {
     // Sparse minor-pentatonic lead — only on bar 0 of each 4-bar phrase.
     // 8 sixteenth-note positions (with rests) climbing then falling, so
     // the loop has a singing-meteor-streak melodic moment without ever
-    // sounding triumphant.
+    // sounding triumphant. Uses a triangle wave through the clean lead
+    // bus so the melody sits gentle against the pad instead of carrying
+    // the Season-1 lead's overdrive grit.
     const METEOR_LEAD_RIFF = [0, null, 3, null, 7, null, 10, 7, null, 3, null, 0, null, null, null, null];
     const playMeteorLead = (root, t) => {
       METEOR_LEAD_RIFF.forEach((semiOffset, i) => {
@@ -1321,18 +1333,18 @@ class AudioBus {
         const noteT = t + i * sixteenth;
         const dur = sixteenth * 2;
         const osc = ctx.createOscillator();
-        osc.type = "sawtooth";
+        osc.type = "triangle";
         osc.frequency.value = f;
         const vib = ctx.createOscillator();
-        vib.frequency.value = 6;
+        vib.frequency.value = 5;
         const vibGain = ctx.createGain();
-        vibGain.gain.value = 4;
+        vibGain.gain.value = 2.5;
         vib.connect(vibGain); vibGain.connect(osc.frequency);
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0, noteT);
-        g.gain.linearRampToValueAtTime(0.30, noteT + 0.01);
+        g.gain.linearRampToValueAtTime(0.32, noteT + 0.015);
         g.gain.exponentialRampToValueAtTime(0.0001, noteT + dur);
-        osc.connect(g); g.connect(leadDrive);
+        osc.connect(g); g.connect(leadCleanFilt);
         osc.start(noteT); osc.stop(noteT + dur + 0.05);
         vib.start(noteT); vib.stop(noteT + dur + 0.05);
       });
