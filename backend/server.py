@@ -1923,6 +1923,10 @@ BOT_SHOT_COOLDOWN_MS = 600
 BOT_AIM_NOISE = 0.10
 TICK_RATE = 20
 NUM_BOTS = 3
+# FFA quick-match / ranked / practice rooms cap the active lobby at this
+# many combat players (incl. bots). Caller adds/removes bots as humans
+# join/leave so the player never walks into a 5- or 6-bot lobby.
+FFA_LOBBY_SIZE = 4
 RANKED_MIN_REAL_PLAYERS = 1
 # TDM mode constants
 TDM_KILL_TARGET = 30        # first team to N kills wins instantly
@@ -2438,48 +2442,79 @@ class GameRoom:
         for i, p in enumerate(order):
             p.team = "red" if i % 2 == 0 else "blue"
 
-    def _maintain_tdm_population(self) -> None:
-        """TDM-only: keep the room at exactly TDM_TEAM_SIZE * 2 = 6
-        combat players by swapping bots in/out as real players come and
-        go. A real-player join always despawns one bot (preferring the
-        team that's now oversized); a real-player leave spawns one
-        replacement bot so the 3v3 feel is preserved between visits.
+    def _maintain_population(self) -> None:
+        """Keep the room at its target lobby size by swapping bots in/out
+        as real players come and go.
 
-        Spectators don't count. Caller must hold `self.lock` to keep
-        the head-count consistent with concurrent add/remove operations."""
-        if self.game_mode != "tdm":
-            return
-        target_total = TDM_TEAM_SIZE * 2
+          - TDM rooms target TDM_TEAM_SIZE * 2 = 6 combat players (3v3).
+          - FFA rooms (casual, ranked, practice) target FFA_LOBBY_SIZE
+            = 4 so the player isn't drowned in bots.
+
+        Spectators are ignored. Practice-room "dummy" bots are kept last
+        so the user always has the docile target to shoot at. Caller
+        must hold `self.lock` to keep the head-count consistent with
+        concurrent add/remove operations."""
+        if self.game_mode == "tdm":
+            target_total = TDM_TEAM_SIZE * 2
+        else:
+            target_total = FFA_LOBBY_SIZE
         combat = [p for p in self.players.values() if not getattr(p, "is_spectator", False)]
         n = len(combat)
         if n > target_total:
-            # Despawn the surplus. Prefer bots on the team that currently
-            # has more members so the 3v3 split is preserved.
+            # Despawn the surplus. Sort key picks bots LAST among combat
+            # entries (real players stay), and within bots:
+            #   - In TDM: prefer the team that's now oversized.
+            #   - In FFA: prefer non-dummy combat bots over dummies so the
+            #     practice room's training targets always survive.
             excess = n - target_total
-            red_count  = sum(1 for p in combat if p.team == "red")
-            blue_count = sum(1 for p in combat if p.team == "blue")
             bots = [p for p in combat if p.is_bot]
-            bots.sort(key=lambda b: -(red_count if b.team == "red" else blue_count))
+            if self.game_mode == "tdm":
+                red_count  = sum(1 for p in combat if p.team == "red")
+                blue_count = sum(1 for p in combat if p.team == "blue")
+                bots.sort(key=lambda b: -(red_count if b.team == "red" else blue_count))
+            else:
+                # Dummies last (highest score → despawned last).
+                bots.sort(key=lambda b: 0 if getattr(b, "is_dummy", False) else -1)
             for bot in bots[:excess]:
                 self.players.pop(bot.id, None)
-                logger.info("TDM auto-balance: despawned bot %s (team=%s) total=%d→%d",
-                            bot.username, bot.team, n, n - 1)
+                logger.info(
+                    "Auto-balance (%s): despawned bot %s team=%s total=%d→%d",
+                    self.game_mode, bot.username, getattr(bot, "team", None),
+                    n, n - 1,
+                )
                 n -= 1
         elif n < target_total:
-            # Spawn replacement bots so the room stays full.
+            # Only repopulate combat-style rooms — practice + offline FFA
+            # rooms have fixed bot fills (dummies / per-user roster) that
+            # we don't want to top off automatically. TDM uses the
+            # disguised pool; FFA quick-match uses the same.
+            if self.game_mode != "tdm" and getattr(self, "is_practice", False):
+                return
             deficit = target_total - n
             in_use = {p.username for p in self.players.values()}
             pool = [nm for nm in DISGUISED_BOT_NAMES if nm not in in_use]
             random.shuffle(pool)
+            # Difficulty inherited from the room's seed bots.
+            if self.game_mode == "tdm":
+                diff = 1.2 if getattr(self, "is_practice", False) else 1.45
+            elif self.is_ranked:
+                diff = 1.9
+            else:
+                diff = 1.15
             for i in range(deficit):
                 name = pool[i] if i < len(pool) else f"shadow_{random.randint(100, 999)}"
-                # Difficulty inherited from the room's seed bots (1.45 for
-                # quick-match TDM, 1.2 for practice). Falls back to 1.4.
-                diff = 1.2 if getattr(self, "is_practice", False) else 1.45
                 self.spawn_bot(name, disguised=True, difficulty=diff)
-                logger.info("TDM auto-balance: spawned bot %s total=%d→%d",
-                            name, n, n + 1)
+                logger.info(
+                    "Auto-balance (%s): spawned bot %s total=%d→%d",
+                    self.game_mode, name, n, n + 1,
+                )
                 n += 1
+
+    # Backwards-compatible alias. Older tests reference the TDM-only name.
+    def _maintain_tdm_population(self) -> None:
+        if self.game_mode != "tdm":
+            return
+        self._maintain_population()
 
     async def add(self, player: Player):
         # Reposition the player onto a spawn point from THIS room's arena —
@@ -2515,10 +2550,15 @@ class GameRoom:
             # burst of simultaneous joins can't race the head-count.
             self._assign_team(player)
             self.players[player.id] = player
-            # TDM 1-for-1 swap: a real-player join displaces one bot so
-            # the room stays at exactly 3v3. No-op in FFA / for bot joins.
-            if self.game_mode == "tdm" and not player.is_bot and not getattr(player, "is_spectator", False):
-                self._maintain_tdm_population()
+            # 1-for-1 bot swap: a real-player join displaces one bot so
+            # the room stays at its target lobby size (TDM=6, FFA=4).
+            # Skipped for offline rooms (per-user roster) and bot joins.
+            if (
+                not player.is_bot
+                and not getattr(player, "is_spectator", False)
+                and not getattr(self, "is_offline", False)
+            ):
+                self._maintain_population()
         # Restart the match clock if this is the first real player to join
         # an empty (or bots-only) room while a match is supposedly in
         # progress. Otherwise the tick loop's `now - match_start >= duration`
@@ -2584,6 +2624,12 @@ class GameRoom:
             "you": player.to_state(),
             "arena": self.arena,
             "is_ranked": self.is_ranked,
+            # Server-confirmed game mode ("ffa" / "tdm"). Quick-match can
+            # roll either one, so the client only knows for sure after
+            # welcome — the loading screen uses this to swap its subtitle
+            # from "DEPLOYING..." to the actual FFA/TDM label.
+            "game_mode": self.game_mode,
+            "is_practice": bool(getattr(self, "is_practice", False)),
             "match_duration": self.match_duration if self.is_ranked else None,
             "match_start": self.match_start if self.is_ranked else None,
             "spectator": bool(getattr(player, "is_spectator", False)),
@@ -2616,15 +2662,16 @@ class GameRoom:
     async def remove(self, player: Player):
         async with self.lock:
             self.players.pop(player.id, None)
-            # TDM 1-for-1 swap: when a real player leaves, spawn a
-            # replacement bot so the room stays at 3v3 for whoever's left.
-            # No-op in FFA / when a bot or spectator departs.
+            # 1-for-1 swap: when a real player leaves, spawn a replacement
+            # bot so the room stays at its target lobby size (TDM=6,
+            # FFA=4) for whoever's left. Offline rooms keep their fixed
+            # per-user roster.
             if (
-                self.game_mode == "tdm"
-                and not player.is_bot
+                not player.is_bot
                 and not getattr(player, "is_spectator", False)
+                and not getattr(self, "is_offline", False)
             ):
-                self._maintain_tdm_population()
+                self._maintain_population()
         if not player.is_bot and not getattr(player, "is_spectator", False) and player.user_id:
             PLAYER_LOCATION.pop(player.user_id, None)
         if not getattr(player, "is_spectator", False):

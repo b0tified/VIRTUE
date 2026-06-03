@@ -19,10 +19,12 @@
 // App root, and dismisses only when WS welcome arrives.
 export const MATCH_LOAD_MS = 800;
 
-export function navigateToMatch(nav, route, { mode = "casual", username } = {}, options = {}) {
+export function navigateToMatch(nav, route, { mode = "casual", username, tdm = false, game_mode } = {}, options = {}) {
   try {
     window.dispatchEvent(
-      new CustomEvent("virtue-match-loading", { detail: { mode, username } }),
+      new CustomEvent("virtue-match-loading", {
+        detail: { mode, username, tdm, game_mode },
+      }),
     );
   } catch {}
   const t = setTimeout(() => nav(route, options), MATCH_LOAD_MS);

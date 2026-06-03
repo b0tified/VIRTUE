@@ -198,20 +198,22 @@ async def test_two_humans_keep_population_balanced():
 
 
 @pytest.mark.asyncio
-async def test_maintain_is_noop_in_ffa():
-    """Auto-balance must never touch non-TDM rooms (FFA quick-match
-    deliberately keeps its bot population fixed)."""
+async def test_maintain_caps_ffa_at_lobby_size():
+    """FFA rooms are now also capped at FFA_LOBBY_SIZE=4. A 4-bot room
+    + 1 human join must displace 1 bot so total stays at the cap."""
     room = srv.GameRoom(is_ranked=False, match_duration=60.0, game_mode="ffa")
     for i in range(4):
         room.spawn_bot(f"BOT{i}", disguised=True, difficulty=1.15)
     before = len(room.players)
+    assert before == 4
 
     human = _real_player("alice")
     await room.add(human)
-    after = len(room.players)
+    combat = [p for p in room.players.values() if not getattr(p, "is_spectator", False)]
 
-    # FFA: room count goes up by 1 (no bot displaced).
-    assert after == before + 1, f"FFA room population unexpectedly changed (before={before}, after={after})"
+    # FFA cap kicks in — total stays at FFA_LOBBY_SIZE.
+    assert len(combat) == srv.FFA_LOBBY_SIZE, \
+        f"FFA cap broken (before={before}, after={len(combat)})"
 
 
 @pytest.mark.asyncio

@@ -318,6 +318,13 @@ export default function Game() {
               detail: {
                 map_id: msg.arena?.map_id || null,
                 map_name: msg.arena?.name || null,
+                // Server-confirmed mode (e.g. quick-match may roll FFA or
+                // TDM 50/50). The loading screen swaps its subtitle to
+                // the truth on welcome so the player knows what they're
+                // dropping into.
+                game_mode: msg.game_mode || "ffa",
+                is_ranked: !!msg.is_ranked,
+                is_practice: !!msg.is_practice,
               },
             }));
           } catch {}

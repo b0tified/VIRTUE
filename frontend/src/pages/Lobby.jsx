@@ -596,7 +596,7 @@ export default function Lobby() {
           navigateToMatch(
             nav,
             `/play?mode=${selectedMode}${mapQuery}${tdmQuery}`,
-            { mode: "offline", username: user?.username },
+            { mode: "offline", username: user?.username, tdm: !!opts.tdm },
           );
         }}
       />

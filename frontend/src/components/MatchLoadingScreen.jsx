@@ -28,6 +28,16 @@ const MODE_LABELS = {
   offline:  { title: "PRACTICE",      accent: "#9B59B6" },
 };
 
+// Sub-headline rendered under the big mode title. Drives directly from
+// the server-confirmed `game_mode` payload that arrives with `welcome`.
+// Before welcome we show a placeholder ("DEPLOYING...") for quick-match
+// (which can roll FFA or TDM server-side) and the known mode for
+// everything else (ranked = always FFA, practice = client picks TDM).
+const GAME_MODE_LABELS = {
+  ffa: { label: "FREE-FOR-ALL · LOBBY OF 4", short: "FFA" },
+  tdm: { label: "TEAM DEATHMATCH · 3V3",     short: "TDM" },
+};
+
 const SAFETY_DISMISS_MS = 6000;     // hard fallback if welcome never arrives
 const REVEAL_HOLD_MS    = 900;      // how long the "CONFIRMED" screen lingers
 
@@ -35,6 +45,13 @@ export default function MatchLoadingScreen() {
   const [phase, setPhase] = useState("idle"); // 'idle' | 'loading' | 'confirmed'
   const [mode, setMode] = useState("casual");
   const [username, setUsername] = useState(null);
+  // Hint from the caller about the game mode (e.g. practice TDM passes
+  // `tdm: true`). Used as the initial sub-headline before welcome
+  // confirms. Quick-match leaves this null (server rolls FFA or TDM).
+  const [gameModeHint, setGameModeHint] = useState(null);
+  // Authoritative `game_mode` from the server welcome — overrides
+  // `gameModeHint` once we know for sure.
+  const [serverGameMode, setServerGameMode] = useState(null);
   const [previewMap, setPreviewMap] = useState(null); // pre-welcome guess
   const [actualMap, setActualMap]   = useState(null); // post-welcome truth
   const [dots, setDots] = useState("");
@@ -52,6 +69,12 @@ export default function MatchLoadingScreen() {
       const m = e?.detail?.mode || "casual";
       setMode(m);
       setUsername(e?.detail?.username || null);
+      // Caller-known game mode hint (e.g. PracticeMapSelector passes
+      // `tdm: true` when the user explicitly picks TDM). Quick-match
+      // leaves it null because the server flips the coin.
+      const tdmHint = !!e?.detail?.tdm;
+      setGameModeHint(e?.detail?.game_mode || (tdmHint ? "tdm" : null));
+      setServerGameMode(null);
       setPreviewMap(pickRandomMapMeta());
       setActualMap(null);
       setPhase("loading");
@@ -68,6 +91,10 @@ export default function MatchLoadingScreen() {
       const mid = e?.detail?.map_id;
       const meta = mid ? MAPS_META.find((m) => m.map_id === mid) : null;
       setActualMap(meta || null);
+      // Capture the server-confirmed game mode so the subtitle locks in
+      // (e.g. quick-match transitions from "DEPLOYING..." to "FFA" or
+      // "TDM 3V3" the instant welcome arrives).
+      if (e?.detail?.game_mode) setServerGameMode(e.detail.game_mode);
       setPhase("confirmed");
       clearTimers();
       dismissTimerRef.current = setTimeout(() => setPhase("idle"), REVEAL_HOLD_MS);
@@ -93,6 +120,11 @@ export default function MatchLoadingScreen() {
   const showMap = phase === "confirmed" && actualMap ? actualMap : previewMap;
   // Did the preview match the actual map? Used to colour the reveal badge.
   const matched = phase === "confirmed" && actualMap && previewMap && actualMap.map_id === previewMap.map_id;
+  // Resolved game-mode for the subtitle. Order: server welcome → caller
+  // hint → mode-implied fallback (ranked is always FFA, party → FFA).
+  const resolvedMode = serverGameMode || gameModeHint
+    || (mode === "ranked" || mode === "party" ? "ffa" : null);
+  const modeLabel = resolvedMode ? GAME_MODE_LABELS[resolvedMode]?.label : null;
 
   return (
     <div
@@ -135,6 +167,25 @@ export default function MatchLoadingScreen() {
           <Zap size={32} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
           {meta.title}
           <Zap size={32} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
+        </div>
+
+        {/* Mode subtitle — FFA vs TDM. Locked-in label after welcome,
+            "DEPLOYING..." placeholder before (only for casual/quick where
+            the server flips the coin). */}
+        <div
+          className="flex items-center gap-2 px-3 py-1 border-2 border-black"
+          style={{
+            background: resolvedMode === "tdm" ? "#0055FF" : (resolvedMode === "ffa" ? "#FFD700" : "rgba(255,255,255,0.12)"),
+            color: resolvedMode === "tdm" ? "#FFFFFF" : (resolvedMode === "ffa" ? "#0A0A0A" : "#FFFFFF"),
+            boxShadow: "3px 3px 0 0 #0A0A0A",
+            animation: "match-loading-banner-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 60ms both",
+          }}
+          data-testid="match-loading-game-mode"
+          data-game-mode={resolvedMode || "unknown"}
+        >
+          <span className="font-anton uppercase tracking-widest text-sm">
+            {modeLabel || "DEPLOYING…"}
+          </span>
         </div>
 
         {showMap && (
