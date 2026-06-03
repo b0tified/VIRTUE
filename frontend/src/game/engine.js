@@ -3047,11 +3047,14 @@ export class GameEngine {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     // Prefix: in TDM a teammate gets a chevron ▲ so the relationship is
-    // clear even for users with mild colour-blindness. Bot prefix only
-    // shows in FFA where there's no team context.
+    // clear even for users with mild colour-blindness. Enemies / players
+    // in TDM get no prefix (team colour alone communicates allegiance).
+    // The "BOT · " prefix only appears in FFA — in TDM it'd just clutter
+    // the nameplate with information that doesn't matter (a teammate-bot
+    // is still a teammate, an enemy-bot is still an enemy).
     let prefix = "";
     if (relation === "team")      prefix = "▲ ";
-    else if (relation === "bot")  prefix = "BOT · ";
+    else if (relation === "bot")  prefix = "BOT · ";   // FFA only
     ctx.fillText((prefix + text).slice(0, 18).toUpperCase(), 128, 32);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;

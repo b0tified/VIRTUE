@@ -2452,6 +2452,18 @@ class GameRoom:
                 (not p.is_bot) and (not getattr(p, "is_spectator", False))
                 for p in self.players.values()
             )
+            # First real player joining an idle room (practice / offline
+            # / quick-match between rounds) — reset every player's
+            # per-match counters so they don't see bots with 50 kills
+            # accumulated from previous sessions. Practice rooms have a
+            # 99999s match length and never call `end_match`, so this is
+            # their ONLY reset path.
+            if not player.is_bot and not had_real_players:
+                for p in self.players.values():
+                    p.kills = 0
+                    p.deaths = 0
+                self.team_scores = {"red": 0, "blue": 0}
+                self._tdm_early_end_armed = False
             # Assign a team (TDM only). Done while holding the lock so a
             # burst of simultaneous joins can't race the head-count.
             self._assign_team(player)
@@ -4064,6 +4076,18 @@ class GameRoom:
         self.last_match_end_payload = None
         self.last_match_end_recipients.clear()
         self.match_num += 1
+        # **Reset everyone's per-match counters** so a fresh round actually
+        # starts at 0-0. Without this, bots that have been alive across
+        # many practice / quick-match rounds carry their lifetime kill
+        # tally into the new game and the player joins finding bots
+        # already at "50 kills". HP also reset so respawn-on-match-start
+        # gives a clean slate.
+        for p in self.players.values():
+            p.kills = 0
+            p.deaths = 0
+            p.hp = p.max_hp
+            p.alive = True
+            p.respawn_at = 0.0
         # Fresh TDM bookkeeping for the next match.
         self.team_scores = {"red": 0, "blue": 0}
         self._tdm_early_end_armed = False
