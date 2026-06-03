@@ -342,6 +342,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Cosmetics (skins, kill cards).
 - Region selection / multi-server.
 
+## Recent TDM polish (2026-06-03)
+- BOT badge hidden in TDM scoreboard (team colour already conveys allegiance).
+- Tab-scoreboard split into RED / BLUE sections with per-team kill totals, ally team rises to the top.
+- Remote-player body meshes recoloured by team in TDM (ally = deep blue 0x2858B4, enemy = red 0xC1322B). Local cosmetic skin preserved. Mesh hot-rebuilds on team rebalance.
+- Idle-room bot kill reset: when a TDM/casual room has no real players, `run()` now freezes the match clock and zero-outs all bot kills/deaths every tick so the next human joiner sees a clean 0-0 lobby (was: bots accumulated 50+ kills indefinitely). Regression test in `tests/test_idle_bot_kills_reset.py`.
+
 ## Tech Notes
 - Hit detection: server-side raycast vs 3-sphere capsule hitboxes.
 - 20Hz tick, client predicts movement, server reconciles.

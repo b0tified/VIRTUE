@@ -486,7 +486,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
             <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
               <div className="font-display text-3xl text-[#FFD700]">SCOREBOARD</div>
               <div className="flex items-center gap-3">
-                <div className="font-anton uppercase text-sm tracking-widest">Free-For-All</div>
+                <div className="font-anton uppercase text-sm tracking-widest">
+                  {hud.gameMode === "tdm" ? "Team Deathmatch 3v3" : "Free-For-All"}
+                </div>
                 <button
                   onClick={() => onCloseScoreboard?.()}
                   className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs flex items-center gap-1"
@@ -497,51 +499,64 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
-              <div className="col-span-1">#</div>
-              <div className="col-span-1"></div>
-              <div className="col-span-4">Player</div>
-              <div className="col-span-2 text-right">Kills</div>
-              <div className="col-span-2 text-right">Deaths</div>
-              <div className="col-span-2 text-right opacity-60">·</div>
-            </div>
-            {hud.players.map((p, i) => (
-              <div
-                key={p.id}
-                className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${
-                  p.id === hud.youId ? "bg-[#FFE680]" : i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"
-                }`}
-                data-testid={`scoreboard-row-${i}`}
-              >
-                <div className="col-span-1 font-display text-xl">{i + 1}</div>
-                <div className="col-span-1">
-                  {p.is_bot ? (
-                    <span className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-2 text-xs font-anton uppercase">
-                      <Bot size={12} strokeWidth={3} /> BOT
-                    </span>
-                  ) : (
-                    <PlatformIcon platform={p.platform} />
-                  )}
+            {hud.gameMode === "tdm" ? (
+              <TdmScoreboardBody
+                players={hud.players}
+                youId={hud.youId}
+                myTeam={hud.minimap?.you?.team || null}
+                teamScores={hud.teamScores}
+                target={hud.tdmKillTarget || 30}
+                onReport={setReportTarget}
+              />
+            ) : (
+              <>
+                <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
+                  <div className="col-span-1">#</div>
+                  <div className="col-span-1"></div>
+                  <div className="col-span-4">Player</div>
+                  <div className="col-span-2 text-right">Kills</div>
+                  <div className="col-span-2 text-right">Deaths</div>
+                  <div className="col-span-2 text-right opacity-60">·</div>
                 </div>
-                <div className="col-span-4 font-anton uppercase truncate">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
-                <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
-                <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
-                <div className="col-span-2 flex justify-end">
-                  {p.id !== hud.youId && !p.is_bot && (
-                    <button
-                      onClick={() => setReportTarget(p)}
-                      className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-[10px] flex items-center gap-1"
-                      data-testid={`scoreboard-report-${i}`}
-                      title={`Report ${p.username}`}
-                    >
-                      <Flag size={11} strokeWidth={3} /> REPORT
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {hud.players.length === 0 && (
-              <div className="p-6 font-anton text-center uppercase">No players yet</div>
+                {hud.players.map((p, i) => (
+                  <div
+                    key={p.id}
+                    className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${
+                      p.id === hud.youId ? "bg-[#FFE680]" : i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"
+                    }`}
+                    data-testid={`scoreboard-row-${i}`}
+                  >
+                    <div className="col-span-1 font-display text-xl">{i + 1}</div>
+                    <div className="col-span-1">
+                      {p.is_bot ? (
+                        <span className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-2 text-xs font-anton uppercase">
+                          <Bot size={12} strokeWidth={3} /> BOT
+                        </span>
+                      ) : (
+                        <PlatformIcon platform={p.platform} />
+                      )}
+                    </div>
+                    <div className="col-span-4 font-anton uppercase truncate">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
+                    <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
+                    <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
+                    <div className="col-span-2 flex justify-end">
+                      {p.id !== hud.youId && !p.is_bot && (
+                        <button
+                          onClick={() => setReportTarget(p)}
+                          className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-[10px] flex items-center gap-1"
+                          data-testid={`scoreboard-report-${i}`}
+                          title={`Report ${p.username}`}
+                        >
+                          <Flag size={11} strokeWidth={3} /> REPORT
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {hud.players.length === 0 && (
+                  <div className="p-6 font-anton text-center uppercase">No players yet</div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -891,6 +906,109 @@ function ReportPlayerModal({ target, onClose }) {
 /* ──────────────────────────────────────────────────────────────────
    TDM-only HUD panels
    ────────────────────────────────────────────────────────────────── */
+
+/* TDM Tab-scoreboard body — splits the player list into two team-coloured
+   sections (RED / BLUE) with per-team totals at the top of each section.
+   The local player's team rises to the top so they always see their squad
+   first. Bot badges are suppressed in TDM (the team colour already
+   communicates allegiance — a "BOT" tag on a friendly is just noise). */
+function TdmScoreboardBody({ players, youId, myTeam, teamScores, target, onReport }) {
+  const ts = teamScores || { red: 0, blue: 0 };
+  // Stable per-team kill leaderboards.
+  const sortRows = (team) =>
+    players
+      .filter((p) => p.team === team)
+      .sort((a, b) => (b.kills ?? 0) - (a.kills ?? 0));
+  const redRows  = sortRows("red");
+  const blueRows = sortRows("blue");
+  // Section order: local player's team first.
+  const sections = (myTeam === "blue")
+    ? [
+        { key: "blue", color: "#3aa1ff", label: "BLUE TEAM", rows: blueRows, score: ts.blue ?? 0 },
+        { key: "red",  color: "#E62429", label: "RED TEAM",  rows: redRows,  score: ts.red  ?? 0 },
+      ]
+    : [
+        { key: "red",  color: "#E62429", label: "RED TEAM",  rows: redRows,  score: ts.red  ?? 0 },
+        { key: "blue", color: "#3aa1ff", label: "BLUE TEAM", rows: blueRows, score: ts.blue ?? 0 },
+      ];
+  return (
+    <div data-testid="scoreboard-tdm">
+      {/* Top banner: side-by-side team scores so the player can read the
+          match state at a glance even before scrolling rows. */}
+      <div className="grid grid-cols-2 bg-black text-white border-t-4 border-black">
+        <div className="px-4 py-3 flex items-center justify-between border-r-2 border-black"
+             style={{ background: "rgba(230,36,41,0.18)" }}>
+          <span className="font-anton uppercase tracking-widest text-sm" style={{ color: "#E62429" }}>RED</span>
+          <span className="font-display text-3xl tabular-nums" data-testid="scoreboard-tdm-red-score">{ts.red ?? 0}</span>
+        </div>
+        <div className="px-4 py-3 flex items-center justify-between"
+             style={{ background: "rgba(58,161,255,0.18)" }}>
+          <span className="font-display text-3xl tabular-nums" data-testid="scoreboard-tdm-blue-score">{ts.blue ?? 0}</span>
+          <span className="font-anton uppercase tracking-widest text-sm" style={{ color: "#3aa1ff" }}>BLUE</span>
+        </div>
+      </div>
+      <div className="bg-black text-white px-4 py-1 text-center font-anton uppercase tracking-widest text-[10px] opacity-80 border-t-2 border-black">
+        First to {target} kills wins
+      </div>
+      {sections.map((sec) => (
+        <div key={sec.key} data-testid={`scoreboard-tdm-section-${sec.key}`}>
+          {/* Section header with team colour bar */}
+          <div className="px-4 py-2 flex items-center justify-between border-t-4 border-black"
+               style={{ background: sec.color, color: "#0A0A0A" }}>
+            <span className="font-anton uppercase tracking-widest text-sm">
+              {sec.label}{sec.key === myTeam ? " · YOUR SQUAD" : ""}
+            </span>
+            <span className="font-display text-2xl tabular-nums">{sec.score}</span>
+          </div>
+          {/* Column headers */}
+          <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-1.5 font-anton uppercase tracking-widest text-xs border-t-2 border-black">
+            <div className="col-span-1">#</div>
+            <div className="col-span-1"></div>
+            <div className="col-span-4">Player</div>
+            <div className="col-span-2 text-right">Kills</div>
+            <div className="col-span-2 text-right">Deaths</div>
+            <div className="col-span-2 text-right opacity-60">·</div>
+          </div>
+          {sec.rows.length === 0 ? (
+            <div className="p-4 font-anton text-center uppercase text-sm bg-white border-t-2 border-black">
+              No players on this team
+            </div>
+          ) : sec.rows.map((p, i) => (
+            <div
+              key={p.id}
+              className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${
+                p.id === youId ? "bg-[#FFE680]" : i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"
+              }`}
+              data-testid={`scoreboard-tdm-row-${sec.key}-${i}`}
+            >
+              <div className="col-span-1 font-display text-lg">{i + 1}</div>
+              <div className="col-span-1">
+                {/* In TDM, suppress the BOT badge — team colour already
+                    communicates the only thing that matters (friend/foe). */}
+                {!p.is_bot && <PlatformIcon platform={p.platform} />}
+              </div>
+              <div className="col-span-4 font-anton uppercase truncate">{p.username}{p.id === youId ? " · YOU" : ""}</div>
+              <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
+              <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
+              <div className="col-span-2 flex justify-end">
+                {p.id !== youId && !p.is_bot && (
+                  <button
+                    onClick={() => onReport?.(p)}
+                    className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-[10px] flex items-center gap-1"
+                    data-testid={`scoreboard-tdm-report-${sec.key}-${i}`}
+                    title={`Report ${p.username}`}
+                  >
+                    <Flag size={11} strokeWidth={3} /> REPORT
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* Polished team-kill scoreboard.
    Two team-coloured columns sandwiching a central "TO 30" target tag.

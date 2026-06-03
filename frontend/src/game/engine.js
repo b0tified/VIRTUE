@@ -2946,7 +2946,7 @@ export class GameEngine {
   _addRemotePlayer(state) {
     // Resolve the skin from the state tick. Falls back to a hashed body
     // color when the player pre-dates the skins system (legacy accounts).
-    const skin = state.skin ? skinById(state.skin) : {
+    const baseSkin = state.skin ? skinById(state.skin) : {
       body: state.is_bot ? 0x9b59b6 : this._hashColor(state.id),
       leg: 0x1a1a1a,
       head: 0xf2c08a,
@@ -2954,6 +2954,10 @@ export class GameEngine {
       aura: 0x000000,
       aura_mode: "none",
     };
+    // TDM team-tint: ally bodies/sleeves go deep blue, enemies deep red so
+    // friend-vs-foe reads at a glance even mid-firefight. Local player and
+    // FFA mode keep their cosmetic skin untouched.
+    const skin = this._applyTeamSkin(state, baseSkin);
     const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     this.scene.add(group);
@@ -2998,6 +3002,7 @@ export class GameEngine {
       label,
       color: skin.body,
       skinId: state.skin || "default",
+      tdmTeamKey: this._tdmTeamKeyFor(state),
       bodyMeshes,
       leftArm, rightArm, leftLeg, rightLeg,
       lastHp: state.hp,
@@ -3071,6 +3076,29 @@ export class GameEngine {
       return p.team === this._myTeam ? "team" : "enemy";
     }
     return p.is_bot ? "bot" : "enemy";
+  }
+
+  /* TDM-only key for cache-busting a remote player's body mesh when their
+     team relationship to the local player changes (e.g. server rebalances
+     teams between matches). Returns a string we can compare across ticks.
+     Always returns "ffa" in FFA so the mesh-rebuild branch never fires. */
+  _tdmTeamKeyFor(state) {
+    if (this._gameMode !== "tdm") return "ffa";
+    if (!this._myTeam || !state?.team) return "tdm:unset";
+    return state.team === this._myTeam ? "tdm:ally" : "tdm:enemy";
+  }
+
+  /* TDM body-tint: clone the resolved skin with the body colour replaced
+     by team blue (ally) or team red (enemy) so the local player can read
+     friend-vs-foe at a glance regardless of cosmetic. Returns the skin
+     unchanged in FFA, before the local team is known, or for the local
+     player themselves (they see their own cosmetic in third-person spectator
+     replays). */
+  _applyTeamSkin(state, baseSkin) {
+    if (this._gameMode !== "tdm" || !this._myTeam || !state?.team) return baseSkin;
+    if (state.id === this.youId) return baseSkin;
+    const isAlly = state.team === this._myTeam;
+    return { ...baseSkin, body: isAlly ? 0x2858B4 : 0xC1322B };
   }
 
   /* TDM-only: snapshot of the data the minimap needs each frame.
@@ -3284,6 +3312,16 @@ export class GameEngine {
       if (msg.game_mode !== undefined) this._gameMode = msg.game_mode || "ffa";
       if (msg.team_scores !== undefined) this._teamScores = msg.team_scores || null;
       if (msg.tdm_kill_target !== undefined) this._tdmKillTarget = msg.tdm_kill_target || null;
+      // Pre-scan: capture the local player's team BEFORE iterating remote
+      // players so `_tdmTeamKeyFor` / `_applyTeamSkin` resolve correctly on
+      // the very first frame (otherwise teammates render as enemies until
+      // the loop reaches the local row).
+      for (const p of msg.players) {
+        if (p.id === this.youId && p.team !== undefined) {
+          this._myTeam = p.team || null;
+          break;
+        }
+      }
       const seen = new Set();
       for (const p of msg.players) {
         seen.add(p.id);
@@ -3336,6 +3374,16 @@ export class GameEngine {
         // Hot-swap mesh if the player equipped a new skin mid-session.
         // Cheap because skins don't share state — we rebuild from scratch.
         if (p.skin && entry.skinId && p.skin !== entry.skinId) {
+          this.scene.remove(entry.mesh);
+          this.players.delete(p.id);
+          entry = this._addRemotePlayer(p);
+        }
+        // Hot-swap mesh if our TDM relationship to this player flipped
+        // (e.g. server rebalanced teams between matches, or the local
+        // player's team finally arrived). Without this the ally/enemy
+        // body colour would be stuck on the value at first-render.
+        const nextTeamKey = this._tdmTeamKeyFor(p);
+        if (entry.tdmTeamKey !== nextTeamKey) {
           this.scene.remove(entry.mesh);
           this.players.delete(p.id);
           entry = this._addRemotePlayer(p);

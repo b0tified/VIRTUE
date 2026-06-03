@@ -4120,6 +4120,25 @@ class GameRoom:
                     if has_min and time.time() - self.match_start >= self.match_duration:
                         await self.end_match()
                         continue
+                    # Idle-room hygiene — when no real players are around, the
+                    # `end_match`/intermission cycle can't run (gated by
+                    # `has_min` above), so bots would otherwise keep killing
+                    # each other forever and accumulate hundreds of kills.
+                    # Freeze the match clock and zero-out any bot stats so
+                    # the next human joiner walks into a clean 0-0 lobby.
+                    # Ranked rooms are skipped — their RP flow requires the
+                    # full match window even at low population.
+                    if not has_min and not self.is_ranked:
+                        self.match_start = time.time()  # freeze duration timer
+                        dirty = False
+                        for bot in self.players.values():
+                            if bot.is_bot and (bot.kills or bot.deaths):
+                                bot.kills = 0
+                                bot.deaths = 0
+                                dirty = True
+                        if dirty and self.game_mode == "tdm":
+                            self.team_scores = {"red": 0, "blue": 0}
+                            self._tdm_early_end_armed = False
                 await self.tick()
             except Exception as e:
                 logger.exception("tick error: %s", e)
