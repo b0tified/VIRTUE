@@ -172,9 +172,14 @@ export default function Lobby() {
   // fall back to the first interaction listener.
   useEffect(() => {
     let started = false;
+    // The lobby music variant follows the same gate as the lobby
+    // background: meteor remix when Season 2+ is live, or when the
+    // signed-in account is an admin (preview). Recomputed on every
+    // change so a season rollover hot-swaps the loop in place.
+    const variant = showMeteorBg ? "meteor" : "default";
     const tryStart = () => {
       if (started) return;
-      audioBus.startLobbyMusic();
+      audioBus.startLobbyMusic(variant);
       // Verify audio actually started. If the context is still suspended
       // after the call, defer to the interaction listener below.
       const ctxState = audioBus.ctx?.state;
@@ -200,7 +205,7 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
-  }, []);
+  }, [showMeteorBg]);
 
   // Refresh the user payload whenever the Lobby mounts. After completing
   // a ranked match (where rank_points / rank_tier / level / coins can all

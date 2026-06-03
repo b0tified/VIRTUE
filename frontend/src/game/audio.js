@@ -1003,35 +1003,57 @@ class AudioBus {
     return curve;
   }
 
-  startLobbyMusic() {
+  startLobbyMusic(variant = "default") {
     if (!this._ensure()) return;
-    if (this.musicTrack === "lobby" && this.musicPlaying) return;
-    // If a different track was playing (e.g. leaderboard / profile),
-    // stop it so the lobby loop replaces it cleanly.
+    // Track id now encodes the variant so a season change can hot-swap
+    // the loop without leaving the old timer running underneath.
+    const trackId = `lobby:${variant}`;
+    if (this.musicTrack === trackId && this.musicPlaying) return;
+    // If a different track (or different lobby variant) was playing,
+    // stop it so the new loop replaces it cleanly.
     if (this.musicPlaying) this.stopLobbyMusic();
     this._restoreMusicGain();
     this.musicPlaying = true;
-    this.musicTrack = "lobby";
+    this.musicTrack = trackId;
+    const isMeteor = variant === "meteor";
     const ctx = this.ctx;
 
     // -- Helpers --
     const semi = (n) => Math.pow(2, n / 12);
     // Base note A2 = 110 Hz. Chord roots & their pitch class:
-    // Am - F - C - G - Am - F - G - E (8 bar minor-pop loop)
+    // Default (Season 1): Am - F - C - G - Am - F - G - E (8-bar minor-pop loop)
+    // Meteor  (Season 2): Am - Em - F - E (4-bar Phrygian-flavoured minor
+    //   loop with a half-step pull from F→E). The drop from F major to
+    //   E major every 4 bars sells the "doomy meteor closing in" mood
+    //   without ever resolving back to a major key.
     const A2 = 110.0;
-    // Semitone offsets from A2 for roots:
-    const ROOTS = [0, -4, 3, -2, 0, -4, -2, -5].map((s) => A2 * semi(s));
-    // Chord qualities (triads): Am, F, C, G, Am, F, G, E (relative semitones)
-    const CHORDS = [
-      [0, 3, 7],   // Am
-      [0, 4, 7],   // F major
-      [0, 4, 7],   // C major
-      [0, 4, 7],   // G major
-      [0, 3, 7],   // Am
-      [0, 4, 7],   // F major
-      [0, 4, 7],   // G major
-      [0, 4, 7],   // E major
-    ];
+    const ROOTS = (isMeteor
+      ? [0, -5, -4, -5, 0, -5, -4, -5]                  // Am, Em, F, E (looped)
+      : [0, -4, 3, -2, 0, -4, -2, -5]                   // Am, F, C, G, Am, F, G, E
+    ).map((s) => A2 * semi(s));
+    // Chord qualities (triads). Meteor uses Em (minor 3rd) on bar 2 so
+    // the texture stays minor instead of brightening to F major early.
+    const CHORDS = isMeteor
+      ? [
+          [0, 3, 7],   // Am
+          [0, 3, 7],   // Em (relative semis from its root)
+          [0, 4, 7],   // F major (passing)
+          [0, 4, 7],   // E major (Phrygian dominant)
+          [0, 3, 7],   // Am
+          [0, 3, 7],   // Em
+          [0, 4, 7],   // F
+          [0, 4, 7],   // E
+        ]
+      : [
+          [0, 3, 7],   // Am
+          [0, 4, 7],   // F major
+          [0, 4, 7],   // C major
+          [0, 4, 7],   // G major
+          [0, 3, 7],   // Am
+          [0, 4, 7],   // F major
+          [0, 4, 7],   // G major
+          [0, 4, 7],   // E major
+        ];
     // 16-step melody (semitone offset from root, or null for rest).
     // RIFF_A used to play on bar 7 (the loop's last bar) which made the
     // song feel like it ended each cycle. Removed for a continuous loop;
@@ -1040,19 +1062,30 @@ class AudioBus {
     const RIFF_A = [12, null, 10, 12, null, 7, null, 10, null, 7, 5, null, 7, null, 12, null];
     const RIFF_B = [10, null, 7,  10, null, 5, null, 7,  null, 3, 5, 7,  null, null, 12, null];
 
-    const BPM = 84;
+    const BPM = isMeteor ? 78 : 84;
     const beat = 60 / BPM;
     const sixteenth = beat / 4;
 
     // -- Buses --
-    // Soft pad (low-pass filtered saw)
+    // Soft pad (low-pass filtered saw). Meteor variant pushes the
+    // cutoff higher and drives a touch of distortion through it so the
+    // pad sits like a "burning sky" wash instead of a clean cushion.
     const padFilt = ctx.createBiquadFilter();
     padFilt.type = "lowpass";
-    padFilt.frequency.value = 950;
-    padFilt.Q.value = 0.4;
+    padFilt.frequency.value = isMeteor ? 1300 : 950;
+    padFilt.Q.value = isMeteor ? 0.7 : 0.4;
     const padBus = ctx.createGain();
-    padBus.gain.value = 0.26;
-    padFilt.connect(padBus);
+    padBus.gain.value = isMeteor ? 0.30 : 0.26;
+    if (isMeteor) {
+      // Soft drive in front of the pad bus for that meteor "scorched"
+      // tone — barely audible but it adds warm overtones.
+      const padDrive = ctx.createWaveShaper();
+      padDrive.curve = this._makeDistortionCurve(4);
+      padDrive.oversample = "2x";
+      padFilt.connect(padDrive); padDrive.connect(padBus);
+    } else {
+      padFilt.connect(padBus);
+    }
     padBus.connect(this.musicGain);
 
     // Lead bus with gentle overdrive + slap-back delay
@@ -1097,8 +1130,8 @@ class AudioBus {
         const f = root * semi(semiOffset);
         osc1.frequency.value = f;
         osc2.frequency.value = f;
-        osc1.detune.value = -6;
-        osc2.detune.value = +6;
+        osc1.detune.value = isMeteor ? -12 : -6;
+        osc2.detune.value = isMeteor ? +12 : +6;
         const g = ctx.createGain();
         const peak = 0.28 / (1 + i * 0.2);
         g.gain.setValueAtTime(0.0001, t);
@@ -1230,11 +1263,84 @@ class AudioBus {
       src.start(t);
     };
 
+    // -- Meteor-only voices --
+    // Sub-drone: a continuous low sine that holds across the whole bar
+    // and ties the loop together with a "burning atmosphere" rumble.
+    // Pitch follows the bar root one octave below the bass.
+    const playMeteorDrone = (root, t, dur) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = root * 0.25; // 2 octaves below bass
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.6);
+      g.gain.setValueAtTime(0.18, t + dur - 0.4);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g); g.connect(this.musicGain);
+      osc.start(t); osc.stop(t + dur + 0.1);
+    };
+
+    // Impact gong: low-pitched percussive boom at the start of every
+    // 4-bar phrase. Suggests a distant meteor strike echoing in.
+    const playMeteorImpact = (t) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(80, t);
+      osc.frequency.exponentialRampToValueAtTime(38, t + 1.2);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.50, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+      osc.connect(g); g.connect(this.musicGain);
+      osc.start(t); osc.stop(t + 1.5);
+      // Soft noisy "ember" tail behind the boom (highpassed white noise).
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.9), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.4);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 800;
+      const gN = ctx.createGain();
+      gN.gain.setValueAtTime(0.12, t);
+      gN.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+      src.connect(hp); hp.connect(gN); gN.connect(this.musicGain);
+      src.start(t);
+    };
+
+    // Sparse minor-pentatonic lead — only on bar 0 of each 4-bar phrase.
+    // 8 sixteenth-note positions (with rests) climbing then falling, so
+    // the loop has a singing-meteor-streak melodic moment without ever
+    // sounding triumphant.
+    const METEOR_LEAD_RIFF = [0, null, 3, null, 7, null, 10, 7, null, 3, null, 0, null, null, null, null];
+    const playMeteorLead = (root, t) => {
+      METEOR_LEAD_RIFF.forEach((semiOffset, i) => {
+        if (semiOffset === null) return;
+        const f = root * 2 * semi(semiOffset);
+        const noteT = t + i * sixteenth;
+        const dur = sixteenth * 2;
+        const osc = ctx.createOscillator();
+        osc.type = "sawtooth";
+        osc.frequency.value = f;
+        const vib = ctx.createOscillator();
+        vib.frequency.value = 6;
+        const vibGain = ctx.createGain();
+        vibGain.gain.value = 4;
+        vib.connect(vibGain); vibGain.connect(osc.frequency);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0, noteT);
+        g.gain.linearRampToValueAtTime(0.30, noteT + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, noteT + dur);
+        osc.connect(g); g.connect(leadDrive);
+        osc.start(noteT); osc.stop(noteT + dur + 0.05);
+        vib.start(noteT); vib.stop(noteT + dur + 0.05);
+      });
+    };
+
     const scheduleBar = (startAt, barIndex) => {
-      // Loop length shortened from 8 → 4 bars (Am - F - C - G). The old
-      // bars 5-8 ended on G → E major, which gave the song a clear
-      // "outro" feel every loop. Cycling just the first 4 chords keeps
-      // the texture ambient with no resolution.
+      // Loop length: 4 bars. Default = Am-F-C-G (Season 1). Meteor =
+      // Am-Em-F-E (Season 2 dark Phrygian-flavoured variant).
       const phraseBar = barIndex % 4;
       const root = ROOTS[phraseBar];
       const triad = CHORDS[phraseBar];
@@ -1254,11 +1360,23 @@ class AudioBus {
         hihat(startAt + i * (beat / 2), false, false);
       }
 
-      // Lead — DISABLED. The distorted saw lead read as a "horn"
-      // fanfare every loop; per user request the melody fragment is
-      // removed entirely. Pad + bass + drums now carry the loop as a
-      // pure ambient bed.
-      // (Was: RIFF_B half-line every 8 bars.)
+      if (isMeteor) {
+        // Meteor variant overlays — sub-drone every bar, impact gong on
+        // bar 0 of each 4-bar phrase, sparse minor-pentatonic lead also
+        // on bar 0 so the loop has one melodic moment per cycle. The
+        // shimmer/cymbal swell on bar 0 reinforces the "phrase reset".
+        playMeteorDrone(root, startAt, beat * 4);
+        if (phraseBar === 0) {
+          playMeteorImpact(startAt);
+          shimmer(startAt);
+          playMeteorLead(root, startAt + beat * 0.5);
+        }
+      }
+
+      // Lead (Season 1) — DISABLED. The distorted saw lead read as a
+      // "horn" fanfare every loop; per user request the melody fragment
+      // is removed entirely for the default variant. The meteor variant
+      // re-introduces a darker, pentatonic riff above (gated by isMeteor).
     };
 
     const start = ctx.currentTime + 0.15;
