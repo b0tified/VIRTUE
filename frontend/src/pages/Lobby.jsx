@@ -10,6 +10,7 @@ import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
+import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
@@ -79,6 +80,25 @@ export default function Lobby() {
   };
 
   const stats = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
+
+  // Season-aware lobby background. Fetch /api/season once on mount; switch
+  // to the meteor-themed backdrop when the live season has rolled over to
+  // Season 2 (or later). Admin accounts always see the meteor preview so
+  // the Season 2 art can be reviewed before the timer flips for everyone.
+  const [seasonNumber, setSeasonNumber] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await api.get("/season");
+        if (alive) setSeasonNumber(Number(r?.data?.season_number ?? 1) || 1);
+      } catch {
+        if (alive) setSeasonNumber(1);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const showMeteorBg = (seasonNumber !== null && seasonNumber >= 2) || user?.role === "admin";
 
   // Initialise audio mute states + volumes from settings/localStorage so the
   // bus reflects user prefs immediately on mount.
@@ -325,7 +345,17 @@ export default function Lobby() {
 
   return (
     <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
-      <LobbyBackground imageUrl={LOBBY_BG} />
+      {showMeteorBg ? (
+        <>
+          <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
+          <LobbyBackgroundMeteor />
+        </>
+      ) : (
+        <>
+          <span className="hidden" data-testid="lobby-bg-default" data-active="true" />
+          <LobbyBackground imageUrl={LOBBY_BG} />
+        </>
+      )}
 
       <header className="relative z-20 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-2 md:py-3">
         {/* Left side intentionally empty — the large VIRTUE logo lives in
