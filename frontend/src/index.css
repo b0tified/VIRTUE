@@ -49,6 +49,18 @@ textarea,
   -webkit-user-select: text !important;
   -ms-user-select: text !important;
 }
+/* Disable native click-drag on links and images. Without this the
+   "Sign up" / "Sign in" links could be dragged into the URL bar or
+   bookmarks, and HUD icons / avatar imgs could be dragged off-screen
+   mid-match. CSS `user-drag` is the standard property; WebKit needs
+   the `-webkit-` prefix. */
+a, img, svg {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+}
 
 .font-display { font-family: 'Bangers', 'Anton', cursive; letter-spacing: 0.04em; }
 .font-anton   { font-family: 'Anton', sans-serif; letter-spacing: 0.03em; }

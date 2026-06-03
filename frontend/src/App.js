@@ -57,7 +57,24 @@ export default function App() {
       e.preventDefault();
     };
     document.addEventListener("contextmenu", onContext, { capture: true });
-    return () => document.removeEventListener("contextmenu", onContext, { capture: true });
+    // Global drag-start blocker. Anchor tags + images are HTML-draggable
+    // by default (you can drag a link into the URL bar / bookmarks bar),
+    // which felt out-of-place in a game shell — especially the "Sign up"
+    // login link. CSS `user-drag: none` covers most browsers; this
+    // listener is the belt-and-braces fallback for the cases it doesn't.
+    const onDragStart = (e) => {
+      const t = e.target;
+      const tag = (t?.tagName || "").toLowerCase();
+      // Allow drag on actual file/upload inputs (none today, but cheap
+      // future-proofing). Block everything else.
+      if (tag === "input" && t.type === "file") return;
+      e.preventDefault();
+    };
+    document.addEventListener("dragstart", onDragStart, { capture: true });
+    return () => {
+      document.removeEventListener("contextmenu", onContext, { capture: true });
+      document.removeEventListener("dragstart", onDragStart, { capture: true });
+    };
   }, []);
 
   return (
