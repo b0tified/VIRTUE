@@ -51,7 +51,7 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     // light-spot the room is casting on the floor, blending into the
     // meteor / arcade background.
     const platform = new THREE.Mesh(
-      new THREE.CircleGeometry(1.40, 64),
+      new THREE.CircleGeometry(0.85, 64),
       new THREE.MeshBasicMaterial({
         color: 0xFF7A2A,
         transparent: true,
@@ -65,7 +65,7 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     // Inner hot-spot — slightly brighter core that fades out, so the
     // figure has a clear "light pool" focal point without a hard rim.
     const platformGlow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.95, 48),
+      new THREE.CircleGeometry(0.55, 48),
       new THREE.MeshBasicMaterial({
         color: 0xFFAA5C,
         transparent: true,
@@ -79,7 +79,7 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     // Faint outer feather ring — a subtle warm glow on the perimeter
     // that fades into the background instead of a sharp gold rim.
     const platformFeather = new THREE.Mesh(
-      new THREE.RingGeometry(1.30, 1.55, 64),
+      new THREE.RingGeometry(0.78, 0.96, 64),
       new THREE.MeshBasicMaterial({
         color: 0xFF6420,
         transparent: true,
