@@ -468,7 +468,7 @@ export default function Lobby() {
       </header>
 
       <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-12 sm:-mt-20 lg:mt-2">
-        <div className="lg:col-span-7 -mt-4 lg:mt-6">
+        <div className="lg:col-span-4 -mt-4 lg:mt-6">
           {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
           <h1
             className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
@@ -579,23 +579,20 @@ export default function Lobby() {
               same stats are still surfaced inside the Profile page. */}
         </div>
 
+        {/* Middle column — 3D character display in the previously-empty
+            gutter between the queue buttons (left) and daily challenges
+            (right). Sits flush against the buttons so the lobby reads
+            "you · your loadout · today's objectives". */}
+        <div className="lg:col-span-3 relative hidden lg:flex flex-col items-stretch pt-6 xl:pt-8">
+          <LobbyCharacterDisplay
+            skinId={user?.selected_skin || "default"}
+            username={user?.username || ""}
+            onClick={() => setShowShop(true)}
+          />
+        </div>
+
         <div className="lg:col-span-5 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
-          {/* Daily challenges now occupy the top slot of the right column
-              (where the character used to live). Players see today's
-              objectives the moment they land in the lobby, before the
-              cosmetic flex. */}
           <LobbyDailyPanel />
-          {/* Character display moved below the challenges and pushed
-              leftward (negative left margin) so it visually sits closer
-              to the lobby's primary "queue up" column without colliding
-              with it on narrower viewports. */}
-          <div className="-ml-10 xl:-ml-16">
-            <LobbyCharacterDisplay
-              skinId={user?.selected_skin || "default"}
-              username={user?.username || ""}
-              onClick={() => setShowShop(true)}
-            />
-          </div>
         </div>
       </main>
 
