@@ -229,6 +229,13 @@ async def maybe_reset_season() -> dict:
         # ever touching the live users collection.
         await _archive_season_top_100(int(doc.get("season_number", 1)), start, now)
         # Snapshot current rank into peak_rank_points (only if higher), then reset.
+        # Pass progression (`season_xp` + `claimed_season_tiers`) is ALSO
+        # wiped here so every player starts the new season at Pass Tier 0
+        # with no claimed rewards — without this the pass UI would keep
+        # showing last-season's level + greyed-out "already claimed"
+        # buttons in the new season. Skins that were already granted
+        # stay in `owned_skins` (append-only) so players keep cosmetics
+        # they earned last season.
         await db.users.update_many(
             {"rank_points": {"$exists": True}},
             [{
@@ -241,6 +248,8 @@ async def maybe_reset_season() -> dict:
                     },
                     "rank_points": 0,
                     "placement_matches_played": 0,
+                    "season_xp": 0,
+                    "claimed_season_tiers": [],
                 }
             }],
         )
@@ -5401,6 +5410,36 @@ class BanUserIn(BaseModel):
     duration_hours: Optional[int] = Field(default=None, ge=1, le=24 * 365)  # None = permanent
     reason: str = Field(min_length=2, max_length=500)
     report_id: Optional[str] = None  # if set, close that report at the same time
+
+
+@api.post("/admin/season/reset_pass")
+async def admin_reset_pass(user: dict = Depends(get_current_user)):
+    """Admin-only — wipe every player's pass progression NOW without
+    bumping the season number. Useful when the live season has visibly
+    "drifted" and we want to put everyone back at Tier 0 immediately.
+
+    Resets: `season_xp` → 0, `claimed_season_tiers` → []. Keeps:
+    `rank_points`, `peak_rank_points`, `owned_skins` (cosmetics already
+    granted stay in the inventory).
+
+    The normal full season rollover (which also zeros RP + archives the
+    leaderboard + bumps season_number) still runs automatically when
+    the season timer hits zero — this endpoint is the manual "soft
+    reset" for the pass alone.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    result = await db.users.update_many(
+        {},
+        {"$set": {"season_xp": 0, "claimed_season_tiers": []}},
+    )
+    logger.info("Admin %s wiped pass progression for %d users",
+                user.get("username"), result.modified_count)
+    return {
+        "ok": True,
+        "modified": int(result.modified_count or 0),
+        "matched": int(result.matched_count or 0),
+    }
 
 
 @api.post("/admin/users/{username}/ban")
