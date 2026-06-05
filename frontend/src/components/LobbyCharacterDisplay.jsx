@@ -44,25 +44,33 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     scene.add(rim);
     scene.add(new THREE.AmbientLight(0xffffff, 0.32));
 
-    // Floor halo — a soft white ring on a dark disc so the figure looks
-    // like it's standing on a small stage instead of floating.
-    const halo = new THREE.Mesh(
-      new THREE.RingGeometry(0.95, 1.30, 64),
+    // Stage platform — a single solid disc (no hole / no concentric
+    // ring). The previous design had a halo ring on top of a darker
+    // disc, but the cutout in the middle left a visible gap when the
+    // figure's bob dipped below the rim. One whole platform reads as a
+    // proper showcase plinth and the figure always feels "on" it.
+    const platformGeo = new THREE.CircleGeometry(1.40, 64);
+    const platform = new THREE.Mesh(
+      platformGeo,
       new THREE.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0.32,
-        side: THREE.DoubleSide,
+        color: 0xFFE680,             // warm pow-yellow so the figure pops
+        transparent: true,
+        opacity: 0.55,
       }),
     );
-    halo.rotation.x = -Math.PI / 2;
-    halo.position.y = -0.02;
-    scene.add(halo);
-    const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(1.55, 48),
-      new THREE.MeshBasicMaterial({ color: 0x0A0A14, transparent: true, opacity: 0.55 }),
+    platform.rotation.x = -Math.PI / 2;
+    platform.position.y = 0;
+    scene.add(platform);
+    // Stronger edge accent — a thin opaque rim around the platform so
+    // the disc reads as a real object (3D thickness implied) instead of
+    // a flat painted circle.
+    const platformRim = new THREE.Mesh(
+      new THREE.RingGeometry(1.38, 1.46, 64),
+      new THREE.MeshBasicMaterial({ color: 0xFFD700, side: THREE.DoubleSide }),
     );
-    disc.rotation.x = -Math.PI / 2;
-    disc.position.y = -0.05;
-    scene.add(disc);
+    platformRim.rotation.x = -Math.PI / 2;
+    platformRim.position.y = 0.001;
+    scene.add(platformRim);
 
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 50);
     camera.position.set(0, 1.55, 3.9);
@@ -80,6 +88,23 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     const built = GameEngine.buildHumanoidForPreview(skin);
     const figure = built.group;
     scene.add(figure);
+    // Cache initial limb rotations so the idle animation modulates around
+    // their resting pose rather than overwriting it. Built object exposes
+    // leftArm / rightArm / leftLeg / rightLeg from the humanoid factory.
+    const rest = {
+      lArmX: built.leftArm?.rotation.x ?? 0,
+      rArmX: built.rightArm?.rotation.x ?? 0,
+      lArmZ: built.leftArm?.rotation.z ?? 0,
+      rArmZ: built.rightArm?.rotation.z ?? 0,
+      lLegX: built.leftLeg?.rotation.x ?? 0,
+      rLegX: built.rightLeg?.rotation.x ?? 0,
+    };
+    // Next head-look re-schedule timer — every 4-7 seconds the figure
+    // glances slightly off-axis (set in the loop). Adds personality so
+    // the idle pose doesn't feel like a static turntable.
+    let nextGlanceAt = 3.5 + Math.random() * 3;
+    let glanceTarget = 0;        // current yaw offset target (rad)
+    let glanceCurrent = 0;        // smoothed value approaching the target
 
     let raf;
     let prev = performance.now();
@@ -89,12 +114,40 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
       auraPhase += dt;
-      // Slow turntable + subtle idle bob — figure breathes once every
-      // ~3 seconds. Enough motion to feel alive without distracting from
-      // the lobby's primary actions.
+      // Slow turntable + idle bob. Bob is always positive (0..0.06) so
+      // the figure never dips into the platform disc anymore — sells the
+      // "hovering" idle feel without the foot-clip bug.
       yaw += dt * 0.35;
-      figure.rotation.y = yaw;
-      figure.position.y = Math.sin(auraPhase * 2.1) * 0.04;
+      figure.rotation.y = yaw + glanceCurrent;
+      figure.position.y = (0.5 + 0.5 * Math.sin(auraPhase * 2.1)) * 0.06;
+
+      // ── Idle limb animation ──────────────────────────────────────────
+      // Breathing arm sway (low-amplitude sine on the X axis) so the
+      // arms aren't frozen at their resting angles. Left and right are
+      // counter-phased so it reads as a gentle alternating sway, not a
+      // robotic mirror motion.
+      if (built.leftArm) {
+        built.leftArm.rotation.x  = rest.lArmX + Math.sin(auraPhase * 1.6) * 0.10;
+        built.leftArm.rotation.z  = rest.lArmZ + Math.sin(auraPhase * 1.1) * 0.04;
+      }
+      if (built.rightArm) {
+        built.rightArm.rotation.x = rest.rArmX + Math.sin(auraPhase * 1.6 + Math.PI) * 0.10;
+        built.rightArm.rotation.z = rest.rArmZ - Math.sin(auraPhase * 1.1) * 0.04;
+      }
+      // Subtle weight-shift on the legs — alternating bend with a tiny
+      // amplitude so the figure looks like it's standing relaxed, not
+      // rigidly at attention.
+      if (built.leftLeg)  built.leftLeg.rotation.x  = rest.lLegX + Math.sin(auraPhase * 0.9) * 0.04;
+      if (built.rightLeg) built.rightLeg.rotation.x = rest.rLegX - Math.sin(auraPhase * 0.9) * 0.04;
+      // Occasional "glance" — every ~5s pick a new tiny yaw offset (±0.15
+      // rad ≈ ±9°). Smoothed via exponential ease so the head turn
+      // reads as deliberate, not jittery. The offset is applied to the
+      // whole figure rotation above so the head + body track together.
+      if (auraPhase >= nextGlanceAt) {
+        glanceTarget = (Math.random() - 0.5) * 0.30;
+        nextGlanceAt = auraPhase + 4 + Math.random() * 3;
+      }
+      glanceCurrent += (glanceTarget - glanceCurrent) * Math.min(1, dt * 2.4);
 
       // Replay astronaut-specific animations so the LED / visor / pilot
       // thrusters all stay alive on the lobby display.
