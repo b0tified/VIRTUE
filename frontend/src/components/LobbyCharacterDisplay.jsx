@@ -44,33 +44,53 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     scene.add(rim);
     scene.add(new THREE.AmbientLight(0xffffff, 0.32));
 
-    // Stage platform — a single solid disc (no hole / no concentric
-    // ring). The previous design had a halo ring on top of a darker
-    // disc, but the cutout in the middle left a visible gap when the
-    // figure's bob dipped below the rim. One whole platform reads as a
-    // proper showcase plinth and the figure always feels "on" it.
-    const platformGeo = new THREE.CircleGeometry(1.40, 64);
+    // Stage platform — semi-transparent ember disc that picks up the
+    // lobby backdrop instead of fighting it. The previous bright pow-
+    // yellow plinth looked like a UI element pasted onto the scene;
+    // this softer warm-orange wash with a feathered edge reads like a
+    // light-spot the room is casting on the floor, blending into the
+    // meteor / arcade background.
     const platform = new THREE.Mesh(
-      platformGeo,
+      new THREE.CircleGeometry(1.40, 64),
       new THREE.MeshBasicMaterial({
-        color: 0xFFE680,             // warm pow-yellow so the figure pops
+        color: 0xFF7A2A,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.18,
+        depthWrite: false,
       }),
     );
     platform.rotation.x = -Math.PI / 2;
     platform.position.y = 0;
     scene.add(platform);
-    // Stronger edge accent — a thin opaque rim around the platform so
-    // the disc reads as a real object (3D thickness implied) instead of
-    // a flat painted circle.
-    const platformRim = new THREE.Mesh(
-      new THREE.RingGeometry(1.38, 1.46, 64),
-      new THREE.MeshBasicMaterial({ color: 0xFFD700, side: THREE.DoubleSide }),
+    // Inner hot-spot — slightly brighter core that fades out, so the
+    // figure has a clear "light pool" focal point without a hard rim.
+    const platformGlow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.95, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xFFAA5C,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+      }),
     );
-    platformRim.rotation.x = -Math.PI / 2;
-    platformRim.position.y = 0.001;
-    scene.add(platformRim);
+    platformGlow.rotation.x = -Math.PI / 2;
+    platformGlow.position.y = 0.001;
+    scene.add(platformGlow);
+    // Faint outer feather ring — a subtle warm glow on the perimeter
+    // that fades into the background instead of a sharp gold rim.
+    const platformFeather = new THREE.Mesh(
+      new THREE.RingGeometry(1.30, 1.55, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xFF6420,
+        transparent: true,
+        opacity: 0.10,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    platformFeather.rotation.x = -Math.PI / 2;
+    platformFeather.position.y = -0.001;
+    scene.add(platformFeather);
 
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 50);
     camera.position.set(0, 1.55, 3.9);
