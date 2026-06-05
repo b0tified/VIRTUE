@@ -580,16 +580,22 @@ export default function Lobby() {
         </div>
 
         <div className="lg:col-span-5 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
-          {/* Big 3D character portrait of the player's equipped skin —
-              Fortnite-style. Clicking opens the shop so swapping skins
-              feels like the obvious next action. Hidden on mobile (the
-              canvas eats too much screen real-estate on small viewports). */}
-          <LobbyCharacterDisplay
-            skinId={user?.selected_skin || "default"}
-            username={user?.username || ""}
-            onClick={() => setShowShop(true)}
-          />
+          {/* Daily challenges now occupy the top slot of the right column
+              (where the character used to live). Players see today's
+              objectives the moment they land in the lobby, before the
+              cosmetic flex. */}
           <LobbyDailyPanel />
+          {/* Character display moved below the challenges and pushed
+              leftward (negative left margin) so it visually sits closer
+              to the lobby's primary "queue up" column without colliding
+              with it on narrower viewports. */}
+          <div className="-ml-10 xl:-ml-16">
+            <LobbyCharacterDisplay
+              skinId={user?.selected_skin || "default"}
+              username={user?.username || ""}
+              onClick={() => setShowShop(true)}
+            />
+          </div>
         </div>
       </main>
 
