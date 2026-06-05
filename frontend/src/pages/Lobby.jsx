@@ -11,6 +11,7 @@ import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
+import LobbyCharacterDisplay from "@/components/LobbyCharacterDisplay";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
@@ -578,7 +579,16 @@ export default function Lobby() {
               same stats are still surfaced inside the Profile page. */}
         </div>
 
-        <div className="lg:col-span-5 relative hidden lg:flex items-start justify-center pt-16 xl:pt-20">
+        <div className="lg:col-span-5 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
+          {/* Big 3D character portrait of the player's equipped skin —
+              Fortnite-style. Clicking opens the shop so swapping skins
+              feels like the obvious next action. Hidden on mobile (the
+              canvas eats too much screen real-estate on small viewports). */}
+          <LobbyCharacterDisplay
+            skinId={user?.selected_skin || "default"}
+            username={user?.username || ""}
+            onClick={() => setShowShop(true)}
+          />
           <LobbyDailyPanel />
         </div>
       </main>
