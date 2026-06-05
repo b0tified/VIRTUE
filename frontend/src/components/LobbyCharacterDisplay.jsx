@@ -109,16 +109,17 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     let raf;
     let prev = performance.now();
     let auraPhase = Math.random() * 6.28;
-    let yaw = 0;
     const tick = (now) => {
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
       auraPhase += dt;
-      // Slow turntable + idle bob. Bob is always positive (0..0.06) so
-      // the figure never dips into the platform disc anymore — sells the
-      // "hovering" idle feel without the foot-clip bug.
-      yaw += dt * 0.35;
-      figure.rotation.y = yaw + glanceCurrent;
+      // No turntable rotation anymore — the character now stands facing
+      // forward (gentle glance offset only) so the player sees their
+      // skin's front detail every time they're in the lobby. Idle
+      // animations (arm sway, weight shift, breathing bob, occasional
+      // head glance) carry the "alive" feel without spinning the figure
+      // away from camera.
+      figure.rotation.y = glanceCurrent;
       figure.position.y = (0.5 + 0.5 * Math.sin(auraPhase * 2.1)) * 0.06;
 
       // ── Idle limb animation ──────────────────────────────────────────
