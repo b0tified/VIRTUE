@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -241,6 +241,14 @@ export default function AdminReports() {
       {/* Redeem code creator — admin-only one-time-per-user promo codes */}
       <div className="max-w-6xl mx-auto mt-6">
         <RedeemCodesCard setToast={setToast} />
+      </div>
+
+      {/* Season-pass nuke button — wipes everyone's pass progression
+          (season_xp + claimed_season_tiers) without touching RP or
+          cosmetics. Used when the live pass needs to be reset early
+          without waiting for the season countdown. */}
+      <div className="max-w-6xl mx-auto mt-6">
+        <ResetPassCard setToast={setToast} />
       </div>
 
       {actionTarget && (
@@ -788,6 +796,122 @@ function StatusBadge({ status, testid }) {
     >
       {s.label}
     </span>
+  );
+}
+
+/* ResetPassCard — danger-zone button on the admin dashboard that fires
+   POST /api/admin/season/reset_pass. Wipes every player's pass
+   progression (season_xp + claimed_season_tiers) to 0 / [] without
+   touching ranked points or owned cosmetics. Two-step confirmation
+   (click button → typed "RESET" gate) so it can't fire on a stray
+   click — the alternative is 310+ players walking into a fresh pass
+   they weren't expecting. */
+function ResetPassCard({ setToast }) {
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [lastResult, setLastResult] = useState(null); // { modified, matched }
+
+  const onFire = async () => {
+    if (confirmText.trim().toUpperCase() !== "RESET") {
+      setToast?.({ kind: "error", msg: 'Type RESET to confirm.' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/season/reset_pass");
+      setLastResult({
+        modified: Number(data?.modified || 0),
+        matched:  Number(data?.matched || 0),
+      });
+      setToast?.({ kind: "ok", msg: `Reset pass for ${data?.modified ?? 0} players.` });
+      setOpen(false);
+      setConfirmText("");
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e.message || "Reset failed.";
+      setToast?.({ kind: "error", msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card-pow p-0 overflow-hidden" data-testid="admin-reset-pass-card">
+      <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+        <RotateCcw size={18} strokeWidth={3} className="text-[#E62429]" />
+        <span className="font-anton uppercase tracking-widest">Reset Season Pass</span>
+        <span className="opacity-60 text-xs ml-auto">Danger zone — wipes all progression</span>
+      </div>
+      <div className="p-5 space-y-4 bg-white">
+        <p className="text-sm leading-relaxed">
+          Wipes every player's pass <strong>level + XP + claimed tiers</strong> back to
+          zero. Ranked Points and owned cosmetics are <strong>not</strong> affected.
+          Fires immediately — there's no undo. Normally the pass resets
+          automatically when the season countdown ends; use this only if
+          the live pass needs to be reset early.
+        </p>
+        {lastResult && (
+          <div
+            className="border-pow-thin bg-[#06A35F] text-white px-3 py-2 text-sm font-anton uppercase flex items-center gap-2"
+            data-testid="reset-pass-last-result"
+          >
+            <CheckCircle size={14} strokeWidth={3} />
+            Last reset: {lastResult.modified} player{lastResult.modified === 1 ? "" : "s"} updated
+            ({lastResult.matched} matched)
+          </div>
+        )}
+        {!open ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="btn-pow bg-[#E62429] text-white flex items-center gap-2"
+            data-testid="reset-pass-open"
+          >
+            <RotateCcw size={14} strokeWidth={3} />
+            Reset Pass for Everyone
+          </button>
+        ) : (
+          <div className="border-pow-thin bg-[#FFF4D6] p-3 space-y-3" data-testid="reset-pass-confirm-pane">
+            <div className="flex items-start gap-2 text-sm">
+              <AlertTriangle size={18} strokeWidth={3} className="text-[#E62429] mt-0.5 shrink-0" />
+              <div>
+                Type <strong>RESET</strong> below to confirm. This wipes every
+                live player's pass progression and cannot be undone.
+              </div>
+            </div>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="Type RESET to confirm"
+              className="border-pow-thin px-3 py-2 w-full font-mono uppercase text-sm bg-white"
+              data-testid="reset-pass-confirm-input"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onFire}
+                disabled={busy || confirmText.trim().toUpperCase() !== "RESET"}
+                className="btn-pow bg-[#E62429] text-white flex items-center gap-2 disabled:opacity-40"
+                data-testid="reset-pass-confirm"
+              >
+                <RotateCcw size={14} strokeWidth={3} />
+                {busy ? "Resetting..." : "Reset Now"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setConfirmText(""); }}
+                className="btn-pow bg-white text-black"
+                data-testid="reset-pass-cancel"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
