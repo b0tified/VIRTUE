@@ -503,6 +503,18 @@ SKINS_CATALOG: List[dict] = [
      "hair": 0x6b3a1a, "bikini": True,
      "aura": 0xff80c0, "aura_mode": "spin"},
 
+    # ─── Astronaut — detailed shop skin with custom render hooks ────────
+    # Triggered client-side by `id === "astronaut"` in `_buildHumanoid`:
+    # adds a life-support backpack, twin animated thruster cones, a
+    # mission patch, pulsing status LED, antenna, and a sweeping visor
+    # reflection. Server-side just records the price + rarity so the
+    # shop "Owned / Buy" gate and skin grants work like any other entry.
+    {"id": "astronaut", "name": "Lunar Pioneer", "price": 4200, "rarity": "legendary", "obtain": "shop",
+     "body": 0xF5F5F5, "leg": 0xEAEAEA, "head": 0xF2C08A, "accent": 0xD0D0D0,
+     "helmet": 0xF5F5F5, "visor": 0x0A1A38, "shoulder": 0xD8D8D8, "stripe": 0xC1322B,
+     "belt": 0x6A6A6A, "cape": None,
+     "aura": 0xBFE8FF, "aura_mode": "pulse"},
+
     # ─── Legacy pass skins — retained for existing owners ───────────────
     # These were the Season 1 pass rewards (tiers 10/20/30) until the
     # meteor lineup replaced them in 2026-06. The catalog keeps them so

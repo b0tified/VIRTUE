@@ -2890,6 +2890,126 @@ export class GameEngine {
     const rightLeg = buildLeg(1);
     group.add(leftLeg); group.add(rightLeg);
 
+    // ----- Astronaut-only extras (skin.id === "astronaut") -----
+    // Detailed life-support backpack with twin thruster nozzles, a USA-
+    // style chest patch + shoulder mission flag, animated breathing
+    // helmet visor reflection, and a tether wire trailing the suit.
+    // These references are stashed in `extras` and updated per-frame in
+    // the main render loop (see the "astro" aura_mode branch).
+    let astro = null;
+    if (skin.id === "astronaut") {
+      astro = { meshes: [] };
+      // Life-support backpack — big white box on the upper back with
+      // colored detail panels (oxygen tank, control unit, antenna).
+      const pack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.78, 0.95, 0.32),
+        new THREE.MeshLambertMaterial({ color: 0xF5F5F5 }),
+      );
+      pack.position.set(0, 1.18, -0.34);
+      bodyMeshes.push(pack); group.add(pack); astro.meshes.push(pack);
+      // Oxygen tank stripe (warm red) running vertically down the right
+      // half of the pack — calls out as NASA mission gear.
+      const tankStripe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.10, 0.78, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0xC1322B }),
+      );
+      tankStripe.position.set(0.22, 1.18, -0.16);
+      bodyMeshes.push(tankStripe); group.add(tankStripe); astro.meshes.push(tankStripe);
+      // Control unit panel (small dark square with a green LED) on the
+      // left side. The LED material is stored on `astro` so its emissive
+      // color can pulse over time (life-support heartbeat).
+      const ctrl = new THREE.Mesh(
+        new THREE.BoxGeometry(0.22, 0.26, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0x0A0A0A }),
+      );
+      ctrl.position.set(-0.18, 1.30, -0.16);
+      bodyMeshes.push(ctrl); group.add(ctrl); astro.meshes.push(ctrl);
+      const ledMat = new THREE.MeshBasicMaterial({ color: 0x33FF66 });
+      const led = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), ledMat);
+      led.position.set(-0.18, 1.36, -0.14);
+      group.add(led); astro.meshes.push(led);
+      astro.led = ledMat;
+      // Antenna on top-right of the pack — thin cylinder + tip ball.
+      const antenna = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 0.32, 6),
+        new THREE.MeshBasicMaterial({ color: 0x2A2A2A }),
+      );
+      antenna.position.set(0.28, 1.78, -0.30);
+      group.add(antenna); astro.meshes.push(antenna);
+      const antennaTip = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 10, 8),
+        new THREE.MeshBasicMaterial({ color: 0xC1322B }),
+      );
+      antennaTip.position.set(0.28, 1.94, -0.30);
+      group.add(antennaTip); astro.meshes.push(antennaTip);
+      // Twin thruster nozzles below the backpack — cones pointing down.
+      // Inner flame mesh sits inside each cone and animates per-frame.
+      const buildThruster = (xSign) => {
+        const nozzle = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.10, 0.06, 0.18, 12),
+          new THREE.MeshLambertMaterial({ color: 0x2A2A2A }),
+        );
+        nozzle.position.set(0.22 * xSign, 0.66, -0.34);
+        bodyMeshes.push(nozzle); group.add(nozzle); astro.meshes.push(nozzle);
+        // Inner glowing flame cone (additive blend so it reads as light).
+        const flame = new THREE.Mesh(
+          new THREE.ConeGeometry(0.075, 0.42, 12, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: 0xFF7A2A,
+            transparent: true,
+            opacity: 0.85,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          }),
+        );
+        // Cone points up by default — rotate to point down + offset so it
+        // emerges from the nozzle.
+        flame.rotation.x = Math.PI;
+        flame.position.set(0.22 * xSign, 0.42, -0.34);
+        group.add(flame);
+        astro.meshes.push(flame);
+        return flame;
+      };
+      astro.flameL = buildThruster(-1);
+      astro.flameR = buildThruster(+1);
+      // Mission patch on the chest — small NASA-style red+blue chevron.
+      const patchBg = new THREE.Mesh(
+        new THREE.BoxGeometry(0.20, 0.16, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0x1A2C5C }),
+      );
+      patchBg.position.set(0.18, 1.18, 0.21);
+      bodyMeshes.push(patchBg); group.add(patchBg); astro.meshes.push(patchBg);
+      const patchAccent = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.04, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0xC1322B }),
+      );
+      patchAccent.position.set(0.18, 1.13, 0.215);
+      bodyMeshes.push(patchAccent); group.add(patchAccent); astro.meshes.push(patchAccent);
+      // Suit utility belt — wider than default, more rugged.
+      const beltMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.62, 0.10, 0.46),
+        new THREE.MeshLambertMaterial({ color: 0x6A6A6A }),
+      );
+      beltMesh.position.set(0, 0.86, 0);
+      bodyMeshes.push(beltMesh); group.add(beltMesh); astro.meshes.push(beltMesh);
+      // Helmet visor "shine" — extra small white box overlaid on the
+      // visor. Its opacity sweeps with auraPhase so the helmet looks
+      // like it's catching ambient star-light.
+      const shine = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.06, 0.02),
+        new THREE.MeshBasicMaterial({
+          color: 0xFFFFFF,
+          transparent: true,
+          opacity: 0.4,
+          depthWrite: false,
+        }),
+      );
+      // Position over the visor band on the front of the head sphere.
+      shine.position.set(-0.10, 1.62, 0.34);
+      group.add(shine); astro.meshes.push(shine);
+      astro.shine = shine;
+    }
+
     // ----- Aura (skin-specific) -----
     // Two stacked rings at the player's feet + a soft halo sphere. The
     // per-frame update animates opacity / rotation based on aura_mode.
@@ -2940,7 +3060,7 @@ export class GameEngine {
       group.add(aura);
     }
 
-    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura };
+    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura, astro };
   }
 
   _addRemotePlayer(state) {
@@ -2958,7 +3078,7 @@ export class GameEngine {
     // friend-vs-foe reads at a glance even mid-firefight. Local player and
     // FFA mode keep their cosmetic skin untouched.
     const skin = this._applyTeamSkin(state, baseSkin);
-    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura } = this._buildHumanoid(skin);
+    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura, astro } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     this.scene.add(group);
     const label = this._makeLabel(state.username, state.is_bot, this._relationFor(state));
@@ -3015,6 +3135,7 @@ export class GameEngine {
       invulnRing,
       invulnGlow,
       aura,
+      astro,
       auraPhase: Math.random() * 6.28,
     };
     this.players.set(state.id, entry);
@@ -4200,6 +4321,50 @@ export class GameEngine {
         entry.rightLeg.rotation.x *= 0.85;
         entry.mesh.position.y *= 0.85;
       }
+
+      // Astronaut-only extras animation — life-support LED heartbeat,
+      // visor reflection sweep, and thruster flame flicker driven by the
+      // same auraPhase counter the rest of the cosmetics use. Hidden
+      // during death-out so the dramatic K.O. read isn't ruined by
+      // still-thrusting boots.
+      if (entry.astro) {
+        const alive = entry.deathT < 0.05 && entry.alive !== false;
+        for (const m of entry.astro.meshes) m.visible = alive;
+        if (alive) {
+          entry.auraPhase = (entry.auraPhase || 0) + dt;
+          const ph = entry.auraPhase;
+          // LED: slow steady heartbeat (1Hz). Sharper "blink" once per
+          // beat so the panel reads as actually monitoring something.
+          if (entry.astro.led) {
+            const beat = Math.max(0, Math.sin(ph * Math.PI));
+            entry.astro.led.color.setRGB(0.05 + 0.95 * beat, 0.95, 0.25 + 0.15 * beat);
+          }
+          // Visor shine: drift the shine highlight horizontally across
+          // the visor band so the helmet always looks like it's catching
+          // moving light. Opacity also breathes for extra liveliness.
+          if (entry.astro.shine) {
+            entry.astro.shine.position.x = -0.10 + 0.15 * Math.sin(ph * 1.2);
+            entry.astro.shine.material.opacity = 0.30 + 0.25 * (0.5 + 0.5 * Math.sin(ph * 2.4));
+          }
+          // Thruster flames: gentle idle flicker (no movement) + a quick
+          // ramp-up when the player is moving fast — sells "jetpack
+          // assist" without overdoing it. Flames scale on Y so they
+          // stretch downward as power increases.
+          const speed = Math.max(0, entry.movingSpeed || 0);
+          const intensity = Math.min(1.0, speed * 0.18); // 0..1 over ~5.5 m/s
+          const flicker = 0.85 + 0.15 * Math.sin(ph * 18); // fast jitter
+          const baseScale = 0.55 + intensity * 1.1;
+          if (entry.astro.flameL) {
+            entry.astro.flameL.scale.set(1.0, baseScale * flicker, 1.0);
+            entry.astro.flameL.material.opacity = (0.55 + intensity * 0.35) * flicker;
+          }
+          if (entry.astro.flameR) {
+            entry.astro.flameR.scale.set(1.0, baseScale * (1.95 - flicker), 1.0);
+            entry.astro.flameR.material.opacity = (0.55 + intensity * 0.35) * (1.95 - flicker);
+          }
+        }
+      }
+
       // Aura animation — drives the per-skin floor ring + halo. Hidden
       // while dying so K.O. doesn't carry the glow.
       if (entry.aura) {

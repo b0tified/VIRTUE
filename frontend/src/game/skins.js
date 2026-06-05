@@ -111,6 +111,18 @@ export const SKINS = [
     hair: 0x6b3a1a, bikini: true,
     aura: 0xff80c0, aura_mode: "spin" },
 
+  // Astronaut — detailed mission-suit skin with custom render hooks
+  // in `engine.js` (life-support backpack, twin thrusters with animated
+  // flame cones, mission patch, animated visor reflection, pulsing
+  // status LED, antenna). Triggered by id === "astronaut" in
+  // `_buildHumanoid`. Aura is a subtle blue-white "vapor halo" because
+  // the spectacle lives in the body extras, not the floor ring.
+  { id: "astronaut", name: "Lunar Pioneer", price: 4200, rarity: "legendary", obtain: "shop",
+    body: 0xF5F5F5, leg: 0xEAEAEA, head: 0xF2C08A, accent: 0xD0D0D0,
+    helmet: 0xF5F5F5, visor: 0x0A1A38, shoulder: 0xD8D8D8, stripe: 0xC1322B,
+    belt: 0x6A6A6A, cape: null,
+    aura: 0xBFE8FF, aura_mode: "pulse" },
+
   // Legacy pass skins — historically rewarded by tiers 10/20/30. The
   // pass was swapped to the meteor lineup (Stardust/Crater/Meteor) so
   // these can no longer be earned, but players who already unlocked
