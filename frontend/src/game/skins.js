@@ -111,39 +111,43 @@ export const SKINS = [
     hair: 0x6b3a1a, bikini: true,
     aura: 0xff80c0, aura_mode: "spin" },
 
-  // Pass-only — appear in shop only after they're owned (equip-only there).
-  { id: "solar",    name: "Solar Inferno",  price: 0,    rarity: "epic",      obtain: "pass_tier_10",
+  // Legacy pass skins — historically rewarded by tiers 10/20/30. The
+  // pass was swapped to the meteor lineup (Stardust/Crater/Meteor) so
+  // these can no longer be earned, but players who already unlocked
+  // them keep them in their inventory (skin grants are append-only).
+  // "pass_tier_X_legacy" tells the catalog UI to render them as a
+  // historical badge rather than a "current pass reward" tag.
+  { id: "solar",    name: "Solar Inferno",  price: 0,    rarity: "epic",      obtain: "pass_tier_10_legacy",
     body: 0xff5500, leg: 0x6b1a00, head: 0xf2c08a, accent: 0xffd700,
     helmet: 0x6b1a00, visor: 0xffd700, shoulder: 0xff8a00, stripe: 0xffd700, belt: 0x3a0a00, cape: 0xff8a00,
     aura: 0xff8a00, aura_mode: "pulse" },
 
-  { id: "cyber",    name: "Cyber Wraith",   price: 0,    rarity: "epic",      obtain: "pass_tier_20",
+  { id: "cyber",    name: "Cyber Wraith",   price: 0,    rarity: "epic",      obtain: "pass_tier_20_legacy",
     body: 0x1a1a3a, leg: 0x05051a, head: 0xbac4d6, accent: 0x00ffaa,
     helmet: 0x05051a, visor: 0x00ffaa, shoulder: 0x00ffaa, stripe: 0x00ffaa, belt: 0x0a0a2a, cape: 0x00ffaa,
     aura: 0x00ffaa, aura_mode: "flicker" },
 
-  { id: "quantum",  name: "Quantum Reaver", price: 0,    rarity: "legendary", obtain: "pass_tier_30",
+  { id: "quantum",  name: "Quantum Reaver", price: 0,    rarity: "legendary", obtain: "pass_tier_30_legacy",
     body: 0x4b0082, leg: 0x1a0033, head: 0xc8a8ff, accent: 0xffffff,
     helmet: 0x1a0033, visor: 0xffffff, shoulder: 0xff00ff, stripe: 0xffffff, belt: 0x4b0082, cape: 0xff00ff,
     aura: 0xff00ff, aura_mode: "spin" },
 
-  /* ── Season 2 pass exclusives — METEOR / SPACE theme ───────────────
-     These ship in the catalog from day one so the data shape stays
-     identical (the pass tab can preview them). Backend's `_season_tiers()`
-     only references them once season_number >= 2 — meaning the swap to
-     the new pass happens automatically the moment the current season
-     timer hits zero. No deploy required at the rollover. */
-  { id: "stardust", name: "Stardust Drifter", price: 0,   rarity: "epic",      obtain: "pass_tier_10_s2",
+  /* ── ACTIVE pass — METEOR / SPACE theme ─────────────────────────────
+     Promoted from "Season 2 preview" to the LIVE pass reward track.
+     Backend's `_season_tiers()` references these at tiers 10/20/30 for
+     every active season; the legacy Solar/Cyber/Quantum trio above is
+     retained only so existing owners' inventories still render. */
+  { id: "stardust", name: "Stardust Drifter", price: 0,   rarity: "epic",      obtain: "pass_tier_10",
     body: 0x1a1538, leg: 0x0b0a22, head: 0xb0a8d8, accent: 0xc8d4ff,
     helmet: 0x0b0a22, visor: 0x88e0ff, shoulder: 0x4a3d7a, stripe: 0x88e0ff, belt: 0x1a1538, cape: 0x4a3d7a,
     aura: 0x88e0ff, aura_mode: "flicker" },
 
-  { id: "crater",   name: "Crater Forged",   price: 0,   rarity: "epic",      obtain: "pass_tier_20_s2",
+  { id: "crater",   name: "Crater Forged",   price: 0,   rarity: "epic",      obtain: "pass_tier_20",
     body: 0x2a1b14, leg: 0x110a06, head: 0xa07a5a, accent: 0xff6420,
     helmet: 0x110a06, visor: 0xff8a40, shoulder: 0x5a2a14, stripe: 0xff6420, belt: 0x110a06, cape: 0xff4a10,
     aura: 0xff5a1a, aura_mode: "pulse" },
 
-  { id: "meteor",   name: "Meteor Ascendant", price: 0,  rarity: "legendary", obtain: "pass_tier_30_s2",
+  { id: "meteor",   name: "Meteor Ascendant", price: 0,  rarity: "legendary", obtain: "pass_tier_30",
     body: 0x2a1058, leg: 0x10042a, head: 0xffe0a8, accent: 0xffd24a,
     helmet: 0x10042a, visor: 0xffd24a, shoulder: 0xffaa20, stripe: 0xffd24a, belt: 0x4a1a78, cape: 0xffd24a,
     aura: 0xffd24a, aura_mode: "spin" },

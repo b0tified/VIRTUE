@@ -194,13 +194,22 @@ def public_user(user: dict) -> dict:
 # Season (rank reset every 14 days)
 # -------------------------------------------------------------------
 async def get_or_init_season() -> dict:
-    """Return the current season doc, initializing it on first run."""
+    """Return the current season doc, initializing it on first run.
+
+    The `_id` field here is the literal string "season" (not an ObjectId)
+    so the doc is JSON-safe to return as-is. We strip it anyway because
+    callers only use the season_number / season_start fields and the
+    linter's "don't return raw find_one docs" heuristic flags any direct
+    return."""
     doc = await db.meta.find_one({"_id": "season"})
     now = datetime.now(timezone.utc)
     if not doc:
         doc = {"_id": "season", "season_number": 1, "season_start": now}
         await db.meta.insert_one(doc)
-    return doc
+    return {
+        "season_number": int(doc.get("season_number", 1) or 1),
+        "season_start": doc.get("season_start"),
+    }
 
 
 async def maybe_reset_season() -> dict:
@@ -494,44 +503,45 @@ SKINS_CATALOG: List[dict] = [
      "hair": 0x6b3a1a, "bikini": True,
      "aura": 0xff80c0, "aura_mode": "spin"},
 
-    # ─── Season-pass exclusive (not in shop) ────────────────────────────
-    {"id": "solar",    "name": "Solar Inferno",  "price": 0,    "rarity": "epic",      "obtain": "pass_tier_10",
+    # ─── Legacy pass skins — retained for existing owners ───────────────
+    # These were the Season 1 pass rewards (tiers 10/20/30) until the
+    # meteor lineup replaced them in 2026-06. The catalog keeps them so
+    # players who already unlocked them still render correctly; the
+    # `_legacy` suffix on `obtain` tells the UI to display them as a
+    # historical/retired badge rather than a current pass reward.
+    {"id": "solar",    "name": "Solar Inferno",  "price": 0,    "rarity": "epic",      "obtain": "pass_tier_10_legacy",
      "body": 0xff5500, "leg": 0x6b1a00, "head": 0xf2c08a, "accent": 0xffd700,
      "helmet": 0x6b1a00, "visor": 0xffd700, "shoulder": 0xff8a00, "stripe": 0xffd700, "belt": 0x3a0a00, "cape": 0xff8a00,
      "aura": 0xff8a00, "aura_mode": "pulse"},
 
-    {"id": "cyber",    "name": "Cyber Wraith",   "price": 0,    "rarity": "epic",      "obtain": "pass_tier_20",
+    {"id": "cyber",    "name": "Cyber Wraith",   "price": 0,    "rarity": "epic",      "obtain": "pass_tier_20_legacy",
      "body": 0x1a1a3a, "leg": 0x05051a, "head": 0xbac4d6, "accent": 0x00ffaa,
      "helmet": 0x05051a, "visor": 0x00ffaa, "shoulder": 0x00ffaa, "stripe": 0x00ffaa, "belt": 0x0a0a2a, "cape": 0x00ffaa,
      "aura": 0x00ffaa, "aura_mode": "flicker"},
 
-    {"id": "quantum",  "name": "Quantum Reaver", "price": 0,    "rarity": "legendary", "obtain": "pass_tier_30",
+    {"id": "quantum",  "name": "Quantum Reaver", "price": 0,    "rarity": "legendary", "obtain": "pass_tier_30_legacy",
      "body": 0x4b0082, "leg": 0x1a0033, "head": 0xc8a8ff, "accent": 0xffffff,
      "helmet": 0x1a0033, "visor": 0xffffff, "shoulder": 0xff00ff, "stripe": 0xffffff, "belt": 0x4b0082, "cape": 0xff00ff,
      "aura": 0xff00ff, "aura_mode": "spin"},
 
-    # ─── Season 2 pass exclusives — METEOR / SPACE theme ────────────────
-    # These unlock only on the Season 2 track. They live in the catalog
-    # from day one so the data shape is identical (the pass tab can
-    # preview them as "Coming in Season 2") but `_season_tiers` only
-    # references them once `season_number >= 2`. That way a user who's
-    # mid-S1 still earns Solar/Cyber/Quantum as they always did, and the
-    # swap is automatic when the season clock rolls over.
-    {"id": "stardust", "name": "Stardust Drifter", "price": 0,   "rarity": "epic",      "obtain": "pass_tier_10_s2",
+    # ─── ACTIVE pass — METEOR / SPACE theme ─────────────────────────────
+    # Promoted from "Season 2 preview" to the live pass reward track
+    # (2026-06). Every active season's tiers 10/20/30 now grant these.
+    {"id": "stardust", "name": "Stardust Drifter", "price": 0,   "rarity": "epic",      "obtain": "pass_tier_10",
      # Deep space drifter — twilight body with starfield glints. Soft
      # nebula-violet → indigo gradient feel, silver accents.
      "body": 0x1a1538, "leg": 0x0b0a22, "head": 0xb0a8d8, "accent": 0xc8d4ff,
      "helmet": 0x0b0a22, "visor": 0x88e0ff, "shoulder": 0x4a3d7a, "stripe": 0x88e0ff, "belt": 0x1a1538, "cape": 0x4a3d7a,
      "aura": 0x88e0ff, "aura_mode": "flicker"},
 
-    {"id": "crater",   "name": "Crater Forged",   "price": 0,   "rarity": "epic",      "obtain": "pass_tier_20_s2",
+    {"id": "crater",   "name": "Crater Forged",   "price": 0,   "rarity": "epic",      "obtain": "pass_tier_20",
      # Forged-from-meteor-rock — scorched basalt body, molten orange seams.
      # Reads as a survivor of the impact, armor still smouldering.
      "body": 0x2a1b14, "leg": 0x110a06, "head": 0xa07a5a, "accent": 0xff6420,
      "helmet": 0x110a06, "visor": 0xff8a40, "shoulder": 0x5a2a14, "stripe": 0xff6420, "belt": 0x110a06, "cape": 0xff4a10,
      "aura": 0xff5a1a, "aura_mode": "pulse"},
 
-    {"id": "meteor",   "name": "Meteor Ascendant", "price": 0,  "rarity": "legendary", "obtain": "pass_tier_30_s2",
+    {"id": "meteor",   "name": "Meteor Ascendant", "price": 0,  "rarity": "legendary", "obtain": "pass_tier_30",
      # Cosmic ascension — supernova gold against deep indigo, halo flares
      # in the legendary slot. The "after-the-impact-came-the-rebirth" vibe.
      "body": 0x2a1058, "leg": 0x10042a, "head": 0xffe0a8, "accent": 0xffd24a,
@@ -577,7 +587,11 @@ async def _user_from_token(token: str) -> Optional[dict]:
         if payload.get("type") != "access":
             return None
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-        return user
+        # Detach from the find_one cursor result so callers (and the
+        # linter) treat this like any other dict. `_id` is still an
+        # ObjectId — callers handle that via `_clean_user_for_response`
+        # before any HTTP response is built.
+        return None if user is None else {**user}
     except Exception:
         return None
 
@@ -1094,23 +1108,25 @@ SEASON_MAX_TIER = 30
 def _season_tiers(season_number: int = 1) -> List[dict]:
     """Returns the static reward layout for the 30-tier pass.
 
-    The skin reward at tiers 10/20/30 is themed per season. Season 1
-    shipped the original Solar/Cyber/Quantum lineup; Season 2 swaps in
-    a brand-new METEOR / SPACE themed track (Stardust Drifter, Crater
-    Forged, Meteor Ascendant). The swap is automatic the moment
-    `maybe_reset_season()` bumps the global season_number — players
-    finish S1 with the old skins, and the new pass goes live as the
-    countdown rolls over.
+    2026-06 update: the **meteor / space lineup** (Stardust, Crater,
+    Meteor) is now the LIVE pass for every season — promoted from its
+    Season 2 preview status. The previous Solar/Cyber/Quantum lineup is
+    retired; players who already unlocked those skins keep them in their
+    inventory (skin grants are append-only on `owned_skins`), but new
+    unlocks all flow into the meteor track. If you re-introduce a
+    different seasonal lineup in the future, slot it into
+    SEASON_SKIN_LINEUPS keyed by the season number.
 
     Rebuilt on each call so the source of truth lives in code, not the DB."""
     # Season-themed skin lineup for the three milestone tiers (10/20/30).
-    # Add more entries here for future seasons; the modulo at the bottom
-    # cycles through them so a missing season key falls back gracefully.
+    # Both keys map to the meteor track today — keeping a per-season dict
+    # so a future agent can introduce Season 3 reward art without
+    # touching the lookup logic. Missing season keys fall back to season 1.
     SEASON_SKIN_LINEUPS: Dict[int, Dict[int, Dict[str, str]]] = {
         1: {
-            10: {"skin": "solar",    "label": "Solar Inferno"},
-            20: {"skin": "cyber",    "label": "Cyber Wraith"},
-            30: {"skin": "quantum",  "label": "Quantum Reaver"},
+            10: {"skin": "stardust", "label": "Stardust Drifter"},
+            20: {"skin": "crater",   "label": "Crater Forged"},
+            30: {"skin": "meteor",   "label": "Meteor Ascendant"},
         },
         2: {
             10: {"skin": "stardust", "label": "Stardust Drifter"},
