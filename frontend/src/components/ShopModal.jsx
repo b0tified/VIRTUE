@@ -12,13 +12,18 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/api";
 import { SKINS, RARITY_COLOR } from "@/game/skins";
 import { useAuth } from "@/context/AuthContext";
-import { Coins, Check, X, Lock } from "lucide-react";
+import { Coins, Check, X, Lock, Eye } from "lucide-react";
+import SkinPreview3D from "@/components/SkinPreview3D";
 
 export default function ShopModal({ open, onClose }) {
   const { user, refreshMe } = useAuth();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // 3D preview modal — opens when the user hits "PREVIEW IN 3D" on any
+  // card. Holds the full skin object so the modal can mount its own
+  // Three.js scene with the live humanoid mesh.
+  const [previewSkin, setPreviewSkin] = useState(null);
 
   const reload = async () => {
     try {
@@ -123,6 +128,7 @@ export default function ShopModal({ open, onClose }) {
                 busy={busy}
                 onBuy={() => buy(s.id)}
                 onEquip={() => equip(s.id)}
+                onPreview={() => setPreviewSkin(s)}
               />
             ))}
           </div>
@@ -132,6 +138,15 @@ export default function ShopModal({ open, onClose }) {
           </p>
         </div>
       </div>
+
+      {/* 3D turntable preview — mounts above the shop on top of the
+          backdrop so the user can spin/inspect a skin's mesh + animated
+          extras (thrusters, LEDs, etc.) before committing coins. */}
+      <SkinPreview3D
+        open={!!previewSkin}
+        skin={previewSkin}
+        onClose={() => setPreviewSkin(null)}
+      />
     </div>
   );
 }
@@ -139,7 +154,7 @@ export default function ShopModal({ open, onClose }) {
 /* Single skin card. Renders a flat CSS-only humanoid preview using the
    skin's palette + an animated aura ring underneath. No Three.js — the
    preview is good enough for the shop and stays performant. */
-function SkinCard({ skin, coins, busy, onBuy, onEquip }) {
+function SkinCard({ skin, coins, busy, onBuy, onEquip, onPreview }) {
   const canAfford = coins >= skin.price;
   const rarityHex = RARITY_COLOR[skin.rarity] || "#9aa3ad";
   const auraStyle = useMemo(() => auraCss(skin), [skin]);
@@ -152,9 +167,22 @@ function SkinCard({ skin, coins, busy, onBuy, onEquip }) {
     >
       {/* Preview area */}
       <div
-        className="relative h-44 overflow-hidden flex items-end justify-center"
+        className="relative h-44 overflow-hidden flex items-end justify-center group"
         style={{ background: `linear-gradient(180deg, ${colorHex(skin.body)}33 0%, #0A0A0A 100%)` }}
       >
+        {/* PREVIEW IN 3D button — overlays the preview tile so it doesn't
+            cost any footer real-estate. Always present (default skin
+            included — useful for sanity-checking your own current look).
+            Fades in on hover so the tile looks clean at rest. */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onPreview?.(); }}
+          className="absolute top-2 right-12 z-10 font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 bg-[#0055FF] text-white border-2 border-black flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          data-testid={`shop-skin-preview-${skin.id}`}
+          title={`Preview ${skin.name} in 3D`}
+        >
+          <Eye size={11} strokeWidth={3} /> 3D
+        </button>
         {/* Aura disc behind the figure */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-32 h-6 rounded-full" style={auraStyle} />
         {/* Cape (renders behind the body) */}

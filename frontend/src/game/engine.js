@@ -406,6 +406,22 @@ export class GameEngine {
 
   _toonMat(color) { return new THREE.MeshToonMaterial({ color, gradientMap: this.toonMap }); }
 
+  /* Static factory used by `SkinPreview3D` (shop preview modal) to build
+     the same animated humanoid mesh you see in-game, without spinning up
+     a full GameEngine instance. Returns the same { group, astro, … }
+     bundle so the caller can drive the per-frame animations themselves.
+
+     Implementation note: `_buildHumanoid` only depends on `this._toonMat`,
+     so we hand it a tiny shim whose toon-material falls back to
+     `MeshLambertMaterial` (no toon ramp). The preview modal lights its
+     own scene, so the cosmetic difference is invisible. */
+  static buildHumanoidForPreview(skin) {
+    const shim = {
+      _toonMat: (color) => new THREE.MeshLambertMaterial({ color }),
+    };
+    return GameEngine.prototype._buildHumanoid.call(shim, skin);
+  }
+
   _outlined(geometry, color, outlineScale = 1.05) {
     const group = new THREE.Group();
     const mesh = new THREE.Mesh(geometry, this._toonMat(color));
