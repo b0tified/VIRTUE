@@ -377,3 +377,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - **Climb-loop floor**: in-progress lerped values also obey `wins >= ceil(new_rp/30)` so mid-climb snapshots remain valid (no "270 RP, 0 wins" anomalies during the early-season ramp).
 - Regression suite: `tests/test_seeded_climb.py` grew to 8 cases — added `test_snap_rp_floors_to_multiple_of_15`, `test_synthesize_career_enforces_wins_floor`, `test_v2_resnap_fixes_legacy_off_grid_targets`, `test_v2_pass_skips_already_consistent_seeds`.
 
+
+## 2026-06-07 — Fixed stale avatar/banner/ranked-botfill tests
+- **Avatar pool grew from 6 → 12** (idx 0..11): added animated avatars (Flaming Skull, Pulsing Diamond, Swirling Lightning, Frost Sigil, Quantum Core, All-Seeing Eye) gated by level/peak-rank. Tests still asserted the old 0..5 range and that idx 6 returned 422. Updated `test_iteration7_banner_avatar_kill.py` to assert 0..5 are always-free (200), 6..11 are validator-accepted but unlock-gated (200 or 403), and 12+ → 422. `test_friends_avatar_botrooms.py::test_set_avatar_invalid_rejected` now uses idx 12 (out of range) instead of idx 5.
+- **Banner pool grew from 8 → 12** (icons + colors). Updated max-accept test to 11 and out-of-range tests to 12.
+- **`ranked_bot_count_for_tier` now returns 4 for every tier** (was 3 for low / 1 for Master / 0 for Goonmaster — felt empty so the design was simplified to a uniform 4-bot FFA). With `FFA_LOBBY_SIZE=4`, `_maintain_population` despawns 1 bot the moment the real player joins so the room caps at 4 total players. Updated `test_ranked_bot_count_function_imports_correctly` and `test_ranked_botfill_low_tier_3_bots` to assert the new contract.
+- **Goonmaster now bot-fills in 120..300s** (was infinite — kept top tier from ever getting games). Renamed `test_ranked_goonmaster_no_botfill` → `test_ranked_goonmaster_bot_fill_in_range` and asserts the queue API reports an int in that window.
+- **`_set_rank_points` helper now also stamps `stats.bonus_xp=3000`** so the manipulated test user clears the `RANKED_MIN_LEVEL=5` gate. Without this, every "set RP then queue ranked" test was 403'ing before the actual queue logic ran.
+- Result: `tests/test_iteration7_banner_avatar_kill.py` + `tests/test_friends_avatar_botrooms.py` now run **44 passed, 1 skipped, 0 failed**.
+

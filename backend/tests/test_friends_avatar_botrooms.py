@@ -102,8 +102,9 @@ class TestAvatar:
 
     def test_set_avatar_invalid_rejected(self, two_users):
         a = two_users["a"]
+        # Avatar pool size is 12 (idx 0..11); anything >=12 must 422.
         r = requests.post(f"{LOCAL}/api/profile/me/avatar",
-                          json={"avatar": 5}, headers=_auth(a["tok"]))
+                          json={"avatar": 12}, headers=_auth(a["tok"]))
         assert r.status_code in (400, 422), r.text
 
     def test_set_avatar_negative_rejected(self, two_users):
@@ -357,8 +358,20 @@ async def _connect_and_count_players(token: str, mode: str, wait_s: float = 2.0)
 
 
 def _set_rank_points(user_id: str, pts: int):
+    """Stamp `rank_points` on a test user. Also bumps `stats.bonus_xp` so
+    `compute_level` resolves to >= RANKED_MIN_LEVEL (5) — ranked queue
+    rejects anything below that with a 403, which would otherwise make
+    every "set RP then queue ranked" test fail before it even starts.
+    Reset to 0 by passing `pts=0`."""
     assert _db is not None
-    _db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"rank_points": pts}})
+    # Level 5 requires 2000 XP (50*1*2 + 50*2*3 + 50*3*4 + 50*4*5 = 2000).
+    # 3000 bonus_xp puts a fresh user comfortably at level 5 without
+    # touching their real kill/match counts.
+    bonus_xp = 3000 if pts > 0 else 0
+    _db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"rank_points": pts, "stats.bonus_xp": bonus_xp}},
+    )
 
 
 def _queue_and_force_botfill(token: str, user_id: str, tier_idx: int):
@@ -374,10 +387,14 @@ def _queue_and_force_botfill(token: str, user_id: str, tier_idx: int):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tier_idx,rank_points,expected_total,bot_wait_s", [
-    (4, 1000, 4, 50.0),   # Diamond (800-1199): 1 real + 3 bots; QUEUE_BOT_FILL_SEC=45s
+    (4, 1000, 4, 50.0),   # Diamond: room caps at FFA_LOBBY_SIZE=4 (1 real + 3 bots)
 ])
 async def test_ranked_botfill_low_tier_3_bots(two_users, tier_idx, rank_points, expected_total, bot_wait_s):
-    """Low-tier user (Bronze..Diamond) queued for ranked should get a 3-bot room.
+    """Low-tier user (Bronze..Diamond) queued for ranked should land in
+    a room with exactly FFA_LOBBY_SIZE=4 players (1 real + 3 bots).
+    `ranked_bot_count_for_tier` still reports 4 spawns, but the new
+    `_maintain_population()` plumbing despawns one bot the moment the
+    real player joins so total never exceeds the lobby cap.
 
     NOTE: QUEUE_BOT_FILL_SEC=45s in current config, so this test takes ~50s. Marked slow.
     """
@@ -391,7 +408,7 @@ async def test_ranked_botfill_low_tier_3_bots(two_users, tier_idx, rank_points, 
         await asyncio.sleep(bot_wait_s)
         max_p, seen = await _connect_and_count_players(a["tok"], "ranked", wait_s=3.0)
         assert seen, "did not receive any state event"
-        assert max_p == expected_total, f"expected {expected_total} players (1 real + 3 bots), got {max_p}"
+        assert max_p == expected_total, f"expected {expected_total} players (FFA_LOBBY_SIZE cap), got {max_p}"
     finally:
         _set_rank_points(a["user"]["id"], 0)
         requests.delete(f"{LOCAL}/api/queue/ranked", headers=_auth(a["tok"]))
@@ -399,27 +416,24 @@ async def test_ranked_botfill_low_tier_3_bots(two_users, tier_idx, rank_points, 
 
 @pytest.mark.asyncio
 async def test_ranked_bot_count_function_imports_correctly():
-    """Structural verification of ranked_bot_count_for_tier without needing matchmaker delays."""
+    """`ranked_bot_count_for_tier` now returns 4 for every tier — every
+    ranked-vs-bots room is built as a full 5-player FFA (player + 4
+    opponents) regardless of rank. Earlier the higher tiers spawned
+    only 1 bot, but the lobby felt empty so the design was simplified."""
     import sys
     sys.path.insert(0, "/app/backend")
     from server import ranked_bot_count_for_tier
-    # Bronze..Diamond (0-4) → 3 bots
-    for t in range(0, 5):
-        assert ranked_bot_count_for_tier(t) == 3, f"tier {t} should yield 3 bots"
-    # Master, GM (5-6) → 1 bot
-    assert ranked_bot_count_for_tier(5) == 1
-    assert ranked_bot_count_for_tier(6) == 1
-    # Goonmaster (7) → 0
-    assert ranked_bot_count_for_tier(7) == 0
+    # All tiers 0..7 → 4 bots.
+    for t in range(0, 8):
+        assert ranked_bot_count_for_tier(t) == 4, f"tier {t} should yield 4 bots"
 
 
 @pytest.mark.asyncio
 async def test_ranked_botfill_master_tier_1_bot(two_users):
-    """Master tier (idx 5, 1700+ rank points) -- bot_fill takes 120s in current config.
-
-    To avoid 2+ minute test runs we verify the queue API surfaces the correct tier and bot_fill
-    seconds; the deeper room-size assertion is covered by test_ranked_bot_count_function_imports_correctly.
-    """
+    """Master+ tier — bot_fill takes 120s in current config. To avoid
+    2+ minute test runs we verify the queue API surfaces the correct
+    tier and bot_fill seconds; the deeper room-size assertion is
+    covered by `test_ranked_bot_count_function_imports_correctly`."""
     if _db is None:
         pytest.skip("No mongo available")
     a = two_users["a"]
@@ -437,8 +451,12 @@ async def test_ranked_botfill_master_tier_1_bot(two_users):
 
 
 @pytest.mark.asyncio
-async def test_ranked_goonmaster_no_botfill(two_users):
-    """Goonmaster (tier 7, 2300+ rank_points) should NEVER be marked vs_bot — queue stays open."""
+async def test_ranked_goonmaster_bot_fill_in_range(two_users):
+    """Goonmaster (tier 7, 2300+ rank_points) used to never bot-fill at
+    all, but the design now uses a randomised 120..300s fill so the
+    elite tier still gets games eventually. Verify the queue API
+    reports a value in that range and that a 5s sleep doesn't trigger
+    an instant bot match (the fill window is far longer than that)."""
     if _db is None:
         pytest.skip("No mongo available")
     a = two_users["a"]
@@ -446,14 +464,17 @@ async def test_ranked_goonmaster_no_botfill(two_users):
     try:
         rq = requests.post(f"{LOCAL}/api/queue/ranked", headers=_auth(a["tok"]))
         assert rq.status_code == 200, rq.text
-        # bot_fill_seconds should be -1 (inf -> negative for goonmaster)
         st = requests.get(f"{LOCAL}/api/queue/ranked", headers=_auth(a["tok"])).json()
-        assert st.get("bot_fill_seconds") in (-1, None), st
-        # Wait some time — matchmaker should NOT mark vs_bot for goonmaster.
+        # Goonmaster bot_fill_seconds is randomised 120..300 (inclusive).
+        fill = st.get("bot_fill_seconds")
+        assert isinstance(fill, int) and 120 <= fill <= 300, st
+        # 5s wait shouldn't bot-fill (window is at least 120s).
         await asyncio.sleep(5.0)
         st2 = requests.get(f"{LOCAL}/api/queue/ranked", headers=_auth(a["tok"])).json()
-        # Still in queue, not matched
-        assert st2.get("status") in ("queued", None), f"goonmaster got matched: {st2}"
+        # Either still queued (typical) or matched against another real
+        # player (rare in CI); either way NOT a bot-fill.
+        assert st2.get("status") in ("queued", None) or st2.get("in_queue"), \
+            f"goonmaster got bot-matched within 5s: {st2}"
     finally:
         _set_rank_points(a["user"]["id"], 0)
         requests.delete(f"{LOCAL}/api/queue/ranked", headers=_auth(a["tok"]))

@@ -1,8 +1,10 @@
 """Iteration-7 backend tests for VIRTUE 3D FPS.
 
 Under test:
-  * POST /api/profile/me/avatar — accepts idx 0..5 (was 0..4); idx 6 -> 422
-  * POST /api/profile/me/banner — accepts banner_icon/banner_color 0..7 (regression)
+  * POST /api/profile/me/avatar — accepts idx 0..11 (12-avatar pool);
+    idx 12+ -> 422
+  * POST /api/profile/me/banner — accepts banner_icon/banner_color 0..11
+    (12-icon / 12-color pool); idx 12+ -> 422
   * GET  /api/profile/me — public_user returns banner_icon, banner_color,
     peak_rank_tier (and avatar)
   * WS /api/ws/game?mode=casual — kill events include
@@ -48,10 +50,15 @@ def token():
 
 # ---------- AVATAR --------------------------------------------------------
 class TestAvatarRange:
-    """POST /api/profile/me/avatar now accepts 0..5."""
+    """POST /api/profile/me/avatar accepts 0..11 (12-avatar pool). idx 0..5
+    are free; idx 6..11 are gated by player level or peak rank — the
+    backend returns 403 (not 422) when those gates aren't met. Tests
+    here only assert that the value is *in validator range* (i.e., not
+    422), since the gate response depends on the test account's
+    level/rank."""
 
     @pytest.mark.parametrize("idx", [0, 1, 2, 3, 4, 5])
-    def test_avatar_accepts_0_to_5(self, token, idx):
+    def test_avatar_accepts_free_range(self, token, idx):
         r = requests.post(
             f"{BASE_URL}/api/profile/me/avatar",
             headers=_h(token),
@@ -65,11 +72,26 @@ class TestAvatarRange:
         me = requests.get(f"{BASE_URL}/api/profile/me", headers=_h(token), timeout=10).json()
         assert me["avatar"] == idx
 
-    def test_avatar_idx_6_returns_422(self, token):
+    @pytest.mark.parametrize("idx", [6, 7, 8, 9, 10, 11])
+    def test_avatar_validator_accepts_unlock_range(self, token, idx):
+        """Validator must not 422 on the unlockable indices — the
+        response is either 200 (gate met → persisted) or 403 (gate not
+        met → rejected with a friendly message). Anything else (e.g.,
+        422 / 400) is a validation regression."""
         r = requests.post(
             f"{BASE_URL}/api/profile/me/avatar",
             headers=_h(token),
-            json={"avatar": 6},
+            json={"avatar": idx},
+            timeout=10,
+        )
+        assert r.status_code in (200, 403), \
+            f"avatar={idx} -> {r.status_code} {r.text}"
+
+    def test_avatar_idx_12_returns_422(self, token):
+        r = requests.post(
+            f"{BASE_URL}/api/profile/me/avatar",
+            headers=_h(token),
+            json={"avatar": 12},
             timeout=10,
         )
         assert r.status_code == 422, f"expected 422, got {r.status_code} {r.text}"
@@ -86,7 +108,7 @@ class TestAvatarRange:
 
 # ---------- BANNER (regression) -------------------------------------------
 class TestBannerRange:
-    """POST /api/profile/me/banner accepts banner_icon + banner_color 0..7."""
+    """POST /api/profile/me/banner accepts banner_icon + banner_color 0..11."""
 
     def test_banner_accepts_min(self, token):
         r = requests.post(
@@ -103,30 +125,30 @@ class TestBannerRange:
         r = requests.post(
             f"{BASE_URL}/api/profile/me/banner",
             headers=_h(token),
-            json={"banner_icon": 7, "banner_color": 7},
+            json={"banner_icon": 11, "banner_color": 11},
             timeout=10,
         )
         assert r.status_code == 200
         d = r.json()
-        assert d["banner_icon"] == 7 and d["banner_color"] == 7
+        assert d["banner_icon"] == 11 and d["banner_color"] == 11
         # Persistence check
         me = requests.get(f"{BASE_URL}/api/profile/me", headers=_h(token), timeout=10).json()
-        assert me["banner_icon"] == 7 and me["banner_color"] == 7
+        assert me["banner_icon"] == 11 and me["banner_color"] == 11
 
-    def test_banner_icon_8_returns_422(self, token):
+    def test_banner_icon_12_returns_422(self, token):
         r = requests.post(
             f"{BASE_URL}/api/profile/me/banner",
             headers=_h(token),
-            json={"banner_icon": 8, "banner_color": 0},
+            json={"banner_icon": 12, "banner_color": 0},
             timeout=10,
         )
         assert r.status_code == 422
 
-    def test_banner_color_8_returns_422(self, token):
+    def test_banner_color_12_returns_422(self, token):
         r = requests.post(
             f"{BASE_URL}/api/profile/me/banner",
             headers=_h(token),
-            json={"banner_icon": 0, "banner_color": 8},
+            json={"banner_icon": 0, "banner_color": 12},
             timeout=10,
         )
         assert r.status_code == 422
