@@ -3,7 +3,7 @@
 The leaderboard seed (`/admin/seed/veterans`) used to insert each bot at
 its *final* RP value. We now stash the final RP on the doc as
 `seed_target_rp` and lerp the live `rank_points` (plus stats) from 0
-toward that target across the 14-day season via `seeded_climb_loop`.
+toward that target across the season via `seeded_climb_loop`.
 Per-bot offset/speed make the board reshuffle organically instead of
 scaling uniformly.
 
@@ -108,12 +108,12 @@ async def _one_tick(monkeypatch, season_start, users_docs):
 
 @pytest.mark.asyncio
 async def test_midseason_climb_lerps_partial_rp(monkeypatch):
-    """7 days into a 14-day season should put a baseline-speed bot at
+    """Halfway through the season should put a baseline-speed bot at
     ~50% of its target RP — and crucially, the RP value must be a
     multiple of 15 (only RP values reachable via ranked match deltas
     of +30/+15/0/-30/-60)."""
     now = datetime.now(timezone.utc)
-    season_start = now - timedelta(days=7)  # halfway
+    season_start = now - timedelta(days=server.SEASON_LENGTH_DAYS * 0.5)
 
     doc = {
         "_id": "bot1",

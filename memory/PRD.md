@@ -386,3 +386,9 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - **`_set_rank_points` helper now also stamps `stats.bonus_xp=3000`** so the manipulated test user clears the `RANKED_MIN_LEVEL=5` gate. Without this, every "set RP then queue ranked" test was 403'ing before the actual queue logic ran.
 - Result: `tests/test_iteration7_banner_avatar_kill.py` + `tests/test_friends_avatar_botrooms.py` now run **44 passed, 1 skipped, 0 failed**.
 
+
+
+## 2026-06-07 — Season length: 14d → 30d
+- `SEASON_LENGTH_DAYS = 14` → `30` in `server.py`. The current Season 2 now ends 2026-07-05 instead of 2026-06-19 (verified via `GET /api/season` → `length_days: 30`).
+- Side effects: the seeded-bot climb curve automatically re-scales to the new 30-day window (the loop derives progress from `elapsed / SEASON_LENGTH_DAYS`), so bots climb proportionally slower per real-time day. No other code changes needed — every consumer reads the constant.
+- Updated stale "14-day" comments + test docstring to be season-length agnostic; midseason test now uses `SEASON_LENGTH_DAYS * 0.5` instead of hard-coded 7 days. 11/11 season + climb tests pass.

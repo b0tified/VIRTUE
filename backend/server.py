@@ -37,7 +37,7 @@ db = client[os.environ['DB_NAME']]
 JWT_ALGORITHM = "HS256"
 ACCESS_TTL_MIN = 60 * 24
 REFRESH_TTL_DAYS = 7
-SEASON_LENGTH_DAYS = 14
+SEASON_LENGTH_DAYS = 30
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
@@ -191,7 +191,7 @@ def public_user(user: dict) -> dict:
 
 
 # -------------------------------------------------------------------
-# Season (rank reset every 14 days)
+# Season (rank reset every SEASON_LENGTH_DAYS)
 # -------------------------------------------------------------------
 async def get_or_init_season() -> dict:
     """Return the current season doc, initializing it on first run.
@@ -729,7 +729,7 @@ async def on_startup():
     for nm in practice_tdm_bot_names:
         practice_tdm_room.spawn_bot(nm, disguised=True, difficulty=1.2)
 
-    # Initialize season metadata (rank reset every 14 days)
+    # Initialize season metadata (rank reset every SEASON_LENGTH_DAYS)
     await get_or_init_season()
     await maybe_reset_season()
 
@@ -4711,7 +4711,7 @@ async def seeded_climb_loop():
 
     is multiplied against each target field and written back. Because
     different bots have different offsets/speeds, the leaderboard
-    reshuffles organically over the 14-day season instead of all seeds
+    reshuffles organically over the season instead of all seeds
     scaling uniformly. When `maybe_reset_season` zeroes everyone's
     `rank_points` + `placement_matches_played` at rollover the next tick
     rebuilds the curve from 0 automatically — no separate re-seed needed.
