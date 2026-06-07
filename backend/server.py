@@ -740,6 +740,7 @@ async def on_startup():
     asyncio.create_task(practice_tdm_room.run())
     asyncio.create_task(matchmaker_loop())
     asyncio.create_task(season_loop())
+    asyncio.create_task(seeded_climb_loop())
     asyncio.create_task(synthetic_online_loop())
 
 
@@ -4696,6 +4697,117 @@ async def season_loop():
         await asyncio.sleep(60.0)
 
 
+async def seeded_climb_loop():
+    """Lerp every seeded leaderboard account from 0 RP toward its
+    `seed_target_rp` across the current season's runtime.
+
+    Each seeded doc carries a `seed_target_rp` (final destination), per-stat
+    targets (`seed_target_matches/kills/deaths/wins`), a per-bot
+    `seed_climb_offset` (fraction of season elapsed before this bot starts
+    climbing, 0..0.20) and `seed_climb_speed` (per-bot pace multiplier,
+    ~0.75..1.35). Each tick:
+
+      progress = clamp((elapsed_fraction - offset) * speed, 0, 1)
+
+    is multiplied against each target field and written back. Because
+    different bots have different offsets/speeds, the leaderboard
+    reshuffles organically over the 14-day season instead of all seeds
+    scaling uniformly. When `maybe_reset_season` zeroes everyone's
+    `rank_points` + `placement_matches_played` at rollover the next tick
+    rebuilds the curve from 0 automatically — no separate re-seed needed.
+
+    `placement_matches_played` is restored to PLACEMENT_MATCHES once a
+    seed's interpolated match count crosses that threshold, otherwise it
+    tracks the lerped match count (so very-fresh-season seeds sit just
+    below the leaderboard filter, then pop in as they "play" placements).
+    """
+    while True:
+        try:
+            # One-time migration for legacy seeded docs that pre-date the
+            # climb system. Convert their static rank_points/stats into
+            # climb targets so they participate in the curve like
+            # newly-seeded docs. After this single pass the docs carry
+            # `seed_target_rp` and the migration filter no longer matches
+            # them — subsequent ticks skip straight to the lerp.
+            legacy = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": False}},
+                {"_id": 1, "rank_points": 1, "stats": 1},
+            )
+            async for u in legacy:
+                rp_now = int(u.get("rank_points", 0) or 0)
+                if rp_now <= 0:
+                    continue
+                stats = u.get("stats") or {}
+                await db.users.update_one(
+                    {"_id": u["_id"]},
+                    {"$set": {
+                        "seed_target_rp": rp_now,
+                        "seed_target_matches": int(stats.get("matches", 0) or 0),
+                        "seed_target_kills": int(stats.get("kills", 0) or 0),
+                        "seed_target_deaths": int(stats.get("deaths", 0) or 0),
+                        "seed_target_wins": int(stats.get("wins", 0) or 0),
+                        "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
+                        "seed_climb_speed": round(random.uniform(0.75, 1.35), 4),
+                    }},
+                )
+
+            doc = await get_or_init_season()
+            start = doc.get("season_start")
+            if isinstance(start, datetime) and start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if start is None:
+                await asyncio.sleep(30.0); continue
+            now = datetime.now(timezone.utc)
+            elapsed = (now - start).total_seconds()
+            total = max(1.0, SEASON_LENGTH_DAYS * 86400.0)
+            frac = max(0.0, min(1.0, elapsed / total))
+
+            cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True}},
+                {
+                    "_id": 1, "rank_points": 1,
+                    "seed_target_rp": 1, "seed_target_matches": 1,
+                    "seed_target_kills": 1, "seed_target_deaths": 1,
+                    "seed_target_wins": 1,
+                    "seed_climb_offset": 1, "seed_climb_speed": 1,
+                },
+            )
+            async for u in cursor:
+                offset = float(u.get("seed_climb_offset", 0.0) or 0.0)
+                speed = float(u.get("seed_climb_speed", 1.0) or 1.0)
+                p = max(0.0, min(1.0, (frac - offset) * speed))
+                t_rp = int(u.get("seed_target_rp", 0) or 0)
+                t_m = int(u.get("seed_target_matches", 0) or 0)
+                t_k = int(u.get("seed_target_kills", 0) or 0)
+                t_d = int(u.get("seed_target_deaths", 0) or 0)
+                t_w = int(u.get("seed_target_wins", 0) or 0)
+                new_rp = int(round(t_rp * p))
+                new_m = int(round(t_m * p))
+                new_k = int(round(t_k * p))
+                new_d = int(round(t_d * p))
+                new_w = int(round(t_w * p))
+                placement = PLACEMENT_MATCHES if new_m >= PLACEMENT_MATCHES else new_m
+                cur_rp = int(u.get("rank_points", 0) or 0)
+                # Skip writes when nothing meaningful changed — keeps the
+                # update churn proportional to how fast the season ticks.
+                if new_rp == cur_rp and p > 0.0:
+                    continue
+                await db.users.update_one(
+                    {"_id": u["_id"]},
+                    {"$set": {
+                        "rank_points": new_rp,
+                        "placement_matches_played": placement,
+                        "stats.matches": new_m,
+                        "stats.kills": new_k,
+                        "stats.deaths": new_d,
+                        "stats.wins": new_w,
+                    }},
+                )
+        except Exception as e:
+            logger.warning("seeded_climb_loop error: %s", e)
+        await asyncio.sleep(45.0)
+
+
 @api.get("/season")
 async def season_status():
     doc = await maybe_reset_season()
@@ -5628,15 +5740,32 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         kills = int(matches * random.uniform(2.5 + rank_idx * 0.4, 4.0 + rank_idx * 0.55))
         deaths = max(1, int(kills / random.uniform(0.95 + rank_idx * 0.12, 1.45 + rank_idx * 0.18)))
         wins = max(0, int(matches * random.uniform(0.35 + rank_idx * 0.03, 0.5 + rank_idx * 0.04)))
+        # Seeded accounts climb progressively across the season instead of
+        # spawning at their final RP. We stash the *target* RP and stat
+        # totals (matches/kills/deaths/wins) on the doc, then let
+        # `seeded_climb_loop` lerp the live `rank_points` + `stats.*` from
+        # 0 toward those targets as the season elapses. Per-bot offset
+        # delays when a bot starts climbing (0..20% of season), and speed
+        # is a per-bot pace multiplier — together they reshuffle the
+        # board organically instead of every seed scaling in lockstep.
+        # Season rollover zeroes `rank_points`/`placement_matches_played`
+        # for all users; the next climb tick rebuilds the curve from 0.
         doc = {
             "email": f"seed_{username.lower()}_{int(now.timestamp())}_{len(inserted)}@virtue.seed",
             "password_hash": "",
             "username": username,
             "role": "user",
             "is_seeded": True,
-            "stats": {"kills": kills, "deaths": deaths, "matches": matches, "wins": wins},
-            "rank_points": rp,
-            "placement_matches_played": PLACEMENT_MATCHES,
+            "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0},
+            "rank_points": 0,
+            "placement_matches_played": 0,
+            "seed_target_rp": rp,
+            "seed_target_matches": matches,
+            "seed_target_kills": kills,
+            "seed_target_deaths": deaths,
+            "seed_target_wins": wins,
+            "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
+            "seed_climb_speed": round(random.uniform(0.75, 1.35), 4),
             "level": random.randint(5, 28 + rank_idx * 4),
             "xp": 0,
             "created_at": now - timedelta(days=random.randint(7, 120)),

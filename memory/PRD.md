@@ -361,3 +361,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Bots: simulated WS connections inside the backend, casual room only by default.
 - Ranked: `RANKED_MIN_REAL_PLAYERS=1` currently (solo-queue routed to bots after `QUEUE_BOT_FILL_SEC=30s`).
 - Placement constants: `PLACEMENT_MATCHES=5`, `PLACEMENT_MULTIPLIER=2` in server.py.
+
+## 2026-06-07 — Leaderboard seed progressive climb
+- **Seeded leaderboard bots now climb dynamically across the season** instead of spawning at their final RP. `/admin/seed/veterans` stores `seed_target_rp`/`seed_target_matches/kills/deaths/wins` on each doc plus a per-bot `seed_climb_offset` (0..0.20 of season) and `seed_climb_speed` (0.75..1.35×). Live `rank_points` + `stats.*` start at 0 and `placement_matches_played` at 0.
+- New background task `seeded_climb_loop` (ticks every 45s) computes the season's elapsed fraction, lerps each seed's RP and stat totals toward their targets, and clamps `placement_matches_played` to `PLACEMENT_MATCHES` once the lerped match count reaches it (so a seed pops into the leaderboard organically once it has "played" placements). Different offsets/speeds reshuffle the board over time rather than scaling uniformly.
+- One-time auto-migration: any pre-existing `is_seeded=True` doc lacking `seed_target_rp` gets its current static RP converted to a target on first tick, then participates in the climb like fresh seeds.
+- On `maybe_reset_season` rollover, the existing `rank_points`/`placement_matches_played` reset already zeros seeded bots; the next climb tick rebuilds the curve from 0 automatically — no separate re-seed needed.
+- Regression suite: `tests/test_seeded_climb.py` (4 cases — mid-season lerp, end-of-season convergence, pre-offset clamp-to-zero, legacy auto-migration).
+
