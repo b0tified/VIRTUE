@@ -4726,28 +4726,85 @@ async def seeded_climb_loop():
             # One-time migration for legacy seeded docs that pre-date the
             # climb system. Convert their static rank_points/stats into
             # climb targets so they participate in the curve like
-            # newly-seeded docs. After this single pass the docs carry
-            # `seed_target_rp` and the migration filter no longer matches
-            # them — subsequent ticks skip straight to the lerp.
+            # newly-seeded docs. RP is snapped to the match grid
+            # (multiples of 15) and the stat targets (matches/kills/
+            # deaths/wins) are RE-synthesized from the snapped RP via
+            # `_synthesize_career` so the targets are guaranteed to be
+            # mathematically consistent with the ranked RP curve — even
+            # if the legacy doc was inserted with under-counted matches
+            # or impossibly low wins. After this single pass the docs
+            # carry `seed_target_rp` and the migration filter no longer
+            # matches them — subsequent ticks skip straight to the lerp.
             legacy = db.users.find(
                 {"is_seeded": True, "seed_target_rp": {"$exists": False}},
                 {"_id": 1, "rank_points": 1, "stats": 1},
             )
             async for u in legacy:
-                rp_now = int(u.get("rank_points", 0) or 0)
-                if rp_now <= 0:
+                rp_raw = int(u.get("rank_points", 0) or 0)
+                if rp_raw <= 0:
                     continue
-                stats = u.get("stats") or {}
+                rp_target = _snap_rp_to_match_grid(rp_raw)
+                rank_idx, _ = rank_for_points(rp_target)
+                t_m, t_k, t_d, t_w = _synthesize_career(rp_target, rank_idx)
                 await db.users.update_one(
                     {"_id": u["_id"]},
                     {"$set": {
-                        "seed_target_rp": rp_now,
-                        "seed_target_matches": int(stats.get("matches", 0) or 0),
-                        "seed_target_kills": int(stats.get("kills", 0) or 0),
-                        "seed_target_deaths": int(stats.get("deaths", 0) or 0),
-                        "seed_target_wins": int(stats.get("wins", 0) or 0),
+                        "seed_target_rp": rp_target,
+                        "seed_target_matches": t_m,
+                        "seed_target_kills": t_k,
+                        "seed_target_deaths": t_d,
+                        "seed_target_wins": t_w,
+                        "seed_career_v2": True,
                         "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
                         "seed_climb_speed": round(random.uniform(0.75, 1.35), 4),
+                    }},
+                )
+
+            # v2 re-snap pass: any seeded doc whose `seed_target_rp` was
+            # set by the first migration (or a pre-v2 `_build_and_insert`)
+            # might carry an un-snapped RP (e.g., 2578 instead of 2580)
+            # and stat targets that don't match the ranked RP curve
+            # (e.g., wins < ceil(rp/30) — mathematically impossible).
+            # Re-snap RP to the match grid and rebuild stat targets via
+            # `_synthesize_career`. Marked complete with
+            # `seed_career_v2: True` so this pass is a true one-shot per
+            # doc. Only re-snaps if RP is off-grid OR wins is below the
+            # arithmetic minimum, so docs that already happened to be
+            # consistent skip cleanly.
+            v2_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True},
+                 "seed_career_v2": {"$exists": False}},
+                {"_id": 1, "seed_target_rp": 1, "seed_target_wins": 1},
+            )
+            async for u in v2_cursor:
+                rp_old = int(u.get("seed_target_rp", 0) or 0)
+                w_old = int(u.get("seed_target_wins", 0) or 0)
+                rp_new = _snap_rp_to_match_grid(rp_old)
+                min_wins = max(1, (rp_new + 29) // 30) if rp_new > 0 else 0
+                needs_fix = (rp_new != rp_old) or (w_old < min_wins)
+                if not needs_fix:
+                    await db.users.update_one(
+                        {"_id": u["_id"]},
+                        {"$set": {"seed_career_v2": True}},
+                    )
+                    continue
+                if rp_new <= 0:
+                    await db.users.update_one(
+                        {"_id": u["_id"]},
+                        {"$set": {"seed_target_rp": 0, "seed_career_v2": True}},
+                    )
+                    continue
+                rank_idx, _ = rank_for_points(rp_new)
+                t_m, t_k, t_d, t_w = _synthesize_career(rp_new, rank_idx)
+                await db.users.update_one(
+                    {"_id": u["_id"]},
+                    {"$set": {
+                        "seed_target_rp": rp_new,
+                        "seed_target_matches": t_m,
+                        "seed_target_kills": t_k,
+                        "seed_target_deaths": t_d,
+                        "seed_target_wins": t_w,
+                        "seed_career_v2": True,
                     }},
                 )
 
@@ -4781,11 +4838,27 @@ async def seeded_climb_loop():
                 t_k = int(u.get("seed_target_kills", 0) or 0)
                 t_d = int(u.get("seed_target_deaths", 0) or 0)
                 t_w = int(u.get("seed_target_wins", 0) or 0)
-                new_rp = int(round(t_rp * p))
+                # Lerp + snap RP to the ranked match grid (multiples of
+                # 15) so every snapshot value is reachable via real
+                # matchplay. Without this snap a 50%-elapsed seed with
+                # target=2578 would show 1289 RP — a value no player
+                # could have actually earned (+30/+15/0/-30/-60 deltas
+                # can never produce that). Stats lerp linearly; only RP
+                # is constrained to the grid.
+                new_rp = _snap_rp_to_match_grid(int(round(t_rp * p)))
                 new_m = int(round(t_m * p))
                 new_k = int(round(t_k * p))
                 new_d = int(round(t_d * p))
                 new_w = int(round(t_w * p))
+                # Floor wins at ceil(rp/30) so the in-progress climb
+                # also obeys the "can't have less wins than the
+                # best-case path to this RP" rule that
+                # `_synthesize_career` enforces at the target.
+                min_wins_now = max(0, (new_rp + 29) // 30)
+                if new_w < min_wins_now:
+                    new_w = min_wins_now
+                if new_m < new_w:
+                    new_m = new_w
                 placement = PLACEMENT_MATCHES if new_m >= PLACEMENT_MATCHES else new_m
                 cur_rp = int(u.get("rank_points", 0) or 0)
                 # Skip writes when nothing meaningful changed — keeps the
@@ -5662,6 +5735,53 @@ class SeedVeteransIn(BaseModel):
     min_per_tier: Dict[int, int] = Field(default_factory=dict)
 
 
+def _snap_rp_to_match_grid(rp: int) -> int:
+    """Snap an arbitrary RP value to the nearest reachable-via-gameplay
+    value. Every valid ranked match delta (+30 / +15 / 0 / -30 / -60) is
+    a multiple of 15, so any RP a real player can accumulate from 0 is
+    a multiple of 15 too. Seed/climb code routes through this so the
+    leaderboard never shows an RP value you couldn't actually earn
+    (e.g., 423 — not a multiple of 15)."""
+    rp = max(0, int(rp))
+    return (rp // 15) * 15
+
+
+def _synthesize_career(rp: int, rank_idx: int) -> tuple[int, int, int, int]:
+    """Given a target `rp` (already snapped to multiples of 15) and a
+    rank tier index, return a plausible (matches, kills, deaths, wins)
+    tuple consistent with the ranked RP curve.
+
+    Constraints enforced:
+      - wins >= ceil(rp / 30): even at the best-case +30 per win, you
+        need this many first-places to reach `rp`. Anything lower would
+        be mathematically impossible.
+      - matches is at least a small multiple of wins so the bot has
+        room for the non-podium placements/losses that the random K/D
+        formula assumes (otherwise low-match high-RP seeds look like
+        90% win rates, which is implausible for a Diamond+ grinder).
+      - kills/deaths scale with matches via the existing tier-based
+        K/D bands. K/D ratio is preserved at all ranks (lower tiers
+        skew nearer 1.0, higher tiers skew higher).
+    """
+    min_wins = max(1, (rp + 29) // 30)  # ceil(rp / 30)
+    # Win rate: lower tiers ~40-55%, higher tiers ~55-70% (Masters+ need
+    # higher rates just to stay positive on the -60 loss curve).
+    win_rate = random.uniform(0.40 + rank_idx * 0.03, 0.55 + rank_idx * 0.025)
+    win_rate = min(0.85, max(0.30, win_rate))
+    # matches derived from min_wins/win_rate, with a small randomized
+    # surplus so the totals don't look mechanically generated.
+    base_matches = max(min_wins, int(round(min_wins / win_rate)))
+    matches = base_matches + random.randint(2 + rank_idx * 2, 10 + rank_idx * 6)
+    wins = max(min_wins, int(round(matches * win_rate)))
+    # Keep wins <= matches (defensive — high win_rate * surplus could
+    # theoretically tip over).
+    wins = min(wins, matches)
+    # Kills / deaths preserve the existing tier-aligned bands.
+    kills = int(matches * random.uniform(2.5 + rank_idx * 0.4, 4.0 + rank_idx * 0.55))
+    deaths = max(1, int(kills / random.uniform(0.95 + rank_idx * 0.12, 1.45 + rank_idx * 0.18)))
+    return matches, kills, deaths, wins
+
+
 @api.post("/admin/seed/veterans")
 async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_current_user)):
     """Seed the leaderboard with N pretend-veteran accounts spanning the
@@ -5718,6 +5838,14 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         """Build one realistic veteran doc with the given RP and insert
         it. Returns the inserted-username summary or None on duplicate.
 
+        RP is snapped to multiples of 15 (the GCD of valid ranked match
+        deltas — see `_snap_rp_to_match_grid`) so the leaderboard never
+        shows a value a real player couldn't have reached. Match/win
+        counts are then derived from that RP via `_synthesize_career`
+        so the bot's W/L numbers are mathematically consistent with its
+        rank — wins is at least ceil(rp/30) (the best-case +30 per win)
+        and matches sits comfortably above wins for plausible win rate.
+
         Name picking: the base handle is drawn from `TIERED_BOT_NAMES`
         for the doc's computed rank tier so seeded leaderboard accounts
         share the **same name pool** that in-game ranked bots use for
@@ -5725,6 +5853,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         the Master leaderboard also believably bumps into
         "ApexLumen_T1-R" inside a Master-tier match — the world feels
         coherent instead of having two disjoint name catalogs."""
+        rp = _snap_rp_to_match_grid(rp)
         rank_idx, _name = rank_for_points(rp)
         # Tier-aligned pool (falls back to all-tiers flat if anything's
         # missing — defensive only; every tier 0..7 is populated above).
@@ -5736,10 +5865,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             username = f"{base}{suffix_pool.pop()}"
         else:
             username = base
-        matches = random.randint(15 + rank_idx * 10, 40 + rank_idx * 35)
-        kills = int(matches * random.uniform(2.5 + rank_idx * 0.4, 4.0 + rank_idx * 0.55))
-        deaths = max(1, int(kills / random.uniform(0.95 + rank_idx * 0.12, 1.45 + rank_idx * 0.18)))
-        wins = max(0, int(matches * random.uniform(0.35 + rank_idx * 0.03, 0.5 + rank_idx * 0.04)))
+        matches, kills, deaths, wins = _synthesize_career(rp, rank_idx)
         # Seeded accounts climb progressively across the season instead of
         # spawning at their final RP. We stash the *target* RP and stat
         # totals (matches/kills/deaths/wins) on the doc, then let
@@ -5764,6 +5890,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_target_kills": kills,
             "seed_target_deaths": deaths,
             "seed_target_wins": wins,
+            "seed_career_v2": True,
             "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
             "seed_climb_speed": round(random.uniform(0.75, 1.35), 4),
             "level": random.randint(5, 28 + rank_idx * 4),
