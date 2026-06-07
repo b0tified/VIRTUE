@@ -97,8 +97,10 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     // larger lobby canvas (previously the helmet floated mid-frame with
     // empty space above). z=3.0 is the closest we can get before the
     // platform edges start clipping into the bottom of the viewport.
-    camera.position.set(0, 1.45, 3.0);
-    camera.lookAt(0, 1.0, 0);
+    // Camera y + lookAt y both raised slightly so the figure sits lower
+    // in the frame (heads-up space above for the lobby's floating logo).
+    camera.position.set(0, 1.75, 3.0);
+    camera.lookAt(0, 1.30, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height, false);
