@@ -5,7 +5,7 @@ import api from "@/api";
 import {
   ArrowLeft, Crown, Trophy, Bot, Swords, History, WifiOff,
   Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
-  Check, Lock, Gem, Snowflake, Atom,
+  Check, Lock, Gem, Snowflake, Atom, Shield, Users,
 } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
@@ -77,6 +77,24 @@ const MODE_META = {
   ranked:  { label: "RANKED",   color: "#0055FF", Icon: Trophy },
   casual:  { label: "QUICK",    color: "#E62429", Icon: Swords },
   offline: { label: "OFFLINE",  color: "#06A35F", Icon: WifiOff },
+};
+
+// TDM gets its own badge — different label/icon/color so a player
+// glancing at their history can instantly tell team matches apart from
+// solo FFA quick-plays. Picked from the `game_mode` field, layered on
+// top of the `mode` mapping above.
+const TDM_MODE_META = {
+  Icon: Shield,
+  label: "TDM 3V3",
+  color: "#9B59B6",  // distinctive purple — stands out from FFA red
+};
+
+// Team outcome → label + accent color (matches the WIN/LOSS overlay in
+// the in-match summary so the UI feels consistent across screens).
+const TDM_OUTCOME_META = {
+  win:  { label: "WIN",  color: "#06A35F" },
+  loss: { label: "LOSS", color: "#E62429" },
+  draw: { label: "DRAW", color: "#7A7A7A" },
 };
 
 export default function Profile() {
@@ -272,7 +290,7 @@ export default function Profile() {
             <>
               <div className="hidden md:grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
                 <div className="col-span-2">Mode</div>
-                <div className="col-span-2">Placement</div>
+                <div className="col-span-2">Result</div>
                 <div className="col-span-2 text-right">Kills</div>
                 <div className="col-span-2 text-right">Deaths</div>
                 <div className="col-span-2 text-right">Δ RP</div>
@@ -335,11 +353,17 @@ export default function Profile() {
 }
 
 function HistoryRow({ idx, m }) {
-  const meta = MODE_META[m.mode] || MODE_META.casual;
+  // TDM rows use a dedicated badge + WIN/LOSS card in the placement
+  // slot. FFA rows keep the original "Nth of M" placement card.
+  const isTdm = m.game_mode === "tdm";
+  const meta = isTdm
+    ? { ...TDM_MODE_META, ...MODE_META[m.mode], Icon: TDM_MODE_META.Icon, label: TDM_MODE_META.label, color: TDM_MODE_META.color }
+    : (MODE_META[m.mode] || MODE_META.casual);
   const M = meta.Icon;
   const rankColor = RANK_COLORS[Math.max(0, Math.min(7, ((rankIdxFromName(m.rank_name_after)) || 0)))];
   const deltaColor = m.rp_delta > 0 ? "#06A35F" : m.rp_delta < 0 ? "#E62429" : "#0A0A0A";
   const sign = m.rp_delta > 0 ? "+" : "";
+  const outcome = isTdm ? (TDM_OUTCOME_META[m.team_outcome] || TDM_OUTCOME_META.draw) : null;
   return (
     <div
       className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"}`}
@@ -349,14 +373,45 @@ function HistoryRow({ idx, m }) {
         <span
           className="inline-flex items-center gap-1 border-pow-thin px-2 py-1 font-anton uppercase text-xs"
           style={{ background: meta.color, color: "#fff" }}
-          data-testid={`history-mode-${m.mode}`}
+          data-testid={`history-mode-${isTdm ? "tdm" : m.mode}`}
         >
           <M size={12} strokeWidth={3} /> {meta.label}
         </span>
+        {/* RANKED badge alongside the TDM badge if this was a ranked TDM match.
+            Hidden when the mode is already "ranked" (avoids double badge). */}
+        {isTdm && m.mode === "ranked" && (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 font-anton uppercase text-[10px]"
+            style={{ background: MODE_META.ranked.color, color: "#fff" }}
+            data-testid={`history-tdm-ranked-${idx}`}
+          >
+            <Trophy size={10} strokeWidth={3} /> RANKED
+          </span>
+        )}
       </div>
-      <div className="col-span-6 md:col-span-2 text-right md:text-left font-anton text-lg">
-        {m.placement || "-"} <span className="text-neutral-400 text-xs">/ {m.total_players || "-"}</span>
-      </div>
+      {isTdm ? (
+        // TDM result card — WIN/LOSS/DRAW badge + the team scoreline
+        // (your team — enemy team) so the row reads at a glance.
+        <div
+          className="col-span-6 md:col-span-2 text-right md:text-left flex items-center gap-2 md:justify-start justify-end"
+          data-testid={`history-tdm-result-${idx}`}
+        >
+          <span
+            className="font-anton uppercase text-xs px-2 py-1"
+            style={{ background: outcome.color, color: "#fff" }}
+            data-testid={`history-tdm-outcome-${idx}`}
+          >
+            {outcome.label}
+          </span>
+          <span className="font-display text-xl tabular-nums" data-testid={`history-tdm-score-${idx}`}>
+            {m.team_score ?? 0}<span className="text-neutral-400 mx-1">—</span>{m.enemy_team_score ?? 0}
+          </span>
+        </div>
+      ) : (
+        <div className="col-span-6 md:col-span-2 text-right md:text-left font-anton text-lg">
+          {m.placement || "-"} <span className="text-neutral-400 text-xs">/ {m.total_players || "-"}</span>
+        </div>
+      )}
       <div className="col-span-4 md:col-span-2 md:text-right font-anton text-lg" data-testid={`history-kills-${idx}`}>
         <span className="md:hidden text-xs opacity-60 uppercase mr-1">K</span>{m.kills}
       </div>

@@ -392,3 +392,15 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - `SEASON_LENGTH_DAYS = 14` → `30` in `server.py`. The current Season 2 now ends 2026-07-05 instead of 2026-06-19 (verified via `GET /api/season` → `length_days: 30`).
 - Side effects: the seeded-bot climb curve automatically re-scales to the new 30-day window (the loop derives progress from `elapsed / SEASON_LENGTH_DAYS`), so bots climb proportionally slower per real-time day. No other code changes needed — every consumer reads the constant.
 - Updated stale "14-day" comments + test docstring to be season-length agnostic; midseason test now uses `SEASON_LENGTH_DAYS * 0.5` instead of hard-coded 7 days. 11/11 season + climb tests pass.
+
+## 2026-06-07 — TDM matches now read clearly in Profile match history
+- **Problem**: TDM (3v3 team) rows in Profile › Match History rendered with the same "QUICK" red badge as FFA quick-matches and showed "Nth of M" placement — which is meaningless in a team mode. A player couldn't glance at their history and tell which matches were team games or whether their team won.
+- **Backend** (`server.py`):
+  - On `match_history` insert, every doc now carries `game_mode: "ffa" | "tdm"` (was implicit). TDM docs additionally store `team`, `team_score`, `enemy_team_score`, and a precomputed `team_outcome: "win" | "loss" | "draw"` so the UI doesn't have to re-apply tie-break rules.
+  - `GET /profile/me/history` passes those fields through for TDM rows; FFA rows stay clean (no leaked TDM keys). Pre-feature legacy docs without `game_mode` default to `"ffa"`.
+- **Frontend** (`Profile.jsx`):
+  - New `TDM_MODE_META` badge: purple **TDM 3V3** with `Shield` icon — visually distinct from FFA red **QUICK** and ranked blue **RANKED**.
+  - Ranked TDM rows show a secondary mini "RANKED" badge alongside TDM so the two dimensions read independently.
+  - The "Placement" column became "Result" and switches its content based on `game_mode`: FFA rows still show "Nth of M", TDM rows show a `WIN/LOSS/DRAW` badge + the literal scoreline "12 — 10" (yours — enemy's).
+- **Tests**: `tests/test_match_history_tdm.py` (2 cases) — confirms `/profile/me/history` surfaces TDM fields when present, defaults legacy rows to FFA, and never leaks TDM keys into FFA rows. All passing.
+

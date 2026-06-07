@@ -1491,8 +1491,9 @@ async def profile_history(user: dict = Depends(get_current_user), limit: int = 1
     rows = []
     async for m in cursor:
         ts = m.get("ended_at")
-        rows.append({
+        row = {
             "mode": m.get("mode", "casual"),
+            "game_mode": m.get("game_mode", "ffa"),
             "kills": int(m.get("kills", 0)),
             "deaths": int(m.get("deaths", 0)),
             "placement": int(m.get("placement", 0)),
@@ -1502,7 +1503,15 @@ async def profile_history(user: dict = Depends(get_current_user), limit: int = 1
             "rank_name_after": m.get("rank_name_after", "BRONZE"),
             "is_placement": bool(m.get("is_placement", False)),
             "ended_at": ts.isoformat() if isinstance(ts, datetime) else ts,
-        })
+        }
+        # TDM rows carry the team scoreline + outcome so the UI can
+        # render "WIN 12 — 10" instead of an FFA placement card.
+        if m.get("game_mode") == "tdm":
+            row["team"] = m.get("team")
+            row["team_score"] = int(m.get("team_score", 0))
+            row["enemy_team_score"] = int(m.get("enemy_team_score", 0))
+            row["team_outcome"] = m.get("team_outcome", "draw")
+        rows.append(row)
     return rows
 
 
@@ -4271,10 +4280,16 @@ class GameRoom:
                 first_match_grants: List[str] = []
                 for pl in real_players:
                     entry = placements_by_uid.get(pl.user_id) or {}
-                    docs.append({
+                    doc = {
                         "user_id": pl.user_id,
                         "username": pl.username,
                         "mode": mode,
+                        # `game_mode` distinguishes FFA from TDM inside the
+                        # broader mode label ("casual" covers both today).
+                        # The profile history UI keys off this to render
+                        # WIN/LOSS + team-score badges for TDM rows instead
+                        # of the FFA "Nth of M" placement card.
+                        "game_mode": self.game_mode,
                         "kills": int(entry.get("kills", pl.kills) or 0),
                         "deaths": int(entry.get("deaths", pl.deaths) or 0),
                         "placement": placement_of.get(pl.id, 1),
@@ -4284,7 +4299,29 @@ class GameRoom:
                         "rank_name_after": entry.get("rank_name") or "BRONZE",
                         "is_placement": bool(entry.get("is_placement", False)),
                         "ended_at": now,
-                    })
+                    }
+                    # TDM extras: persist the player's team color, the
+                    # final 3v3 scoreline, and a precomputed `team_won`
+                    # flag so the UI can render WIN / LOSS / DRAW without
+                    # reapplying the tie-break rules client-side.
+                    if self.game_mode == "tdm":
+                        p_team = (getattr(pl, "team", None) or "").lower()
+                        my_score = int(self.team_scores.get(p_team, 0))
+                        other_team = "blue" if p_team == "red" else "red"
+                        enemy_score = int(self.team_scores.get(other_team, 0))
+                        if my_score > enemy_score:
+                            team_outcome = "win"
+                        elif my_score < enemy_score:
+                            team_outcome = "loss"
+                        else:
+                            team_outcome = "draw"
+                        doc.update({
+                            "team": p_team or None,
+                            "team_score": my_score,
+                            "enemy_team_score": enemy_score,
+                            "team_outcome": team_outcome,
+                        })
+                    docs.append(doc)
                     # Free Mech skin grant — fires when the player's matches
                     # count was still 0 going into this match. The stats.matches
                     # $inc was already issued above, so we re-read via the doc.
