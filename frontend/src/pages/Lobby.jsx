@@ -583,8 +583,11 @@ export default function Lobby() {
             gutter between the queue buttons (left) and daily challenges
             (right). Wider span (4) than before so the figure fills the
             stage at a respectable size; right column drops to 4 to
-            compensate (challenges card is still readable). */}
-        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch pt-6 xl:pt-8">
+            compensate (challenges card is still readable). Top padding
+            pushes the frame DOWN so the figure sits below the header
+            row's bottom edge — keeps the helmet from crowding the
+            currency/shop chip and gives the stage a "grounded" feel. */}
+        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch pt-24 xl:pt-32">
           <LobbyCharacterDisplay
             skinId={user?.selected_skin || "default"}
             username={user?.username || ""}

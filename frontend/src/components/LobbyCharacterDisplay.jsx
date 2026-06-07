@@ -93,13 +93,12 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     scene.add(platformFeather);
 
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 50);
-    // Pull the camera in + frame slightly higher so the figure fills the
-    // larger lobby canvas (previously the helmet floated mid-frame with
-    // empty space above). z=3.0 is the closest we can get before the
-    // platform edges start clipping into the bottom of the viewport.
-    // Camera y + lookAt y both raised slightly so the figure sits lower
-    // in the frame (heads-up space above for the lobby's floating logo).
-    camera.position.set(0, 1.75, 3.0);
+    // Camera positioned so the FULL figure + platform fit in frame with
+    // breathing room on every side. Pull-back distance increased to 3.7
+    // so toes + platform rim are visible at the bottom; camera y raised
+    // to 1.95 with lookAt y at 1.30 so the silhouette sits in the lower
+    // 2/3 of the canvas (lobby-friendly framing, more headroom above).
+    camera.position.set(0, 1.95, 3.7);
     camera.lookAt(0, 1.30, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
