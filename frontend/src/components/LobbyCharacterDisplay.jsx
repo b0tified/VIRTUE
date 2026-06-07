@@ -93,8 +93,12 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
     scene.add(platformFeather);
 
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 50);
-    camera.position.set(0, 1.55, 3.9);
-    camera.lookAt(0, 1.05, 0);
+    // Pull the camera in + frame slightly higher so the figure fills the
+    // larger lobby canvas (previously the helmet floated mid-frame with
+    // empty space above). z=3.0 is the closest we can get before the
+    // platform edges start clipping into the bottom of the viewport.
+    camera.position.set(0, 1.45, 3.0);
+    camera.lookAt(0, 1.0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height, false);
@@ -252,7 +256,7 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
       <div
         ref={hostRef}
         className="w-full"
-        style={{ height: "min(56vh, 460px)", minHeight: 320 }}
+        style={{ height: "min(78vh, 640px)", minHeight: 460 }}
         data-testid="lobby-character-display-canvas"
       />
       {/* Caption with username + a "Customize" hint that pops on hover.

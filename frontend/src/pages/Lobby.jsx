@@ -581,9 +581,10 @@ export default function Lobby() {
 
         {/* Middle column — 3D character display in the previously-empty
             gutter between the queue buttons (left) and daily challenges
-            (right). Sits flush against the buttons so the lobby reads
-            "you · your loadout · today's objectives". */}
-        <div className="lg:col-span-3 relative hidden lg:flex flex-col items-stretch pt-6 xl:pt-8">
+            (right). Wider span (4) than before so the figure fills the
+            stage at a respectable size; right column drops to 4 to
+            compensate (challenges card is still readable). */}
+        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch pt-6 xl:pt-8">
           <LobbyCharacterDisplay
             skinId={user?.selected_skin || "default"}
             username={user?.username || ""}
@@ -591,7 +592,7 @@ export default function Lobby() {
           />
         </div>
 
-        <div className="lg:col-span-5 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
+        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
           <LobbyDailyPanel />
         </div>
       </main>
