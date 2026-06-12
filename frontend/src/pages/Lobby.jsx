@@ -578,11 +578,13 @@ export default function Lobby() {
               same stats are still surfaced inside the Profile page. */}
         </div>
 
-        {/* Middle 3D character column was removed per request. The
-            right-side Daily panel now spans the freed gutter
-            (col-span-8) so the lobby still reads as a balanced two-card
-            layout instead of leaving an empty centre block. */}
-        <div className="lg:col-span-8 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
+        {/* Middle column intentionally left empty — the lobby's
+            background comic-style typography (BOOM!/BLAZE!/IMPACT!)
+            fills the gutter visually without competing for attention
+            with the queue buttons or the daily panel. */}
+        <div className="lg:col-span-4 hidden lg:block" aria-hidden />
+
+        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
           <LobbyDailyPanel />
         </div>
       </main>

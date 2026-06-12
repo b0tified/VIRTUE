@@ -404,3 +404,10 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - The "Placement" column became "Result" and switches its content based on `game_mode`: FFA rows still show "Nth of M", TDM rows show a `WIN/LOSS/DRAW` badge + the literal scoreline "12 — 10" (yours — enemy's).
 - **Tests**: `tests/test_match_history_tdm.py` (2 cases) — confirms `/profile/me/history` surfaces TDM fields when present, defaults legacy rows to FFA, and never leaks TDM keys into FFA rows. All passing.
 
+
+## 2026-06-07 — Lobby layout restored + dailies auto-claim
+- **Lobby layout**: moved Daily Challenges back to the right `col-span-4` column (was temporarily expanded to `col-span-8` after the skin removal). The middle column is now an empty 4-col gutter that the comic-style "BOOM!/FLARE!/IMPACT!" background art fills naturally.
+- **Auto-claim**: added `_auto_claim_completed_dailies(user, daily_state)` server-side. Every `GET /api/progression` now sweeps for completed-but-unclaimed dailies, credits `coins` + `season_xp` in a single batched `update_one` ($set on `daily_state.claimed` + $inc on coins/xp), and returns the freshly-claimed list in `daily.auto_claimed`. Zero writes when nothing's claimable (hot endpoint stays cheap).
+- **Frontend** (`LobbyDailyPanel.jsx`): removed the manual CLAIM button. Each row now shows a status pill (`IN PROGRESS` / `CLAIMING…` / `CLAIMED`). When the panel polls `/progression` (every 30s + on mount) and the response includes any `auto_claimed` entries, a green toast surfaces `"Massacre, Hat Trick — +90 coins · +50 XP"` and the auth context refreshes so the header coin pill updates instantly.
+- **Tests**: `tests/test_daily_auto_claim.py` (3 cases) — batched `$inc` on multiple completes, no-op when nothing completed, skip already-claimed entries. All passing.
+

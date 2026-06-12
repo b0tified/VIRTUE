@@ -1,8 +1,8 @@
-/* LobbyDailyPanel — compact "Daily Challenges" widget that lives in the
-   previously-empty right column of the Lobby. Pulls from /api/progression
-   (same endpoint as the Progress modal) and lets the player claim a
-   challenge inline. A successful claim refreshes the user (coins) and
-   re-fetches the panel state so the UI stays consistent.
+/* LobbyDailyPanel — compact "Daily Challenges" widget in the lobby's
+   right column. Reads from /api/progression (same endpoint as the
+   Progress modal). Completed dailies are **auto-claimed** server-side
+   on every progression refresh — this panel just surfaces a "+50 coins"
+   toast the moment a sweep credits anything new. No claim button.
 
    Opening the full Progress modal is still available via the PASS button
    in the lobby header — this panel just surfaces the 3 dailies up front
@@ -15,17 +15,31 @@ import { Calendar, Coins, Star, Check, Zap, Flame } from "lucide-react";
 export default function LobbyDailyPanel() {
   const { refreshMe } = useAuth();
   const [daily, setDaily] = useState(null);
-  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null); // { kind, text }
 
   const reload = useCallback(async () => {
     try {
       const { data } = await api.get("/progression");
       setDaily(data?.daily || null);
+      // Server returned a list of dailies that were auto-claimed
+      // during this request — surface them as a single rewards toast
+      // and refresh the user header so the coin pill jumps.
+      const auto = data?.daily?.auto_claimed || [];
+      if (auto.length) {
+        const coins = auto.reduce((s, a) => s + (a.coins || 0), 0);
+        const xp = auto.reduce((s, a) => s + (a.season_xp || 0), 0);
+        const names = auto.map((a) => a.name).join(", ");
+        setToast({
+          kind: "ok",
+          text: `${names} — +${coins} coins · +${xp} XP`,
+        });
+        refreshMe?.();
+        setTimeout(() => setToast(null), 4500);
+      }
     } catch (e) {
       // Soft-fail: keep last data, surface nothing in the lobby.
     }
-  }, []);
+  }, [refreshMe]);
 
   useEffect(() => {
     reload();
@@ -33,23 +47,6 @@ export default function LobbyDailyPanel() {
     const id = setInterval(reload, 30000);
     return () => clearInterval(id);
   }, [reload]);
-
-  const claim = async (id) => {
-    if (busy) return;
-    setBusy(true);
-    setToast(null);
-    try {
-      const { data: res } = await api.post("/progression/claim", { kind: "daily", id });
-      setToast({ kind: "ok", text: res?.label || "Claimed!" });
-      await refreshMe?.();
-      await reload();
-    } catch (e) {
-      setToast({ kind: "err", text: e.response?.data?.detail || "Couldn't claim." });
-    } finally {
-      setBusy(false);
-      setTimeout(() => setToast(null), 3500);
-    }
-  };
 
   const challenges = daily?.challenges || [];
 
@@ -86,7 +83,7 @@ export default function LobbyDailyPanel() {
           </div>
         ) : (
           challenges.map((c) => (
-            <DailyRow key={c.id} c={c} busy={busy} onClaim={() => claim(c.id)} />
+            <DailyRow key={c.id} c={c} />
           ))
         )}
       </div>
@@ -94,9 +91,8 @@ export default function LobbyDailyPanel() {
   );
 }
 
-function DailyRow({ c, busy, onClaim }) {
+function DailyRow({ c }) {
   const pct = Math.max(0, Math.min(100, Math.round((c.progress / Math.max(1, c.goal)) * 100)));
-  const canClaim = c.completed && !c.claimed;
   return (
     <div
       className={`border-pow-thin bg-neutral-50 p-2 ${c.claimed ? "opacity-50" : ""}`}
@@ -136,18 +132,19 @@ function DailyRow({ c, busy, onClaim }) {
               <Coins size={11} strokeWidth={3} /> +{c.coins}
             </span>
           ) : null}
-          <button
-            disabled={!canClaim || busy}
-            onClick={onClaim}
-            className={`btn-pow [&]:px-2 [&]:py-0.5 [&]:text-[10px] ${
-              c.claimed ? "bg-neutral-300 text-neutral-500" :
-              c.completed ? "bg-[#06A35F] text-white" :
-              "bg-neutral-200 text-neutral-500"
+          {/* No claim button — auto-claim happens server-side on the
+              /progression GET so the player never has to tap. Status
+              badge keeps the row legible. */}
+          <span
+            className={`font-anton uppercase text-[10px] px-2 py-0.5 border-pow-thin ${
+              c.claimed ? "bg-neutral-200 text-neutral-500" :
+              c.completed ? "bg-[#FFD700] text-black animate-pulse" :
+              "bg-neutral-100 text-neutral-500"
             }`}
-            data-testid={`lobby-daily-claim-${c.id}`}
+            data-testid={`lobby-daily-status-${c.id}`}
           >
-            {c.claimed ? "CLAIMED" : c.completed ? "CLAIM" : "IN PROGRESS"}
-          </button>
+            {c.claimed ? "CLAIMED" : c.completed ? "CLAIMING…" : "IN PROGRESS"}
+          </span>
         </div>
       </div>
     </div>

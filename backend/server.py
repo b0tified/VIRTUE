@@ -1247,11 +1247,84 @@ async def _grant_first_match_skin(user_id: str) -> None:
     )
 
 
+async def _auto_claim_completed_dailies(user: dict, daily_state: dict) -> List[dict]:
+    """Sweep today's dailies and claim any that are completed-but-not-
+    yet-claimed. Credits the user's `coins` + `season_xp` in a single
+    `$inc` and stamps the `daily_state.claimed` map.
+
+    Returns a list of `{id, name, coins, season_xp}` for each freshly
+    claimed challenge so callers (the `/progression` endpoint) can
+    return them to the client for an inline toast like
+    `"Massacre — +50 coins, +30 XP"`. When no challenge becomes newly
+    claimed this returns `[]` and no DB write happens (the call is a
+    cheap pure read).
+
+    `daily_state` is mutated in-place so the calling code can keep
+    using it after the sweep — the freshly-claimed map is reflected
+    without re-fetching the doc.
+    """
+    if not daily_state:
+        return []
+    claimed_map = dict(daily_state.get("claimed") or {})
+    snapshot = daily_state.get("snapshot")
+    by_id = {c["id"]: c for c in DAILY_CHALLENGES_POOL}
+    newly: List[dict] = []
+    coins_inc = 0
+    xp_inc = 0
+    for cid in daily_state.get("challenges", []):
+        if claimed_map.get(cid):
+            continue
+        ch = by_id.get(cid)
+        if not ch:
+            continue
+        prog = _challenge_progress(user, ch, snapshot)
+        if prog < ch["goal"]:
+            continue
+        # Mark claimed and accumulate the inc deltas. We batch all
+        # newly-claimed dailies into a single Mongo update so a player
+        # who logs in to N completed dailies pays for 1 write, not N.
+        claimed_map[cid] = True
+        coins = int(ch.get("coins", 0) or 0)
+        xp = int(ch.get("season_xp", 0) or 0)
+        coins_inc += coins
+        xp_inc += xp
+        newly.append({
+            "id": cid,
+            "name": ch.get("name", cid),
+            "coins": coins,
+            "season_xp": xp,
+        })
+    if not newly:
+        return []
+    new_state = dict(daily_state)
+    new_state["claimed"] = claimed_map
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {"daily_state": new_state},
+            "$inc": {"coins": coins_inc, "season_xp": xp_inc},
+        },
+    )
+    # Mirror the mutations onto the cached user / state dicts the caller
+    # already holds so the rest of /progression sees the post-claim
+    # numbers without a re-fetch.
+    daily_state["claimed"] = claimed_map
+    user["coins"] = int(user.get("coins", 0) or 0) + coins_inc
+    user["season_xp"] = int(user.get("season_xp", 0) or 0) + xp_inc
+    return newly
+
+
 @api.get("/progression")
 async def progression(user: dict = Depends(get_current_user)):
     """Bundle endpoint — returns lifetime challenge progress, today's
     daily challenges, and the 30-tier season pass state in one round-trip.
-    The frontend ProgressionModal pulls everything from here."""
+    The frontend ProgressionModal pulls everything from here.
+
+    Side effect: auto-claims any completed-but-unclaimed daily
+    challenges before computing the response (see
+    `_auto_claim_completed_dailies`). This way the player never has to
+    tap a Claim button — finishing a match credits the coin/XP rewards
+    on the next progression refresh."""
     await credit_level_coins(user)
     # Roll the season forward if the timer elapsed — this is what makes
     # the new pass go live exactly when the countdown hits zero (no
@@ -1259,6 +1332,10 @@ async def progression(user: dict = Depends(get_current_user)):
     season_doc = await maybe_reset_season()
     season_number = int(season_doc.get("season_number", 1))
     daily_state = await _ensure_daily_state(user)
+    # Auto-claim sweep happens AFTER daily_state is hydrated so the
+    # helper can mutate the same dict and so the rest of this function
+    # reads the freshly-credited state.
+    auto_claimed = await _auto_claim_completed_dailies(user, daily_state)
     claimed_lifetime: List[str] = list(user.get("claimed_challenges") or [])
     # Lifetime challenges.
     lifetime_out = []
@@ -1292,6 +1369,10 @@ async def progression(user: dict = Depends(get_current_user)):
         "daily": {
             "date": daily_state.get("date"),
             "challenges": daily_out,
+            # Surfaces freshly auto-claimed dailies from THIS request so
+            # the lobby UI can toast "+50 coins · +30 XP — Massacre!"
+            # immediately. Empty list when nothing was newly claimed.
+            "auto_claimed": auto_claimed,
         },
         "season": {
             "xp": season_xp,
