@@ -11,7 +11,6 @@ import FriendsModal from "@/components/FriendsModal";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
-import LobbyCharacterDisplay from "@/components/LobbyCharacterDisplay";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
@@ -579,23 +578,11 @@ export default function Lobby() {
               same stats are still surfaced inside the Profile page. */}
         </div>
 
-        {/* Middle column — 3D character display in the previously-empty
-            gutter between the queue buttons (left) and daily challenges
-            (right). Wider span (4) than before so the figure fills the
-            stage at a respectable size; right column drops to 4 to
-            compensate (challenges card is still readable). Top padding
-            pushes the frame DOWN so the figure sits below the header
-            row's bottom edge — keeps the helmet from crowding the
-            currency/shop chip and gives the stage a "grounded" feel. */}
-        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch pt-24 xl:pt-32">
-          <LobbyCharacterDisplay
-            skinId={user?.selected_skin || "default"}
-            username={user?.username || ""}
-            onClick={() => setShowShop(true)}
-          />
-        </div>
-
-        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
+        {/* Middle 3D character column was removed per request. The
+            right-side Daily panel now spans the freed gutter
+            (col-span-8) so the lobby still reads as a balanced two-card
+            layout instead of leaving an empty centre block. */}
+        <div className="lg:col-span-8 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
           <LobbyDailyPanel />
         </div>
       </main>
