@@ -487,6 +487,14 @@ export class LocalSim {
     Promise.resolve().then(() => {
       this.onOpen();
       this.matchStartMs = performance.now();
+      // Pre-match freeze: offline practice gets the same 3-2-1 the
+      // online server does so the player has a beat to orient
+      // before bots open fire. `match_started` starts false; client
+      // sends `{type:"loaded"}` after welcome, which kicks off the
+      // countdown timer below.
+      this._matchStarted = false;
+      this._countdownUntilMs = null;
+      this._countdownSeconds = 3.0;
       this.onMessage({
         type: "welcome",
         you: this.me.to_state(performance.now()),
@@ -496,6 +504,9 @@ export class LocalSim {
         match_start: this.matchStartMs ? this.matchStartMs / 1000 : null,
         spectator: false,
         spectate_target_id: null,
+        match_started: false,
+        countdown_until: null,
+        countdown_seconds: this._countdownSeconds,
       });
       // Start tick loop
       this.tickHandle = setInterval(() => this._tick(), 50); // 20Hz
@@ -506,10 +517,33 @@ export class LocalSim {
     if (!this.me) return;
     const now = performance.now();
     const type = msg.type;
+    if (type === "loaded") {
+      // Client finished loading. Start the 3-2-1 if it hasn't already
+      // fired. Mirrors the server's `_maybe_start_countdown`.
+      if (this._matchStarted || this._countdownUntilMs != null) return;
+      this._countdownUntilMs = now + this._countdownSeconds * 1000;
+      // Push match_start out to the countdown end so the duration
+      // timer doesn't include frozen seconds (matches server logic).
+      this.matchStartMs = this._countdownUntilMs;
+      this.onMessage({
+        type: "match_countdown",
+        countdown_until: this._countdownUntilMs / 1000,
+        seconds: this._countdownSeconds,
+      });
+      return;
+    }
+    // Pre-match freeze: drop gameplay-affecting messages until the
+    // countdown ends. Yaw/pitch are still applied inside the `input`
+    // branch so the camera can pan freely.
+    if (!this._matchStarted && (type === "shoot" || type === "melee" || type === "reload")) {
+      return;
+    }
     if (type === "input") {
       if (typeof msg.yaw === "number") this.me.yaw = msg.yaw;
       if (typeof msg.pitch === "number") this.me.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
-      if (typeof msg.x === "number" && typeof msg.z === "number") {
+      // Pre-match freeze: drop x/z updates so the player stays planted
+      // at spawn while the 3-2-1 plays. Yaw/pitch still applied above.
+      if (this._matchStarted && typeof msg.x === "number" && typeof msg.z === "number") {
         // Trust client position (server doesn't reconcile here for offline anyway).
         this.me.x = msg.x;
         this.me.z = msg.z;
@@ -755,6 +789,20 @@ export class LocalSim {
 
   _tick() {
     const now = performance.now();
+    // Pre-match freeze gate. While the 3-2-1 plays we skip respawns,
+    // bot AI, laser ticks, and match-end checks — same shape as the
+    // server's tick guard. When the countdown timer elapses we flip
+    // `_matchStarted` and emit `match_go`, then reset `matchStartMs`
+    // so the duration counter starts fresh.
+    if (!this._matchStarted) {
+      if (this._countdownUntilMs != null && now >= this._countdownUntilMs) {
+        this._matchStarted = true;
+        this._countdownUntilMs = null;
+        this.matchStartMs = now;
+        this.onMessage({ type: "match_go" });
+      }
+      return;
+    }
     // Respawns
     for (const p of this.players.values()) {
       if (!p.alive && now >= p.respawn_at) {

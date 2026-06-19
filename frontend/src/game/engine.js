@@ -169,6 +169,17 @@ export class GameEngine {
 
   getFps() { return this.fps; }
 
+  /** Pre-match freeze state for the HUD overlay. Returns `null` once
+   *  the match is live. `secondsLeft` is the integer ceiling so the
+   *  HUD shows "3", "2", "1" — matches the way most shooters animate
+   *  their pre-match countdowns. */
+  getCountdownState() {
+    if (this._matchStarted !== false) return null;
+    if (!this._countdownUntil) return { secondsLeft: null }; // waiting on other players to load
+    const left = Math.max(0, this._countdownUntil - Date.now() / 1000);
+    return { secondsLeft: Math.ceil(left), totalSeconds: this._countdownSeconds || 3 };
+  }
+
   getSensitivity() {
     const v = parseFloat(localStorage.getItem(SENS_KEY));
     return Number.isFinite(v) && v > 0 ? v : 1.0;
@@ -345,6 +356,11 @@ export class GameEngine {
   }
 
   _tryShoot(aimYaw, aimPitch) {
+    // Pre-match freeze: server will drop the shoot anyway, but we also
+    // gate it client-side so the local muzzle flash + recoil don't
+    // play. Same gate covers melee + laser below — the early-return
+    // skips all three.
+    if (this._matchStarted === false) return;
     if (this.currentWeapon === "secondary") {
       // melee path
       this.pendingMelee = true;
@@ -3331,12 +3347,32 @@ export class GameEngine {
       // Reset delta caches — a fresh welcome implies a new room.
       this._lastPlayersById = null;
       this._lastTopFields = null;
+      // Pre-match freeze state. Server gates movement/shoot until
+      // `_matchStarted` is true; the HUD reads `_countdownUntil` to
+      // render the 3-2-1 overlay. Late joiners arrive with
+      // `match_started=true` and no countdown.
+      this._matchStarted = msg.match_started !== false; // default to true if absent (legacy)
+      this._countdownUntil = msg.countdown_until || null;
+      this._countdownSeconds = msg.countdown_seconds || 3.0;
       // TDM context — reset to defaults until the next state frame
       // tells us otherwise.
       this._gameMode = "ffa";
       this._myTeam = null;
       this._teamScores = null;
       this._tdmKillTarget = null;
+      return;
+    }
+    // Pre-match countdown / go events. These are room-wide broadcasts
+    // that toggle the freeze state independent of the keyframe stream.
+    if (msg.type === "match_countdown") {
+      this._matchStarted = false;
+      this._countdownUntil = msg.countdown_until || null;
+      this._countdownSeconds = msg.seconds || 3.0;
+      return;
+    }
+    if (msg.type === "match_go") {
+      this._matchStarted = true;
+      this._countdownUntil = null;
       return;
     }
     // -----------------------------------------------------------------
@@ -3391,13 +3427,17 @@ export class GameEngine {
       };
     }
     // match_start may carry a new arena (server re-rolls the map on each
-    // intermission reset). Swap to it before the next round begins.
+    // intermission reset). Swap to it before the next round begins. Also
+    // re-arms the pre-match freeze for the new round — the server will
+    // follow this up with a `match_countdown` event the instant it can.
     if (msg.type === "match_start" && msg.arena) {
       this._arena = msg.arena;
       this._rebuildArenaFromServer(msg.arena);
       // Stale cache after a map swap — wait for the next keyframe.
       this._lastPlayersById = null;
       this._lastTopFields = null;
+      this._matchStarted = false;
+      this._countdownUntil = null;
     }
     if (msg.type === "state" && this.isSpectator && this.spectateTargetId) {
       // Lock camera to the spectate target in *first-person* — we see
@@ -3930,10 +3970,19 @@ export class GameEngine {
     }
 
     let mx = 0, mz = 0;
-    if (this.keys.has(_bind("forward", "KeyW"))) mz -= 1;
-    if (this.keys.has(_bind("back", "KeyS"))) mz += 1;
-    if (this.keys.has(_bind("left", "KeyA"))) mx -= 1;
-    if (this.keys.has(_bind("right", "KeyD"))) mx += 1;
+    // Pre-match freeze: skip keyboard/gamepad WASD reads so the player
+    // stays planted at spawn during the 3-2-1. Mouse-look still works
+    // (yaw/pitch are integrated separately above) so the camera can
+    // still pan around — feels better than a fully locked view.
+    if (this._matchStarted === false) {
+      // Skip the WASD reads — `mx`/`mz` stay 0 and the movement block
+      // below short-circuits via the `moving` check.
+    } else {
+      if (this.keys.has(_bind("forward", "KeyW"))) mz -= 1;
+      if (this.keys.has(_bind("back", "KeyS"))) mz += 1;
+      if (this.keys.has(_bind("left", "KeyA"))) mx -= 1;
+      if (this.keys.has(_bind("right", "KeyD"))) mx += 1;
+    }
     const sprintKey = _bind("sprint", "ShiftLeft");
     const sprint = this.keys.has(sprintKey) || (sprintKey === "ShiftLeft" && this.keys.has("ShiftRight"));
     // ADS slows movement to ~55% — gives aimed shots a recoil tradeoff and

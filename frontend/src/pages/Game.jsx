@@ -328,6 +328,15 @@ export default function Game() {
               },
             }));
           } catch {}
+          // Tell the server our local 3D scene + audio are ready so the
+          // room can start its pre-match countdown. The server holds
+          // every shoot/move blocked until ALL real players have sent
+          // this — late joiners (mid-match) hit a no-op handler. We
+          // delay slightly so the HUD has time to mount and the
+          // loading-screen confirm animation can wind down.
+          setTimeout(() => {
+            try { sock.send({ type: "loaded" }); } catch {}
+          }, 200);
           // Don't return — let the engine consume the welcome too.
         }
         if (msg.type === "pong") {
@@ -477,12 +486,15 @@ export default function Game() {
       sock.send({ type: "ping", ts: Date.now() });
     }, 1000);
 
-    // FPS/ping display refresh @ 4Hz
+    // FPS/ping display refresh @ 4Hz. Also samples the engine's
+    // pre-match countdown state so the on-screen overlay can tick down
+    // from 3 → 2 → 1 without needing a dedicated 1Hz timer.
     const statsId = setInterval(() => {
       setHud((h) => ({
         ...h,
         fps: engineRef.current?.getFps() ?? 0,
         ping: pingRef.current.value,
+        countdown: engineRef.current?.getCountdownState?.() || null,
       }));
     }, 250);
 
@@ -665,8 +677,18 @@ export default function Game() {
           }
           try { document.exitPointerLock?.(); } catch {}
           nav("/lobby", { replace: true });
-        }}
-      />
+        }}      />
+      {/* Pre-match 3-2-1 countdown overlay. Visible while the server
+          says `match_started === false`. Two flavours:
+            - `secondsLeft === null` → still waiting on other players'
+              loading screens. We show a "GET READY" placeholder so the
+              player knows the freeze is intentional.
+            - `secondsLeft` is a number → big animated digit that pops
+              with each tick. "GO!" reveals as the digit hits 0. */}
+      {hud.countdown && !isSpectator && (
+        <PreMatchCountdownOverlay state={hud.countdown} />
+      )}
+
       {showPause && !isSpectator && (
         <div
           className="absolute inset-0 z-40 bg-black/70 flex items-center justify-center"
@@ -792,6 +814,55 @@ export default function Game() {
     </div>
   );
 }
+
+/* PreMatchCountdownOverlay — full-screen frozen-state overlay shown while
+   the server holds `match_started === false`. Two visual phases:
+     1. "GET READY" placeholder when `secondsLeft === null` (server is
+        still waiting on at least one teammate's loading screen).
+     2. Big animated digit (3 → 2 → 1 → GO!) once the server has
+        actually started the countdown. Each tick mounts a fresh node
+        via React's `key={secondsLeft}` so the pop animation replays
+        without needing JS keyframes. */
+function PreMatchCountdownOverlay({ state }) {
+  const { secondsLeft } = state || {};
+  const isWaiting = secondsLeft === null || secondsLeft === undefined;
+  // 0 → "GO!", positive → the digit, null → "GET READY"
+  const display = isWaiting ? "GET READY" : (secondsLeft <= 0 ? "GO!" : String(secondsLeft));
+  const accent = isWaiting ? "#FFD700" : (secondsLeft <= 0 ? "#06A35F" : "#E62429");
+  return (
+    <div
+      className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center"
+      data-testid="prematch-countdown-overlay"
+    >
+      {/* Dim the underlying scene a touch so the digit pops without
+          fully blacking out the arena — the player still sees the
+          spawn area and their teammates. */}
+      <div className="absolute inset-0 bg-black/35" />
+      <div
+        key={display}
+        className="relative font-display text-pow-shadow-lg leading-none select-none"
+        style={{
+          fontSize: isWaiting ? "clamp(56px, 9vw, 132px)" : "clamp(140px, 22vw, 320px)",
+          color: "#FFFFFF",
+          textShadow: `0 0 30px ${accent}cc, 6px 6px 0 #0A0A0A, -2px -2px 0 #0A0A0A`,
+          animation: "match-loading-banner-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        }}
+        data-testid="prematch-countdown-digit"
+      >
+        {display}
+      </div>
+      {!isWaiting && (
+        <div
+          className="absolute bottom-[18vh] font-anton uppercase tracking-[0.4em] text-base sm:text-lg text-white/80"
+          style={{ textShadow: "2px 2px 0 #0A0A0A" }}
+        >
+          MATCH STARTING — HOLD POSITION
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 /* Layered post-FX driven entirely by the settings store. Sits above the
    canvas but below the HUD (z-1). Each effect is its own div so it can

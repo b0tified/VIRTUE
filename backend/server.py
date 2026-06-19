@@ -2381,6 +2381,12 @@ class Player:
         # a `ping_ms` value on a shoot message. Clamped 0..300ms to keep
         # bad actors from rewinding the world half a second.
         self.last_ping_ms: int = 0
+        # Pre-match readiness flag. Bots are always loaded (no client to
+        # wait for); real players flip this to True when their client
+        # finishes the loading screen and sends `{type: "loaded"}`. The
+        # room's pre-match freeze stays active until every real player
+        # has reported in (or a 30s safety fallback elapses).
+        self.is_loaded: bool = bool(is_bot)
 
     def cur_ammo(self) -> int:
         return self.ammo.get(self.weapon, 0)
@@ -2523,6 +2529,18 @@ class GameRoom:
         # quick-play seconds before match_end no longer dumps the overlay
         # on a fresh player.
         self.match_num = 0
+        # Pre-match freeze / countdown state. When a room is created (or
+        # reset between matches) `match_started` is False and every real
+        # player is movement/shoot-locked until the countdown elapses.
+        # `countdown_until` is the absolute timestamp the countdown ends
+        # at; before all real players report `is_loaded=True` it stays
+        # None (no visible counter yet). `_countdown_grace_start` is a
+        # 30s safety fallback so a client that never sends `loaded` can't
+        # softlock the room.
+        self.match_started: bool = False
+        self.countdown_until: Optional[float] = None
+        self.countdown_seconds: float = 3.0
+        self._countdown_grace_start: float = time.time()
         # Per-room arena. Picked at init from MAPS and rerolled on each
         # match reset so the same lobby cycles through the available maps.
         # Shipped to clients in the welcome payload + via the next match_start.
@@ -2839,6 +2857,15 @@ class GameRoom:
             "match_start": self.match_start if self.is_ranked else None,
             "spectator": bool(getattr(player, "is_spectator", False)),
             "spectate_target_id": getattr(player, "spectate_target_id", None),
+            # Pre-match freeze state — clients render a "3-2-1" overlay
+            # while `match_started` is false. `countdown_until` is the
+            # absolute server timestamp the countdown ends at (clients
+            # convert to local seconds-remaining each frame). On a
+            # late join (mid-match) `match_started` is true and there's
+            # no countdown to render.
+            "match_started": bool(self.match_started),
+            "countdown_until": self.countdown_until,
+            "countdown_seconds": self.countdown_seconds,
         })
         if not getattr(player, "is_spectator", False):
             await self.broadcast({"type": "join", "player": player.to_state()})
@@ -3452,6 +3479,47 @@ class GameRoom:
             if not hit.is_bot and hit.user_id:
                 _bg(db.users.update_one({"_id": ObjectId(hit.user_id)}, {"$inc": {"stats.deaths": 1}}))
 
+    async def _maybe_start_countdown(self):
+        """Start the pre-match 3-2-1 countdown the moment every real
+        player in the room has reported `is_loaded=True`. Idempotent —
+        safe to call from every `loaded` message + every player join.
+        No-op once the countdown is already running or the match has
+        already started (late joiners skip straight into the live game).
+        """
+        if self.match_started or self.countdown_until is not None:
+            return
+        real_players = [
+            p for p in self.players.values()
+            if not p.is_bot and not getattr(p, "is_spectator", False)
+        ]
+        if not real_players:
+            return  # bots-only room — wait for the real player to actually join
+        if not all(p.is_loaded for p in real_players):
+            return
+        now = time.time()
+        self.countdown_until = now + self.countdown_seconds
+        # Push match_start out to the moment the countdown ends so the
+        # match-duration timer doesn't burn down during the freeze.
+        self.match_start = self.countdown_until
+        await self.broadcast({
+            "type": "match_countdown",
+            "countdown_until": self.countdown_until,
+            "seconds": self.countdown_seconds,
+        })
+
+    async def _begin_match_now(self, forced: bool = False):
+        """Flip the room out of the pre-match freeze. Called when the
+        countdown elapses OR (safety) when the 30s grace window expires
+        because somebody's client never sent `loaded`. Resets
+        `match_start` so the duration timer counts from this exact
+        moment instead of including the frozen seconds."""
+        if self.match_started:
+            return
+        self.match_started = True
+        self.countdown_until = None
+        self.match_start = time.time()
+        await self.broadcast({"type": "match_go", "forced": bool(forced)})
+
     async def handle_message(self, player: Player, msg: dict):
         # Spectators are read-only — ignore all gameplay messages.
         if getattr(player, "is_spectator", False):
@@ -3460,6 +3528,22 @@ class GameRoom:
         if mtype == "ping":
             await self._send(player, {"type": "pong", "ts": msg.get("ts", 0)})
             return
+        if mtype == "loaded":
+            # Client finished its loading screen and is ready for the
+            # countdown. Bots come pre-loaded; this branch is real-player
+            # only. The check inside `_maybe_start_countdown` is the
+            # one that actually fires the 3-2-1.
+            if not player.is_loaded:
+                player.is_loaded = True
+                await self._maybe_start_countdown()
+            return
+        # Block every gameplay-affecting input during the pre-match
+        # freeze. We still let yaw/pitch updates through on `input` so
+        # players can look around while staring at the countdown — feels
+        # better than a fully locked camera. Shoots, melees, and x/z
+        # movement are all silently dropped until `match_started`.
+        if not self.match_started and mtype in ("shoot", "melee"):
+            return
         if mtype == "input":
             x = float(msg.get("x", player.x))
             z = float(msg.get("z", player.z))
@@ -3467,6 +3551,15 @@ class GameRoom:
             pitch = float(msg.get("pitch", player.pitch))
             max_delta = 1.2
             if not player.alive:
+                return
+            # Pre-match freeze: ignore x/z movement (player can still
+            # turn the camera via yaw/pitch below). We `return` after
+            # applying yaw/pitch so the rest of the input handler — ADS,
+            # weapon-switch, laser_firing — also stays a no-op during
+            # the countdown.
+            if not self.match_started:
+                player.yaw = yaw
+                player.pitch = max(-1.5, min(1.5, pitch))
                 return
             dx = x - player.x
             dz = z - player.z
@@ -3943,6 +4036,29 @@ class GameRoom:
         now = time.time()
         dt = max(0.0, now - self._last_tick)
         self._last_tick = now
+
+        # Pre-match freeze gate. While `match_started` is False nothing
+        # should move, shoot, take damage, or respawn — the room is just
+        # holding the camera + HUD steady while clients render the 3-2-1.
+        # The countdown auto-ends when `countdown_until` elapses, or
+        # (safety) the 30s grace window expires for clients that never
+        # sent `loaded`. We still record lag-comp snapshots above this
+        # gate so the first post-countdown shoot has a valid history.
+        if not self.match_started:
+            for p in self.players.values():
+                p.pos_history.append((now, p.x, p.y, p.z, p.alive))
+            if self.countdown_until is not None and now >= self.countdown_until:
+                await self._begin_match_now()
+            elif self.countdown_until is None and (now - self._countdown_grace_start) >= 30.0:
+                # Safety fallback: nobody ever sent `loaded`. Force-start
+                # by marking every real player loaded and re-running the
+                # check — this triggers the normal countdown path so the
+                # client still sees a 3-2-1 even though we synthesised it.
+                for p in self.players.values():
+                    if not p.is_bot:
+                        p.is_loaded = True
+                await self._maybe_start_countdown()
+            return
 
         # Lag-compensation snapshot — record every player's current
         # position so a shot we resolve in N ms can rewind each target's
@@ -4481,6 +4597,17 @@ class GameRoom:
         self.last_match_end_payload = None
         self.last_match_end_recipients.clear()
         self.match_num += 1
+        # New round, fresh freeze. Real players are still connected (no
+        # loading screen this time round) so we mark them all loaded
+        # immediately — `_maybe_start_countdown` will fire the 3-2-1
+        # right after we broadcast `match_start` below. Bots are already
+        # `is_loaded=True` from construction.
+        self.match_started = False
+        self.countdown_until = None
+        self._countdown_grace_start = time.time()
+        for p in self.players.values():
+            if not p.is_bot:
+                p.is_loaded = True
         # **Reset everyone's per-match counters** so a fresh round actually
         # starts at 0-0. Without this, bots that have been alive across
         # many practice / quick-match rounds carry their lifetime kill
@@ -4514,6 +4641,13 @@ class GameRoom:
             "duration": self.match_duration,
             "arena": self.arena,
         })
+        # Kick off the post-reset 3-2-1 countdown. For inter-round
+        # transitions this fires immediately because every real player
+        # was marked loaded above; for first-time room creation
+        # `_maybe_start_countdown` was already attempted on the welcome
+        # path (player-by-player) so this call is a defensive no-op when
+        # the room was just made.
+        await self._maybe_start_countdown()
 
     async def run(self):
         interval = 1.0 / TICK_RATE
@@ -4522,7 +4656,13 @@ class GameRoom:
                 if not self.in_intermission:
                     real_count = sum(1 for p in self.players.values() if not p.is_bot)
                     has_min = real_count >= (RANKED_MIN_REAL_PLAYERS if self.is_ranked else 1)
-                    if has_min and time.time() - self.match_start >= self.match_duration:
+                    # Skip the match-duration / idle-bot bookkeeping while
+                    # the pre-match freeze is active. `tick()` is in
+                    # charge of flipping `match_started` once the
+                    # countdown elapses; until then we don't want to
+                    # end the match (we haven't even started it) or
+                    # zero-out bot stats (they're idle anyway).
+                    if has_min and self.match_started and time.time() - self.match_start >= self.match_duration:
                         await self.end_match()
                         continue
                     # Idle-room hygiene — when no real players are around, the
