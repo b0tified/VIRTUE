@@ -17,6 +17,19 @@ html, body, #root {
   height: 100%;
 }
 
+/* Hide the global scrollbar across the entire app — the layout already
+   fits the viewport on every protected route (Lobby, Game, Profile,
+   Leaderboard). Scrolling still works (touch + wheel + keyboard); only
+   the visual scrollbar track is removed for a cleaner full-bleed feel.
+   `scrollbar-width: none` covers Firefox; `::-webkit-scrollbar` covers
+   Chrome/Edge/Safari/iOS. */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { width: 0; height: 0; display: none; }
+body { scrollbar-width: none; }
+body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+* { scrollbar-width: none; }
+
 body {
   margin: 0;
   font-family: 'Outfit', system-ui, sans-serif;
