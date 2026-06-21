@@ -153,8 +153,9 @@ export default function ShopModal({ open, onClose }) {
 
 /* Single skin card. Renders a flat CSS-only humanoid preview using the
    skin's palette + an animated aura ring underneath. No Three.js — the
-   preview is good enough for the shop and stays performant. */
-function SkinCard({ skin, coins, busy, onBuy, onEquip, onPreview }) {
+   preview is good enough for the shop and stays performant. Exported
+   so the embeddable `ShopBody` can reuse the same card markup. */
+export function SkinCard({ skin, coins, busy, onBuy, onEquip, onPreview }) {
   const canAfford = coins >= skin.price;
   const rarityHex = RARITY_COLOR[skin.rarity] || "#9aa3ad";
   const auraStyle = useMemo(() => auraCss(skin), [skin]);

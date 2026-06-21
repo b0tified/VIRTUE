@@ -13,7 +13,8 @@ import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 import { skinById } from "@/game/skins";
 import SeasonTrailer from "@/components/SeasonTrailer";
-import { Coins, Check, X, Lock, Star, Calendar, Trophy, Zap, Flame, Play, Clock } from "lucide-react";
+import ShopBody from "@/components/ShopBody";
+import { Coins, Check, X, Lock, Star, Calendar, Trophy, Zap, Flame, Play, Clock, ShoppingBag } from "lucide-react";
 
 // Same format helper used by the Leaderboard so the timer reads identically.
 function fmtDHMS(seconds) {
@@ -27,6 +28,7 @@ function fmtDHMS(seconds) {
 
 const TABS = [
   { key: "season",    label: "Season Pass", icon: Star },
+  { key: "shop",      label: "Skin Shop",   icon: ShoppingBag },
   { key: "daily",     label: "Daily",       icon: Calendar },
   { key: "lifetime",  label: "Challenges",  icon: Trophy },
 ];
@@ -161,7 +163,13 @@ export default function ProgressionModal({ open, onClose }) {
               {toast.text}
             </div>
           )}
-          {!data ? (
+          {/* Shop tab is independent of the /progression payload — it
+              self-fetches via ShopBody — so we always render it even
+              when `data` is still loading. The other tabs hard-depend
+              on `data` and fall through to the Loading… placeholder. */}
+          {tab === "shop" ? (
+            <ShopBody embedded />
+          ) : !data ? (
             <div className="text-center py-10 text-neutral-500 font-anton uppercase tracking-widest">Loading…</div>
           ) : tab === "season" ? (
             <SeasonTab season={data.season} seasonMeta={seasonMeta} tick={tick} busy={busy} onClaim={(tier) => claim({ kind: "season", tier })} />

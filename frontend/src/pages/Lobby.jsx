@@ -349,7 +349,10 @@ export default function Lobby() {
   // initialise the audio bus mute state from localStorage on first load.
 
   return (
-    <div className="relative min-h-[100dvh] lg:min-h-screen overflow-hidden bg-black" data-testid="lobby-page">
+    <div
+      className="relative h-[100dvh] lg:h-screen overflow-hidden bg-black flex flex-col"
+      data-testid="lobby-page"
+    >
       {showMeteorBg ? (
         <>
           <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
@@ -400,19 +403,15 @@ export default function Lobby() {
             <span className="font-anton uppercase text-[10px] tracking-widest opacity-80 hidden sm:inline">Coins</span>
             <span className="font-display text-xl sm:text-2xl leading-none">{user?.coins ?? 0}</span>
           </button>
-          <button
-            onClick={() => setShowShop(true)}
-            className="btn-pow bg-[#9B59B6] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
-            data-testid="lobby-shop-button"
-            title="Skin shop"
-          >
-            <span className="flex items-center gap-2"><ShoppingBag size={18} strokeWidth={3} /><span className="hidden sm:inline">SHOP</span></span>
-          </button>
+          {/* Combined PASS + SHOP button — opens ProgressionModal which
+              has both the season-pass tab and a new "SHOP" tab. The
+              coin pill above is still a quick-open into the standalone
+              ShopModal so the wallet stays one click from a purchase. */}
           <button
             onClick={() => setShowProgression(true)}
             className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
             data-testid="lobby-progression-button"
-            title="Season Pass, Challenges & Dailies"
+            title="Season Pass, Skin Shop, Challenges & Dailies"
           >
             <span className="flex items-center gap-2"><Sparkles size={18} strokeWidth={3} /><span className="hidden sm:inline">PASS</span></span>
           </button>
@@ -466,8 +465,10 @@ export default function Lobby() {
         </div>
       </header>
 
-      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-12 sm:-mt-20 lg:mt-2">
-        <div className="lg:col-span-4 -mt-4 lg:mt-6">
+      <main
+        className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-12 sm:-mt-20 lg:mt-2 flex-1 min-h-0 overflow-hidden"
+      >
+        <div className="lg:col-span-4 -mt-4 lg:mt-6 min-h-0 overflow-y-auto pr-1">
           {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
           <h1
             className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
@@ -584,8 +585,14 @@ export default function Lobby() {
             with the queue buttons or the daily panel. */}
         <div className="lg:col-span-4 hidden lg:block" aria-hidden />
 
-        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8">
-          <LobbyDailyPanel />
+        <div className="lg:col-span-4 relative hidden lg:flex flex-col items-stretch gap-3 pt-6 xl:pt-8 min-h-0 overflow-hidden">
+          {/* The daily panel can grow taller than the viewport when 6
+              dailies are queued — wrap it in a flex-1/min-h-0 container
+              so the panel itself stays inside the lobby's frame and
+              scrolls internally instead of pushing the page taller. */}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <LobbyDailyPanel />
+          </div>
         </div>
       </main>
 
