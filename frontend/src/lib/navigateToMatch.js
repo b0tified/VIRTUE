@@ -27,6 +27,12 @@ export function navigateToMatch(nav, route, { mode = "casual", username, tdm = f
       }),
     );
   } catch {}
-  const t = setTimeout(() => nav(route, options), MATCH_LOAD_MS);
+  // Stamp `fromLobby: true` onto the nav state so the `/play` route can
+  // verify the user actually clicked a queue/party button instead of
+  // pasting the URL directly. Game.jsx kicks unauthenticated direct
+  // visits back to /lobby. We merge `state` defensively so a caller
+  // passing its own `options.state` extras still gets the flag.
+  const mergedState = { ...(options.state || {}), fromLobby: true };
+  const t = setTimeout(() => nav(route, { ...options, state: mergedState }), MATCH_LOAD_MS);
   return () => clearTimeout(t);
 }

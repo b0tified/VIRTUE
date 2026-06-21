@@ -421,3 +421,10 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - **Tests**: `tests/test_prematch_countdown.py` (8 cases) — fresh room is frozen, countdown fires only after all real players loaded, shoot/melee blocked, x/z blocked but yaw/pitch pass, `_begin_match_now` resets `match_start`, idempotent countdown start, late join skips countdown, bots count as pre-loaded. All passing.
 - Smoke-tested offline practice live: countdown overlay rendered with "GO!" final state, player remained at full HP (100/100) confirming no damage during freeze.
 
+
+## 2026-06-21 — Block direct URL entry to /play
+- **Problem**: Any authenticated user could paste `/play?mode=casual` (or refresh while in-match) and immediately spin up a WebSocket + engine, bypassing the lobby's queue/matchmaking flow entirely.
+- **Fix**: `navigateToMatch` now stamps `location.state.fromLobby = true` on every navigation it issues. A new `MatchEntryGuard` wrapper (`/app/frontend/src/components/MatchEntryGuard.jsx`) sits between `ProtectedRoute` and `Game` in App.js; if the incoming nav state lacks `fromLobby`, the guard synchronously returns `<Navigate to="/lobby" replace />` so NO Game hook/effect ever runs (no in-flight WS to clean up).
+- **Spectate exempt**: `/spectate/:username` is still URL-shareable — that's a legitimate "watch another player" link and explicitly skips the guard.
+- **Smoke-tested live**: direct `/play?mode=casual` → bounces to `/lobby`. Clicking the lobby's "Offline" button → loads the match correctly (pre-match countdown overlay + 100/100 HP confirming no damage during freeze).
+

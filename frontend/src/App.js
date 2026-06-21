@@ -14,6 +14,7 @@ import Leaderboard from "@/pages/Leaderboard";
 import AuthCallback from "@/pages/AuthCallback";
 import AdminReports from "@/pages/AdminReports";
 import OrientationLock from "@/components/OrientationLock";
+import MatchEntryGuard from "@/components/MatchEntryGuard";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -92,7 +93,7 @@ export default function App() {
             <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
             <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
             <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
-            <Route path="/play" element={<ProtectedRoute><Game /></ProtectedRoute>} />
+            <Route path="/play" element={<ProtectedRoute><MatchEntryGuard><Game /></MatchEntryGuard></ProtectedRoute>} />
             <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
