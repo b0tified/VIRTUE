@@ -428,3 +428,18 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - **Spectate exempt**: `/spectate/:username` is still URL-shareable — that's a legitimate "watch another player" link and explicitly skips the guard.
 - **Smoke-tested live**: direct `/play?mode=casual` → bounces to `/lobby`. Clicking the lobby's "Offline" button → loads the match correctly (pre-match countdown overlay + 100/100 HP confirming no damage during freeze).
 
+
+## 2026-06-22 — Ranked match bug fix + whisper feature
+### Bug fix — ranked match couldn't enter
+- The `MatchEntryGuard` (added 2026-06-21 to block direct `/play` URLs) was also bouncing ranked-match auto-navigations: `QueueContext` navigates with plain `nav("/play?mode=ranked", { replace: true })` after the matchmaker says "matched", without going through `navigateToMatch` — so `state.fromLobby` was missing and the guard kicked the user back to lobby.
+- Fix: `QueueContext` now stamps `state: { fromLobby: true }` on the nav. Smoke-tested live — ranked queue stays active, "SEARCHING" toast persists, and the navigation when matchmaker resolves will pass the guard.
+
+### Whisper (1:1 friend DMs)
+- **Backend** (`server.py`): new `whispers` collection with composite indexes on `(from_id, to_id, ts)` and `(to_id, read_by_recipient)`. Three endpoints:
+  - `POST /whispers/send` — validates target exists, not self, neither side blocked, 1..280 chars, 20/min rate cap.
+  - `GET /whispers/conversation/{username}?limit=50` — returns last N messages oldest-first AND marks the friend's inbound messages as read in one batched update.
+  - `GET /whispers/unread` — per-sender unread counts for the friends-list badge.
+- **Frontend** (`WhisperChat.jsx`, `FriendsModal.jsx`): new `WhisperChat` panel swaps into the Friends modal when a friend's WHISPER button is clicked. Auto-polls the conversation every 3s. Sends are optimistic (appear instantly, reconciled on next poll). Each friend row shows a red unread-count pill (only on the FRIENDS tab); a red dot also lives on the whisper button. The Friends modal polls `/whispers/unread` every 6s while open. Messages: red bubble for mine, white for theirs, Enter-to-send.
+- **Tests**: `tests/test_whispers.py` (6 cases) — happy path send+read, self-whisper rejected, unknown user 404, length bounds, unread counter, block-rejects-both-sides. All passing.
+- Smoke-tested live: Friends modal shows the new chat-bubble button next to INVITE / inspect / remove / block.
+

@@ -4,10 +4,11 @@
 // Each row uses the Avatar component + per-action buttons.
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye, User } from "lucide-react";
+import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye, User, MessageCircle } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
 import PublicProfileModal from "@/components/PublicProfileModal";
+import WhisperChat from "@/components/WhisperChat";
 
 const TABS = [
   { id: "friends",  label: "FRIENDS" },
@@ -41,6 +42,11 @@ export default function FriendsModal({ open, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [profileUsername, setProfileUsername] = useState(null);
+  // Whisper state: when set, the modal body swaps from the friend
+  // list to a 1:1 chat panel for this friend. `unread` maps
+  // friend.id → integer unread-count so each row can show a red pill.
+  const [whisperFriend, setWhisperFriend] = useState(null);
+  const [unread, setUnread] = useState({});
   const nav = useNavigate();
 
   const refresh = useCallback(async () => {
@@ -56,10 +62,31 @@ export default function FriendsModal({ open, onClose }) {
     }
   }, []);
 
+  const refreshUnread = useCallback(async () => {
+    try {
+      const { data } = await api.get("/whispers/unread");
+      setUnread(data?.by_sender || {});
+    } catch {
+      // Soft-fail — keep previous map so the badges don't flicker.
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     refresh();
-  }, [open, refresh]);
+    refreshUnread();
+    // Re-poll unread counts every 6s while the modal is open so a
+    // friend's message lands on the list with a red pill within a
+    // few seconds even if you're sitting on the Friends tab.
+    const id = setInterval(refreshUnread, 6000);
+    return () => clearInterval(id);
+  }, [open, refresh, refreshUnread]);
+
+  // Reset the chat panel when the modal closes so the next open
+  // returns to the friend list.
+  useEffect(() => {
+    if (!open) setWhisperFriend(null);
+  }, [open]);
 
   if (!open) return null;
 
@@ -94,24 +121,35 @@ export default function FriendsModal({ open, onClose }) {
           })}
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto">
-          {error && (
-            <div className="px-5 py-3 bg-[#E62429]/10 border-b-2 border-[#E62429] text-[#E62429] font-anton uppercase text-xs" data-testid="friends-error">
-              {error}
-            </div>
-          )}
-          {loading && (
-            <div className="px-5 py-6 font-anton uppercase text-center text-neutral-500" data-testid="friends-loading">
-              <Loader2 size={20} strokeWidth={3} className="inline animate-spin mr-2" /> Loading...
-            </div>
-          )}
+        {/* When a whisper conversation is open we replace the entire
+            body (tab nav stays accessible after BACK in the chat
+            header). Keeps the modal a single column on mobile. */}
+        {whisperFriend ? (
+          <WhisperChat
+            friend={whisperFriend}
+            onBack={() => setWhisperFriend(null)}
+            onAfterSend={refreshUnread}
+          />
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto">
+            {error && (
+              <div className="px-5 py-3 bg-[#E62429]/10 border-b-2 border-[#E62429] text-[#E62429] font-anton uppercase text-xs" data-testid="friends-error">
+                {error}
+              </div>
+            )}
+            {loading && (
+              <div className="px-5 py-6 font-anton uppercase text-center text-neutral-500" data-testid="friends-loading">
+                <Loader2 size={20} strokeWidth={3} className="inline animate-spin mr-2" /> Loading...
+              </div>
+            )}
 
-          {!loading && tab === "friends" && <FriendList list={data.friends} mode="friend" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
-          {!loading && tab === "incoming" && <FriendList list={data.incoming} mode="incoming" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
-          {!loading && tab === "outgoing" && <FriendList list={data.outgoing} mode="outgoing" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
-          {!loading && tab === "blocked" && <FriendList list={data.blocked} mode="blocked" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
-          {!loading && tab === "search" && <SearchPanel onChange={refresh} onInspect={setProfileUsername} />}
-        </div>
+            {!loading && tab === "friends" && <FriendList list={data.friends} mode="friend" onChange={refresh} nav={nav} onInspect={setProfileUsername} unread={unread} onWhisper={(u) => { setWhisperFriend(u); refreshUnread(); }} />}
+            {!loading && tab === "incoming" && <FriendList list={data.incoming} mode="incoming" onChange={refresh} nav={nav} onInspect={setProfileUsername} unread={unread} onWhisper={(u) => { setWhisperFriend(u); refreshUnread(); }} />}
+            {!loading && tab === "outgoing" && <FriendList list={data.outgoing} mode="outgoing" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
+            {!loading && tab === "blocked" && <FriendList list={data.blocked} mode="blocked" onChange={refresh} nav={nav} onInspect={setProfileUsername} />}
+            {!loading && tab === "search" && <SearchPanel onChange={refresh} onInspect={setProfileUsername} />}
+          </div>
+        )}
       </div>
       <PublicProfileModal
         username={profileUsername}
@@ -121,7 +159,7 @@ export default function FriendsModal({ open, onClose }) {
   );
 }
 
-function FriendList({ list, mode, onChange, nav, onInspect }) {
+function FriendList({ list, mode, onChange, nav, onInspect, unread, onWhisper }) {
   if (!list || list.length === 0) {
     return (
       <div className="px-5 py-8 text-center" data-testid={`friends-empty-${mode}`}>
@@ -137,13 +175,23 @@ function FriendList({ list, mode, onChange, nav, onInspect }) {
   return (
     <div className="divide-y-2 divide-black/10">
       {list.map((u, i) => (
-        <FriendRow key={u.id} idx={i} u={u} mode={mode} onChange={onChange} nav={nav} onInspect={onInspect} />
+        <FriendRow
+          key={u.id}
+          idx={i}
+          u={u}
+          mode={mode}
+          onChange={onChange}
+          nav={nav}
+          onInspect={onInspect}
+          unreadCount={unread?.[u.id] || 0}
+          onWhisper={onWhisper}
+        />
       ))}
     </div>
   );
 }
 
-function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
+function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, onWhisper }) {
   const [busy, setBusy] = useState(false);
 
   const act = async (path, body) => {
@@ -183,6 +231,17 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
           {typeof u.level === "number" && (
             <span className="font-anton uppercase text-[9px] px-1 bg-neutral-900 text-white">
               LV {u.level}
+            </span>
+          )}
+          {/* Unread whisper count — friend-mode only. Red pill stays
+              tight so it doesn't push the rank/status row to wrap. */}
+          {mode === "friend" && unreadCount > 0 && (
+            <span
+              className="font-anton uppercase text-[9px] px-1.5 py-0.5 bg-[#E62429] text-white border border-black tabular-nums"
+              data-testid={`friend-unread-${idx}`}
+              title={`${unreadCount} new whisper${unreadCount === 1 ? "" : "s"}`}
+            >
+              {unreadCount}
             </span>
           )}
         </div>
@@ -243,6 +302,25 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect }) {
         )}
         {mode === "friend" && (
           <>
+            {/* Whisper button — always available on a friend row
+                (online or offline; offline users will see the
+                whisper when they next log in). */}
+            <button
+              onClick={() => onWhisper?.({ id: u.id, username: u.username, avatar: u.avatar })}
+              className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs relative"
+              data-testid={`friend-whisper-${idx}`}
+              title="Send a whisper"
+            >
+              <span className="flex items-center gap-1">
+                <MessageCircle size={14} strokeWidth={3} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1 w-2 h-2 bg-[#E62429] rounded-full border border-black"
+                    aria-hidden
+                  />
+                )}
+              </span>
+            </button>
             {u.online && !u.in_match && !u.in_queue && (
               <button
                 disabled={busy}

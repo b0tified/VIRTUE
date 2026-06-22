@@ -5704,6 +5704,153 @@ async def friends_unblock(payload: FriendActionIn, user: dict = Depends(get_curr
     return {"ok": True}
 
 
+# ---- Whispers (1:1 friend DMs) ------------------------------------------
+# Schema (`whispers` collection):
+#   { _id, from_id, to_id, text, ts: datetime, read_by_recipient: bool }
+# Sorted by `ts`. We keep the index list tight — one composite for
+# pulling a conversation in either direction and one for unread counts.
+_WHISPER_INDEXES_READY = False
+
+
+async def _ensure_whisper_indexes():
+    global _WHISPER_INDEXES_READY
+    if _WHISPER_INDEXES_READY:
+        return
+    # Conversation lookup: server queries `{from_id: $in [A,B], to_id: $in [A,B]}`
+    # → ts ascending. Composite index on (from_id, to_id, ts) covers it.
+    await db.whispers.create_index([("from_id", 1), ("to_id", 1), ("ts", 1)])
+    # Per-recipient unread count: index on (to_id, read_by_recipient).
+    await db.whispers.create_index([("to_id", 1), ("read_by_recipient", 1)])
+    _WHISPER_INDEXES_READY = True
+
+
+class WhisperSendIn(BaseModel):
+    username: str = Field(min_length=1, max_length=32)
+    text: str = Field(min_length=1, max_length=280)
+
+
+async def _is_blocked_either_way(a_id: str, b_id: str) -> bool:
+    """Return True if A has blocked B *or* B has blocked A. Whispers
+    are bilateral so either side's block silences the channel."""
+    doc = await db.friendships.find_one({
+        "$or": [
+            {"from_user_id": a_id, "to_user_id": b_id, "status": "blocked"},
+            {"from_user_id": b_id, "to_user_id": a_id, "status": "blocked"},
+        ],
+    })
+    return doc is not None
+
+
+@api.post("/whispers/send")
+async def whispers_send(payload: WhisperSendIn, user: dict = Depends(get_current_user)):
+    """Send a private message to another user.
+
+    Rules:
+      - Target must exist.
+      - Neither side may have the other blocked.
+      - Self-whisper rejected (would clutter your own conversation
+        list and serves no purpose).
+      - Per-sender rate limit: max 20 sends/minute (anti-spam — friends
+        still get to have a quick exchange).
+    """
+    await _ensure_whisper_indexes()
+    me_id = str(user["_id"])
+    target = await _find_user_by_username(payload.username)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    to_id = str(target["_id"])
+    if to_id == me_id:
+        raise HTTPException(status_code=400, detail="Cannot whisper yourself")
+    if await _is_blocked_either_way(me_id, to_id):
+        raise HTTPException(status_code=403, detail="Whispers blocked between you two")
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=60)
+    recent = await db.whispers.count_documents({"from_id": me_id, "ts": {"$gte": cutoff}})
+    if recent >= 20:
+        raise HTTPException(status_code=429, detail="Slow down — too many whispers")
+    doc = {
+        "from_id": me_id,
+        "to_id": to_id,
+        "text": payload.text.strip(),
+        "ts": datetime.now(timezone.utc),
+        "read_by_recipient": False,
+    }
+    res = await db.whispers.insert_one(doc)
+    return {
+        "id": str(res.inserted_id),
+        "from_id": me_id,
+        "to_id": to_id,
+        "text": doc["text"],
+        "ts": doc["ts"].isoformat(),
+        "read_by_recipient": False,
+    }
+
+
+@api.get("/whispers/conversation/{username}")
+async def whispers_conversation(username: str, user: dict = Depends(get_current_user), limit: int = 50):
+    """Return the last N messages between me and `username`, sorted
+    oldest-first so the client can append the newest at the bottom.
+    Also marks any of `username`'s messages to me as read (the act of
+    opening the conversation IS the read receipt — matches Discord /
+    iMessage behaviour). Returns `[]` if user not found instead of
+    404 so the UI can show a clean "no messages yet" empty state."""
+    await _ensure_whisper_indexes()
+    me_id = str(user["_id"])
+    target = await _find_user_by_username(username)
+    if not target:
+        return {"messages": [], "friend": None}
+    to_id = str(target["_id"])
+    await db.whispers.update_many(
+        {"from_id": to_id, "to_id": me_id, "read_by_recipient": False},
+        {"$set": {"read_by_recipient": True}},
+    )
+    limit = max(1, min(200, int(limit)))
+    cursor = db.whispers.find({
+        "$or": [
+            {"from_id": me_id, "to_id": to_id},
+            {"from_id": to_id, "to_id": me_id},
+        ],
+    }).sort("ts", -1).limit(limit)
+    docs = []
+    async for m in cursor:
+        docs.append({
+            "id": str(m["_id"]),
+            "from_id": m["from_id"],
+            "to_id": m["to_id"],
+            "from_me": m["from_id"] == me_id,
+            "text": m.get("text", ""),
+            "ts": m["ts"].isoformat() if isinstance(m.get("ts"), datetime) else m.get("ts"),
+            "read_by_recipient": bool(m.get("read_by_recipient", False)),
+        })
+    docs.reverse()
+    return {
+        "messages": docs,
+        "friend": {
+            "id": to_id,
+            "username": target.get("username"),
+            "avatar": int(target.get("avatar", 0) or 0),
+        },
+    }
+
+
+@api.get("/whispers/unread")
+async def whispers_unread(user: dict = Depends(get_current_user)):
+    """Per-sender unread counts so the friends list can show a red
+    pill on rows with new messages. Returns
+    `{from_id_str: count, ...}` — frontend joins by friend.id."""
+    await _ensure_whisper_indexes()
+    me_id = str(user["_id"])
+    pipeline = [
+        {"$match": {"to_id": me_id, "read_by_recipient": False}},
+        {"$group": {"_id": "$from_id", "count": {"$sum": 1}}},
+    ]
+    out: Dict[str, int] = {}
+    total = 0
+    async for row in db.whispers.aggregate(pipeline):
+        out[str(row["_id"])] = int(row["count"])
+        total += int(row["count"])
+    return {"by_sender": out, "total": total}
+
+
 @api.get("/users/search")
 async def users_search(q: str, user: dict = Depends(get_current_user), limit: int = 10):
     """Username prefix search (case-insensitive) for the Friends modal."""

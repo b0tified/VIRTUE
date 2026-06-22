@@ -98,7 +98,15 @@ export function QueueProvider({ children }) {
                   new CustomEvent("virtue-match-loading", { detail: { mode: "ranked" } }),
                 );
               } catch {}
-              setTimeout(() => nav("/play?mode=ranked", { replace: true }), 1200);
+              setTimeout(
+                // Stamp `state.fromLobby: true` so the MatchEntryGuard
+                // wrapper around /play doesn't bounce us back to the
+                // lobby. The ranked path doesn't go through
+                // `navigateToMatch` (we drive our own loading toast +
+                // timer here) so we set the flag inline.
+                () => nav("/play?mode=ranked", { replace: true, state: { fromLobby: true } }),
+                1200,
+              );
             } else {
               setMatchFoundSec(sec);
             }
