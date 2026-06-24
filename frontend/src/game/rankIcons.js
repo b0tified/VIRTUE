@@ -26,7 +26,7 @@ export const RANK_NAMES = [
 const RANK_THRESHOLDS = [0, 100, 250, 500, 800, 1200, 1700, 2300];
 
 export const RANK_ICONS = [
-  Shield, Award, Star, Gem, Trophy, Sword, Skull, Flame,
+  Shield, Award, Star, Trophy, Gem, Sword, Skull, Flame,
 ];
 
 export function rankIconFor(tier) {
