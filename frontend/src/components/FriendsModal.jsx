@@ -36,7 +36,7 @@ function formatRelativeTime(unixSeconds) {
   return "LONG AGO";
 }
 
-export default function FriendsModal({ open, onClose }) {
+export default function FriendsModal({ open, onClose, initialWhisperWith = null }) {
   const [tab, setTab] = useState("friends");
   const [data, setData] = useState({ friends: [], incoming: [], outgoing: [], blocked: [] });
   const [loading, setLoading] = useState(false);
@@ -48,6 +48,18 @@ export default function FriendsModal({ open, onClose }) {
   const [whisperFriend, setWhisperFriend] = useState(null);
   const [unread, setUnread] = useState({});
   const nav = useNavigate();
+
+  // When the parent opens us with a pre-selected friend (e.g. the
+  // lobby's WhisperToaster wants to dive straight into a chat) we
+  // honor the request only on the *transition into* open — otherwise
+  // closing the chat panel inside the modal would immediately re-open
+  // it.
+  useEffect(() => {
+    if (open && initialWhisperWith) {
+      setWhisperFriend(initialWhisperWith);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialWhisperWith?.username]);
 
   const refresh = useCallback(async () => {
     setLoading(true);

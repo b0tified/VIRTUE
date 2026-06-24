@@ -443,3 +443,17 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - **Tests**: `tests/test_whispers.py` (6 cases) — happy path send+read, self-whisper rejected, unknown user 404, length bounds, unread counter, block-rejects-both-sides. All passing.
 - Smoke-tested live: Friends modal shows the new chat-bubble button next to INVITE / inspect / remove / block.
 
+
+## 2026-06-24 — Whisper toaster + ranked early-leave penalty
+### Lobby-corner whisper toast
+- `WhisperToaster.jsx` polls `/whispers/unread` every 6s. When the total increases between polls, it fetches the friend list to resolve sender → username/avatar + the conversation to preview the latest inbound text, then surfaces a small comic-book-styled toast bottom-right ("Friend → text"). Click → opens Friends modal pre-navigated to that chat via the new `initialWhisperWith` prop. Auto-dismisses after 6s; single rolling toast (no stacking).
+- Baseline starts at the current unread total so refreshing the lobby doesn't shower the user with re-toasts for messages they already knew about.
+
+### Ranked early-leave penalty
+- **Constant**: `RANKED_LEAVE_BAN_MINUTES = 10`.
+- **`GameRoom.remove`**: when a non-spectator real player disconnects from a ranked match WHERE `match_started=True` AND `not in_intermission`, calls new `_apply_ranked_leave_penalty` which stamps `ranked_ban_until = now + 10min` + `ranked_ban_reason: "left_match"` on the user doc. Pre-match countdown leaves and post-match intermission leaves are exempt.
+- **`/queue/ranked` POST**: now reads `ranked_ban_until`. If positive, returns 403 with `"Ranked locked for {N}s (left a previous ranked match)."` and an `X-Ranked-Ban-Seconds` header. Party path checks every member — one banned alt locks the whole party out.
+- **`public_user`**: ships `ranked_ban_seconds` (0 when clean) so the lobby can render a "RANKED LOCKED" countdown without a separate endpoint.
+- **Frontend**: removed the LEAVE MATCH button in pause-menu when `hud.isRanked`. Replaced with a red banner: "Ranked matches can't be left mid-game. Quitting will lock you out of ranked queue for 10 minutes." The corner EXIT button (Hud.jsx) is also hidden in ranked.
+- **Tests**: `tests/test_ranked_leave_penalty.py` (6 cases — live ranked stamps the ban with ~10-min window, intermission exempt, pre-match exempt, casual exempt, bots never bannable, `public_user.ranked_ban_seconds` math). All passing alongside the 8 prematch + 6 whisper tests.
+

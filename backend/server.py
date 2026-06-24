@@ -186,8 +186,26 @@ def public_user(user: dict) -> dict:
         "coins": int(user.get("coins", 0) or 0),
         "owned_skins": owned,
         "selected_skin": selected,
+        # Ranked early-leave penalty timer (epoch seconds remaining).
+        # 0 when not banned — lobby UI hides the lock pill in that
+        # case. Returned as an int so a quick client-side countdown
+        # is trivial (`Math.max(0, remaining - secondsSinceFetch)`).
+        "ranked_ban_seconds": _ranked_ban_seconds(user),
         "created_at": user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
     }
+
+
+def _ranked_ban_seconds(user: dict) -> int:
+    """Seconds remaining on this user's ranked-leave penalty, or 0
+    if not currently banned. Treats naive datetimes as UTC for the
+    handful of legacy docs that predate timezone awareness."""
+    raw = user.get("ranked_ban_until")
+    if not isinstance(raw, datetime):
+        return 0
+    if raw.tzinfo is None:
+        raw = raw.replace(tzinfo=timezone.utc)
+    delta = raw - datetime.now(timezone.utc)
+    return max(0, int(delta.total_seconds()))
 
 
 # -------------------------------------------------------------------
@@ -2241,6 +2259,11 @@ TIERED_BOT_NAMES: Dict[int, List[str]] = {
     7: ["GOONFATHER", "TheLastGoon", "GoonLord_404"],
 }
 PLACEMENT_MATCHES = 5
+# Ranked early-leave penalty — quitting an in-progress ranked match
+# stamps `ranked_ban_until = now + N minutes` on the user, and the
+# /queue/ranked POST handler 403s until it elapses (with the remaining
+# seconds in `detail` so the client can render a countdown).
+RANKED_LEAVE_BAN_MINUTES = 10
 PLACEMENT_MULTIPLIER = 2
 
 
@@ -2906,8 +2929,37 @@ class GameRoom:
                 self._maintain_population()
         if not player.is_bot and not getattr(player, "is_spectator", False) and player.user_id:
             PLAYER_LOCATION.pop(player.user_id, None)
+            # Ranked early-leave penalty. If a real player disconnects
+            # from a ranked match BEFORE the match has ended, stamp a
+            # 10-minute ranked-queue ban on their user doc so they
+            # can't requeue immediately. We only apply the penalty
+            # while the match is actively in-progress (`match_started`
+            # true and `in_intermission` false) — bailing during the
+            # pre-match countdown or after the WIN/LOSS overlay
+            # already showed is fair game.
+            if (
+                self.is_ranked
+                and self.match_started
+                and not getattr(self, "in_intermission", False)
+            ):
+                await self._apply_ranked_leave_penalty(player.user_id)
         if not getattr(player, "is_spectator", False):
             await self.broadcast({"type": "leave", "id": player.id})
+
+    async def _apply_ranked_leave_penalty(self, user_id: str):
+        """Lock the user out of the ranked queue for 10 minutes (best-
+        effort). The queue endpoint reads `ranked_ban_until` and 403s
+        until it elapses, with the remaining seconds surfaced in the
+        error detail so the client can render a countdown. Idempotent —
+        a second leave just refreshes the timer."""
+        try:
+            ban_until = datetime.now(timezone.utc) + timedelta(minutes=RANKED_LEAVE_BAN_MINUTES)
+            await db.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"ranked_ban_until": ban_until, "ranked_ban_reason": "left_match"}},
+            )
+        except Exception as e:
+            logger.warning("ranked leave penalty write failed for %s: %s", user_id, e)
 
     async def _send(self, player: Player, msg: dict):
         if player.is_bot or player.ws is None:
@@ -5222,6 +5274,21 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
             status_code=403,
             detail=f"Ranked unlocks at Level {RANKED_MIN_LEVEL}. You are Level {user_level}.",
         )
+    # Leave-penalty gate. If this user (or any party-mate when partied)
+    # has a `ranked_ban_until` in the future, surface a 403 with the
+    # remaining seconds so the client can render a countdown like
+    # "RANKED LOCKED — 7:42". Solo first; party check happens below.
+    me_ban = user.get("ranked_ban_until")
+    if isinstance(me_ban, datetime):
+        if me_ban.tzinfo is None:
+            me_ban = me_ban.replace(tzinfo=timezone.utc)
+        remaining = int((me_ban - datetime.now(timezone.utc)).total_seconds())
+        if remaining > 0:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Ranked locked for {remaining}s (left a previous ranked match).",
+                headers={"X-Ranked-Ban-Seconds": str(remaining)},
+            )
     party = await _party_for_user(user_id)
     is_party = bool(party)
     if is_party and party.get("leader_id") != user_id:
@@ -5236,13 +5303,27 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
         # to game the tier calculation (their points are 0 but they could
         # still drag the group into a match they can't survive).
         for uid in party["members"]:
-            mdoc = await db.users.find_one({"_id": ObjectId(uid)}, {"stats": 1, "username": 1})
+            mdoc = await db.users.find_one({"_id": ObjectId(uid)}, {"stats": 1, "username": 1, "ranked_ban_until": 1})
             mlvl = compute_level((mdoc or {}).get("stats", {}))["level"]
             if mlvl < RANKED_MIN_LEVEL:
                 raise HTTPException(
                     status_code=403,
                     detail=f"Party member {(mdoc or {}).get('username', '?')} is Level {mlvl} (Ranked needs L{RANKED_MIN_LEVEL}).",
                 )
+            # Mirror the solo-ban gate above for each party member —
+            # one banned alt locks the whole party out for the
+            # remaining window. Avoids the obvious exploit of a
+            # banned player just party-queuing with a friend.
+            mban = (mdoc or {}).get("ranked_ban_until")
+            if isinstance(mban, datetime):
+                if mban.tzinfo is None:
+                    mban = mban.replace(tzinfo=timezone.utc)
+                remaining = int((mban - datetime.now(timezone.utc)).total_seconds())
+                if remaining > 0:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Party member {(mdoc or {}).get('username','?')} is locked from Ranked for {remaining}s.",
+                    )
         tier_idx, tier_name, top_user = await _max_party_tier(party)
         member_ids = list(party["members"])
         usernames = []

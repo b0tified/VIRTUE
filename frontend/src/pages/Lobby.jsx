@@ -8,6 +8,7 @@ import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Set
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
+import WhisperToaster from "@/components/WhisperToaster";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
@@ -31,6 +32,10 @@ export default function Lobby() {
   const spectateEndedTarget = searchParams.get("target") || "";
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
+  // When the WhisperToaster fires we open the Friends modal pre-
+  // navigated to a specific friend's chat. `null` = open at the
+  // normal list view.
+  const [whisperOpenWith, setWhisperOpenWith] = useState(null);
   const [showShop, setShowShop] = useState(false);
   const [showProgression, setShowProgression] = useState(false);
   // When non-null, the practice map selector is open. Value is the mode
@@ -628,7 +633,20 @@ export default function Lobby() {
       )}
 
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
-      <FriendsModal open={showFriends} onClose={() => setShowFriends(false)} />
+      <FriendsModal
+        open={showFriends}
+        onClose={() => { setShowFriends(false); setWhisperOpenWith(null); }}
+        initialWhisperWith={whisperOpenWith}
+      />
+      {/* Lobby-corner toast for inbound whispers — polls every 6s, toasts
+          a fresh "Friend: text" card when a new DM lands. Clicking the
+          toast opens the Friends modal pre-navigated to that chat. */}
+      <WhisperToaster
+        onOpenWhisper={(friend) => {
+          setWhisperOpenWith(friend);
+          setShowFriends(true);
+        }}
+      />
       <ShopModal open={showShop} onClose={() => setShowShop(false)} />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
       <PracticeMapSelector

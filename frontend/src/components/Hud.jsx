@@ -443,8 +443,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
 
       {/* Click-to-play overlay removed — clicking the canvas now requests
           pointer lock directly. (See Game.jsx canvas onClick wiring.) A small
-          EXIT button stays in the top-left so users can leave before locking. */}
-      {!pointerLocked && (
+          EXIT button stays in the top-left so users can leave before locking,
+          BUT it's hidden in ranked — the pause menu shows a "Quitting bans
+          you for 10 minutes" warning instead, gated on `hud.isRanked`. */}
+      {!pointerLocked && !hud.isRanked && (
         <button
           onClick={onExit}
           className="absolute top-4 left-4 z-30 btn-pow bg-white text-black [&]:px-3 [&]:py-2 [&]:text-xs"

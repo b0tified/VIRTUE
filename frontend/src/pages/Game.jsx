@@ -724,13 +724,30 @@ export default function Game() {
               >
                 <span className="flex items-center justify-center gap-2"><UserPlus size={18} strokeWidth={3} /> FRIENDS</span>
               </button>
-              <button
-                onClick={handleExit}
-                className="btn-pow bg-[#E62429] text-white w-full text-xl [&]:py-3"
-                data-testid="pause-leave-button"
-              >
-                <span className="flex items-center justify-center gap-2"><LogOut size={18} strokeWidth={3} /> LEAVE MATCH</span>
-              </button>
+              {/* Leave Match — hidden in ranked. Quitting a ranked
+                  match drops a placement on every other player and
+                  costs the queue real time, so we strip the convenient
+                  exit. The penalty system (`/queue/ranked` 403 with a
+                  10-minute ban) still applies if the player force-
+                  closes the tab, but at least we don't make rage-
+                  quitting one-click easy. */}
+              {!hud.isRanked && (
+                <button
+                  onClick={handleExit}
+                  className="btn-pow bg-[#E62429] text-white w-full text-xl [&]:py-3"
+                  data-testid="pause-leave-button"
+                >
+                  <span className="flex items-center justify-center gap-2"><LogOut size={18} strokeWidth={3} /> LEAVE MATCH</span>
+                </button>
+              )}
+              {hud.isRanked && (
+                <div
+                  className="text-center font-anton uppercase tracking-widest text-[11px] text-[#E62429] px-2 py-2 border-pow-thin bg-[#FFE4E4]"
+                  data-testid="pause-ranked-no-leave"
+                >
+                  Ranked matches can't be left mid-game. Quitting will lock you out of ranked queue for 10 minutes.
+                </div>
+              )}
             </div>
           </div>
         </div>
