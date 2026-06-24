@@ -229,6 +229,7 @@ export default function Profile() {
         <AvatarPicker
           avatarIdx={avatarIdx}
           peakTier={peakTier}
+          peakDivision={user?.peak_rank_division ?? 0}
           playerLevel={lvl.level}
           saving={savingAvatar}
           onPick={updateAvatar}
@@ -489,7 +490,7 @@ function Stat({ label, value, color, textColor = "#fff", testid }) {
   );
 }
 
-function AvatarPicker({ avatarIdx, peakTier, playerLevel, saving, onPick }) {
+function AvatarPicker({ avatarIdx, peakTier, peakDivision = 0, playerLevel, saving, onPick }) {
   return (
     <div className="card-pow p-0 mt-6 overflow-hidden" data-testid="avatar-picker">
       <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
@@ -530,7 +531,7 @@ function AvatarPicker({ avatarIdx, peakTier, playerLevel, saving, onPick }) {
                 title={unlocked ? (lockMeta?.label || (isPeak ? "Peak Rank Crest" : `Avatar ${i + 1}`)) : `Locked — ${sublabel}`}
               >
                 <div className={`relative p-1 ${active ? "ring-4 ring-[#FFD700] rounded-sm" : ""}`}>
-                  <Avatar idx={i} peakTier={peakTier} size={56} testid={`avatar-option-${i}-avatar`} />
+                  <Avatar idx={i} peakTier={peakTier} peakDivision={peakDivision} size={56} testid={`avatar-option-${i}-avatar`} />
                   {!unlocked && (
                     <span
                       className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-sm"

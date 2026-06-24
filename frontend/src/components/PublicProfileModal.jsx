@@ -78,6 +78,7 @@ export default function PublicProfileModal({ username, onClose }) {
                 rankDivision={data.rank_division ?? 0}
                 rankPoints={data.rank_points}
                 peakRankTier={data.peak_rank_tier}
+                peakRankDivision={data.peak_rank_division ?? 0}
                 bannerIcon={Number.isFinite(data.banner_icon) ? data.banner_icon : 0}
                 bannerColor={Number.isFinite(data.banner_color) ? data.banner_color : 0}
                 bannerAnimated={!!data.banner_animated}

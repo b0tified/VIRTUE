@@ -10,6 +10,7 @@ import {
   Gem, Snowflake, Atom, Eye,
 } from "lucide-react";
 import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor, divisionRoman } from "@/game/rankIcons";
+import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 
 const RANK_COLORS = TIER_COLORS;
 
@@ -67,19 +68,36 @@ export function avatarMeta(idx, peakTier = null) {
 export const AVATAR_COUNT = AVATARS.length;
 
 // Small avatar bubble (used inline e.g. in scoreboards / friend rows).
-export function Avatar({ idx = 0, peakTier = null, size = 40, online = false, testid }) {
+// `peakTier` + `peakDivision` only matter when `idx === 5` (Peak Crest):
+// in that case the bubble renders the player's animated rank icon with
+// division-aware ornaments instead of the static lucide icon.
+export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, size = 40, online = false, testid }) {
   const meta = avatarMeta(idx, peakTier);
   const I = meta.Icon;
   const animClass = meta.anim ? `avatar-anim-${meta.anim}` : "";
+  // Peak Crest: render the same AnimatedRankIcon used everywhere else so
+  // the avatar bubble matches the player's current/peak tier ornaments
+  // (orbiting sparkles, halo ring, Goonmaster flame, etc.). Falls back
+  // to the static icon path if peakTier wasn't supplied.
+  const isAnimatedPeakCrest = meta.isPeakCrest && Number.isFinite(peakTier);
   return (
     <span
       className={`relative inline-flex items-center justify-center border-2 border-black shadow-pow-sm flex-shrink-0 ${animClass}`}
       style={{ width: size, height: size, background: meta.bg }}
       title={meta.label}
       data-testid={testid}
-      data-anim={meta.anim || undefined}
+      data-anim={meta.anim || (isAnimatedPeakCrest ? "peakcrest" : undefined)}
     >
-      <I size={Math.round(size * 0.55)} strokeWidth={3} style={{ color: meta.iconColor }} />
+      {isAnimatedPeakCrest ? (
+        <AnimatedRankIcon
+          tier={peakTier}
+          division={peakDivision}
+          size={size}
+          testid={testid ? `${testid}-rank-icon` : undefined}
+        />
+      ) : (
+        <I size={Math.round(size * 0.55)} strokeWidth={3} style={{ color: meta.iconColor }} />
+      )}
       {online && (
         <span
           className="absolute -bottom-1 -right-1 block rounded-full border-2 border-black bg-[#06D6A0]"
@@ -138,6 +156,7 @@ export default function PlayerCard({
   rankDivision = 0,
   rankPoints = 0,
   peakRankTier = null,
+  peakRankDivision = 0,
   bannerIcon = null,
   bannerColor = null,
   bannerAnimated = false,
@@ -170,7 +189,7 @@ export default function PlayerCard({
       {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} />}
       <div className="flex items-stretch">
         <div className="flex items-center justify-center px-2" style={{ background: avatarMeta(avatar, peakRankTier).bg }}>
-          <Avatar idx={avatar} peakTier={peakRankTier} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />
+          <Avatar idx={avatar} peakTier={peakRankTier} peakDivision={peakRankDivision} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />
         </div>
         <div className="flex flex-col px-3 py-1.5 justify-center min-w-0">
           <div className="flex items-center gap-2 min-w-0">

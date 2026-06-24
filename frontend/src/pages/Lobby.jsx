@@ -402,6 +402,7 @@ export default function Lobby() {
               rankDivision={user.rank_division ?? 0}
               rankPoints={user.rank_points ?? 0}
               peakRankTier={user.peak_rank_tier ?? user.rank_tier ?? 0}
+              peakRankDivision={user.peak_rank_division ?? user.rank_division ?? 0}
               bannerIcon={user.banner_icon ?? null}
               bannerColor={user.banner_color ?? null}
               bannerAnimated={!!user.banner_animated}
