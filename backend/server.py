@@ -109,14 +109,19 @@ def create_refresh_token(user_id: str) -> str:
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str, remember: bool = True):
-    response.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax",
-                        max_age=ACCESS_TTL_MIN * 60, path="/")
-    # When remember=False, omit max_age so the refresh cookie becomes a session
-    # cookie (browser clears it when the tab/browser closes).
+    # When remember=False, BOTH cookies need to be session-scoped (no
+    # max_age) — otherwise the access cookie alone keeps the user signed
+    # in for ACCESS_TTL_MIN (24h) across browser restarts, defeating the
+    # "Remember me OFF" expectation.
     if remember:
+        response.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax",
+                            max_age=ACCESS_TTL_MIN * 60, path="/")
         response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
                             max_age=REFRESH_TTL_DAYS * 86400, path="/")
     else:
+        # Session cookies (cleared when the tab/browser closes).
+        response.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax",
+                            path="/")
         response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
                             path="/")
 
