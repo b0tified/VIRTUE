@@ -353,8 +353,8 @@ export default function Game() {
           const mine = (msg.placements || []).find((p) => p.id === youId);
           if (mine && (mine.rank_change || 0) > 0) {
             setRankUp({
-              prevTier: { idx: mine.prev_rank_tier ?? 0, name: mine.prev_rank_name || "BRONZE" },
-              newTier:  { idx: mine.rank_tier ?? 0,      name: mine.rank_name || "BRONZE" },
+              prevTier: { idx: mine.prev_rank_tier ?? 0, name: mine.prev_rank_name || "BRONZE", division: mine.prev_rank_division ?? 0 },
+              newTier:  { idx: mine.rank_tier ?? 0,      name: mine.rank_name || "BRONZE",      division: mine.rank_division ?? 0 },
               rpDelta:  mine.delta ?? 0,
               newPoints: mine.new_points ?? 0,
             });

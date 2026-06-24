@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { Users, Crown, Play, LogOut, Shield, Loader2, X } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
+import { divisionRoman } from "@/game/rankIcons";
 import { useQueue } from "@/context/QueueContext";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 
@@ -123,7 +124,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                     className="font-anton uppercase text-[9px] px-1 border border-black"
                     style={{ background: rankColor, color: tierIdx === 7 ? "#FFD700" : "#0A0A0A" }}
                   >
-                    {m.rank_name}
+                    {m.rank_name}{divisionRoman(m.rank_division) ? ` ${divisionRoman(m.rank_division)}` : ""}
                   </span>
                   <span className="font-anton uppercase text-[9px] text-neutral-500">{m.rank_points} RP</span>
                   {m.in_match ? (

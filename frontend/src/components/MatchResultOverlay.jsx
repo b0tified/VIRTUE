@@ -6,7 +6,7 @@
    final rank for every participant. */
 import { useEffect, useMemo, useState } from "react";
 import { Trophy, Skull, Star, Crosshair, Target, Home } from "lucide-react";
-import { rankIconFor } from "@/game/rankIcons";
+import { rankIconFor, divisionRoman } from "@/game/rankIcons";
 import audioBus from "@/game/audio";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
@@ -304,7 +304,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                         style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}
                       >
                         {(() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={11} strokeWidth={3} />; })()}
-                        {p.rank_name}
+                        {p.rank_name}{divisionRoman(p.rank_division) ? ` ${divisionRoman(p.rank_division)}` : ""}
                       </span>
                     </div>
                   </div>

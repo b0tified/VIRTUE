@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star } from "lucide-react";
 import api from "@/api";
 import PlayerCard from "@/components/PlayerCard";
+import { divisionRoman } from "@/game/rankIcons";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -74,6 +75,7 @@ export default function PublicProfileModal({ username, onClose }) {
                 avatar={data.avatar}
                 rankTier={data.rank_tier}
                 rankName={data.rank_name}
+                rankDivision={data.rank_division ?? 0}
                 rankPoints={data.rank_points}
                 peakRankTier={data.peak_rank_tier}
                 bannerIcon={Number.isFinite(data.banner_icon) ? data.banner_icon : 0}
@@ -84,8 +86,8 @@ export default function PublicProfileModal({ username, onClose }) {
                 testid="public-profile-card"
               />
               <div className="flex flex-col gap-1">
-                <RankPill label="Current" tier={data.rank_tier} name={data.rank_name} points={data.rank_points} testid="public-profile-current-rank" />
-                <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} points={data.peak_rank_points} crown testid="public-profile-peak-rank" />
+                <RankPill label="Current" tier={data.rank_tier} name={data.rank_name} division={data.rank_division ?? 0} points={data.rank_points} testid="public-profile-current-rank" />
+                <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} division={data.peak_rank_division ?? 0} points={data.peak_rank_points} crown testid="public-profile-peak-rank" />
                 <div className="flex items-center gap-2 mt-1" data-testid="public-profile-level-row">
                   <Star size={14} strokeWidth={3} className="text-[#FFD700]" />
                   <span className="font-anton uppercase text-xs text-neutral-500 w-14">Level</span>
@@ -162,15 +164,16 @@ function rankIdxFromName(name) {
   return Math.max(0, arr.indexOf((name || "BRONZE").toUpperCase()));
 }
 
-function RankPill({ label, tier, name, points, crown = false, testid }) {
+function RankPill({ label, tier, name, division = 0, points, crown = false, testid }) {
   const color = RANK_COLORS[Math.max(0, Math.min(7, tier ?? 0))];
   const textColor = (tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A";
+  const roman = divisionRoman(division);
   return (
     <div className="flex items-center gap-2" data-testid={testid}>
       {crown && <Crown size={14} strokeWidth={3} className="text-[#FFD700]" />}
       <span className="font-anton uppercase text-xs text-neutral-500 w-14">{label}</span>
       <span className="font-anton uppercase tracking-widest text-xs px-2 py-0.5 border-2 border-black" style={{ background: color, color: textColor }}>
-        {name}
+        {name}{roman ? ` ${roman}` : ""}
       </span>
       <span className="font-anton tabular-nums text-xs">{points} RP</span>
     </div>

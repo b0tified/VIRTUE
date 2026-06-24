@@ -177,9 +177,11 @@ def public_user(user: dict) -> dict:
         "rank_points": points,
         "rank_tier": tier_idx,
         "rank_name": tier_name,
+        "rank_division": rank_division_for_points(points, tier_idx),
         "peak_rank_points": peak,
         "peak_rank_tier": peak_idx,
         "peak_rank_name": peak_name,
+        "peak_rank_division": rank_division_for_points(peak, peak_idx),
         "placement_matches_played": placement_played,
         "placement_matches_total": PLACEMENT_MATCHES,
         "in_placements": placement_played < PLACEMENT_MATCHES,
@@ -415,6 +417,43 @@ def rank_for_points(points: int):
             idx = i
             name = n
     return idx, name
+
+
+def rank_division_for_points(points: int, tier_idx: Optional[int] = None) -> int:
+    """Return the sub-division WITHIN a tier (1 = highest, 3 = lowest entry).
+
+    Each main tier (except Goonmaster) is split into 3 equal-width RP bands:
+      - III (3): bottom third of the tier's RP range — fresh promotion.
+      - II  (2): middle third.
+      - I   (1): top third — one band away from promotion.
+    Goonmaster has no division (returns 0). Used for display labels like
+    "SILVER II" and to drive division-aware animated rank icons on the
+    client. The integer ordering is intentional (3 → 2 → 1 → next tier).
+    """
+    if tier_idx is None:
+        tier_idx, _ = rank_for_points(points)
+    tier_idx = max(0, min(len(RANK_TIERS) - 1, int(tier_idx)))
+    # Goonmaster (and any future top-of-ladder tier) is undivided.
+    if tier_idx >= len(RANK_TIERS) - 1:
+        return 0
+    low = RANK_TIERS[tier_idx][0]
+    high = RANK_TIERS[tier_idx + 1][0]
+    span = max(1, high - low)
+    p = max(low, min(high - 1, int(points)))
+    # frac in [0, 1) within the tier.
+    frac = (p - low) / span
+    if frac < 1.0 / 3.0:
+        return 3   # III — entry to the tier
+    if frac < 2.0 / 3.0:
+        return 2   # II — middle
+    return 1       # I  — top of the tier
+
+
+def rank_division_roman(division: int) -> str:
+    """Display helper — turns the integer division into a Roman numeral.
+    Returns empty string for Goonmaster (division == 0) so callers can
+    safely concat without an "0" suffix."""
+    return {1: "I", 2: "II", 3: "III"}.get(int(division or 0), "")
 
 
 # -------------------------------------------------------------------
@@ -995,6 +1034,7 @@ async def leaderboard():
             "rank_points": pts,
             "rank_tier": idx,
             "rank_name": name,
+            "rank_division": rank_division_for_points(pts, idx),
             "online": online,
             "in_match": in_match,
             "match_kind": match_kind,
@@ -1751,8 +1791,8 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
             # Surface tier-change details so the frontend can trigger the
             # rank-up celebration overlay on a successful redeem.
             rank_up_payload = {
-                "prev_tier": {"idx": cur_tier_idx, "name": cur_tier_name},
-                "new_tier":  {"idx": target_tier_idx, "name": RANK_TIERS[target_tier_idx][1]},
+                "prev_tier": {"idx": cur_tier_idx, "name": cur_tier_name, "division": rank_division_for_points(cur_pts, cur_tier_idx)},
+                "new_tier":  {"idx": target_tier_idx, "name": RANK_TIERS[target_tier_idx][1], "division": rank_division_for_points(target_pts, target_tier_idx)},
                 "rp_delta":  int(rp_grant),
                 "new_points": int(target_pts),
             }
@@ -2483,6 +2523,10 @@ class Player:
             "rank_tier": int(getattr(self, "rank_tier", 0) or 0),
             "rank_name": getattr(self, "rank_name", "BRONZE") if not disguised else getattr(self, "disguise_rank_name", "BRONZE"),
             "rank_points": int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
+            "rank_division": rank_division_for_points(
+                int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
+                int(getattr(self, "rank_tier", 0) or 0),
+            ),
             "level": int(getattr(self, "level", 1) or 1),
             "banner_icon": int(getattr(self, "banner_icon", 0) or 0),
             "banner_color": int(getattr(self, "banner_color", 0) or 0),
@@ -4393,10 +4437,12 @@ class GameRoom:
                     "new_points": new_points,
                     "rank_tier": tier_idx,
                     "rank_name": tier_name,
+                    "rank_division": rank_division_for_points(new_points, tier_idx),
                     # Previous tier + change so the client can play the
                     # rank-up / rank-down overlay only for actual transitions.
                     "prev_rank_tier": prev_tier_idx,
                     "prev_rank_name": prev_tier_name,
+                    "prev_rank_division": rank_division_for_points(max(0, new_points - delta), prev_tier_idx),
                     "rank_change": rank_change,
                     "is_placement": is_placement,
                     "placement_match_number": placement_played_before + 1 if is_placement else None,

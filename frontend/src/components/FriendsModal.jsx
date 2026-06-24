@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye, User, MessageCircle } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
+import { divisionRoman } from "@/game/rankIcons";
 import PublicProfileModal from "@/components/PublicProfileModal";
 import WhisperChat from "@/components/WhisperChat";
 
@@ -262,7 +263,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
             className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black"
             style={{ background: rankColor, color: rankText }}
           >
-            {u.rank_name}
+            {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
           </span>
           <span className="text-[10px] font-anton uppercase tracking-widest text-neutral-500">{u.rank_points} RP</span>
           {/* Status chip — priority: in-match > in-queue > online > offline.
@@ -455,7 +456,7 @@ function SearchPanel({ onChange, onInspect }) {
                 <div className="font-anton uppercase text-sm truncate">{u.username}</div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A" }}>
-                    {u.rank_name}
+                    {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
                   </span>
                   <span className="text-[10px] font-anton text-neutral-500">{u.rank_points} RP</span>
                 </div>

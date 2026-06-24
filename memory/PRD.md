@@ -514,3 +514,37 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Live UI smoke: QUICK MATCH → toast "SEARCHING FOR PLAYERS · 0..N" → LEAVE QUEUE clears. Screenshot in `/tmp/lobby_casual_queue.png`.
 
 
+
+
+## 2026-06-24 (later) — Rank sub-divisions + animated rank icons + rank-up shatter/reform
+### Backend — sub-divisions on every tier (except Goonmaster)
+- New helpers `rank_division_for_points(points, tier_idx)` and `rank_division_roman(div)` in `server.py`. Each main tier (Bronze..Grandmaster) is split into three equal-width RP bands: III (3 = entry), II (2 = middle), I (1 = top, one band from promotion). Goonmaster (tier 7) is undivided and returns 0.
+- **`public_user`** now ships `rank_division` AND `peak_rank_division` so the lobby/profile render labels like "SILVER II" without a second fetch.
+- **`/leaderboard`** rows carry `rank_division` for the same reason. Past-season archive rows are intentionally left as plain tier names (historical, no migration).
+- **`Player.to_state()`** scoreboard payloads embed `rank_division` so the in-match scoreboard reads the same labels.
+- **End-match placements** include `rank_division` AND `prev_rank_division` so the rank-up overlay can show e.g. "BRONZE I → SILVER III" with both divisions.
+- Redeem-code `rank_up_payload` (e.g. WARPSPEED) carries divisions inside `prev_tier`/`new_tier`.
+
+### Frontend — division-aware icons + labels everywhere
+- **`/app/frontend/src/game/rankIcons.js`** — added `rankDivisionForPoints`, `divisionRoman`, `rankLabelFor` helpers. Thresholds mirror the backend `RANK_TIERS` so a client-side fallback works for any payload that predates the new fields.
+- **New `<AnimatedRankIcon />`** (`/app/frontend/src/components/AnimatedRankIcon.jsx`). Wraps the existing lucide rank icons with division-aware ornament layers:
+  - Division 3 (entry): soft pulse glow.
+  - Division 2 (middle): pulse + 1 slow-orbiting Sparkles accent + brighter glow.
+  - Division 1 (top): pulse + 2 counter-orbiting accents (Sparkle + Star) + rotating dashed halo ring + strongest glow.
+  - **Goonmaster**: orange flame flicker behind + rotating gold halo + diagonal gold shimmer overlay + counter-orbiting accents (always max-detail since it's undivided).
+  - `prefers-reduced-motion` honored — all decorations pause.
+- **CSS keyframes** added to `/app/frontend/src/index.css` (`rank-pulse-*`, `rank-halo-spin`, `rank-orbit-spin`, `rank-flame-flicker`, `rank-goon-shimmer`).
+- **Label propagation**: `PlayerCard`, `RankBadge` (lobby header), `RankCard` (Profile current+peak), `RankPill` (PublicProfileModal), `FriendsModal` (friend rows + search), `PartyPanel` member rows, `MatchResultOverlay` end-match rows, and the Leaderboard rank cells now render `{name} {romanize(division)}` (e.g. "SILVER II"). Goonmaster intentionally shows just "GOONMASTER".
+
+### Rank-up overlay — shatter & reform transition
+- `RankUpOverlay.jsx` rewritten with a 4-phase timeline:
+  - Phase 0 (0–0.7s): "RANK UP!" banner pops in over the radial backdrop; previous-tier crest visible.
+  - Phase 1 (0.7–1.35s): previous crest brightens then SHATTERS outward (10 Sparkles fly in a starburst via `rankup-prev-shatter` + `rankup-shard-fly` keyframes), white flash, expanding ring shockwave.
+  - Phase 2 (1.35–2.0s): new-tier crest assembles from blur+scale (`rankup-new-assemble`) using `AnimatedRankIcon` so its division ornaments animate from the moment it appears.
+  - Phase 3 (2.0–6.5s): 24-Sparkles star shower + the new crest holds.
+- Crest labels show `NAME + division roman` (e.g. "BRONZE I → SILVER III").
+- **Bug fix**: previous overlay restarted to phase 0 whenever the parent (Lobby/Game) re-rendered because `onClose` was in the timing effect's deps. Now uses a `useRef` to hold the latest `onClose` so the timeline runs uninterrupted from open → auto-dismiss.
+
+### Tests
+- `tests/test_rank_divisions.py` (10 cases) — band boundaries for each of the 7 divided tiers (entry/middle/top), Goonmaster always returns 0, roman helper, and `public_user` exposes both `rank_division` + `peak_rank_division`. All passing.
+- Live UI smoke: lobby header shows "GRANDMASTER III", Profile rank cards show both current + peak with animated icons + division labels, Leaderboard top 5 read "GOONMASTER / GRANDMASTER III / MASTER II / MASTER III / MASTER III", rank-up overlay phases verified (phase 2 ring shockwave + phase 3 star shower screenshots saved to `/tmp/`).

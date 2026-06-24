@@ -7,7 +7,8 @@ import {
   Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
   Check, Lock, Gem, Snowflake, Atom, Shield, Users,
 } from "lucide-react";
-import { rankIconFor } from "@/game/rankIcons";
+import { rankIconFor, divisionRoman } from "@/game/rankIcons";
+import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 import { levelFromStats } from "@/game/level";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
@@ -239,6 +240,7 @@ export default function Profile() {
             label="Current Rank"
             tier={currentTier}
             name={currentName}
+            division={user?.rank_division ?? 0}
             points={currentRP}
             testid="profile-current-rank"
           />
@@ -246,6 +248,7 @@ export default function Profile() {
             label="Peak Rank"
             tier={peakTier}
             name={peakName}
+            division={user?.peak_rank_division ?? 0}
             points={peakRP}
             crown
             testid="profile-peak-rank"
@@ -441,10 +444,10 @@ function rankIdxFromName(name) {
   return arr.indexOf((name || "BRONZE").toUpperCase());
 }
 
-function RankCard({ label, tier, name, points, crown = false, testid }) {
+function RankCard({ label, tier, name, division = 0, points, crown = false, testid }) {
   const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
   const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
-  const I = rankIconFor(tier);
+  const roman = divisionRoman(division);
   return (
     <div className="card-pow p-0 overflow-hidden" data-testid={testid}>
       <div className="bg-black text-white px-5 py-2 flex items-center gap-2">
@@ -453,8 +456,20 @@ function RankCard({ label, tier, name, points, crown = false, testid }) {
       </div>
       <div className="flex items-stretch">
         <div className="font-display px-5 py-5 text-4xl uppercase flex-1 flex items-center gap-3" style={{ background: color, color: textColor }}>
-          <I size={36} strokeWidth={3} style={{ color: textColor }} data-testid={`${testid}-icon`} />
-          <span>{name}</span>
+          <AnimatedRankIcon
+            tier={tier}
+            division={division}
+            size={60}
+            testid={`${testid}-icon`}
+          />
+          <div className="flex flex-col leading-none">
+            <span>{name}</span>
+            {roman && tier !== 7 && (
+              <span className="font-anton tracking-widest text-base mt-1 opacity-90" data-testid={`${testid}-division`}>
+                {roman}
+              </span>
+            )}
+          </div>
         </div>
         <div className="bg-white px-5 py-5 font-display text-4xl border-l-2 border-black tabular-nums">
           {points}

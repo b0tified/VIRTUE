@@ -1072,3 +1072,187 @@ html.virtue-no-ui-blur .hud-panel {
 @keyframes match-loading-burst-spin {
   to { transform: rotate(360deg); }
 }
+
+
+/* =============================================================
+   Animated rank icons — division-aware crest ornaments.
+
+   The AnimatedRankIcon wrapper sets `--rank-color` from
+   rankColorFor(tier) and a body class `rank-icon-{div1|div2|div3|goon}`.
+   Higher divisions get more layers of motion + brighter glow.
+   ============================================================= */
+.rank-icon-anim {
+  /* All children stack on top of the icon (z=2). Decorations stay z=1. */
+  isolation: isolate;
+}
+.rank-icon-anim[data-paused="true"] *,
+.rank-icon-anim[data-paused="true"] {
+  animation-play-state: paused !important;
+}
+
+/* Pulse glow halo behind the icon — strength scales by division. */
+.rank-icon-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--rank-color) 75%, transparent) 0%,
+    transparent 70%
+  );
+  filter: blur(6px);
+  z-index: 1;
+  pointer-events: none;
+}
+.rank-icon-div3 .rank-icon-glow { animation: rank-pulse-soft 2.8s ease-in-out infinite; opacity: 0.55; }
+.rank-icon-div2 .rank-icon-glow { animation: rank-pulse-mid  2.2s ease-in-out infinite; opacity: 0.75; }
+.rank-icon-div1 .rank-icon-glow { animation: rank-pulse-strong 1.6s ease-in-out infinite; opacity: 0.95; }
+.rank-icon-goon .rank-icon-glow {
+  animation: rank-pulse-strong 1.4s ease-in-out infinite;
+  background: radial-gradient(circle, #FFD700cc 0%, transparent 65%);
+  opacity: 0.95;
+  filter: blur(8px);
+}
+
+@keyframes rank-pulse-soft {
+  0%, 100% { transform: scale(1);   opacity: 0.45; }
+  50%      { transform: scale(1.08); opacity: 0.65; }
+}
+@keyframes rank-pulse-mid {
+  0%, 100% { transform: scale(1);   opacity: 0.6; }
+  50%      { transform: scale(1.18); opacity: 0.95; }
+}
+@keyframes rank-pulse-strong {
+  0%, 100% { transform: scale(1);   opacity: 0.65; filter: blur(6px); }
+  50%      { transform: scale(1.32); opacity: 1;    filter: blur(10px); }
+}
+
+/* Halo ring — division 1 + Goonmaster. Rotates slowly behind the
+   icon with a dashed crown effect. */
+.rank-icon-halo {
+  position: absolute;
+  inset: -4%;
+  border-radius: 50%;
+  border: 2px dashed var(--rank-color);
+  z-index: 1;
+  pointer-events: none;
+  animation: rank-halo-spin 6s linear infinite;
+  opacity: 0.85;
+}
+.rank-icon-goon .rank-icon-halo {
+  border: 2px dashed #FFD700;
+  opacity: 1;
+  animation-duration: 4.5s;
+  box-shadow: 0 0 12px #FFD700aa, inset 0 0 12px #FFD70066;
+}
+
+@keyframes rank-halo-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Orbiting accent layers — wraps a small Sparkles/Star icon. The
+   layer itself is centered and rotates; the icon inside is offset
+   so it traces a circle. */
+.rank-icon-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  display: block;
+}
+.rank-icon-orbit > svg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 0 4px var(--rank-color));
+}
+.rank-icon-orbit-a { animation: rank-orbit-spin 5.5s linear infinite; }
+.rank-icon-orbit-b { animation: rank-orbit-spin 4s linear infinite reverse; }
+.rank-icon-goon .rank-icon-orbit-a { animation-duration: 3.2s; }
+.rank-icon-goon .rank-icon-orbit-b { animation-duration: 2.4s; }
+
+@keyframes rank-orbit-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Goonmaster — flame flicker behind the icon (warm radial that
+   subtly wobbles in opacity + scale). */
+.rank-icon-goon-flame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 65%, #FF7B00cc 0%, #E62429aa 30%, transparent 60%);
+  animation: rank-flame-flicker 0.95s ease-in-out infinite;
+  filter: blur(4px);
+}
+@keyframes rank-flame-flicker {
+  0%, 100% { opacity: 0.65; transform: scale(1)    translateY(0); }
+  35%      { opacity: 0.9;  transform: scale(1.05) translateY(-2px); }
+  55%      { opacity: 0.55; transform: scale(0.97) translateY(1px); }
+  78%      { opacity: 0.95; transform: scale(1.08) translateY(-1px); }
+}
+
+/* Goonmaster — gold shimmer overlay (diagonal sweep). */
+.rank-icon-goon-shimmer {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 30%, #FFD70077 50%, transparent 70%);
+  mix-blend-mode: screen;
+  animation: rank-goon-shimmer 2.8s ease-in-out infinite;
+}
+@keyframes rank-goon-shimmer {
+  0%   { transform: translateX(-30%); opacity: 0; }
+  40%  { opacity: 0.95; }
+  100% { transform: translateX(30%);  opacity: 0; }
+}
+
+/* Honor prefers-reduced-motion — pause all rank animations. */
+@media (prefers-reduced-motion: reduce) {
+  .rank-icon-anim *,
+  .rank-icon-anim {
+    animation: none !important;
+  }
+}
+
+/* =============================================================
+   Rank-Up Overlay — phase 1.5 (shatter / reform)
+   ============================================================= */
+@keyframes rankup-prev-shatter {
+  0%   { transform: scale(1)   rotate(0);     opacity: 1;   filter: brightness(1); }
+  40%  { transform: scale(1.18) rotate(-6deg); opacity: 1;   filter: brightness(1.6); }
+  70%  { transform: scale(1.4) rotate(8deg);  opacity: 0.4; filter: brightness(2.2) blur(2px); }
+  100% { transform: scale(2.2) rotate(-14deg); opacity: 0;  filter: brightness(3) blur(8px); }
+}
+@keyframes rankup-shard-fly {
+  0%   { transform: translate(0, 0) rotate(0deg)   scale(0.4); opacity: 0; }
+  10%  { opacity: 1; }
+  100% {
+    transform:
+      translate(var(--shard-tx, 80px), var(--shard-ty, -60px))
+      rotate(var(--shard-rot, 280deg))
+      scale(1);
+    opacity: 0;
+  }
+}
+@keyframes rankup-new-assemble {
+  0%   { transform: scale(0.05) rotate(-25deg); opacity: 0; filter: blur(14px) brightness(2.4); }
+  30%  { transform: scale(0.4)  rotate(-10deg); opacity: 0.6; filter: blur(8px)  brightness(2); }
+  70%  { transform: scale(1.18) rotate(3deg);   opacity: 1; filter: blur(0)     brightness(1.4); }
+  100% { transform: scale(1)    rotate(0deg);   opacity: 1; filter: blur(0)     brightness(1); }
+}
+@keyframes rankup-ring-out {
+  0%   { transform: scale(0.2);  opacity: 0.95; border-width: 6px; }
+  100% { transform: scale(2.6);  opacity: 0;     border-width: 1px; }
+}
+@keyframes rankup-flash {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  100% { opacity: 0; }
+}

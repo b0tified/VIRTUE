@@ -9,7 +9,7 @@ import {
   Trophy, Crown, Flame, Star, Zap, Bomb, Target, Skull as SkullIcon, Sparkles,
   Gem, Snowflake, Atom, Eye,
 } from "lucide-react";
-import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor } from "@/game/rankIcons";
+import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor, divisionRoman } from "@/game/rankIcons";
 
 const RANK_COLORS = TIER_COLORS;
 
@@ -135,6 +135,7 @@ export default function PlayerCard({
   avatar = 0,
   rankTier = 0,
   rankName = "BRONZE",
+  rankDivision = 0,
   rankPoints = 0,
   peakRankTier = null,
   bannerIcon = null,
@@ -192,7 +193,7 @@ export default function PlayerCard({
               style={{ background: rankColor, color: rankTextColor }}
               data-testid={`${testid}-rank`}
             >
-              {isBot ? "BOT" : rankName}
+              {isBot ? "BOT" : (rankName + (divisionRoman(rankDivision) ? ` ${divisionRoman(rankDivision)}` : ""))}
             </span>
             {/* Goonmaster-only: show the player's global leaderboard
                 position (e.g. "#3") next to the rank pill. */}

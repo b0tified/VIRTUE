@@ -13,6 +13,7 @@ import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import RankUpOverlay from "@/components/RankUpOverlay";
+import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
 import PracticeMapSelector from "@/components/PracticeMapSelector";
@@ -162,7 +163,7 @@ export default function Lobby() {
       const d = e?.detail || {};
       if (!d.new_tier) return;
       setRankUp({
-        prevTier: d.prev_tier || { idx: 0, name: "BRONZE" },
+        prevTier: d.prev_tier || { idx: 0, name: "BRONZE", division: 3 },
         newTier:  d.new_tier,
         rpDelta:  d.rp_delta ?? 0,
         newPoints: d.new_points ?? 0,
@@ -398,6 +399,7 @@ export default function Lobby() {
               avatar={user.avatar ?? 0}
               rankTier={user.rank_tier ?? 0}
               rankName={user.rank_name || "BRONZE"}
+              rankDivision={user.rank_division ?? 0}
               rankPoints={user.rank_points ?? 0}
               peakRankTier={user.peak_rank_tier ?? user.rank_tier ?? 0}
               bannerIcon={user.banner_icon ?? null}
@@ -499,7 +501,7 @@ export default function Lobby() {
           </h1>
 
           <div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
-            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} points={user?.rank_points || 0} />
+            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} />
             {user?.in_placements && (
               <div
                 className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white"
@@ -846,13 +848,23 @@ const RANK_TIERS = [
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);
 
-function RankBadge({ tier, name, points }) {
+function RankBadge({ tier, name, division, points }) {
   const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
   const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
+  const roman = { 1: "I", 2: "II", 3: "III" }[Number(division || 0)] || "";
   return (
-    <div className="border-pow shadow-pow-sm flex items-center" data-testid="rank-badge">
-      <div className="font-display px-4 py-2 text-2xl uppercase" style={{ background: color, color: textColor }}>
-        {name}
+    <div className="border-pow shadow-pow-sm flex items-center gap-0" data-testid="rank-badge">
+      <div
+        className="flex items-center justify-center px-2 py-1"
+        style={{ background: color }}
+      >
+        <AnimatedRankIcon tier={tier} division={division} size={36} testid="rank-badge-icon" />
+      </div>
+      <div className="font-display px-4 py-2 text-2xl uppercase flex items-baseline gap-1.5" style={{ background: color, color: textColor }}>
+        <span>{name}</span>
+        {roman && tier !== 7 && (
+          <span className="font-anton text-sm tracking-widest opacity-90" data-testid="rank-badge-division">{roman}</span>
+        )}
       </div>
       <div className="bg-white px-3 py-2 font-anton uppercase tracking-widest text-sm">
         {points} <span className="opacity-60">RP</span>

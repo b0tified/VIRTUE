@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
 import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive } from "lucide-react";
 import audioBus from "@/game/audio";
+import { divisionRoman } from "@/game/rankIcons";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -230,7 +231,7 @@ export default function Leaderboard() {
                         style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
                         data-testid={`leaderboard-rank-${i}`}
                       >
-                        {r.rank_name || "BRONZE"}
+                        {(r.rank_name || "BRONZE") + (divisionRoman(r.rank_division) ? ` ${divisionRoman(r.rank_division)}` : "")}
                       </span>
                     </div>
                     <div className="col-span-2 text-right font-display text-2xl">{r.rank_points ?? 0}</div>
