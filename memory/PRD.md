@@ -471,3 +471,23 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 ### Combined Practice + Offline button
 - Lobby header now has ONE **PRACTICE** button (was PRACTICE RANGE + OFFLINE VS AI). The unified `PracticeMapSelector` got a new **"TRAINING TYPE"** toggle at the top (PRACTICE RANGE vs OFFLINE VS AI) above the existing FFA/TDM toggle and map grid. Returned `opts.mode` from the selector overrides the modal's initial mode prop so the lobby uses the chosen value for the `/play?mode=` navigation. Footer now reads e.g., "SELECTED: RANDOM · RANGE · FFA".
 
+
+## 2026-06-24 (even later) — Per-button SFX + queue fanfare + lobby motion
+### Per-button hover SFX
+- `audioBus.playUIBlip(seed)` now varies pitch + waveform by `seed`. Frequencies pulled from a 12-note D-major-pentatonic-ish scale (660Hz..1490Hz). Waveform cycles triangle/sine/square per seed % 3 for an additional timbre layer.
+- `useButtonSounds` hashes each button's identity (data-testid → text → href → "btn") via djb2 into the seed so the same button always plays the same note (stable musical identity), and sweeping a row of buttons reads as a small arpeggio rather than a single repeating chirp.
+
+### Queue-start fanfare
+- New `audioBus.playQueueStart()` — three-note arpeggio (660 → 880 → 1240Hz) at 0.18 gain, designed to punctuate "you're in matchmaking". Fired from BOTH `joinRankedQueue` (Lobby.jsx) and `startQuickQueue` so the queue entry feels symmetric across modes.
+
+### More animated lobby background + opt-out
+- `LobbyBackgroundMeteor` got a major polish pass:
+  - **3 depth layers** of streaks (back/mid/front) with distinct sizes, opacities, and blur — reads as parallax.
+  - **Pulsing crater glow** (compound animation `lobby-meteor-glow-pulse` + `lobby-meteor-pulse-amp`).
+  - **Wobbling comic words** (gentle ±3° rotation + 8px lift on a 6.5s cycle).
+  - **Breathing ember blobs** (`lobby-bg-blob-breathe` stacked with the drift transform).
+  - **Horizon scan band** — sweeps right→left across the bottom third every 12s, reads as "scanning the impact site".
+- `prefers-reduced-motion` honored — all new animations clamp to none when the OS pref is set.
+- Component accepts `animated` prop. When false, a calm fallback (sky + halftone + 1 blob) is rendered — what the user remembers as "the old background".
+- **Settings toggle** "Animated Lobby Background" added under Graphics. Defaulted ON. Lobby live-subscribes to `virtue-settings-changed` so the swap is instant.
+

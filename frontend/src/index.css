@@ -628,11 +628,77 @@ canvas { outline: none; display: block; }
 .lobby-bg-blob.blob-meteor-magenta { background: #E62478; animation-duration: 23s; animation-delay: -7s; opacity: 0.30; }
 .lobby-bg-blob.blob-meteor-gold    { background: #FFC15C; animation-duration: 26s; animation-delay: -13s; opacity: 0.32; }
 
+/* Streak depth layers — back is slow + dim (parallax distance), front
+   is fast + bright (closer to the camera). Combined with the staggered
+   delays in the JSX this reads as a 3-plane meteor shower instead of
+   uniform falling lines. */
+.lobby-meteor-streak.streak-back {
+  height: 140px;
+  width: 2.5px;
+  opacity: 0.55;
+  filter: blur(0.6px);
+  box-shadow: 0 0 18px 3px #FF7A2A99, 0 0 40px 7px #FF7A2A33;
+}
+.lobby-meteor-streak.streak-front {
+  height: 280px;
+  width: 6px;
+  box-shadow: 0 0 32px 8px #FFE4B0cc, 0 0 80px 14px #FF7A2A88;
+}
+
+/* Crater-glow pulse — adds breathing to the bottom horizon light. */
+.lobby-meteor-pulse { animation: lobby-meteor-glow-pulse 5s ease-in-out infinite, lobby-meteor-pulse-amp 7.5s ease-in-out infinite; }
+@keyframes lobby-meteor-pulse-amp {
+  0%, 100% { filter: brightness(1.0)   saturate(1.0); }
+  50%      { filter: brightness(1.18)  saturate(1.12); }
+}
+
+/* Subtle wobble for comic words — gentle 4-degree rotation + 8px lift.
+   Pairs with the existing color animation so the words feel alive
+   without being distracting. */
+.lobby-bg-word-wobble { animation: lobby-bg-word-wobble 6.5s ease-in-out infinite; }
+@keyframes lobby-bg-word-wobble {
+  0%, 100% { transform: rotate(-3deg) translateY(0); }
+  50%      { transform: rotate( 3deg) translateY(-8px); }
+}
+
+/* Ember-blob breathing — scale 0.95↔1.08 on top of the existing
+   drift translation. Stacks via composite animations. */
+.lobby-bg-blob-breathe { animation-name: lobby-bg-blob-drift, lobby-bg-blob-breathe; animation-iteration-count: infinite; }
+@keyframes lobby-bg-blob-breathe {
+  0%, 100% { transform: scale(0.95); }
+  50%      { transform: scale(1.08); }
+}
+
+/* Horizon scan — a thin glowing band that sweeps right→left across
+   the bottom third every ~12s. Sells the "scanning the impact site"
+   beat without competing with the streaks for attention. */
+.lobby-meteor-scan {
+  position: absolute;
+  bottom: 14%;
+  left: -30%;
+  width: 60%;
+  height: 90px;
+  background: linear-gradient(90deg, transparent 0%, #FFC15C66 45%, #FFE4B0aa 50%, #FFC15C66 55%, transparent 100%);
+  filter: blur(8px);
+  opacity: 0.55;
+  animation: lobby-meteor-scan 12s linear infinite;
+}
+@keyframes lobby-meteor-scan {
+  0%   { left: -30%; opacity: 0; }
+  10%  { opacity: 0.55; }
+  90%  { opacity: 0.55; }
+  100% { left: 110%; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lobby-meteor-sky,
   .lobby-meteor-glow,
   .lobby-meteor-halftone,
-  .lobby-meteor-streak { animation: none !important; }
+  .lobby-meteor-streak,
+  .lobby-meteor-pulse,
+  .lobby-meteor-scan,
+  .lobby-bg-word-wobble,
+  .lobby-bg-blob-breathe { animation: none !important; }
 }
 
 

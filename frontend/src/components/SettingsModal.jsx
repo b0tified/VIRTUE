@@ -713,6 +713,13 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(v) => patch({ disableVsync: v })}
               testid="settings-disable-vsync"
             />
+            <ToggleRow
+              label="Animated Lobby Background"
+              note="New parallax meteor scene with pulsing crater glow + drifting embers. Turn off to use the calmer static background (less motion, lower battery)."
+              checked={!!s.lobbyAnimatedBackground}
+              onChange={(v) => patch({ lobbyAnimatedBackground: v })}
+              testid="settings-lobby-animated-background"
+            />
           </section>
 
           {/* Frame Generation picker — multiplies the per-frame render passes

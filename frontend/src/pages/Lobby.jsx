@@ -106,7 +106,11 @@ export default function Lobby() {
       return;
     }
     const r = await queueCtx?.joinRanked();
-    if (r && !r.ok) alert("Failed to join queue: " + r.error);
+    if (r && !r.ok) { alert("Failed to join queue: " + r.error); return; }
+    // Queue-start fanfare — three-note arpeggio so the player gets a
+    // clear "you're in the queue" audio confirmation alongside the
+    // visual SEARCHING toast.
+    try { audioBus.playQueueStart(); } catch {}
   };
 
   const cancelRankedQueue = async () => {
@@ -145,6 +149,16 @@ export default function Lobby() {
       audioBus.setMusicVolume?.(s.musicVolume ?? 0.32);
       audioBus.setSfxVolume?.(s.sfxVolume ?? 0.65);
     } catch {}
+  }, []);
+
+  // Live-subscribe to the lobby-animated-background toggle so flipping
+  // the setting in the modal swaps the backdrop instantly without a
+  // page reload.
+  const [animatedBg, setAnimatedBg] = useState(() => settingsStore.get().lobbyAnimatedBackground !== false);
+  useEffect(() => {
+    const onChange = () => setAnimatedBg(settingsStore.get().lobbyAnimatedBackground !== false);
+    window.addEventListener("virtue-settings-changed", onChange);
+    return () => window.removeEventListener("virtue-settings-changed", onChange);
   }, []);
 
   // Subscribe to the global `virtue-rankup` event so any rank-up (e.g. after
@@ -267,6 +281,9 @@ export default function Lobby() {
     setQuickQueueTarget(6 + Math.floor(Math.random() * 7));
     setFoundRealPlayers(0);
     setQuickQueueSec(0);
+    // Queue-start fanfare — same audio cue ranked uses so both
+    // matchmaking entry points feel symmetric.
+    try { audioBus.playQueueStart(); } catch {}
   };
 
   const cancelQuickQueue = () => setQuickQueueSec(null);
@@ -390,7 +407,7 @@ export default function Lobby() {
       {showMeteorBg ? (
         <>
           <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
-          <LobbyBackgroundMeteor />
+          <LobbyBackgroundMeteor animated={animatedBg} />
         </>
       ) : (
         <>

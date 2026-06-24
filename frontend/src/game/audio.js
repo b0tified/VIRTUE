@@ -119,26 +119,65 @@ class AudioBus {
     return true;
   }
 
-  /* Tiny UI blip used on button hover. Triangle-wave chirp from 880Hz
-     → 1320Hz over ~60ms with a fast pluck envelope. Cheap, distinct,
-     doesn't fight the music. Throttled by the caller (useButtonSounds
-     hook) so a row of buttons swept by the cursor doesn't drown the
-     user in chirps. */
-  playUIBlip() {
+  /* Tiny UI blip used on button hover. Triangle-wave chirp from a
+     base frequency (default 880Hz) → +50% over ~55ms with a fast
+     pluck envelope. Passing different `seed` values produces a
+     stable-but-distinct timbre per button so a row of buttons sweeps
+     a melodic arpeggio instead of a single repeating chirp. The
+     `useButtonSounds` hook hashes the button's data-testid (or text
+     fallback) into a seed in the 0..11 range, then maps that to a
+     pentatonic-ish frequency table for pleasant-sounding combos. */
+  playUIBlip(seed = 0) {
     if (!this._ensure()) return;
     if (this.sfxMuted) return;
+    // 12-note scale tuned to feel like distinct comic "blips" without
+    // jangling — major pentatonic spanning ~1.5 octaves (D-pentatonic
+    // in the 660Hz..1490Hz range).
+    const SCALE = [660, 740, 880, 990, 1100, 1240, 1390, 1480, 740, 880, 1100, 1390];
+    const base = SCALE[((seed % SCALE.length) + SCALE.length) % SCALE.length];
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(880, t);
-    osc.frequency.exponentialRampToValueAtTime(1320, t + 0.055);
+    // Alternating waveforms (triangle / square light) per seed give
+    // an additional timbre layer beyond pitch.
+    osc.type = seed % 3 === 0 ? "sine" : seed % 3 === 1 ? "triangle" : "square";
+    osc.frequency.setValueAtTime(base, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 1.5, t + 0.055);
     gain.gain.setValueAtTime(0.0, t);
-    gain.gain.linearRampToValueAtTime(0.10, t + 0.006);
+    gain.gain.linearRampToValueAtTime(osc.type === "square" ? 0.06 : 0.10, t + 0.006);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.085);
     osc.connect(gain).connect(this.sfxGain);
     osc.start(t);
     osc.stop(t + 0.10);
+  }
+
+  /* Queue-start fanfare. Three short notes arpeggiating up — comic
+     "ready, set, go!" feel. Plays whenever the player enters a
+     matchmaking queue (ranked / casual). Louder than the hover blip
+     since it's a deliberate user action moment. */
+  playQueueStart() {
+    if (!this._ensure()) return;
+    if (this.sfxMuted) return;
+    const t0 = this.ctx.currentTime;
+    const notes = [
+      { f: 660, at: 0.00, dur: 0.16 },
+      { f: 880, at: 0.10, dur: 0.16 },
+      { f: 1240, at: 0.22, dur: 0.30 },
+    ];
+    for (const n of notes) {
+      const t = t0 + n.at;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(n.f, t);
+      osc.frequency.exponentialRampToValueAtTime(n.f * 1.06, t + n.dur);
+      gain.gain.setValueAtTime(0.0, t);
+      gain.gain.linearRampToValueAtTime(0.18, t + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + n.dur);
+      osc.connect(gain).connect(this.sfxGain);
+      osc.start(t);
+      osc.stop(t + n.dur + 0.05);
+    }
   }
 
   setMuted(m) {

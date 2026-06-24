@@ -88,6 +88,13 @@ const DEFAULTS = Object.freeze({
   // ticks. "off" = 1x (default), "2x" = render 2 frames per RAF, "3x" = 3.
   // Cheap on modern GPUs; helps perceived smoothness on 60Hz displays.
   frameGen: "off",
+  // Animated lobby background — when true, the lobby uses the new
+  // souped-up animated background (parallax meteors, pulsing crater
+  // glow, drifting embers). Off = legacy static-ish background
+  // (single sky gradient + slow drifting blobs). Defaulted on so new
+  // players get the polish, but kept as a toggle for users who find
+  // the motion distracting / battery-heavy.
+  lobbyAnimatedBackground: true,
   // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
   keybinds: {
     forward: "KeyW",
