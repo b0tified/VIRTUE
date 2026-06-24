@@ -11,6 +11,7 @@ import Lobby from "@/pages/Lobby";
 import Game from "@/pages/Game";
 import Profile from "@/pages/Profile";
 import Leaderboard from "@/pages/Leaderboard";
+import News from "@/pages/News";
 import AuthCallback from "@/pages/AuthCallback";
 import AdminReports from "@/pages/AdminReports";
 import OrientationLock from "@/components/OrientationLock";
@@ -103,6 +104,7 @@ export default function App() {
             <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+            <Route path="/news" element={<ProtectedRoute><News /></ProtectedRoute>} />
             <Route path="/admin/reports" element={<ProtectedRoute><AdminReports /></ProtectedRoute>} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="*" element={<Navigate to="/" replace />} />

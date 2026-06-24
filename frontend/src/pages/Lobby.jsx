@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -39,6 +39,9 @@ export default function Lobby() {
   const [whisperOpenWith, setWhisperOpenWith] = useState(null);
   const [showShop, setShowShop] = useState(false);
   const [showProgression, setShowProgression] = useState(false);
+  // News unread badge — refreshed every 30s and cleared when the user
+  // opens /news (the News page dispatches `virtue-news-read`).
+  const [newsUnread, setNewsUnread] = useState(0);
   // When non-null, the practice map selector is open. Value is the mode
   // it will launch on confirm: "practice" | "offline".
   const [practiceSelectorMode, setPracticeSelectorMode] = useState(null);
@@ -321,6 +324,30 @@ export default function Lobby() {
     return () => { alive = false; clearInterval(id); };
   }, [refreshParty]);
 
+  // News unread-count poll — every 30s while the lobby is open. Also
+  // listens for the `virtue-news-read` event the News page dispatches
+  // so the badge clears the instant the user navigates back.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const { data } = await api.get("/news/unread");
+        if (alive) setNewsUnread(Number(data?.count || 0));
+      } catch {
+        // Silent — keep last known value on transient errors.
+      }
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    const onRead = () => setNewsUnread(0);
+    window.addEventListener("virtue-news-read", onRead);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      window.removeEventListener("virtue-news-read", onRead);
+    };
+  }, []);
+
   const acceptInvite = async (invite) => {
     try {
       await api.post("/party/accept", { username: invite.from_username });
@@ -446,6 +473,23 @@ export default function Lobby() {
             title="Friends list"
           >
             <span className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} /><span className="hidden sm:inline">FRIENDS</span></span>
+          </button>
+          <button
+            onClick={() => nav("/news")}
+            className="btn-pow bg-[#9B59B6] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3 relative"
+            data-testid="lobby-news-button"
+            title="News & announcements"
+          >
+            <span className="flex items-center gap-2"><Megaphone size={18} strokeWidth={3} /><span className="hidden sm:inline">NEWS</span></span>
+            {newsUnread > 0 && (
+              <span
+                className="absolute -top-2 -right-2 min-w-[20px] h-[20px] px-1 bg-[#E62429] text-white border-2 border-black font-anton text-[10px] tabular-nums flex items-center justify-center"
+                data-testid="lobby-news-unread-badge"
+                title={`${newsUnread} unread`}
+              >
+                {newsUnread > 99 ? "99+" : newsUnread}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setShowSettings(true)}

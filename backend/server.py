@@ -6884,6 +6884,107 @@ async def admin_delete_code(code: str, user: dict = Depends(get_current_user)):
     return {"ok": True, "deleted": code_norm}
 
 
+# -------------------------------------------------------------------
+# News — admin-broadcast announcement feed.
+#
+# `news_posts` collection. Admins compose posts; every signed-in user
+# can read them at /news. A small unread badge in the lobby shows how
+# many posts have been published since the user last opened the news
+# page (tracked per-user via `users.news_last_read_at`).
+# -------------------------------------------------------------------
+class NewsPostIn(BaseModel):
+    title: str = Field(min_length=2, max_length=120)
+    body:  str = Field(min_length=2, max_length=4000)
+    pinned: bool = False
+
+
+@api.post("/admin/news")
+async def admin_create_news(payload: NewsPostIn, user: dict = Depends(get_current_user)):
+    """Admin-only: publish a new announcement. Stored in the `news_posts`
+    collection with `created_at` set server-side. Returns the persisted
+    post (id, title, body, author_username, created_at, pinned)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    now = datetime.now(timezone.utc)
+    doc = {
+        "title": payload.title.strip(),
+        "body": payload.body.strip(),
+        "author_username": user.get("username", "Admin"),
+        "author_id": str(user["_id"]),
+        "created_at": now,
+        "pinned": bool(payload.pinned),
+    }
+    res = await db.news_posts.insert_one(doc)
+    return {
+        "id": str(res.inserted_id),
+        "title": doc["title"],
+        "body": doc["body"],
+        "author_username": doc["author_username"],
+        "created_at": now.isoformat(),
+        "pinned": doc["pinned"],
+    }
+
+
+@api.delete("/admin/news/{post_id}")
+async def admin_delete_news(post_id: str, user: dict = Depends(get_current_user)):
+    """Admin-only: delete a news post by id."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    try:
+        oid = ObjectId(post_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid post id.")
+    res = await db.news_posts.delete_one({"_id": oid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return {"ok": True, "deleted": post_id}
+
+
+@api.get("/news")
+async def list_news(user: dict = Depends(get_current_user), limit: int = 50):
+    """Public list of all news posts (newest first, pinned posts on top).
+    Also stamps `users.news_last_read_at = now` so the unread badge clears
+    as soon as the user opens the feed."""
+    limit = max(1, min(200, int(limit)))
+    # Pinned first, then by created_at desc.
+    cursor = db.news_posts.find({}).sort([("pinned", -1), ("created_at", -1)]).limit(limit)
+    rows: List[dict] = []
+    async for p in cursor:
+        rows.append({
+            "id": str(p["_id"]),
+            "title": p.get("title", ""),
+            "body": p.get("body", ""),
+            "author_username": p.get("author_username", "Admin"),
+            "created_at": p["created_at"].isoformat() if isinstance(p.get("created_at"), datetime) else p.get("created_at"),
+            "pinned": bool(p.get("pinned", False)),
+        })
+    # Mark as read for this user — the unread counter checks against the
+    # latest post's `created_at`.
+    try:
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"news_last_read_at": datetime.now(timezone.utc)}},
+        )
+    except Exception:
+        pass
+    return rows
+
+
+@api.get("/news/unread")
+async def news_unread(user: dict = Depends(get_current_user)):
+    """Returns `{count: N}` for the lobby's NEWS-button badge.
+    Counts posts published AFTER the user's `news_last_read_at`. New
+    accounts that have never opened the feed see every existing post
+    as unread (capped at 99 for display sanity)."""
+    last_read = user.get("news_last_read_at")
+    if isinstance(last_read, datetime) and last_read.tzinfo is None:
+        last_read = last_read.replace(tzinfo=timezone.utc)
+    query: dict = {}
+    if last_read:
+        query["created_at"] = {"$gt": last_read}
+    count = await db.news_posts.count_documents(query)
+    return {"count": min(99, int(count))}
+
 
 @api.post("/party/invite")
 async def party_invite(payload: PartyInviteIn, user: dict = Depends(get_current_user)):

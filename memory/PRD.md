@@ -548,3 +548,25 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 ### Tests
 - `tests/test_rank_divisions.py` (10 cases) — band boundaries for each of the 7 divided tiers (entry/middle/top), Goonmaster always returns 0, roman helper, and `public_user` exposes both `rank_division` + `peak_rank_division`. All passing.
 - Live UI smoke: lobby header shows "GRANDMASTER III", Profile rank cards show both current + peak with animated icons + division labels, Leaderboard top 5 read "GOONMASTER / GRANDMASTER III / MASTER II / MASTER III / MASTER III", rank-up overlay phases verified (phase 2 ring shockwave + phase 3 star shower screenshots saved to `/tmp/`).
+
+
+## 2026-06-24 (final) — Admin News broadcast system
+### Backend
+- New collection `news_posts` (mongo, ad-hoc — no schema migration needed). Fields: `title`, `body`, `author_username`, `author_id`, `created_at` (datetime UTC), `pinned` (bool).
+- **Endpoints** (in `server.py`):
+  - `POST /api/admin/news` (admin-only) — `{title, body, pinned}`. Validates 2..120/2..4000 char bounds via `NewsPostIn`. Returns the persisted post.
+  - `DELETE /api/admin/news/{post_id}` (admin-only) — yanks one post; 400 on malformed id, 404 if missing.
+  - `GET /api/news` (any auth) — list (sorted: pinned first, then `created_at` desc). Side-effect: stamps `users.news_last_read_at = now` so the unread badge clears as soon as the feed is opened.
+  - `GET /api/news/unread` — returns `{count}` of posts with `created_at > news_last_read_at`. Brand-new accounts see every existing post as unread. Cap displayed at 99.
+- Non-admin POST/DELETE return 403.
+
+### Frontend
+- New page `/news` (`/app/frontend/src/pages/News.jsx`) with comic-styled header (BACK · NEWS · admin NEW POST CTA) and a stack of news cards.
+- **News card** — pinned posts wear a yellow ring + pin icon + yellow title bar; others use black title bar. Body preserves line breaks (`whitespace-pre-wrap`). Footer shows author + relative timestamp (Just now → Nm → Nh → Nd → Mon DD), plus an admin-only red DELETE button.
+- **Compose modal** — title input, body textarea (with 4000-char counter), Pin-to-top checkbox, Cancel/Publish buttons. Optimistic prepend on submit + refresh from server (so pinned-first ordering stays correct).
+- **Lobby NEWS button** — purple `Megaphone` button next to FRIENDS with a red `▣N` unread badge top-right. Polls `/news/unread` every 30s; clears instantly when `virtue-news-read` event fires from the News page.
+- **Route registration** — `/news` added to `App.js` under `ProtectedRoute`.
+
+### Tests
+- `tests/test_news.py` (6 cases) — admin can create, non-admin gets 403, list sorts pinned-then-newest, unread counts posts after `news_last_read_at` (including the "never opened" baseline), admin can delete + re-delete 404s, malformed id returns 400. All passing.
+- Live e2e: admin creates pinned + regular post → list endpoint returns them in correct order with pinned first → unread is 0 after read; non-admin gets 403 on POST/DELETE. UI screenshots verify the page renders, compose modal works, and posts publish optimistically.
