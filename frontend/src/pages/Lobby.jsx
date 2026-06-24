@@ -628,28 +628,103 @@ export default function Lobby() {
 
       {/* Tiers modal */}
       {showTiers && (
-        <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-6" data-testid="tiers-modal" onClick={() => setShowTiers(false)}>
-          <div className="card-pow p-0 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
+        <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4" data-testid="tiers-modal" onClick={() => setShowTiers(false)}>
+          <div className="card-pow p-0 w-full max-w-xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-black text-white px-6 py-3 flex items-center justify-between flex-shrink-0">
               <div className="font-display text-3xl text-[#FFD700]">RANK TIERS</div>
               <button onClick={() => setShowTiers(false)} className="font-anton" data-testid="tiers-close">
                 <X size={20} strokeWidth={3} />
               </button>
             </div>
-            {RANK_TIERS.map((t, i) => (
-              <div key={t.name} className="grid grid-cols-12 border-t-2 border-black items-center" data-testid={`tier-row-${i}`}>
-                <div className="col-span-1 font-display text-2xl text-center bg-white py-3">{i + 1}</div>
-                <div className="col-span-6 font-display text-2xl py-3 px-4" style={{ background: t.color, color: t.name === "GOONMASTER" ? "#FFD700" : "#0A0A0A" }}>
-                  {t.name}
-                </div>
-                <div className="col-span-5 font-anton uppercase text-sm py-3 px-4 bg-white">
-                  {t.min} RP {RANK_TIERS[i + 1] ? `→ ${RANK_TIERS[i + 1].min - 1} RP` : "+"}
-                </div>
+            <div className="overflow-y-auto bg-white">
+              {RANK_TIERS.map((t, i) => {
+                const next = RANK_TIERS[i + 1];
+                const tierTop = next ? next.min - 1 : null;
+                const isGoon = t.name === "GOONMASTER";
+                // 3 sub-divisions for non-Goonmaster tiers: III (entry),
+                // II (middle), I (top). RP bands are equal thirds of the
+                // tier's range. Indexes: division 3 → low band, 1 → high band.
+                const subDivs = isGoon ? null : [3, 2, 1].map((divIdx, k) => {
+                  const span = next.min - t.min;
+                  const low = t.min + Math.round((span * (3 - divIdx)) / 3);
+                  const high = t.min + Math.round((span * (4 - divIdx)) / 3) - 1;
+                  return { divIdx, low, high };
+                });
+                const youAreHere = (user?.rank_tier ?? 0) === i;
+                return (
+                  <div
+                    key={t.name}
+                    className={`border-t-2 border-black ${youAreHere ? "bg-[#FFF7D6]" : ""}`}
+                    data-testid={`tier-row-${i}`}
+                  >
+                    {/* Tier header: # · animated icon · name · full RP range */}
+                    <div className="grid grid-cols-12 items-center">
+                      <div className="col-span-1 font-display text-2xl text-center py-3">{i + 1}</div>
+                      <div
+                        className="col-span-7 font-display text-2xl py-3 px-3 flex items-center gap-3"
+                        style={{ background: t.color, color: isGoon ? "#FFD700" : "#0A0A0A" }}
+                      >
+                        <AnimatedRankIcon
+                          tier={i}
+                          division={isGoon ? 0 : 1}
+                          size={42}
+                          testid={`tier-icon-${i}`}
+                        />
+                        <span>{t.name}</span>
+                        {isGoon && youAreHere && (
+                          <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 bg-[#FFD700] text-black border-2 border-black" data-testid="tier-you-are-here">
+                            YOU
+                          </span>
+                        )}
+                      </div>
+                      <div className="col-span-4 font-anton uppercase text-xs sm:text-sm py-3 px-3 tabular-nums">
+                        {t.min} {tierTop !== null ? `→ ${tierTop}` : "+"} RP
+                      </div>
+                    </div>
+                    {/* Sub-division rows (skip for Goonmaster). */}
+                    {subDivs && (
+                      <div className="bg-neutral-50 border-t border-black/10">
+                        {subDivs.map(({ divIdx, low, high }) => {
+                          const here = youAreHere && (user?.rank_division ?? 0) === divIdx;
+                          const roman = { 1: "I", 2: "II", 3: "III" }[divIdx];
+                          return (
+                            <div
+                              key={divIdx}
+                              className={`grid grid-cols-12 items-center border-t border-black/10 first:border-t-0 ${here ? "bg-[#FFD700]" : ""}`}
+                              data-testid={`tier-${i}-div-${divIdx}`}
+                            >
+                              <div className="col-span-1" />
+                              <div className="col-span-7 flex items-center gap-3 py-2 px-3">
+                                <AnimatedRankIcon
+                                  tier={i}
+                                  division={divIdx}
+                                  size={28}
+                                  testid={`tier-${i}-div-${divIdx}-icon`}
+                                />
+                                <span className="font-anton uppercase tracking-widest text-sm">
+                                  {t.name} {roman}
+                                </span>
+                                {here && (
+                                  <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 bg-black text-[#FFD700] border-2 border-black" data-testid="tier-you-are-here">
+                                    YOU
+                                  </span>
+                                )}
+                              </div>
+                              <div className="col-span-4 font-anton text-xs py-2 px-3 tabular-nums text-neutral-600">
+                                {low} → {high} RP
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-xs leading-relaxed">
+                <div>BELOW MASTERS: +30 (1st) · +15 (2nd) · 0 (3rd) · -30 (lower)</div>
+                <div>MASTERS+: +30 (1st) · 0 (2nd) · -60 (3rd) · -60 (lower)</div>
               </div>
-            ))}
-            <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-xs leading-relaxed">
-              <div>BELOW MASTERS: +30 (1st) · +15 (2nd) · 0 (3rd) · -30 (lower)</div>
-              <div>MASTERS+: +30 (1st) · 0 (2nd) · -60 (3rd) · -60 (lower)</div>
             </div>
           </div>
         </div>
