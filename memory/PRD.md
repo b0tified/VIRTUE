@@ -457,3 +457,17 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - **Frontend**: removed the LEAVE MATCH button in pause-menu when `hud.isRanked`. Replaced with a red banner: "Ranked matches can't be left mid-game. Quitting will lock you out of ranked queue for 10 minutes." The corner EXIT button (Hud.jsx) is also hidden in ranked.
 - **Tests**: `tests/test_ranked_leave_penalty.py` (6 cases — live ranked stamps the ban with ~10-min window, intermission exempt, pre-match exempt, casual exempt, bots never bannable, `public_user.ranked_ban_seconds` math). All passing alongside the 8 prematch + 6 whisper tests.
 
+
+## 2026-06-24 (later) — Ranked penalty UX + hover SFX + practice consolidation
+### Ranked button countdown + -30 RP loss
+- **`server.py`**: `_apply_ranked_leave_penalty` now also issues a `$inc: {rank_points: -30}` (new `RANKED_LEAVE_RP_LOSS` constant) in the same write that stamps the 10-min ban, then floors negatives at 0 in a follow-up scoped update. Treated as a first-place loss for the deserter.
+- **`Lobby.jsx`**: reads `user.ranked_ban_seconds` from the auth context, ticks it down locally (1s interval), and renders **`RANKED LOCKED · M:SS`** with a Lock icon directly on the RANKED MATCH button. When the countdown hits 0 the lobby auto-fires `refreshMe()` so the server-side gate clears without a manual refresh. Title tooltip mentions the -30 RP penalty.
+- **Tests** (`test_ranked_leave_penalty.py`): updated `test_leaving_live_ranked_match_stamps_ban` to assert both the ban timestamp AND the `$inc: {rank_points: -30}` plus the floor-at-0 follow-up. 6/6 leave + 8/8 prematch + 6/6 whisper + 3/3 daily = 23 related tests pass.
+
+### Global hover SFX
+- New **`audio.js#playUIBlip()`** — triangle-wave 880→1320Hz chirp with a 60ms pluck envelope, routed through `sfxGain` so it respects the SFX mute toggle.
+- New **`useButtonSounds()`** hook (App-level): delegated `mouseover` listener on `.btn-pow` elements, throttled to 80ms, suppressed while pointer-locked (in-match), no chirp on disabled buttons. Zero per-component wiring — any existing/new `.btn-pow` inherits the feedback automatically.
+
+### Combined Practice + Offline button
+- Lobby header now has ONE **PRACTICE** button (was PRACTICE RANGE + OFFLINE VS AI). The unified `PracticeMapSelector` got a new **"TRAINING TYPE"** toggle at the top (PRACTICE RANGE vs OFFLINE VS AI) above the existing FFA/TDM toggle and map grid. Returned `opts.mode` from the selector overrides the modal's initial mode prop so the lobby uses the chosen value for the `/play?mode=` navigation. Footer now reads e.g., "SELECTED: RANDOM · RANGE · FFA".
+

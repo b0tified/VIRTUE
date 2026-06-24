@@ -15,6 +15,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import AdminReports from "@/pages/AdminReports";
 import OrientationLock from "@/components/OrientationLock";
 import MatchEntryGuard from "@/components/MatchEntryGuard";
+import useButtonSounds from "@/hooks/useButtonSounds";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -44,6 +45,11 @@ function Root() {
 }
 
 export default function App() {
+  // Global UI hover-blip: any element with the `.btn-pow` class plays
+  // a tiny chirp on mouseenter (throttled, muted while pointer-locked,
+  // and respects the SFX toggle). Mounted once at the App level so
+  // every page inherits the feedback for free.
+  useButtonSounds();
   // Global right-click blocker. The FPS uses RMB to aim down sights; if
   // the browser context menu were allowed to open it would steal focus
   // away from the canvas mid-fight. We swallow `contextmenu` on the

@@ -68,8 +68,37 @@ export default function Lobby() {
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
   const RANKED_MIN_LEVEL = 5;
+  // Mirrors RANKED_LEAVE_RP_LOSS in server.py — for the tooltip copy.
+  const RANKED_LEAVE_RP_LOSS = 30;
   const userLevel = user?.level ?? 1;
   const rankedLocked = userLevel < RANKED_MIN_LEVEL;
+
+  // Ranked early-leave penalty countdown. Server returns
+  // `ranked_ban_seconds` on /me; we tick it down locally each second
+  // so the player sees the clock fall to 0 in real time. When it hits
+  // 0 we re-fetch `/me` so the lobby state reflects the unlocked
+  // queue without a manual refresh.
+  const [rankedBanLeft, setRankedBanLeft] = useState(0);
+  useEffect(() => {
+    setRankedBanLeft(Math.max(0, user?.ranked_ban_seconds || 0));
+  }, [user?.ranked_ban_seconds]);
+  useEffect(() => {
+    if (rankedBanLeft <= 0) return;
+    const id = setInterval(() => {
+      setRankedBanLeft((n) => {
+        const next = Math.max(0, n - 1);
+        // When the countdown hits 0 trigger a one-shot /me refresh so
+        // the server-side ban gate clears.
+        if (next === 0) { try { refreshMe?.(); } catch {} }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [rankedBanLeft, refreshMe]);
+  const rankedBanned = rankedBanLeft > 0;
+  const rankedBanLabel = rankedBanned
+    ? `${Math.floor(rankedBanLeft / 60)}:${String(rankedBanLeft % 60).padStart(2, "0")}`
+    : "";
 
   const joinRankedQueue = async () => {
     if (rankedLocked) {
@@ -530,13 +559,17 @@ export default function Lobby() {
             </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
-              disabled={!!queueState || rankedLocked}
+              disabled={!!queueState || rankedLocked || rankedBanned}
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
-              title={rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}` : undefined}
+              title={
+                rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
+                : rankedBanned ? `Ranked locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
+                : undefined
+              }
             >
               <span className="flex items-center gap-3">
-                {rankedLocked ? (
+                {rankedLocked || rankedBanned ? (
                   <Lock size={20} strokeWidth={3} />
                 ) : queueState && !queueState.matched ? (
                   <Loader2 size={20} strokeWidth={3} className="animate-spin" />
@@ -545,26 +578,27 @@ export default function Lobby() {
                 )}
                 {rankedLocked
                   ? `RANKED · LV ${RANKED_MIN_LEVEL}`
+                  : rankedBanned
+                  /* Ranked early-leave penalty countdown lives directly
+                     on the button so the player sees the lock fall
+                     without clicking through to discover a 403. */
+                  ? `RANKED LOCKED · ${rankedBanLabel}`
                   : queueState
                   ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...")
                   : "RANKED MATCH"}
               </span>
             </button>
+            {/* Combined PRACTICE button — opens the map/mode selector
+                which lets the user pick between RANGE (no enemies) and
+                VS AI (full bot match), plus FFA/TDM and the arena.
+                Replaces the prior two separate buttons. */}
             <button
               type="button"
               onClick={() => setPracticeSelectorMode("practice")}
               className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
               data-testid="lobby-practice-button"
             >
-              <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE RANGE</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPracticeSelectorMode("offline")}
-              className="btn-pow bg-[#06A35F] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
-              data-testid="lobby-offline-button"
-            >
-              <span className="flex items-center gap-3"><WifiOff size={18} strokeWidth={3} /> OFFLINE VS AI</span>
+              <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE</span>
             </button>
             <Link to="/leaderboard" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
@@ -654,7 +688,10 @@ export default function Lobby() {
         mode={practiceSelectorMode || "practice"}
         onClose={() => setPracticeSelectorMode(null)}
         onSelect={(mapId, opts = {}) => {
-          const selectedMode = practiceSelectorMode;
+          // The selector now owns the practice vs offline choice (its
+          // own toggle, since we combined the two lobby buttons). The
+          // returned `opts.mode` overrides the modal's `mode` prop.
+          const selectedMode = opts.mode || practiceSelectorMode;
           setPracticeSelectorMode(null);
           const mapQuery = mapId ? `&map=${mapId}` : "";
           // TDM toggle from the selector — pass through to the WS URL so

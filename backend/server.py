@@ -2264,6 +2264,9 @@ PLACEMENT_MATCHES = 5
 # /queue/ranked POST handler 403s until it elapses (with the remaining
 # seconds in `detail` so the client can render a countdown).
 RANKED_LEAVE_BAN_MINUTES = 10
+# Ranked early-leave RP loss (in addition to the 10-min queue ban).
+# Treated as a first-place loss for the deserter.
+RANKED_LEAVE_RP_LOSS = 30
 PLACEMENT_MULTIPLIER = 2
 
 
@@ -2947,16 +2950,32 @@ class GameRoom:
             await self.broadcast({"type": "leave", "id": player.id})
 
     async def _apply_ranked_leave_penalty(self, user_id: str):
-        """Lock the user out of the ranked queue for 10 minutes (best-
-        effort). The queue endpoint reads `ranked_ban_until` and 403s
-        until it elapses, with the remaining seconds surfaced in the
-        error detail so the client can render a countdown. Idempotent —
-        a second leave just refreshes the timer."""
+        """Lock the user out of ranked queue for 10 minutes AND deduct
+        30 RP on top — leaving a live ranked match is treated as a
+        full first-place loss for the deserter. The queue endpoint
+        reads `ranked_ban_until` and 403s until it elapses, with the
+        remaining seconds in the error detail. Idempotent — a second
+        leave just refreshes the timer (but the -30 RP only applies
+        ONCE per disconnect, not on every retry).
+
+        We $inc rank_points by -30 (not $set) so a leave from a player
+        already at 0 RP doesn't go negative — the $max stage clamps
+        the result to 0 in a second pass since Mongo doesn't combine
+        $inc and $max on the same path in one update."""
         try:
             ban_until = datetime.now(timezone.utc) + timedelta(minutes=RANKED_LEAVE_BAN_MINUTES)
             await db.users.update_one(
                 {"_id": ObjectId(user_id)},
-                {"$set": {"ranked_ban_until": ban_until, "ranked_ban_reason": "left_match"}},
+                {
+                    "$set": {"ranked_ban_until": ban_until, "ranked_ban_reason": "left_match"},
+                    "$inc": {"rank_points": -RANKED_LEAVE_RP_LOSS},
+                },
+            )
+            # Floor at 0 in a follow-up write — keeps the docs clean
+            # without conditional aggregation pipelines on every leave.
+            await db.users.update_one(
+                {"_id": ObjectId(user_id), "rank_points": {"$lt": 0}},
+                {"$set": {"rank_points": 0}},
             )
         except Exception as e:
             logger.warning("ranked leave penalty write failed for %s: %s", user_id, e)

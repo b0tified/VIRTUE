@@ -62,16 +62,21 @@ async def test_leaving_live_ranked_match_stamps_ban(monkeypatch):
     p = _FakePlayer("alice")
     r.players = {p.id: p}
     await r.remove(p)
-    # Exactly one update_one with `ranked_ban_until` set ~10 mins out.
-    assert len(fake_users.updates) >= 1
+    # First write must carry both the ban timestamp AND the -30 RP $inc.
     target = next(u for u in fake_users.updates if "ranked_ban_until" in u[1].get("$set", {}))
     ban_until = target[1]["$set"]["ranked_ban_until"]
     now = datetime.now(timezone.utc)
     delta = (ban_until - now).total_seconds()
     expected = server.RANKED_LEAVE_BAN_MINUTES * 60
-    # Within 10s of the expected window (write latency).
     assert abs(delta - expected) < 10, f"ban delta {delta}s vs expected {expected}s"
     assert target[1]["$set"].get("ranked_ban_reason") == "left_match"
+    # Verify the $inc deducts the configured RP loss (default 30).
+    assert target[1].get("$inc", {}).get("rank_points") == -server.RANKED_LEAVE_RP_LOSS
+    # And a second write should be the floor-at-0 follow-up, scoped
+    # to docs where rank_points went negative.
+    floor_writes = [u for u in fake_users.updates if u[0].get("rank_points") == {"$lt": 0}]
+    assert len(floor_writes) == 1
+    assert floor_writes[0][1]["$set"]["rank_points"] == 0
 
 
 @pytest.mark.asyncio

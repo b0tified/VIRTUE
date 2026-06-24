@@ -9,16 +9,22 @@ import { MAPS_META } from "@/game/mapsMeta";
 import MapPreview from "@/components/MapPreview";
 import { Shuffle, X, Play } from "lucide-react";
 
-export default function PracticeMapSelector({ open, onClose, onSelect, mode = "practice" }) {
+export default function PracticeMapSelector({ open, onClose, onSelect, mode: initialMode = "practice" }) {
   // Tracks which card the user has highlighted before confirming. `null`
   // means RANDOM (server-style uniform pick).
   const [picked, setPicked] = useState(null);
+  // Practice flavour — "practice" (target range, no enemies) vs
+  // "offline" (vs-bots match). Used to be a per-button choice in the
+  // lobby header; combined into this selector so the player picks
+  // training-type + game-mode + map from one place. Defaults to
+  // whatever the caller passed in (kept for legacy entry points).
+  const [trainingMode, setTrainingMode] = useState(initialMode);
   // Game mode toggle — "ffa" or "tdm". Persists for the lifetime of the
   // selector modal; we pass it back via onSelect so the caller can put
   // `tdm=1` in the WS URL.
   const [gameMode, setGameMode] = useState("ffa");
   if (!open) return null;
-  const modeLabel = mode === "practice" ? "PRACTICE RANGE" : "OFFLINE VS AI";
+  const modeLabel = trainingMode === "practice" ? "PRACTICE RANGE" : "OFFLINE VS AI";
   return (
     <div
       className="fixed inset-0 z-[8000] bg-black/85 flex items-center justify-center p-4"
@@ -51,6 +57,31 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
             visible on short viewports (notably mobile landscape, where
             the orientation lock keeps the screen height ~360-414px). */}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
+          {/* Training-type toggle (Practice Range vs Offline vs AI).
+              First row so the player picks their training flavour
+              before format + map — the chosen value drives the
+              subtitle copy in the modal header. */}
+          <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
+            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2">Training Type</div>
+            <div className="grid grid-cols-2 gap-3">
+              <ModeCard
+                testid="practice-type-card-range"
+                active={trainingMode === "practice"}
+                onClick={() => setTrainingMode("practice")}
+                title="PRACTICE RANGE"
+                subtitle="Stationary targets · no enemies"
+                accent="#9B59B6"
+              />
+              <ModeCard
+                testid="practice-type-card-offline"
+                active={trainingMode === "offline"}
+                onClick={() => setTrainingMode("offline")}
+                title="OFFLINE VS AI"
+                subtitle="Full match against bot opponents"
+                accent="#06A35F"
+              />
+            </div>
+          </div>
           {/* Game-mode toggle (FFA vs TDM) — placed above the map cards so
               the user picks their format first, then their arena. */}
           <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
@@ -104,11 +135,13 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode = "p
               ? <>SELECTED: <span className="text-[#E62429]">{MAPS_META.find((mp) => mp.map_id === picked)?.name}</span></>
               : <>SELECTED: <span className="text-[#E62429]">RANDOM</span></>}
             <span className="ml-2 opacity-60">·</span>
+            <span className="ml-2">{trainingMode === "practice" ? <span className="text-[#9B59B6]">RANGE</span> : <span className="text-[#06A35F]">VS AI</span>}</span>
+            <span className="ml-2 opacity-60">·</span>
             <span className="ml-2">{gameMode === "tdm" ? <span className="text-[#9B59B6]">TDM 3V3</span> : <span className="text-[#E62429]">FFA</span>}</span>
           </div>
           <button
             type="button"
-            onClick={() => onSelect(picked, { tdm: gameMode === "tdm" })}
+            onClick={() => onSelect(picked, { tdm: gameMode === "tdm", mode: trainingMode })}
             className="btn-pow bg-[#E62429] text-white [&]:py-2 [&]:px-4"
             data-testid="practice-map-selector-confirm"
           >

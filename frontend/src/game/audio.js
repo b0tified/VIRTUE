@@ -119,6 +119,28 @@ class AudioBus {
     return true;
   }
 
+  /* Tiny UI blip used on button hover. Triangle-wave chirp from 880Hz
+     → 1320Hz over ~60ms with a fast pluck envelope. Cheap, distinct,
+     doesn't fight the music. Throttled by the caller (useButtonSounds
+     hook) so a row of buttons swept by the cursor doesn't drown the
+     user in chirps. */
+  playUIBlip() {
+    if (!this._ensure()) return;
+    if (this.sfxMuted) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.exponentialRampToValueAtTime(1320, t + 0.055);
+    gain.gain.setValueAtTime(0.0, t);
+    gain.gain.linearRampToValueAtTime(0.10, t + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.085);
+    osc.connect(gain).connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.10);
+  }
+
   setMuted(m) {
     this.muted = m;
     if (this.master) this.master.gain.value = m ? 0 : this._masterVol;
