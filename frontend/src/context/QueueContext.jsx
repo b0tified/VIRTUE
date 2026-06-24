@@ -185,8 +185,84 @@ export function QueueProvider({ children }) {
     };
   }, [beginActivePoll]);
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Casual queue — simpler counterpart of the ranked queue. Same shape
+  // (server-side FIFO + 10s bot-fill) but without tiers, party
+  // followers, or the elaborate miss-tolerance the ranked path needs.
+  // The lobby's QUICK MATCH button used to be a pure client-side
+  // timer — this state replaces it so casual feels symmetric with
+  // ranked (proper server queue, cancellable, audio-acknowledged).
+  // ─────────────────────────────────────────────────────────────────────
+  const [casualQueueState, setCasualQueueState] = useState(null);
+  const [casualWaitSec, setCasualWaitSec] = useState(0);
+  const casualJoinedAtRef = useRef(0);
+  const casualPollRef = useRef(null);
+  const casualLocalRef = useRef(null);
+
+  const stopCasual = useCallback(() => {
+    if (casualPollRef.current) { clearInterval(casualPollRef.current); casualPollRef.current = null; }
+    if (casualLocalRef.current) { clearInterval(casualLocalRef.current); casualLocalRef.current = null; }
+  }, []);
+
+  const joinCasual = useCallback(async () => {
+    try {
+      const { data } = await api.post("/queue/casual");
+      casualJoinedAtRef.current = Date.now();
+      setCasualQueueState({ in_queue: true, matched: false, bot_fill_seconds: data.bot_fill_seconds || 10 });
+      setCasualWaitSec(0);
+      casualLocalRef.current = setInterval(() => {
+        setCasualWaitSec(Math.max(0, Math.floor((Date.now() - casualJoinedAtRef.current) / 1000)));
+      }, 250);
+      casualPollRef.current = setInterval(async () => {
+        try {
+          const { data: s } = await api.get("/queue/casual");
+          if (s.matched) {
+            stopCasual();
+            audioBus.matchFound();
+            setCasualQueueState({ in_queue: false, matched: true });
+            // Navigate to the casual room. Stamp `fromLobby: true`
+            // for MatchEntryGuard, same as ranked.
+            try {
+              window.dispatchEvent(
+                new CustomEvent("virtue-match-loading", { detail: { mode: "casual" } }),
+              );
+            } catch {}
+            setTimeout(() => {
+              setCasualQueueState(null);
+              casualJoinedAtRef.current = 0;
+              setCasualWaitSec(0);
+              nav("/play?mode=casual", { replace: true, state: { fromLobby: true } });
+            }, 1200);
+          } else if (!s.in_queue) {
+            // Server lost track — tear down.
+            stopCasual();
+            casualJoinedAtRef.current = 0;
+            setCasualWaitSec(0);
+            setCasualQueueState(null);
+          }
+        } catch { /* network blip — let next tick try again */ }
+      }, 1000);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.response?.data?.detail || e.message };
+    }
+  }, [nav, stopCasual]);
+
+  const cancelCasual = useCallback(async () => {
+    stopCasual();
+    casualJoinedAtRef.current = 0;
+    setCasualWaitSec(0);
+    setCasualQueueState(null);
+    try { await api.delete("/queue/casual"); } catch {}
+  }, [stopCasual]);
+
+  useEffect(() => () => stopCasual(), [stopCasual]);
+
   return (
-    <QueueContext.Provider value={{ queueState, waitSec, matchFoundSec, joinRanked, cancelRanked }}>
+    <QueueContext.Provider value={{
+      queueState, waitSec, matchFoundSec, joinRanked, cancelRanked,
+      casualQueueState, casualWaitSec, joinCasual, cancelCasual,
+    }}>
       {children}
     </QueueContext.Provider>
   );

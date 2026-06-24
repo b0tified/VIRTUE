@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
@@ -44,27 +44,20 @@ export default function Lobby() {
   // Rank-up celebration overlay. Triggered by a global `virtue-rankup` event
   // dispatched after a successful redeem of a tier-skip code (e.g. WARPSPEED).
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
-  const [quickQueueSec, setQuickQueueSec] = useState(null); // null | 0..target
-  // Latches once the quick-match navigation has been dispatched, so the
-  // effect's cleanup never cancels the in-flight nav (see ticker effect).
-  const quickNavStartedRef = useRef(false);
-  // (MatchLoadingScreen moved to App root — listens for `virtue-match-loading`
-  // there so it survives the route change to /play.)
-  // Random per-attempt target wait for Quick Match (6..12s). Re-rolled
-  // every time the player clicks QUICK MATCH so the queue feels organic.
-  // Long enough that the casual-status poll has a real chance to surface
-  // human opponents before bot-fill kicks in at target.
-  const [quickQueueTarget, setQuickQueueTarget] = useState(8);
   // Live count of OTHER real players currently in the casual room. Polled
-  // every 1s while the Quick Match timer runs. >0 means we'll be matched
-  // against humans on join (room is shared); === 0 means bot-fill takes over.
+  // every 1s while the casual queue is active. Cosmetic — used to flip the
+  // toast header from "Searching for players" → "PLAYER FOUND" so the
+  // player sees a sign of life before the server confirms the match.
   const [foundRealPlayers, setFoundRealPlayers] = useState(0);
   const [showTiers, setShowTiers] = useState(false);
-  // (Removed `counts` state — replaced by client-side `displayOnline` below.)
-  // Ranked queue state now lives in the global QueueContext so the toast
-  // persists when navigating to Profile/Leaderboard.
+  // Ranked + casual queue state both live in the global QueueContext so
+  // the toasts persist when navigating to Profile/Leaderboard and the
+  // backend stays the single source of truth for matchmaking.
   const queueCtx = useQueue();
   const queueState = queueCtx?.queueState ?? null;
+  const casualQueueState = queueCtx?.casualQueueState ?? null;
+  const casualWaitSec = queueCtx?.casualWaitSec ?? 0;
+  const casualInQueue = !!(casualQueueState && (casualQueueState.in_queue || casualQueueState.matched));
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
   const RANKED_MIN_LEVEL = 5;
@@ -269,24 +262,22 @@ export default function Lobby() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startQuickQueue = () => {
-    if (quickQueueSec !== null) return;
-    // Reset the nav latch so re-queuing after returning from a match
-    // works again.
-    quickNavStartedRef.current = false;
-    // Re-roll the target wait each click: 6..12 seconds. Gives the
-    // backend a real window to spot human opponents in the shared casual
-    // room before falling back to bot fill. Earlier values (2-9s) felt
-    // cosmetic because the timer ended faster than anyone could join.
-    setQuickQueueTarget(6 + Math.floor(Math.random() * 7));
+  const startQuickQueue = async () => {
+    if (casualInQueue) return;
     setFoundRealPlayers(0);
-    setQuickQueueSec(0);
+    const r = await queueCtx?.joinCasual();
+    if (r && !r.ok) {
+      alert("Failed to join queue: " + r.error);
+      return;
+    }
     // Queue-start fanfare — same audio cue ranked uses so both
     // matchmaking entry points feel symmetric.
     try { audioBus.playQueueStart(); } catch {}
   };
 
-  const cancelQuickQueue = () => setQuickQueueSec(null);
+  const cancelQuickQueue = async () => {
+    await queueCtx?.cancelCasual();
+  };
 
   // Party invite polling — refresh every 5s while the lobby is open.
   const [partyInvites, setPartyInvites] = useState([]);
@@ -343,40 +334,19 @@ export default function Lobby() {
     setPartyInvites((p) => p.filter((i) => i.party_id !== invite.party_id));
   };
 
-  // Quick-match queue ticker: count UP from 0 → randomized target (6-12s).
-  // Now actively searches the shared casual room for OTHER humans during
-  // the countdown. If at least one is found before target, completes
-  // EARLY ("PLAYER FOUND" path). Otherwise the timer hits target and we
-  // fall back to bot-fill via the normal casual room (already pre-populated).
-  //
-  // Important: when the target is hit we MUST NOT return the
-  // navigateToMatch's cancel handle from the cleanup — `setQuickQueueSec(null)`
-  // re-runs the effect's cleanup and would clear the pending nav timer,
-  // stranding the player on the loading screen.
-  useEffect(() => {
-    if (quickQueueSec === null) return;
-    // Early-complete when we've located at least one real player AND
-    // we've already shown a second of "Searching" — feels too instant
-    // if it triggers on tick 0.
-    const earlyMatch = foundRealPlayers > 0 && quickQueueSec >= 1;
-    if (quickQueueSec >= quickQueueTarget || earlyMatch) {
-      if (quickNavStartedRef.current) return;
-      quickNavStartedRef.current = true;
-      setQuickQueueSec(null);
-            navigateToMatch(nav, "/play?mode=casual", { mode: "casual", username: user?.username });
-      return;
-    }
-    const id = setTimeout(() => setQuickQueueSec((s) => (s === null ? null : s + 1)), 1000);
-    return () => clearTimeout(id);
-  }, [quickQueueSec, quickQueueTarget, foundRealPlayers, nav, user?.username]);
+  // Quick-match queue ticker removed — wait time + match-found detection
+  // now live in QueueContext (joinCasual). The lobby renders the toast
+  // from `casualWaitSec` / `casualQueueState` and lets the context drive
+  // the navigation when the server confirms a match.
 
-  // Casual room status poll — every 1s while the Quick Match timer is
-  // running. Surfaces the number of OTHER real players currently in the
-  // shared casual room so the toast can show "X PLAYER(S) FOUND" and
-  // (via the ticker above) complete the queue early when a human opponent
-  // is available. Stops as soon as the queue ends.
+  // Casual room status poll — every 1s while the casual queue is active.
+  // Surfaces the number of OTHER real players currently in the shared
+  // casual room so the toast can show "X PLAYER(S) FOUND" while the
+  // server-side queue is still searching. Purely cosmetic — the queue's
+  // own `matched` flag (driven by QueueContext) is the source of truth
+  // for actually starting the match.
   useEffect(() => {
-    if (quickQueueSec === null) {
+    if (!casualInQueue) {
       setFoundRealPlayers(0);
       return;
     }
@@ -392,7 +362,7 @@ export default function Lobby() {
     check();
     const id = setInterval(check, 1000);
     return () => { alive = false; clearInterval(id); };
-  }, [quickQueueSec === null]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [casualInQueue]);
 
   // Ranked match-found countdown is handled inside QueueContext.
 
@@ -564,14 +534,14 @@ export default function Lobby() {
               <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
             )}
             <button
-              onClick={quickQueueSec !== null ? undefined : startQuickQueue}
-              disabled={quickQueueSec !== null || (party && party.leader_id !== user?.id)}
+              onClick={casualInQueue ? undefined : startQuickQueue}
+              disabled={casualInQueue || (party && party.leader_id !== user?.id)}
               className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
             >
               <span className="flex items-center gap-3">
-                {quickQueueSec !== null ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
-                {quickQueueSec !== null ? `MATCHING...` : "QUICK MATCH"}
+                {casualInQueue ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
+                {casualInQueue ? `MATCHING...` : "QUICK MATCH"}
               </span>
             </button>
             <button
@@ -761,13 +731,17 @@ export default function Lobby() {
       )}
 
       {/* Quick-match (casual) queue toast — count UP from 0; "Searching" header. */}
-      {quickQueueSec !== null && (
+      {casualInQueue && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="quick-queue-toast">
           <div className="card-pow p-0 overflow-hidden">
             <div className="px-4 py-2 flex items-center gap-2 text-white bg-[#E62429]">
               <Loader2 size={18} strokeWidth={3} className="animate-spin" />
               <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="quick-queue-header">
-                Searching for players
+                {casualQueueState?.matched
+                  ? "Match Found"
+                  : foundRealPlayers > 0
+                  ? `${foundRealPlayers} Player${foundRealPlayers === 1 ? "" : "s"} Found`
+                  : "Searching for players"}
               </span>
               <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
                 <X size={16} strokeWidth={3} />
@@ -778,7 +752,7 @@ export default function Lobby() {
                 className="font-display text-6xl leading-none tabular-nums text-[#E62429]"
                 data-testid="quick-queue-timer"
               >
-                {quickQueueSec}
+                {casualWaitSec}
               </div>
               <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#E62429] text-white">

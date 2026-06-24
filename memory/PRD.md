@@ -491,3 +491,26 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Component accepts `animated` prop. When false, a calm fallback (sky + halftone + 1 blob) is rendered — what the user remembers as "the old background".
 - **Settings toggle** "Animated Lobby Background" added under Graphics. Defaulted ON. Lobby live-subscribes to `virtue-settings-changed` so the swap is instant.
 
+
+## 2026-06-24 (final) — Casual Quick Match → server-side queue
+### Server-side FIFO casual queue (mirrors ranked)
+- `CASUAL_QUEUE: List[dict]` + `CASUAL_BOT_FILL_SEC = 10.0` constants in `server.py`. Same entry shape as ranked (`user_id` + `user_ids` + `username` + `joined_at`) so the matchmaker logic stays parallel.
+- **Matchmaker loop**: appended a casual block — pairs two waiting entries head-to-head in one tick (single `tdm` roll shared between both users so they land in the same room), otherwise bot-fills after 10s with `vs_bot: True` + a private `room_key`. Pre-existing ranked matchmaking untouched.
+- **Endpoints**:
+  - `POST /api/queue/casual` — clears any stale matched flag, appends entry. Returns `{ok, bot_fill_seconds, queue_size}`.
+  - `GET /api/queue/casual` — returns either `{in_queue, wait_seconds, queue_position}` or `{matched, match_id, vs_bot, tdm}` once paired.
+  - `DELETE /api/queue/casual` — yanks the caller's entry and clears `MATCHED_USERS[uid]`.
+  - `GET /api/queue/casual/status` — unchanged real_players counter for the toast.
+- **`ws_game(mode=casual)`** now honours `MATCHED_USERS[uid].tdm` so paired players resolve to the same shared `game_room` or `tdm_room`. The flag is consumed on connect so the next queue cycle starts fresh.
+
+### Frontend wiring
+- `QueueContext.jsx` — new `casualQueueState` + `casualWaitSec` state, with `joinCasual()` and `cancelCasual()` actions. `joinCasual` POSTs, starts a 4Hz local wait timer + 1Hz server poll, fires `audioBus.matchFound()` + `virtue-match-loading` event on `matched:true`, and nav-replaces to `/play?mode=casual` after 1.2s with `state.fromLobby: true` for the MatchEntryGuard.
+- `Lobby.jsx` — removed the client-side `startQuickQueue` timer + `quickQueueSec` state + `quickNavStartedRef` + `quickQueueTarget`. The QUICK MATCH button now delegates to `joinCasual()`/`cancelCasual()`. The toast renders `casualWaitSec` / `casualQueueState` + the cosmetic "X PLAYER(S) FOUND" header from the existing `/queue/casual/status` poll.
+- Both ranked and casual matchmaking now share the same architectural shape: server-authoritative FIFO + bot-fill timeout, with the only differences being the absence of tier gating and the shorter 10s timer for casual.
+
+### Tests
+- `tests/test_casual_queue.py` (5 cases) — head-to-head pairs both users with identical `tdm` flag, solo entry bot-fills after timeout with private `room_key`, `_remove_user_from_casual_queue` yanks the right entry, `CASUAL_BOT_FILL_SEC` regression guard at 10s, GET payload carries `tdm`. All passing.
+- Live e2e curl: POST → in_queue:true → 12s wait → matched:true vs_bot:true → DELETE → in_queue:false. Verified against admin account.
+- Live UI smoke: QUICK MATCH → toast "SEARCHING FOR PLAYERS · 0..N" → LEAVE QUEUE clears. Screenshot in `/tmp/lobby_casual_queue.png`.
+
+

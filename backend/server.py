@@ -4933,6 +4933,13 @@ async def cleanup_ranked_bot_room_if_empty(user_id: str):
 # -------------------------------------------------------------------
 QUEUE_LOCK = asyncio.Lock()
 RANKED_QUEUE: Dict[int, List[dict]] = {i: [] for i in range(len(RANK_TIERS))}
+# Casual matchmaking — a single FIFO queue (no tiers) so quick-match
+# operates like ranked but without rank gating. Bot-fill timer is short
+# (10s) so the player is never left waiting long; matchmaker pairs head-
+# to-head when two entries are present. Mirrors RANKED_QUEUE's shape:
+# each entry is `{user_id?, user_ids?, username?, usernames?, joined_at, is_party?}`.
+CASUAL_QUEUE: List[dict] = []
+CASUAL_BOT_FILL_SEC = 10.0
 MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 
 # Rolling window (last 10) of how long each match took to fill, per tier.
@@ -5011,6 +5018,42 @@ async def matchmaker_loop():
                             ",".join(a.get("usernames") or [a.get("username", "?")]),
                             bool(a.get("is_party")), len(a_uids), int(tier_timeout),
                         )
+                # Casual queue — single FIFO, no tiers. Pair head-to-head
+                # when two entries are present, otherwise bot-fill after
+                # CASUAL_BOT_FILL_SEC (10s). Quicker than ranked so
+                # casual queues feel instant.
+                while len(CASUAL_QUEUE) >= 2:
+                    a = CASUAL_QUEUE.pop(0)
+                    b = CASUAL_QUEUE.pop(0)
+                    mid = uuid.uuid4().hex[:10]
+                    a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
+                    b_uids = b.get("user_ids") or ([b["user_id"]] if b.get("user_id") else [])
+                    # Roll FFA vs TDM ONCE per match so both paired
+                    # players land in the same shared room.
+                    match_tdm = random.random() < TDM_QUICK_MATCH_ROLL
+                    for uid in a_uids + b_uids:
+                        MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "tdm": match_tdm}
+                    logger.info(
+                        "Casual matched entryA=%s vs entryB=%s mid=%s tdm=%s",
+                        ",".join(a.get("usernames") or [a.get("username", "?")]),
+                        ",".join(b.get("usernames") or [b.get("username", "?")]),
+                        mid, match_tdm,
+                    )
+                while CASUAL_QUEUE and (now - CASUAL_QUEUE[0]["joined_at"]) >= CASUAL_BOT_FILL_SEC:
+                    a = CASUAL_QUEUE.pop(0)
+                    mid = uuid.uuid4().hex[:10]
+                    a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
+                    shared_key = a_uids[0] if a_uids else None
+                    # Solo bot-fill also rolls TDM/FFA so the bot room
+                    # variety matches the head-to-head experience.
+                    bot_tdm = random.random() < TDM_QUICK_MATCH_ROLL
+                    for uid in a_uids:
+                        MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "vs_bot": True, "room_key": shared_key, "tdm": bot_tdm}
+                    logger.info(
+                        "Casual bot-filled entry=%s (%d users) after %ds queue tdm=%s",
+                        ",".join(a.get("usernames") or [a.get("username", "?")]),
+                        len(a_uids), int(CASUAL_BOT_FILL_SEC), bot_tdm,
+                    )
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
         await asyncio.sleep(0.5)
@@ -5442,6 +5485,93 @@ async def queue_ranked_ack(user: dict = Depends(get_current_user)):
     async with QUEUE_LOCK:
         MATCHED_USERS.pop(user_id, None)
     return {"ok": True}
+
+
+@api.post("/queue/casual")
+async def queue_casual_join(user: dict = Depends(get_current_user)):
+    """Enqueue the caller for casual matchmaking. Single FIFO queue
+    (no rank tiers). Matched head-to-head when another entry exists,
+    otherwise bot-filled after CASUAL_BOT_FILL_SEC (10s)."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        # Remove any prior queue entry — pressing Quick Match twice
+        # shouldn't stack entries. Also clear any stale matched flag
+        # so a fresh queue session starts cleanly.
+        _remove_user_from_casual_queue(user_id)
+        MATCHED_USERS.pop(user_id, None)
+        CASUAL_QUEUE.append({
+            "user_id": user_id,
+            "user_ids": [user_id],
+            "username": user.get("username", "?"),
+            "usernames": [user.get("username", "?")],
+            "joined_at": time.time(),
+            "is_party": False,
+        })
+    return {
+        "ok": True,
+        "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
+        "queue_size": len(CASUAL_QUEUE),
+    }
+
+
+@api.get("/queue/casual")
+async def queue_casual_state(user: dict = Depends(get_current_user)):
+    """Poll the caller's casual queue state. Mirrors the ranked GET:
+    returns wait seconds, queue-position estimate, and (when matched)
+    a `matched: true` flag with `vs_bot` so the client knows whether
+    to route into the shared casual room or a private bot room."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        match = MATCHED_USERS.get(user_id)
+        if match and match.get("casual"):
+            return {
+                "in_queue": False,
+                "matched": True,
+                "match_id": match["match_id"],
+                "vs_bot": bool(match.get("vs_bot", False)),
+                "room_key": match.get("room_key"),
+                "tdm": bool(match.get("tdm", False)),
+                "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
+            }
+        for idx, e in enumerate(CASUAL_QUEUE):
+            uids = e.get("user_ids") or ([e.get("user_id")] if e.get("user_id") else [])
+            if user_id in uids:
+                return {
+                    "in_queue": True,
+                    "matched": False,
+                    "wait_seconds": int(time.time() - e["joined_at"]),
+                    "queue_position": idx + 1,
+                    "queue_size": len(CASUAL_QUEUE),
+                    "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
+                }
+        return {"in_queue": False, "matched": False, "queue_size": len(CASUAL_QUEUE)}
+
+
+@api.delete("/queue/casual")
+async def queue_casual_leave(user: dict = Depends(get_current_user)):
+    """Leave the casual queue and clear any stale matched flag."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        _remove_user_from_casual_queue(user_id)
+        MATCHED_USERS.pop(user_id, None)
+    return {"ok": True}
+
+
+def _remove_user_from_casual_queue(user_id: str) -> Optional[dict]:
+    """Yank the caller's entry from CASUAL_QUEUE (caller must hold
+    QUEUE_LOCK). Returns the removed entry so callers can mirror any
+    multi-user cleanup if we ever support party casual queueing."""
+    removed: Optional[dict] = None
+    keep: List[dict] = []
+    for e in CASUAL_QUEUE:
+        uids = e.get("user_ids") or ([e.get("user_id")] if e.get("user_id") else [])
+        if user_id in uids:
+            if removed is None:
+                removed = e
+            continue
+        keep.append(e)
+    CASUAL_QUEUE[:] = keep
+    return removed
 
 
 @api.get("/queue/casual/status")
@@ -6998,10 +7128,22 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             await websocket.close(code=4404)
             return
     else:
-        # Casual / Quick Match. Honour an explicit `?tdm=1`, otherwise
-        # randomly roll TDM half the time so the rotation feels varied
-        # without making FFA rare.
-        wants_tdm = bool(tdm) or (random.random() < TDM_QUICK_MATCH_ROLL)
+        # Casual / Quick Match. If the matchmaker has already paired us
+        # (head-to-head OR bot-fill), honour the room mode it picked so
+        # both paired players land in the same shared room. Falls back
+        # to the legacy per-connection roll for direct ws joins that
+        # bypass the queue (e.g. mid-development test flows).
+        u_id = str(user["_id"])
+        matched = MATCHED_USERS.get(u_id, {})
+        if matched.get("casual"):
+            wants_tdm = bool(tdm) or bool(matched.get("tdm"))
+            # Consume the matched flag now that we've used it. The next
+            # queue cycle starts from a clean slate; if the player drops
+            # mid-match they'll requeue normally on return to lobby.
+            async with QUEUE_LOCK:
+                MATCHED_USERS.pop(u_id, None)
+        else:
+            wants_tdm = bool(tdm) or (random.random() < TDM_QUICK_MATCH_ROLL)
         room = tdm_room if wants_tdm else game_room
     await websocket.accept()
     u_id_str = str(user["_id"])
