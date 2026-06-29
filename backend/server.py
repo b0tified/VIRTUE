@@ -618,29 +618,69 @@ SKINS_CATALOG: List[dict] = [
      "helmet": 0x1a0033, "visor": 0xffffff, "shoulder": 0xff00ff, "stripe": 0xffffff, "belt": 0x4b0082, "cape": 0xff00ff,
      "aura": 0xff00ff, "aura_mode": "spin"},
 
-    # ─── ACTIVE pass — METEOR / SPACE theme ─────────────────────────────
-    # Promoted from "Season 2 preview" to the live pass reward track
-    # (2026-06). Every active season's tiers 10/20/30 now grant these.
-    {"id": "stardust", "name": "Stardust Drifter", "price": 0,   "rarity": "epic",      "obtain": "pass_tier_10",
+    # ─── Meteor / Space lineup — formerly Season 2 pass; now SHOP only
+    #     (2026-06-29 pass is coins-only). Existing owners keep them. ───
+    {"id": "stardust", "name": "Stardust Drifter", "price": 2800, "rarity": "epic",      "obtain": "shop",
      # Deep space drifter — twilight body with starfield glints. Soft
      # nebula-violet → indigo gradient feel, silver accents.
      "body": 0x1a1538, "leg": 0x0b0a22, "head": 0xb0a8d8, "accent": 0xc8d4ff,
      "helmet": 0x0b0a22, "visor": 0x88e0ff, "shoulder": 0x4a3d7a, "stripe": 0x88e0ff, "belt": 0x1a1538, "cape": 0x4a3d7a,
      "aura": 0x88e0ff, "aura_mode": "flicker"},
 
-    {"id": "crater",   "name": "Crater Forged",   "price": 0,   "rarity": "epic",      "obtain": "pass_tier_20",
+    {"id": "crater",   "name": "Crater Forged",   "price": 3200, "rarity": "epic",      "obtain": "shop",
      # Forged-from-meteor-rock — scorched basalt body, molten orange seams.
      # Reads as a survivor of the impact, armor still smouldering.
      "body": 0x2a1b14, "leg": 0x110a06, "head": 0xa07a5a, "accent": 0xff6420,
      "helmet": 0x110a06, "visor": 0xff8a40, "shoulder": 0x5a2a14, "stripe": 0xff6420, "belt": 0x110a06, "cape": 0xff4a10,
      "aura": 0xff5a1a, "aura_mode": "pulse"},
 
-    {"id": "meteor",   "name": "Meteor Ascendant", "price": 0,  "rarity": "legendary", "obtain": "pass_tier_30",
+    {"id": "meteor",   "name": "Meteor Ascendant", "price": 5500, "rarity": "legendary", "obtain": "shop",
      # Cosmic ascension — supernova gold against deep indigo, halo flares
      # in the legendary slot. The "after-the-impact-came-the-rebirth" vibe.
      "body": 0x2a1058, "leg": 0x10042a, "head": 0xffe0a8, "accent": 0xffd24a,
      "helmet": 0x10042a, "visor": 0xffd24a, "shoulder": 0xffaa20, "stripe": 0xffd24a, "belt": 0x4a1a78, "cape": 0xffd24a,
      "aura": 0xffd24a, "aura_mode": "spin"},
+
+    # ─── 2026-06-29 expansion — 5 new high-detail shop skins ────────────
+    # Layered palettes with cape + helmet + visor + stripe + accent all
+    # tuned for crisp contrast at small avatar sizes. Each has a unique
+    # aura mode so they feel distinct in motion.
+
+    # Samurai — ronin red lacquer + obsidian inner armor, gold filigree
+    # accent on the cape. The Inferno Lord's hot brother, less chaos.
+    {"id": "ronin",     "name": "Crimson Ronin",   "price": 3600, "rarity": "epic",      "obtain": "shop",
+     "body": 0xa3001a, "leg": 0x1a0a0a, "head": 0xf2c08a, "accent": 0xffd700,
+     "helmet": 0x0a0a0a, "visor": 0xff1a1a, "shoulder": 0xffd700, "stripe": 0x0a0a0a, "belt": 0xffd700, "cape": 0x6b0010,
+     "aura": 0xff3a3a, "aura_mode": "spin"},
+
+    # Royal — emerald velvet + ivory trim + gold crown accent. Cape is
+    # full-length for a regal silhouette.
+    {"id": "monarch",   "name": "Emerald Monarch", "price": 4200, "rarity": "epic",      "obtain": "shop",
+     "body": 0x0d6b3a, "leg": 0x052a16, "head": 0xf2c08a, "accent": 0xffd700,
+     "helmet": 0xffd700, "visor": 0xffe066, "shoulder": 0xffd700, "stripe": 0xfafafa, "belt": 0xffd700, "cape": 0x062a18,
+     "aura": 0xffd700, "aura_mode": "pulse"},
+
+    # Cyber-knight — chrome blue + neon magenta seams + holographic cape.
+    # The Cyber Wraith's evolved cousin, more saturated.
+    {"id": "neonknight", "name": "Neon Knight",    "price": 4800, "rarity": "legendary", "obtain": "shop",
+     "body": 0x0a0a3a, "leg": 0x05051a, "head": 0xc8d4ff, "accent": 0xff00aa,
+     "helmet": 0x0a0a3a, "visor": 0xff00ff, "shoulder": 0x00d4ff, "stripe": 0xff00aa, "belt": 0x05051a, "cape": 0x6b00aa,
+     "aura": 0xff00ff, "aura_mode": "rainbow"},
+
+    # Phoenix — molten orange body + crimson accents + flame-gold cape
+    # that reads as a tail of fire. Pairs with the existing inferno aura.
+    {"id": "phoenix",   "name": "Phoenix Rebirth", "price": 5200, "rarity": "legendary", "obtain": "shop",
+     "body": 0xff5500, "leg": 0x6b1a00, "head": 0xffaa70, "accent": 0xffd700,
+     "helmet": 0x6b1a00, "visor": 0xffd700, "shoulder": 0xff8a00, "stripe": 0xffd700, "belt": 0x3a0a00, "cape": 0xff2a00,
+     "aura": 0xff5a00, "aura_mode": "flame"},
+
+    # Stealth ninja — flat black with neon-mint stripe + visor + cape.
+    # Reads as a high-end "agent" silhouette. Spin aura for the energy
+    # wash around movement.
+    {"id": "shadowblade", "name": "Shadowblade",   "price": 3400, "rarity": "epic",      "obtain": "shop",
+     "body": 0x0a0a0a, "leg": 0x000000, "head": 0xf2c08a, "accent": 0x00ffaa,
+     "helmet": 0x000000, "visor": 0x00ffaa, "shoulder": 0x1a1a1a, "stripe": 0x00ffaa, "belt": 0x000000, "cape": 0x1a1a1a,
+     "aura": 0x00ffaa, "aura_mode": "flicker"},
 ]
 SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 
@@ -1202,49 +1242,35 @@ SEASON_MAX_TIER = 30
 
 
 def _season_tiers(season_number: int = 1) -> List[dict]:
-    """Returns the static reward layout for the 30-tier pass.
+    """Returns the static 30-tier reward layout.
 
-    2026-06 update: the **meteor / space lineup** (Stardust, Crater,
-    Meteor) is now the LIVE pass for every season — promoted from its
-    Season 2 preview status. The previous Solar/Cyber/Quantum lineup is
-    retired; players who already unlocked those skins keep them in their
-    inventory (skin grants are append-only on `owned_skins`), but new
-    unlocks all flow into the meteor track. If you re-introduce a
-    different seasonal lineup in the future, slot it into
-    SEASON_SKIN_LINEUPS keyed by the season number.
+    2026-06-29 update: the pass is now **coins-only**. Tier 10/20/30 used
+    to grant the meteor lineup skins (Stardust / Crater / Meteor); those
+    have been retired from the pass and exist purely as cosmetic shop
+    items moving forward. Existing owners keep them in `owned_skins`
+    (skin grants are append-only). Milestone tiers (10/20/30) now grant
+    big coin payouts so the climb still feels rewarding.
 
-    Rebuilt on each call so the source of truth lives in code, not the DB."""
-    # Season-themed skin lineup for the three milestone tiers (10/20/30).
-    # Both keys map to the meteor track today — keeping a per-season dict
-    # so a future agent can introduce Season 3 reward art without
-    # touching the lookup logic. Missing season keys fall back to season 1.
-    SEASON_SKIN_LINEUPS: Dict[int, Dict[int, Dict[str, str]]] = {
-        1: {
-            10: {"skin": "stardust", "label": "Stardust Drifter"},
-            20: {"skin": "crater",   "label": "Crater Forged"},
-            30: {"skin": "meteor",   "label": "Meteor Ascendant"},
-        },
-        2: {
-            10: {"skin": "stardust", "label": "Stardust Drifter"},
-            20: {"skin": "crater",   "label": "Crater Forged"},
-            30: {"skin": "meteor",   "label": "Meteor Ascendant"},
-        },
-    }
-    lineup = SEASON_SKIN_LINEUPS.get(int(season_number)) or SEASON_SKIN_LINEUPS[1]
+    Reward schedule:
+      • Tier 10: 2000 coins (was Stardust Drifter)
+      • Tier 20: 3500 coins (was Crater Forged)
+      • Tier 30: 6000 coins (was Meteor Ascendant)
+      • Other multiples of 5 (5, 15, 25): 500 coins
+      • Every other tier: 100 coins
+    """
+    MILESTONE_PAYOUTS = {10: 2000, 20: 3500, 30: 6000}
     tiers: List[dict] = []
     for i in range(1, SEASON_MAX_TIER + 1):
-        if i in lineup:
-            spec = lineup[i]
-            tiers.append({
-                "tier": i,
-                "reward_type": "skin",
-                "reward_skin": spec["skin"],
-                "reward_label": spec["label"],
-            })
+        if i in MILESTONE_PAYOUTS:
+            coins = MILESTONE_PAYOUTS[i]
+            label = f"+{coins:,} Coins"
         elif i % 5 == 0:
-            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 500, "reward_label": "+500 Coins"})
+            coins = 500
+            label = "+500 Coins"
         else:
-            tiers.append({"tier": i, "reward_type": "coins", "reward_coins": 100, "reward_label": "+100 Coins"})
+            coins = 100
+            label = "+100 Coins"
+        tiers.append({"tier": i, "reward_type": "coins", "reward_coins": coins, "reward_label": label})
     return tiers
 
 

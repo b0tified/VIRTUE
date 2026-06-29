@@ -8,6 +8,7 @@ import {
   VenetianMask, Skull, Shield, Swords, Ghost,
   Trophy, Crown, Flame, Star, Zap, Bomb, Target, Skull as SkullIcon, Sparkles,
   Gem, Snowflake, Atom, Eye,
+  Anchor, Cat, Dog, Rocket, Drama, Wind, Cherry, Bird, Diamond, Heart,
 } from "lucide-react";
 import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
@@ -34,6 +35,31 @@ const AVATARS = [
   { Icon: Atom,         bg: "#1a0033", iconColor: "#ff00ff", label: "Quantum Core", anim: "quantum" },
   // idx 11 — All-Seeing Eye (animated, unlock: Level 30 or Goonmaster peak)
   { Icon: Eye,          bg: "#000000", iconColor: "#ff3a3a", label: "All-Seeing Eye", anim: "eye" },
+  // ─── 2026-06-29 expansion — 8 new icons ─────────────────────────────
+  // First 4 are static, last 4 are animated (anim hooked into existing
+  // CSS `avatar-anim-*` classes; each one falls back to a sane static
+  // appearance if the class is missing).
+  // idx 12 — Anchor (deep navy / gold)
+  { Icon: Anchor,       bg: "#00254a", iconColor: "#FFD700", label: "Anchor" },
+  // idx 13 — Cat (orange / cream)
+  { Icon: Cat,          bg: "#FF7B00", iconColor: "#FFF1D6", label: "Cat" },
+  // idx 14 — Dog (charcoal / soft gold)
+  { Icon: Dog,          bg: "#3a2a1a", iconColor: "#FFD79A", label: "Dog" },
+  // idx 15 — Rocket (deep teal / hot pink)
+  { Icon: Rocket,       bg: "#004052", iconColor: "#ff3a8a", label: "Rocket" },
+  // idx 16 — Drama Masks (ruby / cream)
+  { Icon: Drama,        bg: "#7a0010", iconColor: "#fff1d6", label: "Drama" },
+  // idx 17 — Cyclone Wind (animated, reusing the lightning animation
+  // class for now since both are kinetic swirls)
+  { Icon: Wind,          bg: "#0a3a5a", iconColor: "#9adcff", label: "Cyclone", anim: "lightning" },
+  // idx 18 — Cherry (animated pulse via diamond class)
+  { Icon: Cherry,        bg: "#3a0010", iconColor: "#ff3a6b", label: "Cherry Bomb", anim: "diamond" },
+  // idx 19 — Phoenix (animated flame via flame class)
+  { Icon: Bird,          bg: "#ff5500", iconColor: "#FFD700", label: "Phoenix",     anim: "flame" },
+  // idx 20 — Sacred Diamond (animated diamond pulse)
+  { Icon: Diamond,       bg: "#0a0a3a", iconColor: "#ff00ff", label: "Sacred Diamond", anim: "diamond" },
+  // idx 21 — Heart Sigil (static, vivid red)
+  { Icon: Heart,         bg: "#E62429", iconColor: "#fff1d6", label: "Heart Sigil" },
 ];
 
 // Banner icons / colors — extended pool. Must mirror Profile.jsx ordering.

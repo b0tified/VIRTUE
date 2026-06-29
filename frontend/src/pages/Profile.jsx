@@ -207,13 +207,39 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* Rank cards moved to the top — most important visual, gets
+            prime real estate right under the hero. Current + peak side
+            by side with the new RankProgressBar inside current. */}
+        <SectionHeader title="Your Rank" testid="profile-section-rank" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <RankCard
+            label="Current Rank"
+            tier={currentTier}
+            name={currentName}
+            division={user?.rank_division ?? 0}
+            points={currentRP}
+            testid="profile-current-rank"
+          />
+          <RankCard
+            label="Peak Rank"
+            tier={peakTier}
+            name={peakName}
+            division={user?.peak_rank_division ?? 0}
+            points={peakRP}
+            crown
+            testid="profile-peak-rank"
+          />
+        </div>
+
         {/* Level + XP progress */}
+        <SectionHeader title="Level & Progression" testid="profile-section-level" />
         <LevelCard level={lvl.level} xpInto={lvl.xpIntoLevel} xpForNext={lvl.xpForNext} totalXp={lvl.totalXp} />
 
         {/* Level progression rewards (1-10) */}
         <LevelRewardsCard currentLevel={lvl.level} />
 
-        {/* Banner customization */}
+        {/* Customization block — banner + avatar grouped together. */}
+        <SectionHeader title="Customize" testid="profile-section-customize" />
         <BannerCustomizer
           iconIdx={bannerIcon}
           colorIdx={bannerColor}
@@ -236,27 +262,7 @@ export default function Profile() {
           onPick={updateAvatar}
         />
 
-        {/* Rank cards: current + peak */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8">
-          <RankCard
-            label="Current Rank"
-            tier={currentTier}
-            name={currentName}
-            division={user?.rank_division ?? 0}
-            points={currentRP}
-            testid="profile-current-rank"
-          />
-          <RankCard
-            label="Peak Rank"
-            tier={peakTier}
-            name={peakName}
-            division={user?.peak_rank_division ?? 0}
-            points={peakRP}
-            crown
-            testid="profile-peak-rank"
-          />
-        </div>
-
+        <SectionHeader title="Stats" testid="profile-section-stats" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mt-6">
           <Stat label="KILLS" value={s.kills} color="#E62429" testid="profile-kills" />
           <Stat label="DEATHS" value={s.deaths} color="#0055FF" testid="profile-deaths" />
@@ -446,8 +452,22 @@ function rankIdxFromName(name) {
   return arr.indexOf((name || "BRONZE").toUpperCase());
 }
 
-function RankCard({ label, tier, name, division = 0, points, crown = false, testid }) {
-  const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
+// Lightweight section header — small comic-style ribbon that breaks
+// the long Profile page into scannable blocks. Sits above each major
+// section (Your Rank / Level / Customize / Stats / History).
+function SectionHeader({ title, testid }) {
+  return (
+    <div className="mt-10 mb-4 flex items-center gap-3" data-testid={testid}>
+      <span className="inline-block bg-black text-[#FFD700] border-pow shadow-pow-sm px-3 py-1 font-display text-xl sm:text-2xl uppercase -rotate-1">
+        {title}
+      </span>
+      <span className="flex-1 h-[3px] bg-black/80" />
+    </div>
+  );
+}
+
+
+function RankCard({ label, tier, name, division = 0, points, crown = false, testid }) {  const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
   const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
   const roman = divisionRoman(division);
   return (
