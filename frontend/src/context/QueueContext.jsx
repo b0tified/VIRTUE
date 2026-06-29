@@ -9,7 +9,7 @@
 // track a client-side `joinedAt` timestamp and compute elapsed locally every
 // 250ms; the server poll only refreshes tier_size/position/matched flags.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "@/api";
 import audioBus from "@/game/audio";
 
@@ -17,6 +17,18 @@ const QueueContext = createContext(null);
 
 export function QueueProvider({ children }) {
   const nav = useNavigate();
+  // Used to gate the background queue-poll: once the player is on
+  // /play (mid-match) we MUST stop polling /queue/ranked. Otherwise a
+  // stale `matched: true` from MATCHED_USERS — which lingers until
+  // the ws_game endpoint consumes it on connect — would re-trigger the
+  // match-found audio + loading screen mid-game. Bug repro:
+  //   1. Queue ranked → matched → 3-2-1 → nav("/play")
+  //   2. WS opens; backend hasn't yet popped MATCHED_USERS[uid]
+  //   3. Bg poll fires 3s later → sees matched:true → beginActivePoll
+  //      → audioBus.matchFound() + virtue-match-loading event
+  //   4. Loading screen pops up over the live game.
+  const location = useLocation();
+  const inMatchRoute = location?.pathname?.startsWith("/play");
   const [queueState, setQueueState] = useState(null); // {tier, tier_name, tier_size, matched, ...} | null
   const [waitSec, setWaitSec] = useState(0);
   const [matchFoundSec, setMatchFoundSec] = useState(null);
@@ -163,8 +175,12 @@ export function QueueProvider({ children }) {
   // every follower also detects the queue + match-found event and navigates
   // to the ranked room. We skip while the active poll is already running
   // (joinRanked path) to avoid double polling, and pause once the user is
-  // already matched / mid-countdown.
+  // already matched / mid-countdown OR currently mid-match (see
+  // `inMatchRoute` rationale at the top of the file).
   useEffect(() => {
+    // Don't background-poll while in a match — would re-fire the
+    // match-found flow on top of live gameplay.
+    if (inMatchRoute) return;
     const tick = async () => {
       if (pollIdRef.current || matchTimerRef.current) return;
       try {
@@ -183,7 +199,7 @@ export function QueueProvider({ children }) {
         bgPollIdRef.current = null;
       }
     };
-  }, [beginActivePoll]);
+  }, [beginActivePoll, inMatchRoute]);
 
   // ─────────────────────────────────────────────────────────────────────
   // Casual queue — simpler counterpart of the ranked queue. Same shape

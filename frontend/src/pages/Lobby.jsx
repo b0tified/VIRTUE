@@ -187,6 +187,49 @@ export default function Lobby() {
     return () => window.removeEventListener("virtue-rankup", onRankUp);
   }, []);
 
+  // Replay a pending rank-up celebration if Game.jsx parked one in
+  // localStorage. Triggered after the player returns to the lobby
+  // (either by clicking "Back to Lobby" on the match-end overlay or
+  // by being auto-dropped after AFK). Without this, a player who
+  // closes the tab between match-end and pressing Back never sees the
+  // celebration. We delay 600ms so the lobby has a beat to settle —
+  // dispatching mid-mount would race with the user card data load and
+  // look jarring.
+  //
+  // Important: the localStorage `removeItem` MUST happen inside the
+  // setTimeout (after dispatch), not before. React StrictMode dev-mode
+  // mounts the effect twice — if we cleared eagerly, the first mount
+  // would erase the key + queue a timer, the cleanup would cancel it,
+  // and the second mount would find nothing → overlay never plays.
+  useEffect(() => {
+    let raw = null;
+    try { raw = localStorage.getItem("virtue.pendingRankUp"); } catch {}
+    if (!raw) return;
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return; }
+    if (!payload?.newTier) return;
+    const t = setTimeout(() => {
+      try {
+        // Drop the key right before dispatch so a slow user navigating
+        // away & back during this 600ms window doesn't double-fire.
+        localStorage.removeItem("virtue.pendingRankUp");
+      } catch {}
+      try {
+        // Mimic the `virtue-rankup` event shape — it's identical to the
+        // payload we just stored (camelCase tier names), so the existing
+        // onRankUp handler ingests it without translation.
+        window.dispatchEvent(new CustomEvent("virtue-rankup", { detail: {
+          prev_tier: { idx: payload.prevTier?.idx, name: payload.prevTier?.name, division: payload.prevTier?.division },
+          new_tier:  { idx: payload.newTier?.idx,  name: payload.newTier?.name,  division: payload.newTier?.division },
+          rp_delta: payload.rpDelta,
+          new_points: payload.newPoints,
+          kind: payload.kind,
+        }}));
+      } catch {}
+    }, 600);
+    return () => clearTimeout(t);
+  }, []);
+
   // Auto-clear ?disconnected=1 from URL after 5s, hide the toast.
   useEffect(() => {
     if (!disconnected) return;

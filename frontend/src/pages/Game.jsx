@@ -358,13 +358,22 @@ export default function Game() {
             const newDiv = mine.rank_division ?? 0;
             const divisionUp = !tierChanged && prevDiv > 0 && newDiv > 0 && newDiv < prevDiv;
             if (tierChanged || divisionUp) {
-              setRankUp({
+              const payload = {
                 prevTier: { idx: mine.prev_rank_tier ?? 0, name: mine.prev_rank_name || "BRONZE", division: prevDiv },
                 newTier:  { idx: mine.rank_tier ?? 0,      name: mine.rank_name || "BRONZE",      division: newDiv },
                 rpDelta:  mine.delta ?? 0,
                 newPoints: mine.new_points ?? 0,
                 kind: tierChanged ? "tier" : "division",
-              });
+              };
+              setRankUp(payload);
+              // Persist so the lobby can replay the overlay when the
+              // player returns. If they hit "Back to Lobby" before the
+              // in-match overlay finishes — or if the tab navigates
+              // away too fast — the celebration would otherwise vanish
+              // silently. Lobby reads + clears this key on mount.
+              try {
+                localStorage.setItem("virtue.pendingRankUp", JSON.stringify(payload));
+              } catch {}
             }
           }
           // Disconnect from the server immediately so the room's next
@@ -791,7 +800,12 @@ export default function Game() {
         rpDelta={rankUp?.rpDelta}
         newPoints={rankUp?.newPoints}
         kind={rankUp?.kind || "tier"}
-        onClose={() => setRankUp(null)}
+        onClose={() => {
+          setRankUp(null);
+          // Acknowledged in-match — drop the pending payload so the
+          // lobby doesn't replay the celebration on return.
+          try { localStorage.removeItem("virtue.pendingRankUp"); } catch {}
+        }}
       />
       {/* Comic-style respawn flash, plays for ~1.1s after each respawn. */}
       <RespawnOverlay trigger={respawnAt} />
