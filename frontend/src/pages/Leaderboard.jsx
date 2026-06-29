@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
-import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive } from "lucide-react";
+import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive, Medal, Crown } from "lucide-react";
 import audioBus from "@/game/audio";
 import { divisionRoman } from "@/game/rankIcons";
+import { useAuth } from "@/context/AuthContext";
+import AnimatedRankIcon from "@/components/AnimatedRankIcon";
+import PublicProfileModal from "@/components/PublicProfileModal";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -18,8 +21,12 @@ function fmtDHMS(seconds) {
 
 export default function Leaderboard() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Clicking any row opens the player's PublicProfileModal — same
+  // component the friends list / spectate-search use. `null` = closed.
+  const [openProfile, setOpenProfile] = useState(null); // username
   const [season, setSeason] = useState(null); // { season_number, seconds_left, season_ends_at, length_days }
   const [tick, setTick] = useState(0);
   // CURRENT ↔ ARCHIVE tab. The archive tab loads the list of past
@@ -125,6 +132,47 @@ export default function Leaderboard() {
       <div className="max-w-4xl mx-auto">
         <h1 className="font-display text-6xl uppercase text-[#E62429] text-pow-shadow-lg mb-3">LEADERBOARD</h1>
 
+        {/* "Your placement" jump-strip — only renders when the signed-in
+            user is anywhere in the live leaderboard. Scrolls them down
+            to their row on click. Adds a quick "I'm #N" signal at the
+            top of the page so players don't have to scroll the whole
+            list looking for themselves. */}
+        {tab === "current" && !loading && user && (() => {
+          const myIdx = rows.findIndex((r) => r.id === user.id || r.username === user.username);
+          if (myIdx < 0) return null;
+          const me = rows[myIdx];
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.querySelector(`[data-testid="leaderboard-row-${myIdx}"]`);
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              className="card-pow p-0 overflow-hidden mb-4 w-full text-left rotate-[0.4deg] hover:translate-y-[-1px] transition-transform"
+              data-testid="leaderboard-you-strip"
+            >
+              <div className="flex items-stretch">
+                <div className="bg-[#E62429] text-white font-display text-xl px-4 py-2 flex items-center gap-2">
+                  <Crown size={18} strokeWidth={3} className="text-[#FFD700]" /> YOU
+                </div>
+                <div className="bg-white px-4 py-2 flex-1 flex items-center justify-between gap-3 font-anton uppercase tracking-widest text-sm">
+                  <span>
+                    <span className="font-display text-2xl text-[#E62429] mr-1">#{myIdx + 1}</span>
+                    of {rows.length}
+                  </span>
+                  <span className="tabular-nums">{me.rank_points ?? 0} RP</span>
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 border-2 border-black"
+                    style={{ background: RANK_COLORS[Math.max(0, Math.min(7, me.rank_tier ?? 0))], color: (me.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A" }}
+                  >
+                    {(me.rank_name || "BRONZE") + (divisionRoman(me.rank_division) ? ` ${divisionRoman(me.rank_division)}` : "")}
+                  </span>
+                </div>
+              </div>
+            </button>
+          );
+        })()}
+
         {/* CURRENT ↔ ARCHIVE tab switcher. Archive shows the top-100
             snapshot we saved on the day each past season ended. */}
         <div className="flex gap-2 mb-4" data-testid="leaderboard-tab-switcher">
@@ -190,34 +238,67 @@ export default function Leaderboard() {
               rows.map((r, i) => {
                 const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
                 const color = RANK_COLORS[tier];
+                const isYou = !!(user && (r.id === user.id || r.username === user.username));
+                // Top-3 medal icons (gold/silver/bronze). Top of the
+                // ladder gets the Crown instead of a medal to crown the
+                // current leader.
+                const MedalEl = i === 0 ? Crown : i <= 2 ? Medal : null;
+                const medalColor = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : null;
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={r.username + i}
-                    className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center ${
-                      i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white"
+                    onClick={() => setOpenProfile(r.username)}
+                    className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center text-left w-full transition-transform hover:translate-y-[-1px] ${
+                      isYou ? "bg-[#FFFCE6] ring-4 ring-inset ring-[#E62429]" :
+                      i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white hover:bg-neutral-50"
                     }`}
                     data-testid={`leaderboard-row-${i}`}
+                    data-you={isYou ? "true" : "false"}
+                    title={`View ${r.username}'s profile`}
                   >
-                    <div className="col-span-1 font-display text-2xl">{i + 1}</div>
-                    <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2">
-                      <span>{r.username}</span>
+                    <div className="col-span-1 font-display text-2xl flex items-center gap-1">
+                      {MedalEl ? (
+                        <MedalEl size={22} strokeWidth={3} style={{ color: medalColor }} />
+                      ) : (
+                        <span className="text-neutral-700">{i + 1}</span>
+                      )}
+                    </div>
+                    <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2 min-w-0">
+                      <AnimatedRankIcon
+                        tier={tier}
+                        division={r.rank_division ?? 0}
+                        size={32}
+                        testid={`leaderboard-row-${i}-icon`}
+                      />
+                      <span className="truncate">{r.username}</span>
+                      {isYou && (
+                        <span
+                          className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex-shrink-0"
+                          data-testid={`leaderboard-row-${i}-you`}
+                        >
+                          YOU
+                        </span>
+                      )}
                       {/* Live status chip — IN MATCH (red, clickable to spectate)
                           > ONLINE (green dot) > nothing for offline rows.
                           Mirrors the FriendsModal status chip pattern. */}
                       {r.in_match ? (
-                        <button
-                          type="button"
-                          onClick={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
-                          className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform"
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => { e.stopPropagation(); nav(`/spectate/${encodeURIComponent(r.username)}`); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); nav(`/spectate/${encodeURIComponent(r.username)}`); } }}
+                          className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform flex-shrink-0 cursor-pointer"
                           data-testid={`leaderboard-spectate-${i}`}
                           title={`Spectate ${r.username}`}
                         >
                           <Eye size={11} strokeWidth={3} />
                           SPECTATE
-                        </button>
+                        </span>
                       ) : r.online ? (
                         <span
-                          className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F]"
+                          className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F] flex-shrink-0"
                           data-testid={`leaderboard-status-${i}`}
                           data-status="online"
                         >
@@ -234,8 +315,8 @@ export default function Leaderboard() {
                         {(r.rank_name || "BRONZE") + (divisionRoman(r.rank_division) ? ` ${divisionRoman(r.rank_division)}` : "")}
                       </span>
                     </div>
-                    <div className="col-span-2 text-right font-display text-2xl">{r.rank_points ?? 0}</div>
-                  </div>
+                    <div className="col-span-2 text-right font-display text-2xl tabular-nums">{r.rank_points ?? 0}</div>
+                  </button>
                 );
               })
             )
@@ -251,6 +332,13 @@ export default function Leaderboard() {
           )}
         </div>
       </div>
+
+      {/* Public-profile modal — opens when a leaderboard row is clicked.
+          Same component used by the friends list. */}
+      <PublicProfileModal
+        username={openProfile}
+        onClose={() => setOpenProfile(null)}
+      />
     </div>
   );
 }
@@ -310,6 +398,8 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
         rows.map((r, i) => {
           const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
           const color = RANK_COLORS[tier];
+          const MedalEl = i === 0 ? Crown : i <= 2 ? Medal : null;
+          const medalColor = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : null;
           return (
             <div
               key={(r.user_id || r.username) + i}
@@ -318,9 +408,21 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
               }`}
               data-testid={`archive-row-${i}`}
             >
-              <div className="col-span-1 font-display text-2xl">{r.rank ?? i + 1}</div>
-              <div className="col-span-7 font-anton uppercase text-lg">
-                {r.username}
+              <div className="col-span-1 font-display text-2xl flex items-center gap-1">
+                {MedalEl ? (
+                  <MedalEl size={22} strokeWidth={3} style={{ color: medalColor }} />
+                ) : (
+                  <span className="text-neutral-700">{r.rank ?? i + 1}</span>
+                )}
+              </div>
+              <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2 min-w-0">
+                <AnimatedRankIcon
+                  tier={tier}
+                  division={r.rank_division ?? 0}
+                  size={28}
+                  testid={`archive-row-${i}-icon`}
+                />
+                <span className="truncate">{r.username}</span>
               </div>
               <div className="col-span-2 text-right">
                 <span
@@ -331,7 +433,7 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
                   {r.rank_name || "BRONZE"}
                 </span>
               </div>
-              <div className="col-span-2 text-right font-display text-2xl">{r.rank_points ?? 0}</div>
+              <div className="col-span-2 text-right font-display text-2xl tabular-nums">{r.rank_points ?? 0}</div>
             </div>
           );
         })
