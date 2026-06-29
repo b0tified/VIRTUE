@@ -253,7 +253,12 @@ async def maybe_reset_season() -> dict:
         # "/leaderboard/archive/:N" endpoint can read it back without
         # ever touching the live users collection.
         await _archive_season_top_100(int(doc.get("season_number", 1)), start, now)
-        # Snapshot current rank into peak_rank_points (only if higher), then reset.
+        # Snapshot current rank into peak_rank_points (only if higher), then
+        # apply the soft reset: drop everyone 9 sub-tiers (= 900 RP, since
+        # each sub-tier is exactly 100 RP wide), clamped at 0. This keeps
+        # established players in the upper half of the ladder so they
+        # don't have to grind back through Bronze every month, while
+        # still rewarding new-season activity.
         # Pass progression (`season_xp` + `claimed_season_tiers`) is ALSO
         # wiped here so every player starts the new season at Pass Tier 0
         # with no claimed rewards — without this the pass UI would keep
@@ -261,6 +266,7 @@ async def maybe_reset_season() -> dict:
         # buttons in the new season. Skins that were already granted
         # stay in `owned_skins` (append-only) so players keep cosmetics
         # they earned last season.
+        SEASON_RESET_RP_DROP = 900  # 9 sub-tiers × 100 RP
         await db.users.update_many(
             {"rank_points": {"$exists": True}},
             [{
@@ -271,7 +277,12 @@ async def maybe_reset_season() -> dict:
                             {"$ifNull": ["$rank_points", 0]},
                         ]
                     },
-                    "rank_points": 0,
+                    "rank_points": {
+                        "$max": [
+                            0,
+                            {"$subtract": [{"$ifNull": ["$rank_points", 0]}, SEASON_RESET_RP_DROP]},
+                        ]
+                    },
                     "placement_matches_played": 0,
                     "season_xp": 0,
                     "claimed_season_tiers": [],
