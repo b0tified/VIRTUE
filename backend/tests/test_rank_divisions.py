@@ -21,14 +21,14 @@ import server  # noqa: E402
 # Each tier's [low, high) RP boundary from RANK_TIERS.
 # (low, high, expected divisions at three sample points)
 _CASES = [
-    # Bronze 0..99 → bands: 0..33 (III), 33..66 (II), 66..99 (I).
-    ("BRONZE",       0,    100,  [(0, 3), (50, 2), (99, 1)]),
-    ("SILVER",       100,  250,  [(100, 3), (175, 2), (249, 1)]),
-    ("GOLD",         250,  500,  [(250, 3), (375, 2), (499, 1)]),
-    ("PLATINUM",     500,  800,  [(500, 3), (650, 2), (799, 1)]),
-    ("DIAMOND",      800,  1200, [(800, 3), (1000, 2), (1199, 1)]),
-    ("MASTER",       1200, 1700, [(1200, 3), (1450, 2), (1699, 1)]),
-    ("GRANDMASTER",  1700, 2300, [(1700, 3), (2000, 2), (2299, 1)]),
+    # Each main tier is now 300 RP wide → III (0..99), II (100..199), I (200..299).
+    ("BRONZE",       0,    300,  [(0, 3), (150, 2), (299, 1)]),
+    ("SILVER",       300,  600,  [(300, 3), (450, 2), (599, 1)]),
+    ("GOLD",         600,  900,  [(600, 3), (750, 2), (899, 1)]),
+    ("PLATINUM",     900,  1200, [(900, 3), (1050, 2), (1199, 1)]),
+    ("DIAMOND",      1200, 1500, [(1200, 3), (1350, 2), (1499, 1)]),
+    ("MASTER",       1500, 1800, [(1500, 3), (1650, 2), (1799, 1)]),
+    ("GRANDMASTER",  1800, 2100, [(1800, 3), (1950, 2), (2099, 1)]),
 ]
 
 
@@ -47,7 +47,7 @@ def test_division_bands_across_each_tier(name, low, high, samples):
 
 def test_goonmaster_is_undivided():
     """Goonmaster (tier 7) has no sub-divisions — always returns 0."""
-    for pts in [2300, 2500, 5000, 10000]:
+    for pts in [2100, 2300, 2500, 5000, 10000]:
         tier_idx, name = server.rank_for_points(pts)
         assert name == "GOONMASTER"
         assert server.rank_division_for_points(pts, tier_idx) == 0
@@ -69,8 +69,8 @@ def test_public_user_exposes_rank_division():
     u = {
         "_id": "u1", "email": "a@b.com", "username": "a",
         "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0},
-        "rank_points": 175,           # Silver II
-        "peak_rank_points": 1690,     # Master I
+        "rank_points": 450,           # Silver II (300..599; II is 400..499)
+        "peak_rank_points": 1750,     # Master I  (1500..1799; I is 1700..1799)
     }
     out = server.public_user(u)
     assert out["rank_tier"] == 1
@@ -79,3 +79,14 @@ def test_public_user_exposes_rank_division():
     assert out["peak_rank_tier"] == 5
     assert out["peak_rank_name"] == "MASTER"
     assert out["peak_rank_division"] == 1
+
+
+def test_each_division_is_exactly_100_rp_wide():
+    """Product spec: every sub-tier spans exactly 100 RP. Guards
+    against accidental drift in `RANK_TIERS` thresholds."""
+    for i in range(len(server.RANK_TIERS) - 1):
+        low = server.RANK_TIERS[i][0]
+        high = server.RANK_TIERS[i + 1][0]
+        assert high - low == 300, (
+            f"{server.RANK_TIERS[i][1]} spans {high - low} RP, expected 300"
+        )

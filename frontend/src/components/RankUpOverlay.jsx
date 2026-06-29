@@ -1,17 +1,22 @@
 /* Full-screen rank-up celebration overlay.
 
    Animation timeline (all driven by raw CSS keyframes for reliability):
-     • 0.0s  → fade in dim background, "RANK UP!" banner pops in.
+     • 0.0s  → fade in dim background, "RANK UP!" / "PROMOTED" banner pops in.
      • 0.7s  → previous-tier crest brightens + SHATTERS outward (8 shards
                fly in a starburst), screen flashes white, ring expands.
      • 1.35s → new-tier crest assembles from blur+scale (with extra
                division-aware orbital animations baked into AnimatedRankIcon).
      • 2.0s  → star shower (24 falling Sparkles).
-     • 6.5s  → auto-dismiss.
+     • 6.5s  → auto-dismiss (4.5s for the lighter "division" variant).
 
-   Both crests render via AnimatedRankIcon so divisions show their full
-   ornament set (orbiting sparkles, halo ring, goon flame, etc.). The
-   label below the new crest reads e.g. "SILVER II".
+   The `kind` prop switches between two visual flavors:
+     • "tier" (default) — full main-tier promotion. Yellow "RANK UP!" banner
+       with green chevrons, larger crest, longer timeline, big star shower.
+     • "division" — sub-tier promotion (e.g. SILVER III → SILVER II). Smaller
+       teal "PROMOTED" banner, the SAME crest icon on both sides but with
+       the previous icon's division ornaments dissolving and the new (more
+       elaborate) ornaments materialising in their place — so the change is
+       carried by the icon's animation level, not the crest shape.
 
    Props:
      - open: boolean
@@ -19,6 +24,7 @@
      - newTier:  { idx, name, division? }
      - rpDelta:  number
      - newPoints: number
+     - kind: "tier" | "division"  (default "tier")
      - onClose: () => void
 */
 import { useEffect, useRef, useState } from "react";
@@ -26,9 +32,10 @@ import { rankColorFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import { Sparkles, ChevronUp } from "lucide-react";
 
-export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoints, onClose }) {
+export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoints, kind = "tier", onClose }) {
   // 0: enter, 1: shatter (prev crest explodes), 2: new assembled, 3: star shower
   const [phase, setPhase] = useState(0);
+  const isDivision = kind === "division";
   // Keep the latest `onClose` in a ref so the timing effect (below) can
   // call it without listing onClose in its deps — that prop is recreated
   // on every parent render and previously caused the entire animation
@@ -39,17 +46,23 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
   useEffect(() => {
     if (!open) return;
     setPhase(0);
-    const t1 = setTimeout(() => setPhase(1), 700);   // shatter
-    const t2 = setTimeout(() => setPhase(2), 1350);  // new assemble
-    const t3 = setTimeout(() => setPhase(3), 2000);  // star shower
-    const auto = setTimeout(() => onCloseRef.current?.(), 6500);
+    // Division-up uses a tighter, snappier timeline (the visual change is
+    // smaller, so the player doesn't need as long to read it).
+    const tShatter   = isDivision ? 500  : 700;
+    const tAssemble  = isDivision ? 950  : 1350;
+    const tStars     = isDivision ? 1450 : 2000;
+    const tDismiss   = isDivision ? 4500 : 6500;
+    const t1 = setTimeout(() => setPhase(1), tShatter);
+    const t2 = setTimeout(() => setPhase(2), tAssemble);
+    const t3 = setTimeout(() => setPhase(3), tStars);
+    const auto = setTimeout(() => onCloseRef.current?.(), tDismiss);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
       clearTimeout(auto);
     };
-  }, [open]);
+  }, [open, isDivision]);
   if (!open || !newTier || !prevTier) return null;
   const prevIdx = prevTier.idx ?? 0;
   const newIdx = newTier.idx ?? 0;
@@ -57,12 +70,19 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
   const prevColor = rankColorFor(prevIdx) || "#FFD700";
   const prevDiv = prevTier.division ?? 0;
   const newDiv = newTier.division ?? 0;
+  // Division-up uses a calmer teal accent + smaller crest so it doesn't
+  // upstage the main-tier promotions.
+  const bannerColor = isDivision ? "#5BC0EB" : "#FFD700";
+  const bannerText = isDivision ? "PROMOTED" : "RANK UP!";
+  const crestSize = isDivision ? "w-[200px] h-[200px] sm:w-[240px] sm:h-[240px]" : "w-[260px] h-[260px] sm:w-[320px] sm:h-[320px]";
+  const innerCrestPx = isDivision ? 130 : 170;
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center cursor-pointer"
       onClick={onClose}
       data-testid="rankup-overlay"
       data-phase={phase}
+      data-kind={kind}
       style={{
         background:
           "radial-gradient(circle at 50% 40%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.92) 70%)",
@@ -97,10 +117,11 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
         />
       )}
 
-      {/* Star shower (phase 3) */}
+      {/* Star shower (phase 3) — fewer stars for division-ups so it reads
+          as a smaller celebration. */}
       {phase >= 3 && (
         <div className="absolute inset-0 pointer-events-none" data-testid="rankup-stars">
-          {[...Array(24)].map((_, i) => {
+          {[...Array(isDivision ? 12 : 24)].map((_, i) => {
             const left = (i * 137.5) % 100;
             const delay = (i * 0.07) % 1.4;
             const size = 10 + ((i * 13) % 18);
@@ -128,22 +149,22 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
         className="relative z-10 flex flex-col items-center select-none px-4"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* "RANK UP!" comic banner */}
+        {/* Banner — text + color swap by kind. */}
         <div
-          className="font-display text-5xl sm:text-7xl text-pow-shadow-lg flex items-center gap-3"
+          className={`font-display ${isDivision ? "text-4xl sm:text-6xl" : "text-5xl sm:text-7xl"} text-pow-shadow-lg flex items-center gap-3`}
           style={{
-            color: "#FFD700",
+            color: bannerColor,
             animation: "rankup-banner-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both",
           }}
           data-testid="rankup-banner"
         >
-          <ChevronUp size={48} strokeWidth={4} className="text-[#06A35F]" />
-          RANK UP!
-          <ChevronUp size={48} strokeWidth={4} className="text-[#06A35F]" />
+          <ChevronUp size={isDivision ? 36 : 48} strokeWidth={4} className="text-[#06A35F]" />
+          {bannerText}
+          <ChevronUp size={isDivision ? 36 : 48} strokeWidth={4} className="text-[#06A35F]" />
         </div>
 
         {/* Crest transition area: previous shatters, new assembles. */}
-        <div className="relative my-8 sm:my-10 w-[260px] h-[260px] sm:w-[320px] sm:h-[320px]">
+        <div className={`relative my-6 sm:my-8 ${crestSize}`}>
           {/* Expanding ring shockwave during shatter beat. */}
           {phase >= 1 && phase < 3 && (
             <div
@@ -169,7 +190,7 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
               }}
               data-testid="rankup-prev-shield"
             >
-              <RankShield tier={prevIdx} division={prevDiv} color={prevColor} faded={false} />
+              <RankShield tier={prevIdx} division={prevDiv} color={prevColor} faded={false} sizePx={innerCrestPx} />
               <div className="absolute bottom-[-32px] font-anton uppercase tracking-widest text-sm text-neutral-400">
                 {(prevTier.name || "BRONZE") + (divisionRoman(prevDiv) ? ` ${divisionRoman(prevDiv)}` : "")}
               </div>
@@ -213,7 +234,7 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
               }}
               data-testid="rankup-new-shield"
             >
-              <RankShield tier={newIdx} division={newDiv} color={newColor} />
+              <RankShield tier={newIdx} division={newDiv} color={newColor} sizePx={innerCrestPx} />
               <div
                 className="absolute bottom-[-32px] font-anton uppercase tracking-widest text-base sm:text-lg"
                 style={{
@@ -259,7 +280,7 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
   );
 }
 
-function RankShield({ tier, division, color, faded = false }) {
+function RankShield({ tier, division, color, faded = false, sizePx = 170 }) {
   const c = color || "#FFD700";
   return (
     <div
@@ -285,7 +306,7 @@ function RankShield({ tier, division, color, faded = false }) {
         <AnimatedRankIcon
           tier={tier}
           division={division}
-          size={170}
+          size={sizePx}
           testid="rankup-crest-icon"
         />
       </div>

@@ -362,13 +362,13 @@ def season_payload(doc: dict) -> dict:
 
 RANK_TIERS = [
     (0,    "BRONZE"),
-    (100,  "SILVER"),
-    (250,  "GOLD"),
-    (500,  "PLATINUM"),
-    (800,  "DIAMOND"),
-    (1200, "MASTER"),
-    (1700, "GRANDMASTER"),
-    (2300, "GOONMASTER"),
+    (300,  "SILVER"),
+    (600,  "GOLD"),
+    (900,  "PLATINUM"),
+    (1200, "DIAMOND"),
+    (1500, "MASTER"),
+    (1800, "GRANDMASTER"),
+    (2100, "GOONMASTER"),
 ]
 
 # RP deltas by placement at end of a ranked match. Two simple tiers:

@@ -23,7 +23,7 @@ export const RANK_NAMES = [
 // Thresholds must match RANK_TIERS in /app/backend/server.py so a
 // client-side fallback can compute the right division when the server
 // payload predates this field.
-const RANK_THRESHOLDS = [0, 100, 250, 500, 800, 1200, 1700, 2300];
+const RANK_THRESHOLDS = [0, 300, 600, 900, 1200, 1500, 1800, 2100];
 
 export const RANK_ICONS = [
   Shield, Award, Star, Trophy, Gem, Sword, Skull, Flame,

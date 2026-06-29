@@ -351,13 +351,21 @@ export default function Game() {
           // Find this player's placement to drive the rank-up overlay.
           const youId = engineRef.current?.youId;
           const mine = (msg.placements || []).find((p) => p.id === youId);
-          if (mine && (mine.rank_change || 0) > 0) {
-            setRankUp({
-              prevTier: { idx: mine.prev_rank_tier ?? 0, name: mine.prev_rank_name || "BRONZE", division: mine.prev_rank_division ?? 0 },
-              newTier:  { idx: mine.rank_tier ?? 0,      name: mine.rank_name || "BRONZE",      division: mine.rank_division ?? 0 },
-              rpDelta:  mine.delta ?? 0,
-              newPoints: mine.new_points ?? 0,
-            });
+          if (mine) {
+            const tierChanged = (mine.rank_change || 0) > 0;
+            // Sub-division promotion (lower number = higher division: 3 → 2 → 1).
+            const prevDiv = mine.prev_rank_division ?? 0;
+            const newDiv = mine.rank_division ?? 0;
+            const divisionUp = !tierChanged && prevDiv > 0 && newDiv > 0 && newDiv < prevDiv;
+            if (tierChanged || divisionUp) {
+              setRankUp({
+                prevTier: { idx: mine.prev_rank_tier ?? 0, name: mine.prev_rank_name || "BRONZE", division: prevDiv },
+                newTier:  { idx: mine.rank_tier ?? 0,      name: mine.rank_name || "BRONZE",      division: newDiv },
+                rpDelta:  mine.delta ?? 0,
+                newPoints: mine.new_points ?? 0,
+                kind: tierChanged ? "tier" : "division",
+              });
+            }
           }
           // Disconnect from the server immediately so the room's next
           // intermission/match_start can't yank the player back into
@@ -775,13 +783,14 @@ export default function Game() {
       <FriendsModal open={showGameFriends} onClose={() => setShowGameFriends(false)} />
 
       {/* Rank-up celebration — triggered by match_end when the local player
-          gained a tier this match. Auto-dismisses after 6.5s. */}
+          gained a tier OR a sub-division this match. Auto-dismisses after 6.5s. */}
       <RankUpOverlay
         open={!!rankUp}
         prevTier={rankUp?.prevTier}
         newTier={rankUp?.newTier}
         rpDelta={rankUp?.rpDelta}
         newPoints={rankUp?.newPoints}
+        kind={rankUp?.kind || "tier"}
         onClose={() => setRankUp(null)}
       />
       {/* Comic-style respawn flash, plays for ~1.1s after each respawn. */}

@@ -165,11 +165,21 @@ export default function Lobby() {
     const onRankUp = (e) => {
       const d = e?.detail || {};
       if (!d.new_tier) return;
+      // If the event explicitly tagged itself as a division-up OR the
+      // prev/new tier indexes match (only the sub-division changed),
+      // play the lighter "PROMOTED" variant. Otherwise it's a main-tier
+      // promotion.
+      const prevIdx = d.prev_tier?.idx ?? 0;
+      const newIdx = d.new_tier?.idx ?? 0;
+      const sameTier = prevIdx === newIdx;
+      const explicitDivision = d.kind === "division";
+      const kind = (explicitDivision || sameTier) ? "division" : "tier";
       setRankUp({
         prevTier: d.prev_tier || { idx: 0, name: "BRONZE", division: 3 },
         newTier:  d.new_tier,
         rpDelta:  d.rp_delta ?? 0,
         newPoints: d.new_points ?? 0,
+        kind,
       });
     };
     window.addEventListener("virtue-rankup", onRankUp);
@@ -824,6 +834,7 @@ export default function Lobby() {
         newTier={rankUp?.newTier}
         rpDelta={rankUp?.rpDelta}
         newPoints={rankUp?.newPoints}
+        kind={rankUp?.kind || "tier"}
         onClose={() => setRankUp(null)}
       />
 
@@ -957,13 +968,13 @@ function fmtMS(totalSec) {
 
 const RANK_TIERS = [
   { name: "BRONZE", min: 0, color: "#CD7F32" },
-  { name: "SILVER", min: 100, color: "#C0C0C0" },
-  { name: "GOLD", min: 250, color: "#FFD700" },
-  { name: "PLATINUM", min: 500, color: "#5BC0EB" },
-  { name: "DIAMOND", min: 800, color: "#9D4EDD" },
-  { name: "MASTER", min: 1200, color: "#E63946" },
-  { name: "GRANDMASTER", min: 1700, color: "#06D6A0" },
-  { name: "GOONMASTER", min: 2300, color: "#000000" },
+  { name: "SILVER", min: 300, color: "#C0C0C0" },
+  { name: "GOLD", min: 600, color: "#FFD700" },
+  { name: "PLATINUM", min: 900, color: "#5BC0EB" },
+  { name: "DIAMOND", min: 1200, color: "#9D4EDD" },
+  { name: "MASTER", min: 1500, color: "#E63946" },
+  { name: "GRANDMASTER", min: 1800, color: "#06D6A0" },
+  { name: "GOONMASTER", min: 2100, color: "#000000" },
 ];
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);
