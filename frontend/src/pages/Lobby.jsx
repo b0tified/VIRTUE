@@ -1040,10 +1040,15 @@ function RankBadge({ tier, name, division, points }) {
   return (
     <div className="border-pow shadow-pow-sm flex items-center gap-0" data-testid="rank-badge">
       <div
-        className="flex items-center justify-center px-2 py-1"
-        style={{ background: color }}
+        // Generous padding + visible overflow so the rank icon's
+        // division-aware ornaments (orbiting sparkles for div 2/1,
+        // rotating halo ring for div 1 + Goonmaster, flame flicker for
+        // Goonmaster) can extend slightly past the rank-icon box
+        // without being clipped by the colored cell.
+        className="flex items-center justify-center px-3 py-2 relative"
+        style={{ background: color, overflow: "visible" }}
       >
-        <AnimatedRankIcon tier={tier} division={division} size={36} testid="rank-badge-icon" />
+        <AnimatedRankIcon tier={tier} division={division} size={48} testid="rank-badge-icon" />
       </div>
       <div className="font-display px-4 py-2 text-2xl uppercase flex items-baseline gap-1.5" style={{ background: color, color: textColor }}>
         <span>{name}</span>
