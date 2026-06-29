@@ -118,12 +118,10 @@ export default function PublicProfileModal({ username, onClose }) {
               >
                 <Lock size={32} strokeWidth={3} className="inline text-neutral-500" />
                 <div className="mt-3 font-display text-2xl uppercase text-neutral-700">
-                  {data.is_bot ? "BOT PROFILE" : "PRIVATE PROFILE"}
+                  PRIVATE PROFILE
                 </div>
                 <div className="mt-2 font-anton uppercase tracking-widest text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
-                  {data.is_bot
-                    ? "Leaderboard placeholder — stats not available."
-                    : "This player has set their profile to private. Stats and match history are hidden."}
+                  This player has set their profile to private. Stats and match history are hidden.
                 </div>
               </div>
             ) : (
