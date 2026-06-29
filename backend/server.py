@@ -2235,6 +2235,12 @@ QUEUE_BOT_FILL_SEC_GOONMASTER = 210.0  # Goonmaster (7) waits ~3.5 minutes
 # 210s. Re-rolled per join via `bot_fill_seconds_for_tier()`.
 QUEUE_BOT_FILL_GOONMASTER_MIN = 120.0
 QUEUE_BOT_FILL_GOONMASTER_MAX = 300.0
+# Bronze → Gold (tiers 0-2) — the bottom of the ladder. Pop a snappy
+# match much sooner (random 5-20s) so new players aren't stuck staring
+# at the queue toast in their first sessions. Re-rolled per join.
+QUEUE_BOT_FILL_LOW_MIN = 5.0
+QUEUE_BOT_FILL_LOW_MAX = 20.0
+QUEUE_LOW_TIER_MAX = 2  # tiers 0..2 = BRONZE, SILVER, GOLD
 QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 
 # -------------------------------------------------------------------
@@ -2294,7 +2300,14 @@ def bot_fill_seconds_for_tier(tier_idx: int) -> float:
     # old fixed 10-minute wait so games happen more often.
     if tier_idx >= 7:
         return random.uniform(QUEUE_BOT_FILL_GOONMASTER_MIN, QUEUE_BOT_FILL_GOONMASTER_MAX)
-    return QUEUE_BOT_FILL_SEC_HIGH if tier_idx >= QUEUE_HIGH_TIER_MIN else QUEUE_BOT_FILL_SEC
+    if tier_idx >= QUEUE_HIGH_TIER_MIN:
+        return QUEUE_BOT_FILL_SEC_HIGH
+    # Bronze → Gold (0-2): snappy 5-20s window so new players hit a match
+    # almost immediately and don't bounce off the lobby.
+    if tier_idx <= QUEUE_LOW_TIER_MAX:
+        return random.uniform(QUEUE_BOT_FILL_LOW_MIN, QUEUE_BOT_FILL_LOW_MAX)
+    # Platinum / Diamond (3-4): mid-tier — keep the original 45s wait.
+    return QUEUE_BOT_FILL_SEC
 
 
 def bot_fill_seconds_for_tier_api(tier_idx: int) -> int:
