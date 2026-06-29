@@ -14,6 +14,7 @@ import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
+import RankProgressBar from "@/components/RankProgressBar";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
 import PracticeMapSelector from "@/components/PracticeMapSelector";
@@ -584,6 +585,16 @@ export default function Lobby() {
             >
               <span className="flex items-center gap-2"><Award size={16} strokeWidth={3} /> SHOW TIERS</span>
             </button>
+          </div>
+
+          {/* Rank progress to next sub-division (or next main tier from I). */}
+          <div className="mt-2 sm:mt-3 max-w-md" data-testid="lobby-rank-progress-wrap">
+            <RankProgressBar
+              tier={user?.rank_tier ?? 0}
+              division={user?.rank_division ?? 0}
+              points={user?.rank_points ?? 0}
+              testid="lobby-rank-progress"
+            />
           </div>
 
           <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 max-w-md">

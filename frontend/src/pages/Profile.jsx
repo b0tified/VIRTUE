@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { rankIconFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
+import RankProgressBar from "@/components/RankProgressBar";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 import { levelFromStats } from "@/game/level";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
@@ -477,6 +478,19 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, test
           <span className="font-anton uppercase tracking-widest text-xs ml-1 opacity-60">RP</span>
         </div>
       </div>
+      {/* Progression bar to the next sub-division (or next tier from I).
+          Hidden for the Peak Rank card — peak is a static snapshot of the
+          high-water mark, not something the player is actively climbing. */}
+      {!crown && (
+        <div className="px-5 py-3 bg-neutral-50 border-t-2 border-black" data-testid={`${testid}-progress-wrap`}>
+          <RankProgressBar
+            tier={tier}
+            division={division}
+            points={points}
+            testid={`${testid}-progress`}
+          />
+        </div>
+      )}
     </div>
   );
 }

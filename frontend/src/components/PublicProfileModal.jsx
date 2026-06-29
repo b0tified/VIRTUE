@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star } from "lucide-react";
 import api from "@/api";
 import PlayerCard from "@/components/PlayerCard";
+import RankProgressBar from "@/components/RankProgressBar";
 import { divisionRoman } from "@/game/rankIcons";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
@@ -89,6 +90,14 @@ export default function PublicProfileModal({ username, onClose }) {
               <div className="flex flex-col gap-1">
                 <RankPill label="Current" tier={data.rank_tier} name={data.rank_name} division={data.rank_division ?? 0} points={data.rank_points} testid="public-profile-current-rank" />
                 <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} division={data.peak_rank_division ?? 0} points={data.peak_rank_points} crown testid="public-profile-peak-rank" />
+                <div className="mt-1" data-testid="public-profile-progress-wrap">
+                  <RankProgressBar
+                    tier={data.rank_tier}
+                    division={data.rank_division ?? 0}
+                    points={data.rank_points}
+                    testid="public-profile-progress"
+                  />
+                </div>
                 <div className="flex items-center gap-2 mt-1" data-testid="public-profile-level-row">
                   <Star size={14} strokeWidth={3} className="text-[#FFD700]" />
                   <span className="font-anton uppercase text-xs text-neutral-500 w-14">Level</span>
