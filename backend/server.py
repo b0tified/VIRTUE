@@ -187,6 +187,7 @@ def public_user(user: dict) -> dict:
         "peak_rank_tier": peak_idx,
         "peak_rank_name": peak_name,
         "peak_rank_division": rank_division_for_points(peak, peak_idx),
+        "profile_private": bool(user.get("profile_private", False)),
         "placement_matches_played": placement_played,
         "placement_matches_total": PLACEMENT_MATCHES,
         "in_placements": placement_played < PLACEMENT_MATCHES,
@@ -7189,10 +7190,26 @@ async def spectate_info(username: str, _user: dict = Depends(get_current_user)):
 @api.get("/users/{username}/profile")
 async def public_profile(username: str, _user: dict = Depends(get_current_user)):
     """Public view of any user's profile — username, avatar, stats, rank,
-    peak rank, last 10 matches. Email is intentionally excluded."""
+    peak rank, last 10 matches. Email is intentionally excluded.
+
+    Privacy: if the target user has `profile_private: True`, return a
+    minimal payload (`private: True` + display essentials only). Bots
+    (`is_bot: True` OR `is_seeded: True`) are ALWAYS treated as private
+    so their seeded stats / fake match histories don't leak into the
+    public-profile UI — the leaderboard lists them by username + rank
+    only.
+
+    The viewer can ALWAYS see their own full profile regardless of the
+    flag, so a player who turned privacy on can still verify what
+    they're hiding.
+    """
     u = await _find_user_by_username(username)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    is_self = str(u.get("_id")) == str(_user.get("_id"))
+    is_bot = bool(u.get("is_bot", False)) or bool(u.get("is_seeded", False))
+    user_private = bool(u.get("profile_private", False))
+    private = (is_bot or user_private) and not is_self
     pts = int(u.get("rank_points", 0) or 0)
     peak = int(u.get("peak_rank_points", pts) or pts)
     if pts > peak:
@@ -7200,6 +7217,30 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     t_idx, t_name = rank_for_points(pts)
     p_idx, p_name = rank_for_points(peak)
     user_id = str(u["_id"])
+    if private:
+        return {
+            "id": user_id,
+            "username": u.get("username", ""),
+            "avatar": int(u.get("avatar", 0) or 0),
+            "private": True,
+            "is_bot": is_bot,
+            # Still surface rank so the modal can show the rank pill —
+            # the leaderboard already exposes this info publicly, hiding
+            # it here would just be confusing.
+            "rank_points": pts,
+            "rank_tier": t_idx,
+            "rank_name": t_name,
+            "rank_division": rank_division_for_points(pts, t_idx),
+            "peak_rank_points": peak,
+            "peak_rank_tier": p_idx,
+            "peak_rank_name": p_name,
+            "peak_rank_division": rank_division_for_points(peak, p_idx),
+            "level": compute_level(u.get("stats", {}))["level"],
+            "banner_icon": int(u.get("banner_icon", 0) or 0),
+            "banner_color": int(u.get("banner_color", 0) or 0),
+            "banner_animated": bool(u.get("banner_animated", False)),
+            "online": is_online(user_id),
+        }
     cursor = db.match_history.find(
         {"user_id": user_id}, {"_id": 0}
     ).sort([("ended_at", -1)]).limit(10)
@@ -7221,15 +7262,16 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "id": user_id,
         "username": u.get("username", ""),
         "avatar": int(u.get("avatar", 0) or 0),
+        "private": False,
         "stats": u.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
         "rank_points": pts,
         "rank_tier": t_idx,
         "rank_name": t_name,
+        "rank_division": rank_division_for_points(pts, t_idx),
         "peak_rank_points": peak,
         "peak_rank_tier": p_idx,
         "peak_rank_name": p_name,
-        # Level + banner cosmetics so the public profile modal can render the
-        # same card visuals (with LV chip) as the lobby header.
+        "peak_rank_division": rank_division_for_points(peak, p_idx),
         "level": compute_level(u.get("stats", {}))["level"],
         "banner_icon": int(u.get("banner_icon", 0) or 0),
         "banner_color": int(u.get("banner_color", 0) or 0),
@@ -7237,6 +7279,22 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "online": is_online(user_id),
         "history": history,
     }
+
+
+class ProfilePrivacyPayload(BaseModel):
+    profile_private: bool
+
+
+@api.put("/profile/privacy")
+async def set_profile_privacy(payload: ProfilePrivacyPayload, user: dict = Depends(get_current_user)):
+    """Toggle the `profile_private` flag on the signed-in user's doc.
+    When true, other players opening this user's PublicProfileModal see
+    a stripped-down "private" view (no stats, no match history)."""
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"profile_private": bool(payload.profile_private)}},
+    )
+    return {"ok": True, "profile_private": bool(payload.profile_private)}
 
 
 # -------------------------------------------------------------------

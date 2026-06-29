@@ -44,7 +44,7 @@ export default function SettingsModal({ open, onClose }) {
   const [musicMuted, setMusicMuted] = useState(false);
   const [sfxMuted, setSfxMuted] = useState(false);
   const [tab, setTab] = useState("video");
-  const { logout, refreshMe } = useAuth();
+  const { user, logout, refreshMe } = useAuth();
   // Redeem-code form state — `redeemMsg` doubles as both success + error UI.
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemBusy, setRedeemBusy] = useState(false);
@@ -991,6 +991,40 @@ export default function SettingsModal({ open, onClose }) {
 
           {tab === "account" && (
           <>
+          {/* Privacy: hide your profile from other players. Bots are
+              always hidden server-side regardless of this toggle; this
+              switch only affects how your real account appears in the
+              PublicProfileModal opened from the leaderboard / friends
+              list / spectate search. */}
+          <section data-testid="settings-privacy-section" className="mb-4">
+            <div className="font-anton uppercase tracking-widest text-sm mb-2 flex items-center gap-2">
+              <UserIcon size={14} strokeWidth={3} /> Privacy
+            </div>
+            <label className="flex items-start gap-3 p-3 rounded border border-neutral-800 bg-neutral-950 cursor-pointer hover:border-neutral-700 transition-colors">
+              <input
+                type="checkbox"
+                checked={!!user?.profile_private}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  try {
+                    await api.put("/profile/privacy", { profile_private: next });
+                    try { await refreshMe?.(); } catch {}
+                  } catch (err) {
+                    alert(err?.response?.data?.detail || "Could not save privacy setting.");
+                  }
+                }}
+                className="mt-1 w-4 h-4 accent-[#FFD700]"
+                data-testid="settings-profile-private-toggle"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-anton uppercase tracking-widest text-sm">Private profile</div>
+                <div className="text-xs text-neutral-400 mt-1 leading-snug">
+                  When ON, other players who open your profile see only your username, rank, and avatar — no stats, level, or match history.
+                </div>
+              </div>
+            </label>
+          </section>
+
           {/* Redeem promo code. Codes are one-time per account, validated +
               applied server-side; success refreshes the auth context so the
               new XP / RP / cosmetic shows up everywhere (PlayerCard banner,

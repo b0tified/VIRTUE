@@ -1,7 +1,7 @@
 // Public profile modal — overlay shown when inspecting any other player.
 // Pulls /api/users/{username}/profile (email omitted server-side).
 import { useEffect, useState } from "react";
-import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star } from "lucide-react";
+import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star, Lock } from "lucide-react";
 import api from "@/api";
 import PlayerCard from "@/components/PlayerCard";
 import RankProgressBar from "@/components/RankProgressBar";
@@ -107,32 +107,55 @@ export default function PublicProfileModal({ username, onClose }) {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 pb-4">
-              <Stat label="KILLS" value={data.stats?.kills ?? 0} color="#E62429" testid="public-kills" />
-              <Stat label="DEATHS" value={data.stats?.deaths ?? 0} color="#0055FF" testid="public-deaths" />
-              <Stat label="MATCHES" value={data.stats?.matches ?? 0} color="#FFD700" textColor="#0A0A0A" testid="public-matches" />
-              <Stat
-                label="K/D"
-                value={data.stats?.deaths > 0 ? (data.stats.kills / data.stats.deaths).toFixed(2) : String(data.stats?.kills ?? 0)}
-                color="#0A0A0A"
-                testid="public-kd"
-              />
-            </div>
-
-            {/* Recent matches */}
-            <div className="border-t-4 border-black">
-              <div className="bg-[#FFD700] px-4 py-2 flex items-center gap-2 font-anton uppercase tracking-widest text-sm">
-                <History size={16} strokeWidth={3} /> Recent Matches
-              </div>
-              {data.history.length === 0 ? (
-                <div className="px-5 py-8 text-center" data-testid="public-history-empty">
-                  <Bot size={28} strokeWidth={3} className="inline text-neutral-400" />
-                  <div className="font-anton uppercase mt-2 text-neutral-500">No matches yet</div>
+            {data.private ? (
+              // Privacy mode — show a "this profile is private" banner
+              // in place of stats + match history. Server still returns
+              // the rank/avatar/level fields above so the card still
+              // looks complete; we just hide the numbers and game log.
+              <div
+                className="border-t-4 border-black bg-neutral-100 px-5 py-8 text-center"
+                data-testid="public-profile-private-banner"
+              >
+                <Lock size={32} strokeWidth={3} className="inline text-neutral-500" />
+                <div className="mt-3 font-display text-2xl uppercase text-neutral-700">
+                  {data.is_bot ? "BOT PROFILE" : "PRIVATE PROFILE"}
                 </div>
-              ) : (
-                data.history.map((m, i) => <HistoryRow key={i} m={m} idx={i} />)
-              )}
-            </div>
+                <div className="mt-2 font-anton uppercase tracking-widest text-xs text-neutral-500 max-w-sm mx-auto leading-relaxed">
+                  {data.is_bot
+                    ? "Leaderboard placeholder — stats not available."
+                    : "This player has set their profile to private. Stats and match history are hidden."}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 pb-4">
+                  <Stat label="KILLS" value={data.stats?.kills ?? 0} color="#E62429" testid="public-kills" />
+                  <Stat label="DEATHS" value={data.stats?.deaths ?? 0} color="#0055FF" testid="public-deaths" />
+                  <Stat label="MATCHES" value={data.stats?.matches ?? 0} color="#FFD700" textColor="#0A0A0A" testid="public-matches" />
+                  <Stat
+                    label="K/D"
+                    value={data.stats?.deaths > 0 ? (data.stats.kills / data.stats.deaths).toFixed(2) : String(data.stats?.kills ?? 0)}
+                    color="#0A0A0A"
+                    testid="public-kd"
+                  />
+                </div>
+
+                {/* Recent matches */}
+                <div className="border-t-4 border-black">
+                  <div className="bg-[#FFD700] px-4 py-2 flex items-center gap-2 font-anton uppercase tracking-widest text-sm">
+                    <History size={16} strokeWidth={3} /> Recent Matches
+                  </div>
+                  {(data.history || []).length === 0 ? (
+                    <div className="px-5 py-8 text-center" data-testid="public-history-empty">
+                      <Bot size={28} strokeWidth={3} className="inline text-neutral-400" />
+                      <div className="font-anton uppercase mt-2 text-neutral-500">No matches yet</div>
+                    </div>
+                  ) : (
+                    data.history.map((m, i) => <HistoryRow key={i} m={m} idx={i} />)
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
