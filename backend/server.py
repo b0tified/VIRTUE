@@ -897,6 +897,59 @@ async def on_startup():
     asyncio.create_task(season_loop())
     asyncio.create_task(seeded_climb_loop())
     asyncio.create_task(synthetic_online_loop())
+    asyncio.create_task(_backfill_past_seasons_once())
+
+
+async def _backfill_past_seasons_once():
+    """One-shot backfill so existing accounts with a `peak_rank_points`
+    from previous seasons get a `past_seasons[]` entry too. Without
+    this, the "past-season peak-rank title" feature would only work
+    for players who go through a NEW season rollover after this deploy
+    — anyone who peaked at Diamond in Season 1 would see an empty
+    picker forever.
+
+    Rule: for every user with `peak_rank_points > 0` and no
+    `past_seasons` yet (or empty list), stamp ONE synthetic entry for
+    the previous season (current_season - 1, min 1) using their all-
+    time peak. Idempotent — the second run finds no matches. Doesn't
+    touch users who already have a past-season array from the
+    forward-going rollover code.
+    """
+    try:
+        # Small delay so the season doc + climb loop init have settled.
+        await asyncio.sleep(1.0)
+        season_doc = await db.season.find_one({"_id": "current"})
+        cur = int((season_doc or {}).get("season_number", 1))
+        prev_season = max(1, cur - 1)
+        cursor = db.users.find(
+            {
+                "peak_rank_points": {"$gt": 0},
+                "$or": [
+                    {"past_seasons": {"$exists": False}},
+                    {"past_seasons": {"$size": 0}},
+                ],
+            },
+            {"_id": 1, "peak_rank_points": 1, "peak_rank_name": 1},
+        )
+        touched = 0
+        async for u in cursor:
+            pts = int(u.get("peak_rank_points", 0) or 0)
+            t_idx, t_name = rank_for_points(pts)
+            entry = {
+                "season": prev_season,
+                "tier": int(t_idx),
+                "tier_name": u.get("peak_rank_name") or t_name,
+                "rp": pts,
+            }
+            await db.users.update_one(
+                {"_id": u["_id"]},
+                {"$set": {"past_seasons": [entry]}},
+            )
+            touched += 1
+        if touched:
+            logger.info("past_seasons backfill: stamped %d users with S%d entry", touched, prev_season)
+    except Exception as e:
+        logger.warning("past_seasons backfill failed: %s", e)
 
 
 @app.on_event("shutdown")

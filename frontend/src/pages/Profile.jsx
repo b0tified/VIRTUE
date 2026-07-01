@@ -12,6 +12,7 @@ import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import RankProgressBar from "@/components/RankProgressBar";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 import { levelFromStats } from "@/game/level";
+import { formatBannerTitle } from "@/game/bannerTitle";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
 import audioBus from "@/game/audio";
 
@@ -216,7 +217,7 @@ export default function Profile() {
       <div className="max-w-4xl mx-auto mt-8">
         <div className="card-pow p-0 -rotate-1 overflow-hidden">
           {/* User banner (icon + color) */}
-          <ProfileBanner iconIdx={bannerIcon} colorIdx={bannerColor} animated={bannerAnimated} />
+          <ProfileBanner iconIdx={bannerIcon} colorIdx={bannerColor} animated={bannerAnimated} title={formatBannerTitle(user)} />
           <div className="p-8">
             <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
               <span className="font-anton uppercase tracking-widest">Profile</span>
@@ -628,7 +629,7 @@ function AvatarPicker({ avatarIdx, peakTier, peakDivision = 0, playerLevel, savi
 // Wide banner strip rendered above the username — shows the chosen icon over
 // a diagonal-striped band of the chosen color. When `animated` is true, a
 // CSS shimmer overlay sweeps across.
-function ProfileBanner({ iconIdx, colorIdx, animated = false }) {
+function ProfileBanner({ iconIdx, colorIdx, animated = false, title = null }) {
   const c = bannerColorMeta(colorIdx);
   const I = bannerIconMeta(iconIdx).Icon;
   return (
@@ -642,6 +643,23 @@ function ProfileBanner({ iconIdx, colorIdx, animated = false }) {
       data-testid="profile-banner"
       data-animated={animated || undefined}
     >
+      {/* Past-season peak-rank title — big centred flex ("S2 · GRANDMASTER"). */}
+      {title && (
+        <div
+          className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none"
+          data-testid="profile-banner-title"
+        >
+          <span
+            className="font-display uppercase text-2xl md:text-3xl tracking-widest text-center px-3 py-1 border-2 border-black bg-black/25"
+            style={{
+              color: c.fg,
+              textShadow: "2px 2px 0 rgba(0,0,0,0.85)",
+            }}
+          >
+            {title}
+          </span>
+        </div>
+      )}
       <I
         size={88}
         strokeWidth={3}

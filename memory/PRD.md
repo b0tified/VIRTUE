@@ -801,3 +801,21 @@ Every disguised bot's `disguise_rank_points` now snaps to the same **match-grid 
 - `POST /profile/me/title {season: null}` → clears the title.
 - UI screenshot: Profile page shows the SEASON TITLES card with `NONE / S2 GRANDMASTER (equipped) / S1 DIAMOND` tiles laid out cleanly.
 
+
+## 2026-07-01 (late night) — Banner Titles Now Actually Visible
+
+Follow-up after user reported "I do not see the titles". Root cause was two-fold:
+1. **Existing players had `past_seasons: []`** — the stamp only fires on future rollovers, so no one on the live DB had entries yet.
+2. **Big `ProfileBanner` didn't render the title** — only the tiny `BannerStrip` in PlayerCard did, and at 8px font it was practically invisible.
+
+### Fixes
+- **Startup backfill** — new `_backfill_past_seasons_once()` runs on FastAPI startup: for every user with `peak_rank_points > 0` and no `past_seasons`, stamp a synthetic entry `{season: prev_season, tier, tier_name, rp}` derived from their peak. Idempotent (empty second pass) and marked into logs. **Backfilled 123 users on first run.**
+- **ProfileBanner now shows the title** as a big centred stamp (font-display 2xl → 3xl) with a bordered semi-transparent panel — impossible to miss.
+- **PlayerCard BannerStrip title** — sized up (was 8px, now `height-2` = ~12-16px) and given a subtle `border + bg-black/25` panel so it reads even on the small (sm) lobby size.
+
+### Verified
+- Profile page screenshot (Player1): the top banner reads **"S2 · GRANDMASTER"** in giant purple pill text.
+- Bottom of Profile: SEASON TITLES card shows `NONE / S2 GRANDMASTER (equipped) / S1 DIAMOND` tiles.
+- Backfill log: `past_seasons backfill: stamped 123 users with S1 entry`.
+- Same 6-test suite still passing.
+

@@ -167,16 +167,16 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false,
           </span>
         )}
       </div>
-      {/* Centre: optional past-season title ("S2 · DIAMOND"). Keeps the
-          typography consistent with the level chip on the left and the
-          rank icon on the right so the strip stays readable. */}
+      {/* Centre: optional past-season title ("S2 · DIAMOND"). Sized a
+          hair larger than the level chip so the flex is legible even
+          on the small (sm) size banner strip in the lobby header. */}
       {title && (
         <span
-          className="absolute left-1/2 -translate-x-1/2 font-anton uppercase tracking-widest leading-none whitespace-nowrap pointer-events-none"
+          className="absolute left-1/2 -translate-x-1/2 font-anton uppercase tracking-widest leading-none whitespace-nowrap pointer-events-none px-1 border border-black/40 bg-black/25"
           style={{
             color: c.fg,
-            fontSize: Math.max(8, height - 4),
-            textShadow: "0 1px 0 rgba(0,0,0,0.55)",
+            fontSize: Math.max(9, height - 2),
+            textShadow: "0 1px 0 rgba(0,0,0,0.85)",
           }}
           data-testid="player-card-banner-title"
         >
