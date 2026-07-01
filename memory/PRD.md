@@ -667,3 +667,47 @@ Fixed the "estimated wait time flips every poll" complaint:
 ### Live evidence
 Back-to-back `GET /queue/ranked` calls now return different `bot_fill_seconds` values on the server side (e.g. `30` then `26` for a Bronze user) — confirming the randomisation. The client-side lock guarantees the user only ever sees the first value.
 
+
+## 2026-07-01 (evening) — Leaderboard Bots Climb Faster + Diamond+ Heavy
+
+### Backend (`server.py`)
+Two tuning goals per user request:
+
+**1. Faster climb**
+- `seed_climb_speed` sampling: `[0.75, 1.35]` → **`[1.35, 2.4]`** (roughly 2× faster on average)
+- `seed_climb_offset` sampling: `[0.0, 0.20]` → **`[0.0, 0.08]`** (bots start climbing much sooner into the season)
+- Applied in three places: the v1 legacy migration, the new v3 migration, and the seed endpoint's fresh doc insert.
+
+**2. Leaderboard skews Diamond+ (60% → ~70%)**
+Retuned the RP bucket weights in `/admin/seed/veterans`:
+| Tier | Old weight | New weight |
+|------|-----------:|-----------:|
+| Bronze | 8 | 3 |
+| Silver | 12 | 4 |
+| Gold | 18 | 8 |
+| Platinum | 22 | 15 |
+| **Diamond** | 20 | **28** |
+| **Master** | 12 | **22** |
+| **Grandmaster** | 6 | **14** |
+| **Goonmaster** | 2 | **6** |
+Diamond+ = 70% of new seeds (was 40%).
+
+**3. v3 migration — retroactively boost existing bots**
+Added a one-shot migration in `seeded_climb_loop`:
+- For every existing seeded bot: bump `seed_climb_speed` into the new `[1.35, 2.4]` band + tighten offset to `[0.0, 0.08]`.
+- For ~55% of bots currently targeting Bronze/Silver/Gold (`seed_target_rp ≤ 490`): re-target them to a Diamond..Goonmaster RP window (weighted 28/22/14/6). Stat targets are re-synthesized via `_synthesize_career` so wins/matches stay mathematically consistent with the new higher RP.
+- Marked with `seed_v3_boost: True` so this runs exactly once per doc.
+
+### Tests
+- New `tests/test_seed_climb_tuning.py` (3 cases) — guards the new bucket weights (Diamond+ ≥ 60%) and the tighter climb-speed + offset ranges.
+- Updated `tests/test_seeded_climb.py` — every test doc now carries `seed_v3_boost: True` to opt out of the v3 migration and keep the baseline-lerp assertions valid. Legacy-migration test now expects the new offset/speed bands.
+- All 11 climb + tuning tests pass.
+
+### Live evidence
+Post-restart leaderboard shows a dramatic tier shift toward the top:
+- Position #1: `Goonlord_404` @ 3150 RP (Goonmaster)
+- Positions 2-6: Five more Goonmaster entries (2205-2685 RP)
+- Positions 7-10: Grandmaster entries
+- API `GET /api/leaderboard/ranked?limit=100` returns 50 entries with the top-25 all Diamond+.
+- Effect will continue to compound as the climb_loop keeps ticking — promoted bots lerp from their current RP toward the new high-tier targets over the remainder of the season.
+

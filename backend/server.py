@@ -5239,8 +5239,10 @@ async def seeded_climb_loop():
     Each seeded doc carries a `seed_target_rp` (final destination), per-stat
     targets (`seed_target_matches/kills/deaths/wins`), a per-bot
     `seed_climb_offset` (fraction of season elapsed before this bot starts
-    climbing, 0..0.20) and `seed_climb_speed` (per-bot pace multiplier,
-    ~0.75..1.35). Each tick:
+    climbing, 0..0.08 — tightened from 0.20 so seeds start climbing sooner)
+    and `seed_climb_speed` (per-bot pace multiplier, ~1.35..2.4 — bumped
+    from ~0.75..1.35 so the leaderboard fills the top tiers faster). Each
+    tick:
 
       progress = clamp((elapsed_fraction - offset) * speed, 0, 1)
 
@@ -5290,8 +5292,8 @@ async def seeded_climb_loop():
                         "seed_target_deaths": t_d,
                         "seed_target_wins": t_w,
                         "seed_career_v2": True,
-                        "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
-                        "seed_climb_speed": round(random.uniform(0.75, 1.35), 4),
+                        "seed_climb_offset": round(random.uniform(0.0, 0.08), 4),
+                        "seed_climb_speed": round(random.uniform(1.35, 2.4), 4),
                     }},
                 )
 
@@ -5342,6 +5344,56 @@ async def seeded_climb_loop():
                         "seed_career_v2": True,
                     }},
                 )
+
+            # v3 migration — climb-speed boost + top-heavy re-rank. Two
+            # goals per user request:
+            #   1) Existing seeded bots climb the ladder FASTER (bump
+            #      their `seed_climb_speed` into the new 1.35..2.4 band
+            #      and tighten the offset so they start sooner).
+            #   2) The leaderboard skews DIAMOND+ — promote ~55% of the
+            #      Bronze/Silver/Gold seeded bots into Diamond..Goonmaster
+            #      by re-targeting their `seed_target_rp` (and stat
+            #      totals) to the higher-tier RP windows.
+            # Marked complete per doc with `seed_v3_boost: True` so this
+            # migration is a strict one-shot. Runs before the lerp so
+            # updated targets take effect on the same tick.
+            v3_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True},
+                 "seed_v3_boost": {"$exists": False}},
+                {"_id": 1, "seed_target_rp": 1},
+            )
+            # Windows mirror the seed endpoint's Diamond..Goonmaster
+            # buckets so promoted bots blend in with newly-seeded ones.
+            _V3_HIGH_TARGETS = [
+                (820, 1190),   # Diamond
+                (1220, 1690),  # Master
+                (1720, 2290),  # Grandmaster
+                (2300, 3200),  # Goonmaster
+            ]
+            # Diamond+ weights match the new bucket weights (28/22/14/6).
+            _V3_HIGH_WEIGHTS = [28, 22, 14, 6]
+            async for u in v3_cursor:
+                rp_cur = int(u.get("seed_target_rp", 0) or 0)
+                update = {
+                    "seed_v3_boost": True,
+                    "seed_climb_offset": round(random.uniform(0.0, 0.08), 4),
+                    "seed_climb_speed": round(random.uniform(1.35, 2.4), 4),
+                }
+                # Promote ~55% of Bronze/Silver/Gold (rp <= 490) up to a
+                # Diamond+ tier so the top of the leaderboard fills in.
+                if rp_cur <= 490 and random.random() < 0.55:
+                    lo, hi = random.choices(_V3_HIGH_TARGETS, weights=_V3_HIGH_WEIGHTS, k=1)[0]
+                    rp_new = _snap_rp_to_match_grid(random.randint(lo, hi))
+                    rank_idx, _ = rank_for_points(rp_new)
+                    t_m, t_k, t_d, t_w = _synthesize_career(rp_new, rank_idx)
+                    update.update({
+                        "seed_target_rp": rp_new,
+                        "seed_target_matches": t_m,
+                        "seed_target_kills": t_k,
+                        "seed_target_deaths": t_d,
+                        "seed_target_wins": t_w,
+                    })
+                await db.users.update_one({"_id": u["_id"]}, {"$set": update})
 
             doc = await get_or_init_season()
             start = doc.get("season_start")
@@ -6619,14 +6671,14 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
     # most players sit Gold/Plat/Diamond, fewer climb to Master+, only a
     # handful reach Goonmaster.
     buckets = [
-        (40,   95,   8),   # late Bronze
-        (110,  240,  12),  # Silver
-        (260,  490,  18),  # Gold
-        (520,  790,  22),  # Platinum
-        (820, 1190,  20),  # Diamond
-        (1220, 1690, 12),  # Master
-        (1720, 2290,  6),  # Grandmaster
-        (2300, 3200,  2),  # Goonmaster
+        (40,   95,   3),   # late Bronze (rare — most new joiners not on leaderboard yet)
+        (110,  240,  4),   # Silver
+        (260,  490,  8),   # Gold
+        (520,  790, 15),   # Platinum
+        (820, 1190, 28),   # Diamond ← heavy
+        (1220, 1690, 22),  # Master ← heavy
+        (1720, 2290, 14),  # Grandmaster
+        (2300, 3200,  6),  # Goonmaster
     ]
     weights = [b[2] for b in buckets]
     # Build a shuffled deck of handle suffixes so duplicates within a
@@ -6707,8 +6759,8 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_target_deaths": deaths,
             "seed_target_wins": wins,
             "seed_career_v2": True,
-            "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
-            "seed_climb_speed": round(random.uniform(0.75, 1.35), 4),
+            "seed_climb_offset": round(random.uniform(0.0, 0.08), 4),
+            "seed_climb_speed": round(random.uniform(1.35, 2.4), 4),
             "level": random.randint(5, 28 + rank_idx * 4),
             "xp": 0,
             "created_at": now - timedelta(days=random.randint(7, 120)),

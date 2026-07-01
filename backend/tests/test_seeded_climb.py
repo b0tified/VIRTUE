@@ -126,6 +126,7 @@ async def test_midseason_climb_lerps_partial_rp(monkeypatch):
         "seed_target_deaths": 200,
         "seed_target_wins": 36,  # >= ceil(1005/30) = 34
         "seed_career_v2": True,
+        "seed_v3_boost": True,   # opt out of the v3 speed-boost migration
         "seed_climb_offset": 0.0,  # start at season start
         "seed_climb_speed": 1.0,   # baseline pace
     }
@@ -160,6 +161,7 @@ async def test_end_of_season_climb_lands_on_target(monkeypatch):
         "seed_target_deaths": 500,
         "seed_target_wins": 100,  # >= ceil(2490/30) = 83
         "seed_career_v2": True,
+        "seed_v3_boost": True,   # opt out of the v3 speed-boost migration
         "seed_climb_offset": 0.0,
         "seed_climb_speed": 1.0,
     }
@@ -191,6 +193,7 @@ async def test_offset_keeps_bot_at_zero_before_their_start(monkeypatch):
         "seed_target_deaths": 60,
         "seed_target_wins": 40,  # >= ceil(1200/30) = 40
         "seed_career_v2": True,
+        "seed_v3_boost": True,   # opt out of the v3 speed-boost migration
         "seed_climb_offset": 0.5,
         "seed_climb_speed": 1.0,
     }
@@ -228,8 +231,8 @@ async def test_legacy_seeded_docs_are_auto_migrated(monkeypatch):
     assert migrated["seed_target_wins"] >= (1785 + 29) // 30
     # Match target should comfortably exceed wins (room for losses).
     assert migrated["seed_target_matches"] >= migrated["seed_target_wins"]
-    assert 0.0 <= migrated["seed_climb_offset"] <= 0.20
-    assert 0.75 <= migrated["seed_climb_speed"] <= 1.35
+    assert 0.0 <= migrated["seed_climb_offset"] <= 0.08
+    assert 1.35 <= migrated["seed_climb_speed"] <= 2.4
     assert migrated.get("seed_career_v2") is True
     # The same tick's lerp pass also writes a partial RP (50% in,
     # baseline speed), still snapped to multiples of 15.
