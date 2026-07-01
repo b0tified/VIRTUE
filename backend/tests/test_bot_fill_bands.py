@@ -1,14 +1,13 @@
 """Bot-fill timer tests — tier-banded wait windows.
 
-  • Bronze .. Gold (0-2): 5-20s  (random per join)
-  • Plat .. Diamond (3-4): 45s flat
-  • Master .. Grandmaster (5-6): 120s flat
-  • Goonmaster (7): 120-300s random per join
+Post 2026-07-01 tuning per user request:
+  • Bronze .. Diamond (0-4): random 20-45s per join
+  • Master .. Goonmaster (5-7): random 30-180s (30s to 3 minutes) per join
 
-The randomised bands keep new players in fast queues and let high-end
-queues hold longer for real-vs-real matchmaking. This file guards the
-ranges so a future agent doesn't accidentally collapse them back to a
-single timer.
+The randomised bands keep the lower-mid ladder snappy while giving the
+high-end queues a wider window for real-vs-real matchmaking. This file
+guards the ranges so a future agent doesn't accidentally collapse them
+back to a single timer.
 """
 import sys
 import pathlib
@@ -17,32 +16,31 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import server  # noqa: E402
 
 
-def test_low_tier_bot_fill_is_5_to_20s():
-    """Bronze (0), Silver (1), Gold (2) all roll inside [5, 20]."""
-    for tier in (0, 1, 2):
-        for _ in range(40):
+def test_low_and_mid_tier_bot_fill_is_20_to_45s():
+    """Bronze (0), Silver (1), Gold (2), Platinum (3), Diamond (4) all
+    roll inside [20, 45] seconds."""
+    for tier in (0, 1, 2, 3, 4):
+        for _ in range(60):
             v = server.bot_fill_seconds_for_tier(tier)
-            assert 5.0 <= v <= 20.0, f"tier {tier} → {v}s outside 5-20"
+            assert 20.0 <= v <= 45.0, f"tier {tier} → {v}s outside 20-45"
 
 
-def test_mid_tier_bot_fill_stays_45s():
-    for tier in (3, 4):
-        # Mid tier is deterministic — assert exact value.
-        assert server.bot_fill_seconds_for_tier(tier) == server.QUEUE_BOT_FILL_SEC
-
-
-def test_high_tier_bot_fill_stays_120s():
-    for tier in (5, 6):
-        assert server.bot_fill_seconds_for_tier(tier) == server.QUEUE_BOT_FILL_SEC_HIGH
-
-
-def test_goonmaster_bot_fill_in_120_to_300s():
-    for _ in range(40):
-        v = server.bot_fill_seconds_for_tier(7)
-        assert 120.0 <= v <= 300.0
+def test_high_tier_bot_fill_is_30_to_180s():
+    """Master (5), Grandmaster (6), Goonmaster (7) all roll inside
+    [30, 180] seconds — that's 30 seconds to 3 minutes."""
+    for tier in (5, 6, 7):
+        for _ in range(60):
+            v = server.bot_fill_seconds_for_tier(tier)
+            assert 30.0 <= v <= 180.0, f"tier {tier} → {v}s outside 30-180"
 
 
 def test_low_tier_band_constants_match_user_spec():
-    assert server.QUEUE_BOT_FILL_LOW_MIN == 5.0
-    assert server.QUEUE_BOT_FILL_LOW_MAX == 20.0
-    assert server.QUEUE_LOW_TIER_MAX == 2  # Gold (idx 2) is the highest "low" tier
+    assert server.QUEUE_BOT_FILL_LOW_MIN == 20.0
+    assert server.QUEUE_BOT_FILL_LOW_MAX == 45.0
+    assert server.QUEUE_LOW_TIER_MAX == 4  # Diamond (idx 4) is now the highest "low" tier
+
+
+def test_high_tier_band_constants_match_user_spec():
+    assert server.QUEUE_BOT_FILL_HIGH_MIN == 30.0
+    assert server.QUEUE_BOT_FILL_HIGH_MAX == 180.0
+    assert server.QUEUE_HIGH_TIER_MIN == 5  # Master (idx 5) is the lowest "high" tier

@@ -2296,18 +2296,19 @@ TDM_TEAM_SIZE = 3           # each team's max size (3v3)
 TDM_QUICK_MATCH_ROLL = 0.50  # 50% of quick-match rooms become TDM
 QUEUE_BOT_FILL_SEC = 45.0
 QUEUE_BOT_FILL_SEC_HIGH = 120.0  # Master tier (5) and above wait longer
-QUEUE_BOT_FILL_SEC_GOONMASTER = 210.0  # Goonmaster (7) waits ~3.5 minutes
-# Randomization window applied on top of the base — so the actual wait
-# lands somewhere in 2-5 minutes (120-300s) rather than always exactly
-# 210s. Re-rolled per join via `bot_fill_seconds_for_tier()`.
-QUEUE_BOT_FILL_GOONMASTER_MIN = 120.0
-QUEUE_BOT_FILL_GOONMASTER_MAX = 300.0
-# Bronze → Gold (tiers 0-2) — the bottom of the ladder. Pop a snappy
-# match much sooner (random 5-20s) so new players aren't stuck staring
-# at the queue toast in their first sessions. Re-rolled per join.
-QUEUE_BOT_FILL_LOW_MIN = 5.0
-QUEUE_BOT_FILL_LOW_MAX = 20.0
-QUEUE_LOW_TIER_MAX = 2  # tiers 0..2 = BRONZE, SILVER, GOLD
+QUEUE_BOT_FILL_SEC_GOONMASTER = 210.0  # (legacy — no longer used, kept for backwards compat)
+# High-tier randomization window (Master / Grandmaster / Goonmaster):
+# random 30 seconds → 3 minutes so climbing the ladder feels slower
+# but never gets stuck for double-digit minutes. Re-rolled per join.
+QUEUE_BOT_FILL_HIGH_MIN = 30.0
+QUEUE_BOT_FILL_HIGH_MAX = 180.0
+QUEUE_BOT_FILL_GOONMASTER_MIN = 30.0
+QUEUE_BOT_FILL_GOONMASTER_MAX = 180.0
+# Bronze → Diamond (tiers 0-4) — everything up through mid-ladder gets
+# the 20-45s window so ranked feels snappy end-to-end. Re-rolled per join.
+QUEUE_BOT_FILL_LOW_MIN = 20.0
+QUEUE_BOT_FILL_LOW_MAX = 45.0
+QUEUE_LOW_TIER_MAX = 4  # tiers 0..4 = BRONZE, SILVER, GOLD, PLATINUM, DIAMOND
 QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 
 # -------------------------------------------------------------------
@@ -2361,20 +2362,14 @@ def weapon_cfg(name: str) -> dict:
 
 
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
-    # GOONMASTER (tier 7): the highest tier still gets a real-vs-real shot
-    # but can't be stuck queueing forever. Per user request, the wait is
-    # randomised in the **2-5 minute** band (120s-300s) — narrower than the
-    # old fixed 10-minute wait so games happen more often.
-    if tier_idx >= 7:
-        return random.uniform(QUEUE_BOT_FILL_GOONMASTER_MIN, QUEUE_BOT_FILL_GOONMASTER_MAX)
+    # High tiers (Master / Grandmaster / Goonmaster, 5-7): random 30-180s
+    # per join — the ladder gets slower to climb but never stalls out for
+    # >3 minutes. Re-rolled every /queue/ranked POST.
     if tier_idx >= QUEUE_HIGH_TIER_MIN:
-        return QUEUE_BOT_FILL_SEC_HIGH
-    # Bronze → Gold (0-2): snappy 5-20s window so new players hit a match
-    # almost immediately and don't bounce off the lobby.
-    if tier_idx <= QUEUE_LOW_TIER_MAX:
-        return random.uniform(QUEUE_BOT_FILL_LOW_MIN, QUEUE_BOT_FILL_LOW_MAX)
-    # Platinum / Diamond (3-4): mid-tier — keep the original 45s wait.
-    return QUEUE_BOT_FILL_SEC
+        return random.uniform(QUEUE_BOT_FILL_HIGH_MIN, QUEUE_BOT_FILL_HIGH_MAX)
+    # Bronze → Diamond (0-4): random 20-45s so ranked feels snappy at the
+    # low-to-mid ladder without becoming instant-pop.
+    return random.uniform(QUEUE_BOT_FILL_LOW_MIN, QUEUE_BOT_FILL_LOW_MAX)
 
 
 def bot_fill_seconds_for_tier_api(tier_idx: int) -> int:

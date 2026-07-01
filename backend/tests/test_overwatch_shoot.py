@@ -101,7 +101,8 @@ class TestSeasonEndpoint:
 
 # ---------- /api/queue/ranked bot_fill_seconds ----------
 class TestQueueBotFillSeconds:
-    def test_bronze_admin_returns_45(self):
+    def test_bronze_admin_returns_20_to_45(self):
+        """Bronze bot-fill is now random [20, 45] per 2026-07-01 tuning."""
         admin = _admin_login()
         admin_id = admin["user"]["id"]
         _set_rank_points(admin_id, 0)
@@ -110,11 +111,13 @@ class TestQueueBotFillSeconds:
         try:
             r = requests.post(f"{LOCAL}/api/queue/ranked", headers=headers)
             assert r.status_code == 200, r.text
-            assert r.json().get("bot_fill_seconds") == 45, r.json()
+            fill = r.json().get("bot_fill_seconds")
+            assert 20 <= fill <= 45, r.json()
         finally:
             requests.delete(f"{LOCAL}/api/queue/ranked", headers=headers)
 
-    def test_master_admin_returns_120(self):
+    def test_master_admin_returns_30_to_180(self):
+        """Master bot-fill is now random [30, 180] per 2026-07-01 tuning."""
         admin = _admin_login()
         admin_id = admin["user"]["id"]
         _set_rank_points(admin_id, 1300)
@@ -123,7 +126,8 @@ class TestQueueBotFillSeconds:
             headers = {"Authorization": f"Bearer {admin['access_token']}"}
             r = requests.post(f"{LOCAL}/api/queue/ranked", headers=headers)
             assert r.status_code == 200, r.text
-            assert r.json().get("bot_fill_seconds") == 120, r.json()
+            fill = r.json().get("bot_fill_seconds")
+            assert 30 <= fill <= 180, r.json()
             requests.delete(f"{LOCAL}/api/queue/ranked", headers=headers)
         finally:
             _set_rank_points(admin_id, 0)

@@ -638,3 +638,32 @@ Frozen arctic wasteland, added everywhere the previous 4 maps live:
 ### Live smoke test
 Verified the Practice Map Selector shows the TUNDRA card as the 5th option; direct match load `?map=tundra` renders with a pale snow ground, cool blue-grey sky, and no console errors.
 
+
+## 2026-07-01 (later still) — Queue Timings + Locked ETA
+
+### Backend — new tier-banded queue times (`server.py`)
+Per user request, retuned the ranked bot-fill windows:
+- **Bronze → Diamond (tiers 0-4)**: random **20-45 seconds** per join (was 5-20s for Bronze-Gold, fixed 45s for Plat-Diamond)
+- **Master → Goonmaster (tiers 5-7)**: random **30 seconds to 3 minutes (30-180s)** per join (was fixed 120s for Master/GM, 120-300s for Goonmaster)
+- Constants renamed: `QUEUE_BOT_FILL_LOW_MIN/MAX` now cover 20-45s and `QUEUE_LOW_TIER_MAX=4` (Diamond); new `QUEUE_BOT_FILL_HIGH_MIN/MAX` covers 30-180s.
+- Simplified `bot_fill_seconds_for_tier()` — every tier now rolls randomly (no more fixed values).
+
+### Frontend — locked ETA on queue join (`context/QueueContext.jsx`)
+Fixed the "estimated wait time flips every poll" complaint:
+- Added `lockedEtaRef` — captured on the **first** in-queue response and never re-read.
+- All subsequent polls (`setQueueState`) merge `estimated_wait_seconds: lockedEtaRef.current` into the state so the displayed "Est. wait ~Xs" pill stays put while the live count-up timer ticks normally.
+- Lock resets on: match found, queue cancel (`DELETE`), and 3-consecutive-miss teardown.
+- Without this fix, the newly-randomised server bot-fill (which re-rolls every poll) would swing the client ETA wildly (e.g. 32s → 41s → 25s over 3 seconds).
+
+### Tests
+- Updated `tests/test_bot_fill_bands.py` — 4 cases guarding the new tier boundaries + ranges.
+- New `tests/test_queue_eta_lock.py` — 3 cases: POST + GET both include `estimated_wait_seconds`, Diamond now uses low band, Master now uses high band.
+- Updated `tests/test_recent_features.py::test_lower_tier_bot_fill_positive_45` → asserts 20-45 range instead of fixed 45.
+- Updated `tests/test_recent_features.py::test_goonmaster_tier7_bot_fill_neg1_and_no_fill` → renamed to `_30_to_180`, asserts 30-180 range instead of -1 sentinel.
+- Updated `tests/test_overwatch_shoot.py::test_bronze_admin_returns_45` → renamed to `_returns_20_to_45`, asserts the new range.
+- Updated `tests/test_overwatch_shoot.py::test_master_admin_returns_120` → renamed to `_returns_30_to_180`, asserts the new range.
+- All 22 queue/timing tests pass.
+
+### Live evidence
+Back-to-back `GET /queue/ranked` calls now return different `bot_fill_seconds` values on the server side (e.g. `30` then `26` for a Bronze user) — confirming the randomisation. The client-side lock guarantees the user only ever sees the first value.
+

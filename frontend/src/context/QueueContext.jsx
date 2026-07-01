@@ -43,6 +43,14 @@ export function QueueProvider({ children }) {
     if (localTimerRef.current) { clearInterval(localTimerRef.current); localTimerRef.current = null; }
     if (matchTimerRef.current) { clearInterval(matchTimerRef.current); matchTimerRef.current = null; }
   }, []);
+  // Estimated-wait lock: captured on the FIRST poll where the user is
+  // in-queue and NEVER re-read from subsequent polls. Users complained
+  // that the ETA was ticking down / jumping around every second — with
+  // the server re-rolling the bot-fill randomly per poll, the shown
+  // value would swing wildly (e.g. 32s → 41s → 25s). Locking it to the
+  // initial estimate gives a stable "here's roughly how long you'll
+  // wait" number that plays nicely alongside the live count-up timer.
+  const lockedEtaRef = useRef(null);
   // Consecutive `in_queue: false` poll counter. A single rogue response
   // (e.g. server momentarily 500/empty body, or a queue lock race) used
   // to flip queueState → null and the toast would disappear → reappear
@@ -67,7 +75,13 @@ export function QueueProvider({ children }) {
   const beginActivePoll = useCallback((data) => {
     if (pollIdRef.current) return; // already running
     joinedAtRef.current = Date.now() - ((data.wait_seconds || 0) * 1000);
-    setQueueState(data);
+    // Lock the ETA to whatever the server reported on the FIRST poll —
+    // subsequent polls will re-roll the random bot-fill window and
+    // return a different value, which we intentionally ignore here.
+    lockedEtaRef.current = Number.isFinite(data.estimated_wait_seconds)
+      ? data.estimated_wait_seconds
+      : null;
+    setQueueState({ ...data, estimated_wait_seconds: lockedEtaRef.current });
     setWaitSec(data.wait_seconds || 0);
     missesRef.current = 0;
     startLocalTimer();
@@ -92,6 +106,8 @@ export function QueueProvider({ children }) {
           setQueueState(s);
           if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
           try { await api.post("/queue/ranked/ack"); } catch {}
+          // Clear the ETA lock — next queue starts fresh.
+          lockedEtaRef.current = null;
           audioBus.matchFound();
           setMatchFoundSec(3);
           let sec = 3;
@@ -134,11 +150,18 @@ export function QueueProvider({ children }) {
             setWaitSec(0);
             setQueueState(null);
             missesRef.current = 0;
+            lockedEtaRef.current = null;
           }
         } else {
           // Healthy in_queue: true response — reset miss counter.
+          // Preserve the locked ETA so the "Est. wait" number the user
+          // saw when they joined doesn't jump around every second as
+          // the server re-rolls the bot-fill randomly.
           missesRef.current = 0;
-          setQueueState(s);
+          setQueueState({
+            ...s,
+            estimated_wait_seconds: lockedEtaRef.current ?? s.estimated_wait_seconds,
+          });
         }
       } catch {
         // Network blip: treat as a soft miss too so a flaky connection
@@ -164,6 +187,7 @@ export function QueueProvider({ children }) {
     setWaitSec(0);
     setMatchFoundSec(null);
     setQueueState(null);
+    lockedEtaRef.current = null;
     try { await api.delete("/queue/ranked"); } catch {}
   }, [stopAll]);
 

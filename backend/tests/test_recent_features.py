@@ -142,6 +142,8 @@ class TestProfileHistory:
 # ---------- QUEUE ----------
 class TestQueue:
     def test_lower_tier_bot_fill_positive_45(self):
+        """Bronze (tier 0) now rolls its bot-fill randomly in [20, 45]
+        seconds per the 2026-07-01 tuning (was fixed 45s)."""
         suffix = uuid.uuid4().hex[:6]
         tok, _ = _register(suffix)
         try:
@@ -151,13 +153,16 @@ class TestQueue:
                              headers={"Authorization": f"Bearer {tok}"})
             assert r.status_code == 200
             d = r.json()
-            assert d["bot_fill_seconds"] == 45
+            assert 20 <= d["bot_fill_seconds"] <= 45, d
             assert d["tier"] == 0
         finally:
             requests.delete(f"{LOCAL}/api/queue/ranked",
                             headers={"Authorization": f"Bearer {tok}"})
 
-    def test_goonmaster_tier7_bot_fill_neg1_and_no_fill(self):
+    def test_goonmaster_tier7_bot_fill_30_to_180(self):
+        """Goonmaster (tier 7) now rolls its bot-fill randomly in
+        [30, 180] seconds per the 2026-07-01 tuning (was 120-300s, and
+        an earlier design used -1 sentinel to mean "never fills")."""
         if _db is None:
             pytest.skip("Mongo not available")
         suffix = uuid.uuid4().hex[:6]
@@ -170,7 +175,7 @@ class TestQueue:
             assert r.status_code == 200
             d = r.json()
             assert d["tier"] == 7
-            assert d["bot_fill_seconds"] == -1
+            assert 30 <= d["bot_fill_seconds"] <= 180, d
         finally:
             _db.users.update_one({"_id": ObjectId(uid)}, {"$set": {"rank_points": 0}})
             requests.delete(f"{LOCAL}/api/queue/ranked",
