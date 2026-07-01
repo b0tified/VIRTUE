@@ -870,3 +870,33 @@ Screenshot of Player1 clicking Quick Match: toast displays
 - Pills: `CASUAL · FFA` + `EST. WAIT ~8s`
 - LEAVE QUEUE button
 
+
+## 2026-07-01 — Snowy Lobby Background (Admin Preview)
+
+Winter-themed lobby backdrop gated behind `user.role === "admin"` for now (per user request "only on admin account for now" while we validate the look).
+
+### New component
+`/app/frontend/src/components/LobbyBackgroundSnow.jsx` — mirrors the structure of `LobbyBackgroundMeteor.jsx`:
+- **Sky**: steel-blue overhead → milky white low horizon.
+- **Aurora glow**: soft cyan pulsing halo along the top.
+- **Halftone**: cool-blue dots at 55% opacity, slow drift.
+- **Snowflakes**: 23 flakes across 3 parallax layers (small/slow/dim back → big/fast/bright front). Pure CSS radial-gradient dots + diagonal-drift `translate3d + rotate` animation. Different sizes and opacity per layer for depth.
+- **Frost blobs**: cyan / ice / white palette with breathing animation.
+- **Comic words**: `FROST!`, `CHILL!`, `BLIZZARD!`, `ICE!`, `FLURRY!` — cyan/gold/red mix, wobble in place.
+- **Horizon shimmer**: subtle horizontal sweep along the ground line, ~14s cycle.
+- `animated={false}` fallback: sky + one halftone + one blob (calm subset for prefers-reduced-motion / battery saver).
+
+### CSS
+Appended a `lobby-snow-*` block to `/app/frontend/src/index.css` (~120 lines) with all keyframes + palette. `prefers-reduced-motion: reduce` disables every animation.
+
+### Integration in Lobby.jsx
+- New gate: `const showSnowBg = user?.role === "admin"`.
+- Renders BEFORE the meteor/default gates so admin overrides both.
+- Marker: `data-testid="lobby-bg-snow"` for testing.
+- Music variant still uses the meteor loop (admin already got that gate); dedicated "snow" music is a follow-up if we ship this to all players.
+
+### Verified
+- Admin account lands on the lobby → sky is icy blue, `FROST! · FLURRY! · BLIZZARD!` visible, snowflakes falling diagonally across the arena.
+- Data-testid confirms `lobby-bg-snow` is active for admin.
+- Non-admin players fall back to meteor (Season 2) or default (Season 1) — unchanged.
+

@@ -12,6 +12,7 @@ import WhisperToaster from "@/components/WhisperToaster";
 import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
+import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import RankProgressBar from "@/components/RankProgressBar";
@@ -136,6 +137,9 @@ export default function Lobby() {
     return () => { alive = false; };
   }, []);
   const showMeteorBg = (seasonNumber !== null && seasonNumber >= 2) || user?.role === "admin";
+  // Snowy winter backdrop — admin-only preview while we validate the
+  // aesthetic. Overrides the meteor scene when active.
+  const showSnowBg = user?.role === "admin";
 
   // Initialise audio mute states + volumes from settings/localStorage so the
   // bus reflects user prefs immediately on mount.
@@ -457,7 +461,12 @@ export default function Lobby() {
       className="relative h-[100dvh] lg:h-screen overflow-hidden bg-black flex flex-col"
       data-testid="lobby-page"
     >
-      {showMeteorBg ? (
+      {showSnowBg ? (
+        <>
+          <span className="hidden" data-testid="lobby-bg-snow" data-active="true" />
+          <LobbyBackgroundSnow animated={animatedBg} />
+        </>
+      ) : showMeteorBg ? (
         <>
           <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
           <LobbyBackgroundMeteor animated={animatedBg} />
