@@ -1378,3 +1378,123 @@ html.virtue-no-ui-blur .hud-panel {
   20%  { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* =============================================================
+   Banner title animations for Master+ past-season flexes.
+   --------------------------------------------------------------
+   Master:      subtle golden glow pulse.
+   Grandmaster: shimmering diagonal sheen sweeps across the text.
+   Goonmaster:  bigger + rainbow rgb shift + inset sparkle.
+   The base `.banner-title-anim` sets `position: relative` so the
+   pseudo-element sheens have somewhere to sweep.
+   ============================================================= */
+.banner-title-anim {
+  position: relative;
+  overflow: hidden;
+  will-change: filter, background-position, color;
+}
+
+/* -------- Master: gentle gold pulse ------------------------- */
+.banner-title-anim-master {
+  animation: banner-title-master-pulse 2.4s ease-in-out infinite;
+}
+@keyframes banner-title-master-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(255, 215, 0, 0));
+    text-shadow: 0 1px 0 rgba(0,0,0,0.85);
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.7));
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.9), 0 1px 0 rgba(0,0,0,0.85);
+  }
+}
+
+/* -------- Grandmaster: diagonal sheen sweep ----------------- */
+.banner-title-anim-grandmaster {
+  background-image: linear-gradient(
+    100deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.85) 48%,
+    rgba(255, 240, 180, 0.95) 52%,
+    transparent 68%
+  );
+  background-repeat: no-repeat;
+  background-size: 220% 100%;
+  background-position: -50% 0;
+  -webkit-background-clip: padding-box;
+  animation: banner-title-gm-sheen 3.6s linear infinite;
+}
+@keyframes banner-title-gm-sheen {
+  0%   { background-position: -50% 0; }
+  100% { background-position: 200% 0; }
+}
+.banner-title-anim-grandmaster {
+  animation: banner-title-gm-sheen 3.6s linear infinite,
+             banner-title-master-pulse 3.2s ease-in-out infinite;
+}
+
+/* -------- Goonmaster: full rainbow shift + sparkles --------- */
+.banner-title-anim-goonmaster {
+  /* Rainbow gradient locked to the text via background-clip. */
+  background: linear-gradient(
+    90deg,
+    #ff3860 0%,
+    #ffcf3a 20%,
+    #47ff69 40%,
+    #3af0ff 60%,
+    #b247ff 80%,
+    #ff3860 100%
+  );
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent !important;
+  text-shadow: none !important;   /* rainbow reads better without the shadow */
+  animation: banner-title-goon-rainbow 3.8s linear infinite;
+  /* Layer a subtle outline via drop-shadow so text stays readable
+     against light banner colours. */
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.8))
+          drop-shadow(0 0 10px rgba(255,255,255,0.35));
+}
+@keyframes banner-title-goon-rainbow {
+  0%   { background-position:   0% 0; }
+  100% { background-position: 240% 0; }
+}
+/* Sparkle overlay — pseudo-element with a bright dot that traverses
+   left→right on a slower cycle than the rainbow, so the two rhythms
+   don't sync up and the effect stays lively. */
+.banner-title-anim-goonmaster::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -25%;
+  width: 25%; height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.85) 45%,
+    rgba(255,255,255,0.95) 50%,
+    rgba(255,255,255,0.85) 55%,
+    transparent
+  );
+  filter: blur(2px);
+  animation: banner-title-goon-spark 5.2s linear infinite;
+  pointer-events: none;
+}
+@keyframes banner-title-goon-spark {
+  0%   { left: -30%; opacity: 0; }
+  15%  { opacity: 0.85; }
+  85%  { opacity: 0.85; }
+  100% { left: 120%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-title-anim,
+  .banner-title-anim-master,
+  .banner-title-anim-grandmaster,
+  .banner-title-anim-goonmaster {
+    animation: none !important;
+  }
+  .banner-title-anim-goonmaster::after { display: none !important; }
+}
+

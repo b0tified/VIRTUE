@@ -6,7 +6,7 @@ import api from "@/api";
 import PlayerCard from "@/components/PlayerCard";
 import RankProgressBar from "@/components/RankProgressBar";
 import { divisionRoman } from "@/game/rankIcons";
-import { formatBannerTitle } from "@/game/bannerTitle";
+import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -85,6 +85,7 @@ export default function PublicProfileModal({ username, onClose }) {
                 bannerColor={Number.isFinite(data.banner_color) ? data.banner_color : 0}
                 bannerAnimated={!!data.banner_animated}
                 bannerTitle={formatBannerTitle(data)}
+                bannerTitleClass={bannerTitleAnimClass(data)}
                 level={data.level ?? 1}
                 online={data.online}
                 testid="public-profile-card"

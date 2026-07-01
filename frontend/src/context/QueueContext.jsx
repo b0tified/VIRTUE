@@ -57,6 +57,18 @@ export function QueueProvider({ children }) {
   // on the next 1s poll. We now require 3 consecutive misses before
   // tearing the toast down.
   const missesRef = useRef(0);
+  // Cancel guard — set to `Date.now() + N` on cancelRanked so both the
+  // active poll AND the background poll IGNORE the server response for
+  // the next N ms. Fixes: "click cancel → toast reappears" bug. Root
+  // cause was the async DELETE hadn't hit the server yet when the next
+  // bg poll (3s interval, unrelated to stopAll) fired GET /queue/ranked,
+  // saw stale in_queue:true from the server, and re-invoked
+  // beginActivePoll. The guard gives the DELETE a full 10s to clear
+  // any lingering entry (including party-follower cascades).
+  const cancelGuardUntilRef = useRef(0);
+  // Same guard for the casual queue — separate timestamp so casual and
+  // ranked cancellations don't cross-block each other.
+  const casualCancelGuardUntilRef = useRef(0);
 
   // Local elapsed-time ticker — runs 4× per second so the timer is smooth and
   // never resets between server polls.
@@ -88,6 +100,10 @@ export function QueueProvider({ children }) {
     pollIdRef.current = setInterval(async () => {
       try {
         const { data: s } = await api.get("/queue/ranked");
+        // Cancel-guard check — the user hit LEAVE while the request
+        // was in flight. Drop the response entirely so it can't
+        // re-populate queueState after the toast tore down.
+        if (Date.now() < cancelGuardUntilRef.current) return;
         // Sync local clock to the server's authoritative elapsed value, but
         // ONLY while still queueing (server is in_queue=true & not matched).
         // Once matched, `wait_seconds` means "seconds since match" — applying
@@ -141,10 +157,17 @@ export function QueueProvider({ children }) {
           }, 1000);
         } else if (!s.in_queue) {
           // Tolerate transient `in_queue: false` blips — only tear down
-          // after 3 consecutive misses (~3s). Fixes the
-          // "toast disappears and reappears" flicker.
+          // after 5 consecutive misses (~5s). Fixes the
+          // "toast disappears and reappears" flicker. Bumped from 3
+          // because a single network wobble was still enough to blip
+          // the toast on slower connections.
           missesRef.current += 1;
-          if (missesRef.current >= 3) {
+          if (missesRef.current >= 5) {
+            // Set the cancel guard so the bg poll doesn't instantly
+            // re-invoke beginActivePoll on its next 3s tick. Without
+            // this, the toast disappears and reappears in a tight
+            // loop until the server actually clears the queue.
+            cancelGuardUntilRef.current = Date.now() + 6000;
             stopAll();
             joinedAtRef.current = 0;
             setWaitSec(0);
@@ -182,12 +205,18 @@ export function QueueProvider({ children }) {
   }, [beginActivePoll]);
 
   const cancelRanked = useCallback(async () => {
+    // Block ALL polls (active + background) from re-invoking
+    // beginActivePoll for the next 10 seconds. This closes the race
+    // where the async DELETE hasn't reached the server yet when the
+    // next bg poll tick fires and sees stale in_queue:true.
+    cancelGuardUntilRef.current = Date.now() + 10000;
     stopAll();
     joinedAtRef.current = 0;
     setWaitSec(0);
     setMatchFoundSec(null);
     setQueueState(null);
     lockedEtaRef.current = null;
+    missesRef.current = 0;
     try { await api.delete("/queue/ranked"); } catch {}
   }, [stopAll]);
 
@@ -207,8 +236,15 @@ export function QueueProvider({ children }) {
     if (inMatchRoute) return;
     const tick = async () => {
       if (pollIdRef.current || matchTimerRef.current) return;
+      // Respect the cancel guard — cancelRanked bumped this to
+      // Date.now() + 10s so any lingering server-side entry (or
+      // pending DELETE) can't sneak back and re-invoke beginActivePoll.
+      if (Date.now() < cancelGuardUntilRef.current) return;
       try {
         const { data: s } = await api.get("/queue/ranked");
+        // Double-check the guard AFTER the async fetch — if the user
+        // cancelled while we were awaiting, the response is stale.
+        if (Date.now() < cancelGuardUntilRef.current) return;
         if (s && (s.in_queue || s.matched)) {
           beginActivePoll(s);
         }
@@ -268,6 +304,9 @@ export function QueueProvider({ children }) {
       casualPollRef.current = setInterval(async () => {
         try {
           const { data: s } = await api.get("/queue/casual");
+          // Drop the response if the user cancelled while we were
+          // awaiting — otherwise the toast can reappear after LEAVE.
+          if (Date.now() < casualCancelGuardUntilRef.current) return;
           if (s.matched) {
             stopCasual();
             audioBus.matchFound();
@@ -302,6 +341,8 @@ export function QueueProvider({ children }) {
   }, [nav, stopCasual]);
 
   const cancelCasual = useCallback(async () => {
+    // Block any in-flight or bg poll from re-populating the toast.
+    casualCancelGuardUntilRef.current = Date.now() + 10000;
     stopCasual();
     casualJoinedAtRef.current = 0;
     setCasualWaitSec(0);

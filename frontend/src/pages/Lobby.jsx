@@ -19,7 +19,7 @@ import RankProgressBar from "@/components/RankProgressBar";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
 import PracticeMapSelector from "@/components/PracticeMapSelector";
-import { formatBannerTitle } from "@/game/bannerTitle";
+import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import LobbyDailyPanel from "@/components/LobbyDailyPanel";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
@@ -532,6 +532,7 @@ export default function Lobby() {
               bannerColor={user.banner_color ?? null}
               bannerAnimated={!!user.banner_animated}
               bannerTitle={formatBannerTitle(user)}
+              bannerTitleClass={bannerTitleAnimClass(user)}
               level={user.level ?? 1}
               leaderboardRank={user.leaderboard_rank ?? null}
               online
