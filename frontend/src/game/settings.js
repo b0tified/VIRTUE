@@ -95,6 +95,13 @@ const DEFAULTS = Object.freeze({
   // players get the polish, but kept as a toggle for users who find
   // the motion distracting / battery-heavy.
   lobbyAnimatedBackground: true,
+  // Lobby background variant picker — "auto" gates on the current season
+  // (Season 1 → default, Season 2 → meteor, Season 3+ → snow). Any
+  // finished-season variant unlocks in the Settings picker so players
+  // can reminisce with a past season's aesthetic. Admin sees all
+  // options unlocked regardless of season.
+  //   Values: "auto" | "default" | "meteor" | "snow"
+  lobbyBackgroundVariant: "auto",
   // Keyboard binds (KeyboardEvent.code strings). One primary code per action.
   keybinds: {
     forward: "KeyW",

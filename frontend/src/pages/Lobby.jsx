@@ -136,10 +136,42 @@ export default function Lobby() {
     })();
     return () => { alive = false; };
   }, []);
-  const showMeteorBg = (seasonNumber !== null && seasonNumber >= 2) || user?.role === "admin";
-  // Snowy winter backdrop — admin-only preview while we validate the
-  // aesthetic. Overrides the meteor scene when active.
-  const showSnowBg = user?.role === "admin";
+  // Compute the effective lobby background variant. Priority:
+  //   1. Explicit user setting (`lobbyBackgroundVariant`), if not "auto"
+  //      AND the user is allowed to pick it (see filter below).
+  //   2. Auto: current season → default / meteor / snow.
+  // Season 3+ ships the snowy backdrop to everyone; admins get it
+  // early as a preview.
+  const isAdmin = user?.role === "admin";
+  const autoVariant =
+    seasonNumber !== null && seasonNumber >= 3 ? "snow" :
+    seasonNumber !== null && seasonNumber >= 2 ? "meteor" :
+    "default";
+  const [pickedVariant, setPickedVariant] = useState(() => settingsStore.get().lobbyBackgroundVariant || "auto");
+  useEffect(() => {
+    const onChange = () => setPickedVariant(settingsStore.get().lobbyBackgroundVariant || "auto");
+    window.addEventListener("virtue-settings-changed", onChange);
+    return () => window.removeEventListener("virtue-settings-changed", onChange);
+  }, []);
+  // A variant is available if it's the current auto pick OR the user
+  // has played the season that shipped it (past_seasons contains it),
+  // OR the user is admin. Season→variant map:
+  //   S1 → default, S2 → meteor, S3+ → snow.
+  const finishedSeasons = new Set((user?.past_seasons || []).map((e) => Number(e?.season) || 0));
+  const canUseVariant = (v) => {
+    if (v === "auto") return true;
+    if (isAdmin) return true;
+    if (v === autoVariant) return true;
+    if (v === "default") return finishedSeasons.has(1) || (seasonNumber !== null && seasonNumber >= 1);
+    if (v === "meteor")  return finishedSeasons.has(2) || (seasonNumber !== null && seasonNumber >= 2);
+    if (v === "snow")    return finishedSeasons.has(3) || (seasonNumber !== null && seasonNumber >= 3);
+    return false;
+  };
+  const effectiveVariant = (pickedVariant !== "auto" && canUseVariant(pickedVariant))
+    ? pickedVariant
+    : autoVariant;
+  const showSnowBg   = effectiveVariant === "snow";
+  const showMeteorBg = effectiveVariant === "meteor";
 
   // Initialise audio mute states + volumes from settings/localStorage so the
   // bus reflects user prefs immediately on mount.
@@ -276,11 +308,13 @@ export default function Lobby() {
   // fall back to the first interaction listener.
   useEffect(() => {
     let started = false;
-    // The lobby music variant follows the same gate as the lobby
-    // background: meteor remix when Season 2+ is live, or when the
-    // signed-in account is an admin (preview). Recomputed on every
-    // change so a season rollover hot-swaps the loop in place.
-    const variant = showMeteorBg ? "meteor" : "default";
+    // The lobby music variant follows the same effective-variant gate
+    // as the lobby background so the audio/visual pairing always
+    // matches (default → default loop, meteor → dark remix, snow →
+    // chime/bell remix of the default). Recomputed on every variant
+    // change so a season rollover or a setting toggle hot-swaps the
+    // loop in place.
+    const variant = effectiveVariant;
     const tryStart = () => {
       if (started) return;
       audioBus.startLobbyMusic(variant);
@@ -309,7 +343,7 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
-  }, [showMeteorBg]);
+  }, [effectiveVariant]);
 
   // Refresh the user payload whenever the Lobby mounts. After completing
   // a ranked match (where rank_points / rank_tier / level / coins can all

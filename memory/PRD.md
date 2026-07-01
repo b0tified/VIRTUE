@@ -900,3 +900,49 @@ Appended a `lobby-snow-*` block to `/app/frontend/src/index.css` (~120 lines) wi
 - Data-testid confirms `lobby-bg-snow` is active for admin.
 - Non-admin players fall back to meteor (Season 2) or default (Season 1) — unchanged.
 
+
+## 2026-07-01 — Snow Music Remix + Season 3 Gate + Choosable BG Picker
+
+Three related upgrades to the lobby background system.
+
+### 1. Snow music variant — a chime remix of the DEFAULT loop
+`audio.js::startLobbyMusic("snow")` uses the same Am-F-C-G-Am-F-G-E progression as Season 1 (NOT the meteor variant) so it feels like a wintered version of the original theme. New layers added on top:
+
+- **BPM 76** (down from 84) — winter stillness.
+- **Bell arpeggios** (`playSnowBells`) — every bar, 4 triangle+sine bell notes arpeggiate the current chord two octaves above the pad root. Beat pattern `1 · 2.5 · 3 · 4.5` (subtle syncopation).
+- **Phrase-reset shimmer** — bar 0 of every 4-bar phrase adds a high 12th sparkle note.
+- **Sleigh-bell ticks** (`playSnowTick`) — filtered-noise HP@4.5kHz on 16th positions 2/6/10/14. Reads as distant sleigh bells.
+- **Wind pad** (`playSnowWind`) — bandpass-filtered noise (600→1400→400 Hz sweep) every 2 bars. Sits at 0.09 gain — felt more than heard.
+- Same pad/bass/drums as default so the base track is instantly recognisable.
+
+### 2. Season 3 gates snow for everyone
+`Lobby.jsx` computes `autoVariant` from `seasonNumber`:
+- Season 1 → `default`
+- Season 2 → `meteor`
+- **Season 3+ → `snow`**
+
+When the current season doc rolls to 3, every player automatically gets the snowy backdrop + the chime music remix. No client change or setting toggle required.
+
+### 3. Choosable past-season backgrounds
+New setting `lobbyBackgroundVariant` (default `"auto"`) with four values:
+- `auto` — always available, tracks current season.
+- `default` (Season 1)
+- `meteor` (Season 2)
+- `snow` (Season 3)
+
+**Unlock rules** (`canUseVariant` in Lobby.jsx):
+- `auto` — always.
+- Explicit variant — unlocked when the user has `season` in their `past_seasons[]` OR the current season is at/past the variant's requirement.
+- Admins bypass everything (all four options unlocked in the picker).
+
+**Picker UI** (`SettingsModal.jsx::LobbyVariantPicker`):
+- Grid of 4 tiles inside the Video section, right under "Animated Lobby Background".
+- Locked variants render dimmed with a padlock (`🔒`) and are non-clickable.
+- Active tile has a gold ring, matches the frame-gen picker styling for consistency.
+- data-testids: `settings-lobby-variant-picker`, `settings-lobby-variant-{auto|default|meteor|snow}`.
+
+### Verified
+- Admin logs in → picker shows all 4 tiles unlocked (screenshot confirms Season 1/2/3 all clickable).
+- Setting `lobbyBackgroundVariant = "snow"` → lobby renders the snow BG, `lobby-bg-snow` data-testid present, snowflakes fall diagonally, cyan `FROST!/BLIZZARD!` + gold `FLURRY!` tags visible.
+- Music variant now routes through `effectiveVariant` — hot-swaps loops on setting change.
+

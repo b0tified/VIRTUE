@@ -1077,6 +1077,11 @@ class AudioBus {
     this.musicPlaying = true;
     this.musicTrack = trackId;
     const isMeteor = variant === "meteor";
+    // Snow variant — a chime/glockenspiel remix of the DEFAULT chord
+    // progression (not meteor). Same Am-F-C-G-Am-F-G-E loop as Season 1
+    // but with a bell shimmer layer on offbeats, a filtered "wind noise"
+    // pad, and a slightly slower tempo for that winter-stillness feel.
+    const isSnow = variant === "snow";
     const ctx = this.ctx;
 
     // -- Helpers --
@@ -1123,7 +1128,7 @@ class AudioBus {
     const RIFF_A = [12, null, 10, 12, null, 7, null, 10, null, 7, 5, null, 7, null, 12, null];
     const RIFF_B = [10, null, 7,  10, null, 5, null, 7,  null, 3, 5, 7,  null, null, 12, null];
 
-    const BPM = isMeteor ? 78 : 84;
+    const BPM = isMeteor ? 78 : (isSnow ? 76 : 84);
     const beat = 60 / BPM;
     const sixteenth = beat / 4;
 
@@ -1411,9 +1416,113 @@ class AudioBus {
       });
     };
 
+    // ─────────────────────────────────────────────────────────────
+    // Snow variant helpers — a glockenspiel/bell shimmer + soft wind
+    // noise layer over the DEFAULT chord progression. Meant to read as
+    // "same song, wintered". Only referenced when `isSnow === true`.
+    // ─────────────────────────────────────────────────────────────
+    // High-pass filtered noise buffer, cached across bars.
+    let snowNoiseBuf = null;
+    const getSnowNoise = () => {
+      if (snowNoiseBuf) return snowNoiseBuf;
+      const dur = 4.0;
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.6;
+      snowNoiseBuf = buf;
+      return buf;
+    };
+    // Wind gust — plays once per bar, layered noise through a bandpass
+    // filter that sweeps up then down. Sits low in the mix (0.08 gain)
+    // so it's felt more than heard.
+    const playSnowWind = (t, dur) => {
+      const src = ctx.createBufferSource();
+      src.buffer = getSnowNoise();
+      src.loop = true;
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.setValueAtTime(600, t);
+      bp.frequency.linearRampToValueAtTime(1400, t + dur * 0.55);
+      bp.frequency.linearRampToValueAtTime(400, t + dur);
+      bp.Q.value = 0.9;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.09, t + 0.4);
+      g.gain.linearRampToValueAtTime(0.05, t + dur - 0.3);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      src.connect(bp); bp.connect(g); g.connect(this.musicGain);
+      src.start(t); src.stop(t + dur + 0.1);
+    };
+    // Bell — bright triangle+sine chime with a long exponential decay.
+    // Uses the triad note offsets so bells arpeggiate the current chord.
+    const playSnowBell = (freq, t, level = 0.22) => {
+      const dur = 1.6;
+      const o1 = ctx.createOscillator();
+      const o2 = ctx.createOscillator();
+      o1.type = "triangle"; o1.frequency.value = freq;
+      // Slight inharmonic partial for that glassy bell timbre.
+      o2.type = "sine"; o2.frequency.value = freq * 2.005;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(level, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0002, t + dur);
+      const g2 = ctx.createGain();
+      g2.gain.value = 0.28;
+      o1.connect(g); o2.connect(g2); g2.connect(g);
+      // Route through a mild low-pass so the bells sit above the pad
+      // without becoming ice-picky.
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 300;
+      g.connect(hp); hp.connect(this.musicGain);
+      o1.start(t); o2.start(t);
+      o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+    };
+    // Bar-level glockenspiel pattern: 4 arpeggiated triad notes on
+    // beats 1, 2.5, 3, 4.5 (a subtle syncopation) climbing +2 octaves
+    // above the chord root. Bar-4 (phrase reset) adds a 5th shimmer
+    // note high above for that Christmas-morning tag.
+    const playSnowBells = (root, triad, t, isPhraseReset) => {
+      // Triad → up 2 octaves relative to root's fundamental.
+      const octUp = 4;   // 2 octaves = 2 doublings above the pad root
+      const beats = [
+        { off: 0.0 * beat,  idx: 0 },
+        { off: 1.5 * beat,  idx: 1 },
+        { off: 2.0 * beat,  idx: 2 },
+        { off: 3.5 * beat,  idx: 0 },
+      ];
+      beats.forEach(({ off, idx }) => {
+        const s = triad[idx % triad.length] ?? 0;
+        const f = root * octUp * semi(s);
+        playSnowBell(f, t + off, 0.20);
+      });
+      // Phrase-reset sparkle — a high 12th (perfect 5th above the top
+      // triad note) on the "and" of beat 4 to punctuate the loop.
+      if (isPhraseReset) {
+        const topSemi = (triad[triad.length - 1] ?? 7) + 12;
+        playSnowBell(root * octUp * semi(topSemi), t + 3.75 * beat, 0.18);
+      }
+    };
+    // Sleigh-bell-ish tick — very short, closed-hihat-style shimmer on
+    // the offbeat 16ths. Uses filtered white noise + a super-quick env.
+    const playSnowTick = (t) => {
+      const src = ctx.createBufferSource();
+      src.buffer = getSnowNoise();
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 4500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.07, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      src.connect(hp); hp.connect(g); g.connect(this.musicGain);
+      src.start(t); src.stop(t + 0.12);
+    };
+
     const scheduleBar = (startAt, barIndex) => {
       // Loop length: 4 bars. Default = Am-F-C-G (Season 1). Meteor =
-      // Am-Em-F-E (Season 2 dark Phrygian-flavoured variant).
+      // Am-Em-F-E (Season 2 dark Phrygian-flavoured variant). Snow
+      // uses the DEFAULT progression with bells + wind layered on top.
       const phraseBar = barIndex % 4;
       const root = ROOTS[phraseBar];
       const triad = CHORDS[phraseBar];
@@ -1443,6 +1552,20 @@ class AudioBus {
           playMeteorImpact(startAt);
           shimmer(startAt);
           playMeteorLead(root, startAt + beat * 0.5);
+        }
+      } else if (isSnow) {
+        // Snow overlays — bell arpeggio every bar (louder on the phrase
+        // reset), sleigh-bell ticks on 16th offbeats, and a slow wind
+        // gust every 2 bars. The wind gust length is one bar so it
+        // ducks under the bells without overlapping itself.
+        playSnowBells(root, triad, startAt, phraseBar === 0);
+        // Offbeat 16ths (positions 2, 6, 10, 14 in a 16-step bar) —
+        // sparse enough to feel like distant sleigh bells.
+        [2, 6, 10, 14].forEach((step) => {
+          playSnowTick(startAt + step * sixteenth);
+        });
+        if (barIndex % 2 === 0) {
+          playSnowWind(startAt, beat * 4);
         }
       }
 

@@ -720,6 +720,14 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(v) => patch({ lobbyAnimatedBackground: v })}
               testid="settings-lobby-animated-background"
             />
+            {/* Lobby Background Variant picker — lets players re-use any
+                past-season backdrop they've earned. AUTO tracks the
+                current season. Locked variants show a padlock instead. */}
+            <LobbyVariantPicker
+              value={s.lobbyBackgroundVariant || "auto"}
+              onChange={(v) => patch({ lobbyBackgroundVariant: v })}
+              user={user}
+            />
           </section>
 
           {/* Frame Generation picker — multiplies the per-frame render passes
@@ -1263,5 +1271,70 @@ function ToggleRow({ label, note, checked, onChange, testid }) {
         />
       </button>
     </label>
+  );
+}
+
+
+/* LobbyVariantPicker — grid of tiles for the lobby background choice.
+   Users unlock a variant by finishing (or currently playing) the season
+   it originally shipped in:
+     · S1 → Default
+     · S2 → Meteor
+     · S3+ → Snow
+   AUTO is always available; admins see every option unlocked.
+   Locked tiles render dimmed with a padlock; picking one triggers no
+   change (defensive — the parent Lobby also gates the effective
+   variant so a manual localStorage tweak wouldn't sneak past). */
+function LobbyVariantPicker({ value, onChange, user }) {
+  const isAdmin = user?.role === "admin";
+  const finished = new Set((user?.past_seasons || []).map((e) => Number(e?.season) || 0));
+  // Since we can't read seasonNumber from AuthContext directly (it's
+  // page-scoped), rely on `past_seasons` + AUTO as the safe default.
+  // A user currently on Season N doesn't yet have S{N} in finished,
+  // but the AUTO option will pick the right variant regardless.
+  const options = [
+    { id: "auto",    label: "Auto",    note: "Follow current season" },
+    { id: "default", label: "Season 1", note: "Comic-city default", requires: 1 },
+    { id: "meteor",  label: "Season 2", note: "Ember + meteor",      requires: 2 },
+    { id: "snow",    label: "Season 3", note: "Winter blizzard",     requires: 3 },
+  ];
+  return (
+    <div className="mt-3" data-testid="settings-lobby-variant-picker">
+      <div className="text-xs uppercase tracking-widest opacity-70 mb-1 font-anton">
+        Lobby Background
+      </div>
+      <div className="text-[11px] opacity-60 mb-2">
+        Re-use past seasons&apos; backdrops. Locked variants unlock by finishing that season.
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {options.map(({ id, label, note, requires }) => {
+          const unlocked = id === "auto" || isAdmin || (requires && finished.has(requires));
+          const active = value === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              disabled={!unlocked}
+              onClick={() => unlocked && onChange(id)}
+              className={`text-left rounded border px-3 py-2 transition-colors ${
+                active
+                  ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
+                  : unlocked
+                    ? "border-neutral-800 hover:border-neutral-700"
+                    : "border-neutral-800 opacity-40 cursor-not-allowed"
+              }`}
+              data-testid={`settings-lobby-variant-${id}`}
+              data-active={active || undefined}
+              data-unlocked={unlocked ? "1" : "0"}
+            >
+              <div className="font-anton uppercase text-sm tracking-widest">
+                {label}{!unlocked && " 🔒"}
+              </div>
+              <div className="text-[10px] opacity-70 mt-0.5">{note}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
