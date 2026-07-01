@@ -711,3 +711,51 @@ Post-restart leaderboard shows a dramatic tier shift toward the top:
 - API `GET /api/leaderboard/ranked?limit=100` returns 50 entries with the top-25 all Diamond+.
 - Effect will continue to compound as the climb_loop keeps ticking — promoted bots lerp from their current RP toward the new high-tier targets over the remainder of the season.
 
+
+## 2026-07-01 (late evening) — Goonmaster-Dominated Leaderboard (End of Season)
+
+Per user request, most of the leaderboard should read **Goonmaster** by the last week of the season.
+
+### Backend (`server.py`)
+
+**1. Retuned bucket weights** for the `/admin/seed/veterans` endpoint — Goonmaster now the dominant tier:
+| Tier | Was | Now |
+|------|-----:|-----:|
+| Bronze | 3 | 1 |
+| Silver | 4 | 2 |
+| Gold | 8 | 3 |
+| Platinum | 15 | 5 |
+| Diamond | 28 | 10 |
+| Master | 22 | 14 |
+| Grandmaster | 14 | 15 |
+| **Goonmaster** | 6 | **50** |
+Half of every new seed run now targets Goonmaster (2300-3200 RP).
+
+**2. Expanded Goonmaster name pool** — was 3 handles (`GOONFATHER`, `TheLastGoon`, `GoonLord_404`), now **20 unique handles** including `GoonEmpress`, `OverlordVii`, `TheGoonEternal`, `GoonKing_Ω`, `GoonMonarch`, `GoonWraithZ9`, `GoonReaperUltra`, `GoonHydra_Prime`, etc. Prevents the Goonmaster-heavy board from collapsing into `GoonLord_404-100`, `GoonLord_404-200`, ... spam.
+
+**3. v4 migration — Goonmaster promotion**
+A one-shot migration in `seeded_climb_loop` runs alongside v3:
+- Selects every seeded bot NOT already targeting Goonmaster (`seed_target_rp < 2300`).
+- Promotes 65% of them into a Goonmaster RP window (2300-3200), re-synthesizing career stats via `_synthesize_career` to stay mathematically consistent.
+- Marked with `seed_v4_gm: True` so it runs exactly once per doc.
+- Combined with the earlier v3 climb-speed boost (`1.35..2.4` per bot), promoted bots reach their new target within a few climb ticks. Since we're at ~87% of season elapsed and `p = (0.87 - 0.08) * 1.35 ≈ 1.07 → clamped 1.0`, every bot immediately lerps to 100% of its new Goonmaster target.
+
+### Tests
+- New `test_seed_endpoint_buckets_are_goonmaster_heavy` — asserts Goonmaster weight ≥45% AND Diamond+ combined ≥85%.
+- New `test_goonmaster_name_pool_expanded` — asserts ≥15 unique Goonmaster handles.
+- Updated existing `test_seeded_climb.py` docs with `seed_v4_gm: True` opt-outs so baseline-lerp assertions stay deterministic.
+- All 15 climb + tuning tests pass.
+
+### Live evidence
+Post-restart leaderboard API:
+```
+GET /api/leaderboard/ranked?limit=100  →  50 entries
+  GOONMASTER: 48  ← 96% of the board
+  GRANDMASTER: 2
+```
+UI screenshot confirms every top-10 slot is Goonmaster:
+- #1 `Rampage_Arc831 @ 3195 RP` (Goonmaster)
+- #2 `Driftwolf-9794 @ 3180 RP` (Goonmaster)
+- #3 `RogueByte474 @ 3150 RP` (Goonmaster)
+- ... every visible row: Goonmaster
+

@@ -2412,8 +2412,15 @@ TIERED_BOT_NAMES: Dict[int, List[str]] = {
     6: ["FrostKnight_Origin", "Vespera_Pro", "ZephyrTKO_EU", "K1ngslayer.gg",
         "OnyxRevenant_T1", "MidnightProtocol", "NocturneApex_FNT",
         "VelourSavant_T1", "Mistral_Chrono", "DraconisGG.TV"],
-    # Goonmaster — only one slot, never actually bot-fills, but seed for completeness
-    7: ["GOONFATHER", "TheLastGoon", "GoonLord_404"],
+    # Goonmaster — the pinnacle tier. Expanded pool so a Goonmaster-heavy
+    # leaderboard doesn't rely on the same 3 names + numeric suffixes. Mix
+    # of ominous / legend / pro-scene handles.
+    7: ["GOONFATHER", "TheLastGoon", "GoonLord_404", "GoonEmpress",
+        "GoonSaintNyx", "OverlordVii", "TheGoonEternal", "GoonKing_Ω",
+        "GoonMonarch", "GoonWraithZ9", "TheGoonSovereign", "GoonPhantasm",
+        "GoonReaperUltra", "GoonHydra_Prime", "GoonCipher_R1",
+        "Goon_Aeternum", "Goonlyth", "GoonAlpha_Ω9", "GoonPrimarch",
+        "GoonAvatar_X"],
 }
 PLACEMENT_MATCHES = 5
 # Ranked early-leave penalty — quitting an in-progress ranked match
@@ -5395,6 +5402,33 @@ async def seeded_climb_loop():
                     })
                 await db.users.update_one({"_id": u["_id"]}, {"$set": update})
 
+            # v4 migration — Goonmaster-heavy end-of-season leaderboard.
+            # Per user request, "most of the leaderboard [should] be
+            # Goonmaster by the last week of the season". Promote ~65%
+            # of every seeded bot NOT already targeting Goonmaster
+            # (seed_target_rp < 2300) directly into a Goonmaster window
+            # (2300..3200 RP). One-shot per doc via `seed_v4_gm: True`.
+            v4_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True},
+                 "seed_v4_gm": {"$exists": False}},
+                {"_id": 1, "seed_target_rp": 1},
+            )
+            async for u in v4_cursor:
+                rp_cur = int(u.get("seed_target_rp", 0) or 0)
+                update = {"seed_v4_gm": True}
+                if rp_cur < 2300 and random.random() < 0.65:
+                    rp_new = _snap_rp_to_match_grid(random.randint(2300, 3200))
+                    rank_idx, _ = rank_for_points(rp_new)
+                    t_m, t_k, t_d, t_w = _synthesize_career(rp_new, rank_idx)
+                    update.update({
+                        "seed_target_rp": rp_new,
+                        "seed_target_matches": t_m,
+                        "seed_target_kills": t_k,
+                        "seed_target_deaths": t_d,
+                        "seed_target_wins": t_w,
+                    })
+                await db.users.update_one({"_id": u["_id"]}, {"$set": update})
+
             doc = await get_or_init_season()
             start = doc.get("season_start")
             if isinstance(start, datetime) and start.tzinfo is None:
@@ -6671,14 +6705,15 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
     # most players sit Gold/Plat/Diamond, fewer climb to Master+, only a
     # handful reach Goonmaster.
     buckets = [
-        (40,   95,   3),   # late Bronze (rare — most new joiners not on leaderboard yet)
-        (110,  240,  4),   # Silver
-        (260,  490,  8),   # Gold
-        (520,  790, 15),   # Platinum
-        (820, 1190, 28),   # Diamond ← heavy
-        (1220, 1690, 22),  # Master ← heavy
-        (1720, 2290, 14),  # Grandmaster
-        (2300, 3200,  6),  # Goonmaster
+        (40,   95,   1),   # late Bronze (very rare)
+        (110,  240,  2),   # Silver
+        (260,  490,  3),   # Gold
+        (520,  790,  5),   # Platinum
+        (820, 1190, 10),   # Diamond
+        (1220, 1690, 14),  # Master
+        (1720, 2290, 15),  # Grandmaster
+        (2300, 3200, 50),  # Goonmaster ← dominant so most of the board
+                           # sits at the ceiling by the last week of the season
     ]
     weights = [b[2] for b in buckets]
     # Build a shuffled deck of handle suffixes so duplicates within a

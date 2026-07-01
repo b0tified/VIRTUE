@@ -127,6 +127,7 @@ async def test_midseason_climb_lerps_partial_rp(monkeypatch):
         "seed_target_wins": 36,  # >= ceil(1005/30) = 34
         "seed_career_v2": True,
         "seed_v3_boost": True,   # opt out of the v3 speed-boost migration
+        "seed_v4_gm": True,       # opt out of the v4 Goonmaster promotion
         "seed_climb_offset": 0.0,  # start at season start
         "seed_climb_speed": 1.0,   # baseline pace
     }
@@ -162,6 +163,7 @@ async def test_end_of_season_climb_lands_on_target(monkeypatch):
         "seed_target_wins": 100,  # >= ceil(2490/30) = 83
         "seed_career_v2": True,
         "seed_v3_boost": True,   # opt out of the v3 speed-boost migration
+        "seed_v4_gm": True,       # opt out of the v4 Goonmaster promotion
         "seed_climb_offset": 0.0,
         "seed_climb_speed": 1.0,
     }
@@ -194,6 +196,7 @@ async def test_offset_keeps_bot_at_zero_before_their_start(monkeypatch):
         "seed_target_wins": 40,  # >= ceil(1200/30) = 40
         "seed_career_v2": True,
         "seed_v3_boost": True,   # opt out of the v3 speed-boost migration
+        "seed_v4_gm": True,       # opt out of the v4 Goonmaster promotion
         "seed_climb_offset": 0.5,
         "seed_climb_speed": 1.0,
     }
@@ -221,6 +224,9 @@ async def test_legacy_seeded_docs_are_auto_migrated(monkeypatch):
         "rank_points": 1798,  # off-grid value (was real pre-snap seed)
         "stats": {"kills": 600, "deaths": 400, "matches": 120, "wins": 50},
         # No seed_target_rp / climb fields — pre-feature doc.
+        # Opt out of v4 Goonmaster promotion so this test validates the
+        # v1 migration output (target=1785) without the 65% flake.
+        "seed_v4_gm": True,
     }
     fake = await _one_tick(monkeypatch, season_start, [legacy])
     migrated = fake.docs[0]
@@ -260,6 +266,9 @@ async def test_v2_resnap_fixes_legacy_off_grid_targets(monkeypatch):
         "seed_target_wins": 12,  # impossibly low for RP=2578
         "seed_climb_offset": 0.1,
         "seed_climb_speed": 1.0,
+        # 2578 > 2300 so v4 wouldn't promote anyway, but be explicit.
+        "seed_v3_boost": True,
+        "seed_v4_gm": True,
     }
     fake = await _one_tick(monkeypatch, season_start, [pre_v2])
     updated = fake.docs[0]
@@ -293,6 +302,10 @@ async def test_v2_pass_skips_already_consistent_seeds(monkeypatch):
         "seed_target_wins": 60,  # >= ceil(1500/30) = 50
         "seed_climb_offset": 0.05,
         "seed_climb_speed": 1.0,
+        # Opt out of the v3 climb-boost + v4 Goonmaster promotion so the
+        # v2-skip assertion below stays deterministic.
+        "seed_v3_boost": True,
+        "seed_v4_gm": True,
     }
     fake = await _one_tick(monkeypatch, season_start, [clean])
     updated = fake.docs[0]

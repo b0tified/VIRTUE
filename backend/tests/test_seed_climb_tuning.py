@@ -19,28 +19,27 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import server  # noqa: E402
 
 
-def test_seed_endpoint_bucket_weights_are_diamond_heavy():
-    """The seed_leaderboard endpoint's bucket table now weights
-    Diamond+ over lower ranks. We can't reach the local variable
-    directly, but we can re-derive the expected distribution from the
-    documented change: Diamond+ should sum to ≥60% of total weight.
-    """
-    # Rebuild the bucket table exactly as the endpoint declares it.
+def test_seed_endpoint_buckets_are_goonmaster_heavy():
+    """The seed_leaderboard endpoint's bucket table now leans HEAVY on
+    Goonmaster (tier 7) so most of the leaderboard reads Goonmaster by
+    the last week of the season. Guard: Goonmaster weight ≥45% AND
+    Diamond+ combined ≥85%."""
     buckets = [
-        (40,   95,   3),   # late Bronze
-        (110,  240,  4),   # Silver
-        (260,  490,  8),   # Gold
-        (520,  790, 15),   # Platinum
-        (820, 1190, 28),   # Diamond
-        (1220, 1690, 22),  # Master
-        (1720, 2290, 14),  # Grandmaster
-        (2300, 3200,  6),  # Goonmaster
+        (40,   95,   1),   # late Bronze
+        (110,  240,  2),   # Silver
+        (260,  490,  3),   # Gold
+        (520,  790,  5),   # Platinum
+        (820, 1190, 10),   # Diamond
+        (1220, 1690, 14),  # Master
+        (1720, 2290, 15),  # Grandmaster
+        (2300, 3200, 50),  # Goonmaster
     ]
     total = sum(b[2] for b in buckets)
     assert total == 100
+    goonmaster = buckets[-1][2]
+    assert goonmaster >= 45, f"Goonmaster weight only {goonmaster}%, expected ≥45%"
     diamond_plus = sum(b[2] for b in buckets if b[0] >= 820)
-    # Diamond, Master, GM, Goonmaster.
-    assert diamond_plus >= 60, f"Diamond+ weight only {diamond_plus}%, expected ≥60%"
+    assert diamond_plus >= 85, f"Diamond+ weight only {diamond_plus}%, expected ≥85%"
 
 
 def test_new_climb_speed_band_is_faster():
@@ -66,3 +65,16 @@ def test_new_climb_offset_band_is_tighter():
     for _ in range(500):
         v = random.uniform(0.0, 0.08)
         assert 0.0 <= v <= 0.08
+
+
+def test_goonmaster_name_pool_expanded():
+    """The Goonmaster (tier 7) name pool used to be 3 handles. To make
+    "most of the leaderboard = Goonmaster" plausible we've expanded it
+    to at least 15 unique handles so a Goonmaster-heavy board doesn't
+    devolve into `GoonLord_404-100`, `GoonLord_404-200`, ..."""
+    import server as _server  # local import to avoid module-caching issues
+    pool = _server.TIERED_BOT_NAMES.get(7)
+    assert pool is not None
+    assert len(pool) >= 15, f"Goonmaster pool has only {len(pool)} handles; expected ≥15"
+    # All handles must be unique.
+    assert len(set(pool)) == len(pool)
