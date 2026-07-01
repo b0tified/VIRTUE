@@ -223,7 +223,59 @@ export const MAP_CRASHSITE = {
   ],
 };
 
-export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE, MAP_CRASHSITE];
+export const MAP_TUNDRA = {
+  map_id: "tundra",
+  name: "TUNDRA",
+  size: 50,
+  tagline: "Frozen wasteland · snowdrifts + ice shards · overcast blizzard.",
+  palette: {
+    bg: "#f1f6fb",       // fresh powder snow
+    border: "#0A0A0A",
+    obstacle: "#9ec8e0", // glacial cyan cover
+    crate: "#ff7b00",
+    accent: "#4a6a88",   // deep steel-blue for ice shards
+  },
+  obstacles: [
+    // Frozen central pond + ice-shard ring
+    { x: 0,    z: 0,    w: 8,   h: 0.3, d: 8 },
+    { x: 7.5,  z: 4.5,  w: 1.4, h: 3.2, d: 3.4 },
+    { x: -7.5, z: 4.5,  w: 1.4, h: 3.2, d: 3.4 },
+    { x: 7.5,  z: -4.5, w: 1.4, h: 3.2, d: 3.4 },
+    { x: -7.5, z: -4.5, w: 1.4, h: 3.2, d: 3.4 },
+    { x: 0,    z: 8.5,  w: 3.4, h: 3.2, d: 1.4 },
+    { x: 0,    z: -8.5, w: 3.4, h: 3.2, d: 1.4 },
+    // Snowdrift mid-cover
+    { x: 15,   z: 0,    w: 2.2, h: 1.2, d: 6 },
+    { x: -15,  z: 0,    w: 2.2, h: 1.2, d: 6 },
+    { x: 0,    z: 15,   w: 6,   h: 1.2, d: 2.2 },
+    { x: 0,    z: -15,  w: 6,   h: 1.2, d: 2.2 },
+    { x: 11,   z: 11,   w: 3.0, h: 1.4, d: 3.0 },
+    { x: -11,  z: 11,   w: 3.0, h: 1.4, d: 3.0 },
+    { x: 11,   z: -11,  w: 3.0, h: 1.4, d: 3.0 },
+    { x: -11,  z: -11,  w: 3.0, h: 1.4, d: 3.0 },
+    // Frozen pine stumps
+    { x: 6,    z: 20,   w: 1.2, h: 2.0, d: 1.2 },
+    { x: -6,   z: 20,   w: 1.2, h: 2.0, d: 1.2 },
+    { x: 6,    z: -20,  w: 1.2, h: 2.0, d: 1.2 },
+    { x: -6,   z: -20,  w: 1.2, h: 2.0, d: 1.2 },
+    { x: 20,   z: 6,    w: 1.2, h: 2.0, d: 1.2 },
+    { x: 20,   z: -6,   w: 1.2, h: 2.0, d: 1.2 },
+    { x: -20,  z: 6,    w: 1.2, h: 2.0, d: 1.2 },
+    { x: -20,  z: -6,   w: 1.2, h: 2.0, d: 1.2 },
+    // Wrecked research outposts at corners
+    { x: 26,   z: 26,   w: 7,   h: 4,   d: 1.8 },
+    { x: -26,  z: 26,   w: 7,   h: 4,   d: 1.8 },
+    { x: 26,   z: -26,  w: 7,   h: 4,   d: 1.8 },
+    { x: -26,  z: -26,  w: 7,   h: 4,   d: 1.8 },
+    { x: 22,   z: 22,   w: 1.8, h: 4,   d: 3.2 },
+    { x: -22,  z: 22,   w: 1.8, h: 4,   d: 3.2 },
+    { x: 22,   z: -22,  w: 1.8, h: 4,   d: 3.2 },
+    { x: -22,  z: -22,  w: 1.8, h: 4,   d: 3.2 },
+    ..._PERIMETER,
+  ],
+};
+
+export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE, MAP_CRASHSITE, MAP_TUNDRA];
 
 export function pickRandomMapMeta() {
   return MAPS_META[Math.floor(Math.random() * MAPS_META.length)];

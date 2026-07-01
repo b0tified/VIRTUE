@@ -592,3 +592,49 @@ No code change needed — the sweep is server-authoritative and the existing `Qu
 
 ### Live smoke test
 Logged into `player1@shooter.com`, landed on `/lobby`: no ghost "match found" overlay, timer widgets absent (queue not started), buttons interactive. `RANKED LOCKED · 1:46` shows normally (unrelated 10-min leave-penalty from earlier automated tests).
+
+## 2026-07-01 (later) — Animations + New Snow Map (TUNDRA)
+
+### Improved dying animation (`engine.js`)
+Replaced the flat 0.7s topple with a **4-phase KO** (~1.0s total):
+- **Phase 0 (0-0.14s) Recoil**: torso/head snap back, arms fling up-and-out (drops the weapon).
+- **Phase 1 (0.14-0.45s) Buckle**: knees fold under (one leg slightly more than the other), body hangs for a beat.
+- **Phase 2 (0.45-0.90s) Topple**: ease-in fall backwards (gravity accel), arms drift outward, side roll gathers speed.
+- **Phase 3 (0.90-1.0s) Settle**: small landing bounce, torso lands with a randomised side lean, limbs relax flat.
+- Each death captures a mid-stride pose snapshot so the flail interpolates from wherever the limbs happened to be.
+- Per-death `seed` gives a slightly different side-roll direction so mass deaths don't look uniform.
+- Respawn clears the pose snapshot + zeroes every axis the KO touched.
+
+### Improved walking/running animation (`engine.js`)
+Replaced the simple sin-swing with a richer gait:
+- **Hip ↔ shoulder counter-rotation**: torso twists opposite to the leading leg for a natural walk cycle.
+- **Asymmetric arm swing**: right arm (rifle-carry) swings ~42% of the left — reads as a soldier in motion.
+- **Vertical body bob at 2× cadence**: peaks at each foot plant, amplitude scales with sprint.
+- **Sprint boost**: cadence ramps 8Hz → 13Hz, stride widens 0.55 → 0.95 rad, arms flare slightly outward.
+- **Forward lean on sprint**: whole-body tilt (up to 0.08 rad) — reads as "leaning into a run".
+- Sprint-detected from `movingSpeed > 5.2` (matches the server-side sprint threshold).
+- Legs get a slight extra amplitude bump so run legs sweep noticeably wider than the arms.
+- Torso reference now returned by `_buildHumanoid` and animated per-frame.
+
+### New map — TUNDRA (5th map)
+Frozen arctic wasteland, added everywhere the previous 4 maps live:
+- **Backend** (`server.py`): `MAP_E` with a frozen central pond, 6-shard ice ring, 4 snowdrifts, 8 pine-stump pillars, 4 wrecked research outposts, 12 spawn points, 9 healthpacks. Added to `MAPS = [...]` list.
+- **Client sim** (`localSim.js`): mirrors the backend layout so practice/offline mode can use TUNDRA.
+- **Metadata** (`mapsMeta.js`): `MAP_TUNDRA` with a pale-blue palette (snow bg, glacial-cyan obstacles, steel-blue accents). Shown in the loading-screen minimap preview and Practice Map Selector card.
+- **Engine rendering** (`engine.js`):
+  - Snow-white toon-material ground (`0xf1f6fb`).
+  - Tundra sky gradient (deep steel blue → milky white low horizon) rebuilt as a canvas texture.
+  - Overcast lighting: sun dimmed (0.75) with cool blue-white tint; hemisphere boosted (1.15) with high-albedo snow ground colour.
+  - Tighter fog (60→155) for the blizzard whiteout look.
+  - Snow disc hidden (overcast); clouds retinted grey; grass blades hidden.
+  - Ice-cyan obstacle palette (`[0xe4eef7, 0x9ec8e0, 0x4a6a88, 0x3a2a20, 0xbfd8ea]`).
+  - **Snow particle system**: 900 procedural fluffy flakes with per-flake horizontal sway (sine drift) + slow floaty fall (1.4-2.6 u/s). Lazy-built on first tundra load, camera-relative recycle, ~0.35 particle size. Animates every frame regardless of day/night.
+
+### Tests
+- `tests/test_tundra_map.py` (4 cases) — tundra in rotation, correct topology (frozen pond centre, ≥25 obstacles, ≥8 spawns), `get_map_by_id` lookup, and random_map eventually picks tundra.
+- Updated `tests/test_crashsite_map.py::test_crashsite_in_rotation` to expect the new 5-map list.
+- All map + stale-flag tests passing.
+
+### Live smoke test
+Verified the Practice Map Selector shows the TUNDRA card as the 5th option; direct match load `?map=tundra` renders with a pale snow ground, cool blue-grey sky, and no console errors.
+

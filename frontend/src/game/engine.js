@@ -1028,6 +1028,10 @@ export class GameEngine {
       // orange highlights, glowing magenta meteor accents, smoke grey,
       // a sickly green from the alien core.
       arena.map_id === "crashsite" ? [0x2a2222, 0xff4a1a, 0xc23a8a, 0x4a3a3a, 0x6a8a3a] :
+      // TUNDRA: frozen palette — pale snow-tinted whites, glacial cyan,
+      // deep steel-blue shadows, weathered dark timber for tree stumps,
+      // and a soft powder-blue for ice highlights.
+      arena.map_id === "tundra" ? [0xe4eef7, 0x9ec8e0, 0x4a6a88, 0x3a2a20, 0xbfd8ea] :
       /* default */                  [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
     const colored = arena.obstacles.map((ob, i) => {
       const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
@@ -1061,6 +1065,11 @@ export class GameEngine {
         // Scorched dirt ground for the meteor crashsite — burnt sienna
         // with a strong red push to sell the "still hot" vibe.
         newMat = new THREE.MeshToonMaterial({ color: 0x3a2218, gradientMap: this.toonMap });
+      } else if (arena.map_id === "tundra") {
+        // Snow-covered ground — near-white with a very cool blue tint
+        // so it reads as fresh powder + gets a slight sparkle vibe under
+        // the cel-shaded toon gradient.
+        newMat = new THREE.MeshToonMaterial({ color: 0xf1f6fb, gradientMap: this.toonMap });
       } else {
         // Default grass texture
         newMat = new THREE.MeshToonMaterial({ map: this._makeGrassTexture(), gradientMap: this.toonMap });
@@ -1478,7 +1487,7 @@ export class GameEngine {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
       // neither aesthetic wants tall green tufts. Also hide on crashsite
       // (scorched ground) for the same reason.
-      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite";
+      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite" && arena.map_id !== "tundra";
       this._grassBlades.forEach((b) => { b.visible = showBlades; });
     }
   }
@@ -1488,8 +1497,9 @@ export class GameEngine {
      once at init with night=false to set up the default daytime look. */
   _applyDayNight(night, mapId) {
     // Atmospheric "mode" string used to gate theme-specific overlays
-    // (e.g. CRASHSITE's red dusk sky). null = vanilla day/night.
-    const theme = (mapId === "crashsite") ? "crashsite" : null;
+    // (e.g. CRASHSITE's red dusk sky, TUNDRA's pale arctic overcast).
+    // null = vanilla day/night.
+    const theme = (mapId === "crashsite") ? "crashsite" : (mapId === "tundra" ? "tundra" : null);
     if (this._isNight === night && this._currentTheme === theme) return;
     this._isNight = night;
     this._currentTheme = theme;
@@ -1612,9 +1622,17 @@ export class GameEngine {
       if (this._stars) this._stars.visible = false;
     }
 
-    // 5) Clouds — tone down at night.
+    // 5) Clouds — tone down at night, restore normal white for day.
+    // Themes (tundra/crashsite) may override this below.
     if (Array.isArray(this._clouds)) {
-      this._clouds.forEach((c) => { if (c) c.visible = !night; });
+      this._clouds.forEach((c) => {
+        if (!c) return;
+        c.visible = !night;
+        if (c.material) {
+          c.material.color?.setHex(night ? 0x1e2a4a : 0xffffff);
+          if (typeof c.material.opacity === "number") c.material.opacity = 1;
+        }
+      });
     }
 
     // 6) Trees + benches — hide at night so the dark scene reads cleanly.
@@ -1781,10 +1799,146 @@ export class GameEngine {
       if (Array.isArray(this._clouds)) this._clouds.forEach((c) => { if (c) c.visible = false; });
       if (Array.isArray(this._dayDecorations)) this._dayDecorations.forEach((d) => { if (d) d.visible = false; });
     }
+
+    // TUNDRA overlay — pale arctic overcast: soft blue-gray sky, cool
+    // hemisphere light, tighter fog to sell the "flurry" look. Applied
+    // on top of the daytime base (tundra is night=false).
+    if (theme === "tundra") {
+      // Rebuild sky with a milky pale-blue → white gradient.
+      const sc3 = document.createElement("canvas");
+      sc3.width = 8; sc3.height = 512;
+      const ctx3 = sc3.getContext("2d");
+      const grd3 = ctx3.createLinearGradient(0, 0, 0, 512);
+      grd3.addColorStop(0.00, "#2a4a72");   // deep steel-blue overhead
+      grd3.addColorStop(0.25, "#4c76a8");
+      grd3.addColorStop(0.50, "#8fb3d8");   // washed-out mid band
+      grd3.addColorStop(0.72, "#c5dcef");   // pale horizon haze
+      grd3.addColorStop(0.88, "#e3eef8");   // near-white low horizon
+      grd3.addColorStop(1.00, "#f2f7fc");   // whiteout at ground line
+      ctx3.fillStyle = grd3; ctx3.fillRect(0, 0, 8, 512);
+      const skyTex3 = new THREE.CanvasTexture(sc3);
+      skyTex3.colorSpace = THREE.SRGBColorSpace;
+      if (this._sky) {
+        const old = this._sky.material.map;
+        this._sky.material.map = skyTex3;
+        this._sky.material.color?.setRGB(1, 1, 1);
+        this._sky.material.needsUpdate = true;
+        old?.dispose?.();
+      }
+      this.scene.background = this._buildSkyGradient(0x3a5a80, 0xeaf3fb);
+      // Cold pale fog — closer than the default so distant shapes fade
+      // into the whiteout blizzard.
+      this.scene.fog = new THREE.Fog(0xdce8f4, 60, 155);
+      if (this._sun) {
+        this._sun.intensity = 0.75;         // overcast — no harsh direct light
+        this._sun.color.set(0xdbe6f0);      // cool pale blue-white
+      }
+      if (this._hemi) {
+        this._hemi.intensity = 1.15;        // strong sky bounce (snowy albedo)
+        this._hemi.color.set(0xd2e3f2);
+        this._hemi.groundColor.set(0xf5f8fb); // snow bounces almost pure white
+      }
+      if (this._ambientFill) {
+        this._ambientFill.intensity = 0.42;
+        this._ambientFill.color.set(0xeaf1fa);
+      }
+      // Hide the bright sun disc + halos — overcast sky.
+      const sunMeshes3 = [this._sunDisc, this._sunHaloInner, this._sunHaloOuter, this._sunGlow];
+      sunMeshes3.forEach((m) => { if (m) m.visible = false; });
+      // Keep clouds visible but dim their tint (overcast, not blue-sky).
+      if (Array.isArray(this._clouds)) {
+        this._clouds.forEach((c) => {
+          if (!c) return;
+          c.visible = true;
+          if (c.material) { c.material.color?.setHex(0xdbe4ee); c.material.opacity = 0.9; }
+        });
+      }
+      // Hide parkland decorations (green trees) — swapped for snowy stumps.
+      if (Array.isArray(this._dayDecorations)) this._dayDecorations.forEach((d) => { if (d) d.visible = false; });
+
+      // Snow particle system — lazy-built the first time we hit tundra.
+      // Smaller, softer flakes than raindrops; drift diagonally with a
+      // gentle sway so it feels like snowfall rather than sleet.
+      if (!this._snow) {
+        const SNOW_COUNT = 900;
+        const positions = new Float32Array(SNOW_COUNT * 3);
+        const velocities = new Float32Array(SNOW_COUNT);
+        const phases = new Float32Array(SNOW_COUNT);
+        for (let i = 0; i < SNOW_COUNT; i++) {
+          positions[i * 3]     = (Math.random() - 0.5) * 120;
+          positions[i * 3 + 1] = Math.random() * 50;
+          positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
+          velocities[i] = 1.4 + Math.random() * 1.2;   // slow, floaty fall
+          phases[i] = Math.random() * Math.PI * 2;      // per-flake sway offset
+        }
+        const snowGeo = new THREE.BufferGeometry();
+        snowGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        // Procedural soft-flake texture — round white blob with alpha
+        // falloff so flakes read as fluffy specks not sharp dots.
+        const sfc = document.createElement("canvas");
+        sfc.width = 32; sfc.height = 32;
+        const sfctx = sfc.getContext("2d");
+        const sg = sfctx.createRadialGradient(16, 16, 0, 16, 16, 15);
+        sg.addColorStop(0.00, "rgba(255,255,255,1.0)");
+        sg.addColorStop(0.45, "rgba(240,246,255,0.75)");
+        sg.addColorStop(1.00, "rgba(210,225,240,0.0)");
+        sfctx.fillStyle = sg; sfctx.fillRect(0, 0, 32, 32);
+        const snowTex = new THREE.CanvasTexture(sfc);
+        snowTex.colorSpace = THREE.SRGBColorSpace;
+        const snowMat = new THREE.PointsMaterial({
+          map: snowTex,
+          color: 0xffffff,
+          size: 0.35,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+        });
+        this._snow = new THREE.Points(snowGeo, snowMat);
+        this._snowVelocities = velocities;
+        this._snowPhases = phases;
+        this.scene.add(this._snow);
+      }
+      this._snow.visible = true;
+    } else if (this._snow) {
+      // Hide snow when the theme changes back to a non-tundra map.
+      this._snow.visible = false;
+    }
   }
 
-  /* Per-frame update for rain + lightning. Called from the main loop. */
+  /* Per-frame update for rain + lightning + snow. Called from the main loop. */
   _updateWeather(dt) {
+    // --- Snow: fluffy diagonal fall with per-flake horizontal sway. Runs
+    // regardless of day/night since tundra is a daytime map. Recycled
+    // relative to the camera position, same as rain.
+    if (this._snow && this._snow.visible) {
+      const pos = this._snow.geometry.attributes.position;
+      const arr = pos.array;
+      const vels = this._snowVelocities;
+      const phases = this._snowPhases;
+      const cx = this.position.x;
+      const cz = this.position.z;
+      const tt = performance.now() / 1000;
+      for (let i = 0; i < vels.length; i++) {
+        const i3 = i * 3;
+        arr[i3 + 1] -= vels[i] * dt;
+        // Slow horizontal sway — a sine per flake so the field feels
+        // like it's drifting, not marching straight down.
+        arr[i3]     += Math.sin(tt * 0.6 + phases[i]) * 0.9 * dt;
+        arr[i3 + 2] += Math.cos(tt * 0.5 + phases[i]) * 0.6 * dt;
+        if (arr[i3 + 1] < 0) {
+          arr[i3]     = cx + (Math.random() - 0.5) * 120;
+          arr[i3 + 1] = 46 + Math.random() * 10;
+          arr[i3 + 2] = cz + (Math.random() - 0.5) * 120;
+        }
+        if (arr[i3] > cx + 60)  arr[i3] -= 120;
+        if (arr[i3] < cx - 60)  arr[i3] += 120;
+        if (arr[i3 + 2] > cz + 60) arr[i3 + 2] -= 120;
+        if (arr[i3 + 2] < cz - 60) arr[i3 + 2] += 120;
+      }
+      pos.needsUpdate = true;
+    }
+
     if (!this._isNight) return;
     // --- Rain: rotate each drop downward, recycle from below back to top
     // and shift the whole grid with the player's XZ so the rain follows
@@ -2793,6 +2947,9 @@ export class GameEngine {
     const torso = push(new THREE.BoxGeometry(0.7, 0.9, 0.42), skin.body, 1.05);
     torso.position.y = 1.05;
     group.add(torso);
+    // Head is added below at a fixed Y — track the head+torso in a "upperBody"
+    // wrapper so walk/run/death animations can apply a subtle bob + twist to
+    // the whole upper half without breaking the rifle-holding right arm.
     // Vertical chest stripe — runs from collar to belt, narrow. Skipped
     // when this is a bikini skin (the bikini top below replaces it).
     if (stripe != null && !bikini) {
@@ -3092,7 +3249,7 @@ export class GameEngine {
       group.add(aura);
     }
 
-    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura, astro };
+    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro };
   }
 
   _addRemotePlayer(state) {
@@ -3110,7 +3267,7 @@ export class GameEngine {
     // friend-vs-foe reads at a glance even mid-firefight. Local player and
     // FFA mode keep their cosmetic skin untouched.
     const skin = this._applyTeamSkin(state, baseSkin);
-    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, aura, astro } = this._buildHumanoid(skin);
+    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     this.scene.add(group);
     const label = this._makeLabel(state.username, state.is_bot, this._relationFor(state));
@@ -3156,7 +3313,7 @@ export class GameEngine {
       skinId: state.skin || "default",
       tdmTeamKey: this._tdmTeamKeyFor(state),
       bodyMeshes,
-      leftArm, rightArm, leftLeg, rightLeg,
+      leftArm, rightArm, leftLeg, rightLeg, torso,
       lastHp: state.hp,
       flashUntil: 0,
       prevX: state.x, prevZ: state.z,
@@ -3164,6 +3321,11 @@ export class GameEngine {
       movingSpeed: 0,
       prevAlive: state.alive,
       deathT: 0,
+      // Death animation snapshot — captured at the moment of death so
+      // the multi-phase KO plays out from wherever the limbs happened to
+      // be mid-stride, then locks into a natural collapsed pose.
+      deathSeed: 0,
+      deathPose: null,
       invulnRing,
       invulnGlow,
       aura,
@@ -3662,10 +3824,19 @@ export class GameEngine {
           entry.deathT = 0.001; // start animation
         }
         if (!entry.prevAlive && p.alive) {
-          // Respawned — reset
+          // Respawned — reset every axis the KO animation touched so
+          // the next stride starts from a clean neutral pose.
           entry.deathT = 0;
+          entry.deathPose = null;
           entry.mesh.rotation.x = 0;
           entry.mesh.rotation.z = 0;
+          entry.mesh.position.y = 0;
+          entry.leftArm.rotation.z = 0;
+          entry.rightArm.rotation.z = 0;
+          if (entry.torso) {
+            entry.torso.rotation.x = 0;
+            entry.torso.rotation.y = 0;
+          }
         }
         entry.prevAlive = p.alive;
         // Don't override visibility for the spectate target — the spectate
@@ -4350,16 +4521,93 @@ export class GameEngine {
     const nowMs = performance.now();
     const flashRed = new THREE.Color(0xff2a2a);
     for (const entry of this.players.values()) {
-      // Death animation: 0 → 1 over 0.7s, then keep until respawn
+      // ─────────────────────────────────────────────────────────────
+      // DEATH ANIMATION — 4-phase KO (recoil → buckle → topple → land)
+      //   phase 0 (0.00–0.14) : head/torso jolt back + arms flail
+      //   phase 1 (0.14–0.45) : knees buckle, legs fold under
+      //   phase 2 (0.45–0.90) : full topple backwards with side roll
+      //   phase 3 (0.90–1.00) : slight bounce + settle into flat pose
+      // Runs over 1.0s total (up from the old 0.7s straight fall).
+      // ─────────────────────────────────────────────────────────────
       if (entry.deathT > 0 && entry.deathT < 1) {
-        entry.deathT = Math.min(1, entry.deathT + dt / 0.7);
+        // Snapshot arm/leg/torso rotation on the first tick after death
+        // so the flail interpolates smoothly from the mid-stride pose.
+        if (!entry.deathPose) {
+          entry.deathPose = {
+            la: entry.leftArm.rotation.x, ra: entry.rightArm.rotation.x,
+            ll: entry.leftLeg.rotation.x, rl: entry.rightLeg.rotation.x,
+            torsoY: entry.torso ? entry.torso.rotation.y : 0,
+          };
+          entry.deathSeed = Math.random();
+        }
+        entry.deathT = Math.min(1, entry.deathT + dt / 1.0);
         const t = entry.deathT;
-        // Topple backwards: rotation.x from 0 → -pi/2
-        entry.mesh.rotation.x = -Math.PI / 2 * t;
-        // Slight roll
-        entry.mesh.rotation.z = 0.18 * t;
-        // Sink slightly
-        entry.mesh.position.y = -0.4 * t;
+        const seed = entry.deathSeed;
+        const sideRoll = (seed - 0.5) * 0.6;   // per-death randomised side lean
+
+        if (t < 0.14) {
+          // Phase 0 — recoil jolt: head/torso snap back, arms fling up.
+          const u = t / 0.14;
+          entry.mesh.rotation.x = -0.18 * u;
+          entry.mesh.rotation.z = sideRoll * 0.15 * u;
+          entry.mesh.position.y = 0.10 * u;
+          // Arms fling up-and-out (drop the weapon).
+          entry.leftArm.rotation.x  = THREE.MathUtils.lerp(entry.deathPose.la, -1.05, u);
+          entry.rightArm.rotation.x = THREE.MathUtils.lerp(entry.deathPose.ra, -0.85, u);
+          entry.leftArm.rotation.z  = -0.4 * u;
+          entry.rightArm.rotation.z =  0.4 * u;
+        } else if (t < 0.45) {
+          // Phase 1 — knees buckle, legs fold under, hover for a beat.
+          const u = (t - 0.14) / 0.31;
+          entry.mesh.rotation.x = -0.18 - 0.18 * u;
+          entry.mesh.rotation.z = sideRoll * (0.15 + 0.15 * u);
+          entry.mesh.position.y = 0.10 - 0.35 * u;
+          // Legs collapse — one folds slightly more than the other.
+          entry.leftLeg.rotation.x  = THREE.MathUtils.lerp(entry.deathPose.ll,  0.9 + seed * 0.3, u);
+          entry.rightLeg.rotation.x = THREE.MathUtils.lerp(entry.deathPose.rl,  1.1 - seed * 0.3, u);
+          entry.leftArm.rotation.x  = THREE.MathUtils.lerp(-1.05, -0.35, u);
+          entry.rightArm.rotation.x = THREE.MathUtils.lerp(-0.85, -0.25, u);
+          entry.leftArm.rotation.z  = -0.4 + 0.25 * u;
+          entry.rightArm.rotation.z =  0.4 - 0.25 * u;
+        } else if (t < 0.90) {
+          // Phase 2 — full topple backwards, gathering speed.
+          const u = (t - 0.45) / 0.45;
+          // Ease-in on the topple so the fall accelerates (gravity feel).
+          const eu = u * u;
+          entry.mesh.rotation.x = -0.36 + (-Math.PI / 2 + 0.36) * eu;
+          entry.mesh.rotation.z = sideRoll * (0.30 + 0.20 * eu);
+          entry.mesh.position.y = -0.25 - 0.20 * eu;
+          // Arms drift outward on the way down.
+          entry.leftArm.rotation.x  = THREE.MathUtils.lerp(-0.35, -0.05, u);
+          entry.rightArm.rotation.x = THREE.MathUtils.lerp(-0.25,  0.10, u);
+          entry.leftArm.rotation.z  = THREE.MathUtils.lerp(-0.15, -0.55, u);
+          entry.rightArm.rotation.z = THREE.MathUtils.lerp( 0.15,  0.55, u);
+        } else {
+          // Phase 3 — impact settle: small bounce, arms/legs relax flat.
+          const u = (t - 0.90) / 0.10;
+          const bounce = Math.sin(u * Math.PI) * 0.08;
+          entry.mesh.rotation.x = -Math.PI / 2 + bounce * 0.4;
+          entry.mesh.rotation.z = sideRoll * 0.50;
+          entry.mesh.position.y = -0.45 + bounce;
+          entry.leftArm.rotation.z  = -0.55;
+          entry.rightArm.rotation.z =  0.55;
+        }
+        if (entry.torso) {
+          // Twist the torso relative to the collapse direction so the
+          // fall doesn't feel like a rigid domino.
+          entry.torso.rotation.y = entry.deathPose.torsoY + sideRoll * 0.25 * t;
+        }
+      } else if (entry.deathT >= 1) {
+        // Settled pose — hold everything at the final collapsed values.
+        entry.mesh.rotation.x = -Math.PI / 2;
+        entry.mesh.position.y = -0.45;
+      } else if (entry.deathT === 0 && entry.deathPose) {
+        // Respawned — clear the pose snapshot + zero out roll/twist that
+        // the death animation left on the arms.
+        entry.deathPose = null;
+        entry.leftArm.rotation.z = 0;
+        entry.rightArm.rotation.z = 0;
+        if (entry.torso) entry.torso.rotation.y = 0;
       }
       // Hit flash
       const flashing = nowMs < entry.flashUntil;
@@ -4367,24 +4615,63 @@ export class GameEngine {
         if (flashing) bm.mesh.material.color.copy(flashRed);
         else bm.mesh.material.color.setHex(bm.baseColor);
       }
-      // Limb swing while moving (skip if dying)
+      // ─────────────────────────────────────────────────────────────
+      // WALK / RUN CYCLE — richer gait: hip↔shoulder counter-rotation,
+      // asymmetric arm swing (rifle held on right, so right swings
+      // less), vertical body bob synced with foot plant, and sprint
+      // boost that widens stride amplitude + speeds up the cadence.
+      // Skipped entirely while dying.
+      // ─────────────────────────────────────────────────────────────
       const moveAmount = entry.deathT > 0 ? 0 : Math.min(1, entry.movingSpeed / 6);
+      const sprintAmt = Math.max(0, Math.min(1, (entry.movingSpeed - 5.2) / 2.8));
       if (moveAmount > 0.05) {
-        const cadence = 9 + moveAmount * 3;
+        // Cadence: 8Hz walking → ~13Hz sprinting.
+        const cadence = 8 + moveAmount * 2.5 + sprintAmt * 2.5;
         entry.animPhase += dt * cadence;
-        const swing = Math.sin(entry.animPhase) * 0.6 * moveAmount;
-        const swing2 = Math.cos(entry.animPhase) * 0.12 * moveAmount;
-        entry.leftArm.rotation.x = swing;
-        entry.rightArm.rotation.x = -swing * 0.4;
-        entry.leftLeg.rotation.x = -swing;
-        entry.rightLeg.rotation.x = swing;
-        if (entry.deathT === 0) entry.mesh.position.y = Math.abs(swing2) * 0.08;
+        const ph = entry.animPhase;
+        // Stride amplitude: 0.55 rad walk → ~0.95 rad sprint. Legs get
+        // a slight extra bump so running looks like actual running.
+        const stride = (0.55 + 0.30 * sprintAmt) * moveAmount;
+        const legStride = stride * (1.10 + 0.15 * sprintAmt);
+        const s = Math.sin(ph);
+        const s2 = Math.sin(ph * 2);   // double-frequency for vertical bob
+        // Arm swing — right arm carries the rifle so it swings ~40% of
+        // the left. Sprint pushes both arms further and adds a small
+        // outward flare so the pose reads as "power run".
+        entry.leftArm.rotation.x  =  s * stride;
+        entry.rightArm.rotation.x = -s * stride * 0.42;
+        entry.leftArm.rotation.z  =  0.05 * sprintAmt;
+        entry.rightArm.rotation.z = -0.05 * sprintAmt;
+        // Leg swing with a phase offset so opposite arm/leg pair.
+        entry.leftLeg.rotation.x  = -s * legStride;
+        entry.rightLeg.rotation.x =  s * legStride;
+        // Vertical body bob — 2× cadence, peaks at each foot plant.
+        // Sprint adds ~40% more amplitude.
+        const bobAmp = (0.06 + 0.05 * sprintAmt) * moveAmount;
+        entry.mesh.position.y = Math.abs(s2) * bobAmp;
+        // Torso counter-twist: hips lead the direction of the forward
+        // leg, so the shoulders (upper body) twist the opposite way.
+        if (entry.torso) {
+          entry.torso.rotation.y = -s * 0.14 * moveAmount;
+          entry.torso.rotation.x = Math.abs(s2) * 0.05 * moveAmount;  // lean into stride
+        }
+        // Whole-body slight lean forward on sprint — like leaning into
+        // a run — but only if not currently airborne (mid-jump lift).
+        entry.mesh.rotation.x = 0.08 * sprintAmt;
       } else if (entry.deathT === 0) {
-        entry.leftArm.rotation.x *= 0.85;
+        // Idle decay — ease every limb back to neutral.
+        entry.leftArm.rotation.x  *= 0.85;
         entry.rightArm.rotation.x *= 0.85;
-        entry.leftLeg.rotation.x *= 0.85;
+        entry.leftLeg.rotation.x  *= 0.85;
         entry.rightLeg.rotation.x *= 0.85;
+        entry.leftArm.rotation.z  *= 0.85;
+        entry.rightArm.rotation.z *= 0.85;
         entry.mesh.position.y *= 0.85;
+        entry.mesh.rotation.x *= 0.85;
+        if (entry.torso) {
+          entry.torso.rotation.y *= 0.85;
+          entry.torso.rotation.x *= 0.85;
+        }
       }
 
       // Astronaut-only extras animation — life-support LED heartbeat,

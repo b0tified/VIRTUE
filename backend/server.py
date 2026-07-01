@@ -2155,6 +2155,72 @@ MAP_D = {
 
 MAPS = [MAP_A, MAP_B, MAP_C, MAP_D]
 
+MAP_E = {
+    "map_id": "tundra",
+    "name": "TUNDRA",
+    "size": 50,
+    "obstacles": [
+        # ---- Frozen central pond & ice-shard ring -----------------------------
+        # A wide frozen pond (very short cover) at dead centre — visually
+        # distinct rink you can slide across; hitboxes are tiny so it plays
+        # mostly as open ground with a subtle line-of-sight ridge.
+        {"x":  0,   "z":  0,   "w": 8,   "h": 0.3, "d": 8},
+        # Six angled ice shards jutting up around the pond rim — tall thin
+        # walls to peek around from any approach angle.
+        {"x":  7.5, "z":  4.5, "w": 1.4, "h": 3.2, "d": 3.4},
+        {"x": -7.5, "z":  4.5, "w": 1.4, "h": 3.2, "d": 3.4},
+        {"x":  7.5, "z": -4.5, "w": 1.4, "h": 3.2, "d": 3.4},
+        {"x": -7.5, "z": -4.5, "w": 1.4, "h": 3.2, "d": 3.4},
+        {"x":  0,   "z":  8.5, "w": 3.4, "h": 3.2, "d": 1.4},
+        {"x":  0,   "z": -8.5, "w": 3.4, "h": 3.2, "d": 1.4},
+        # ---- Snowdrift mid-cover (scattered) ---------------------------------
+        # Long low banks — belly-cover you can vault over but not stand in.
+        {"x":  15,  "z":  0,   "w": 2.2, "h": 1.2, "d": 6},
+        {"x": -15,  "z":  0,   "w": 2.2, "h": 1.2, "d": 6},
+        {"x":  0,   "z":  15,  "w": 6,   "h": 1.2, "d": 2.2},
+        {"x":  0,   "z": -15,  "w": 6,   "h": 1.2, "d": 2.2},
+        # Rounded diagonal snow humps at intermediate distances.
+        {"x":  11,  "z":  11,  "w": 3.0, "h": 1.4, "d": 3.0},
+        {"x": -11,  "z":  11,  "w": 3.0, "h": 1.4, "d": 3.0},
+        {"x":  11,  "z": -11,  "w": 3.0, "h": 1.4, "d": 3.0},
+        {"x": -11,  "z": -11,  "w": 3.0, "h": 1.4, "d": 3.0},
+        # ---- Frozen pine stumps (short pillars) -------------------------------
+        {"x":  6,   "z":  20,  "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x": -6,   "z":  20,  "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x":  6,   "z": -20,  "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x": -6,   "z": -20,  "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x":  20,  "z":  6,   "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x":  20,  "z": -6,   "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x": -20,  "z":  6,   "w": 1.2, "h": 2.0, "d": 1.2},
+        {"x": -20,  "z": -6,   "w": 1.2, "h": 2.0, "d": 1.2},
+        # ---- Wrecked research outposts at corners -----------------------------
+        # Long tall walls with cover slits — like collapsed field stations
+        # from a shuttered arctic expedition.
+        {"x":  26,  "z":  26,  "w": 7,   "h": 4,   "d": 1.8},
+        {"x": -26,  "z":  26,  "w": 7,   "h": 4,   "d": 1.8},
+        {"x":  26,  "z": -26,  "w": 7,   "h": 4,   "d": 1.8},
+        {"x": -26,  "z": -26,  "w": 7,   "h": 4,   "d": 1.8},
+        {"x":  22,  "z":  22,  "w": 1.8, "h": 4,   "d": 3.2},
+        {"x": -22,  "z":  22,  "w": 1.8, "h": 4,   "d": 3.2},
+        {"x":  22,  "z": -22,  "w": 1.8, "h": 4,   "d": 3.2},
+        {"x": -22,  "z": -22,  "w": 1.8, "h": 4,   "d": 3.2},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (28, 28), (-28, 28), (28, -28), (-28, -28),
+        (32, 0), (-32, 0), (0, 32), (0, -32),
+        (18, 14), (-18, 14), (18, -14), (-18, -14),
+    ],
+    "healthpacks": [
+        (0.0, 0.0),                     # centre of the frozen pond
+        (18.0, 0.0), (-18.0, 0.0),
+        (0.0, 18.0), (0.0, -18.0),
+        (24.0, 24.0), (-24.0, 24.0),
+        (24.0, -24.0), (-24.0, -24.0),
+    ],
+}
+
+MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E]
+
 def random_map() -> dict:
     """Pick a random map for a new match. All maps are equally likely."""
     return random.choice(MAPS)
