@@ -37,6 +37,26 @@ function isAvatarUnlocked(idx, level, peakTier) {
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
+/* Turn any axios/FastAPI error into a readable, alert()-safe string.
+   Handles three shapes:
+     • `{detail: "string"}` — plain HTTPException.
+     • `{detail: [{msg, loc, ...}, ...]}` — FastAPI validation errors.
+     • Anything else — falls back to `e.message` or the passed default.
+   Without this, validation errors alert() as "[object Object]"
+   because the detail is an array of dicts. */
+function _apiErrorMessage(err, fallback) {
+  const d = err?.response?.data?.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    const msgs = d
+      .map((e) => (typeof e === "string" ? e : e?.msg || null))
+      .filter(Boolean);
+    if (msgs.length) return msgs.join(" · ");
+  }
+  return err?.message || fallback;
+}
+
+
 // 12 banner icons + 12 banner colors, customizable from the profile.
 const BANNER_ICONS = [
   { Icon: Trophy,    label: "Trophy" },
@@ -134,7 +154,7 @@ export default function Profile() {
       });
       await refreshMe();
     } catch (e) {
-      alert(e.response?.data?.detail || "Could not save banner");
+      alert(_apiErrorMessage(e, "Could not save banner"));
     }
     setSavingBanner(false);
   };
@@ -145,7 +165,10 @@ export default function Profile() {
       await api.post("/profile/me/avatar", { avatar: nextIdx });
       await refreshMe();
     } catch (e) {
-      alert(e.response?.data?.detail || "Could not save avatar");
+      // FastAPI validation errors are an ARRAY of {loc, msg, type, ...}
+      // objects — alert()ing that directly prints "[object Object]".
+      // Flatten to a readable string so users see the real reason.
+      alert(_apiErrorMessage(e, "Could not save avatar"));
     }
     setSavingAvatar(false);
   };
@@ -165,7 +188,7 @@ export default function Profile() {
       await api.post("/profile/me/title", { season });
       await refreshMe();
     } catch (e) {
-      alert(e.response?.data?.detail || "Could not save title");
+      alert(_apiErrorMessage(e, "Could not save title"));
     }
     setSavingTitle(false);
   };

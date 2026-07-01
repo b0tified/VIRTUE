@@ -1768,7 +1768,13 @@ async def progression_claim(payload: ProgressionClaimIn, user: dict = Depends(ge
 
 
 class AvatarIn(BaseModel):
-    avatar: int = Field(ge=0, le=11)
+    # 22 avatar slots total (idx 0-21). Idx 6-11 are the original animated
+    # specials with level/tier gates; 12-21 are the 2026-06-29 expansion
+    # (5 static + 5 animated) which are ungated (available to everyone).
+    # Bumping this cap without expanding the gate map on the backend
+    # would still work — the gate check only fires for indices present
+    # in `gates`.
+    avatar: int = Field(ge=0, le=21)
 
 
 # Banner customization — 12 icons × 12 colors, displayed on the profile card.
@@ -1836,20 +1842,23 @@ async def set_title(payload: TitleIn, user: dict = Depends(get_current_user)):
 
 @api.post("/profile/me/avatar")
 async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
-    # Animated avatars (idx 6..11) are gated by level OR peak rank.
-    if payload.avatar >= 6:
+    # Animated avatars (idx 6..11) are gated by level OR peak rank. The
+    # newer 12..21 additions are ungated on both sides — same visual
+    # tier system, but they cost nothing to try. Only apply the gate
+    # when the picked index actually has an entry in the map.
+    gates = {
+        6:  {"level": 5,  "tier": 0},  # Flaming Skull
+        7:  {"level": 15, "tier": 4},  # Pulsing Diamond
+        8:  {"level": 25, "tier": 5},  # Swirling Lightning
+        9:  {"level": 10, "tier": 0},  # Frost Sigil
+        10: {"level": 20, "tier": 4},  # Quantum Core
+        11: {"level": 30, "tier": 7},  # All-Seeing Eye
+    }
+    if payload.avatar in gates:
         stats = user.get("stats", {})
         lvl = compute_level(stats)["level"]
         peak_pts = int(user.get("peak_rank_points", user.get("rank_points", 0)) or 0)
         peak_tier, _ = rank_for_points(peak_pts)
-        gates = {
-            6:  {"level": 5,  "tier": 0},  # Flaming Skull
-            7:  {"level": 15, "tier": 4},  # Pulsing Diamond
-            8:  {"level": 25, "tier": 5},  # Swirling Lightning
-            9:  {"level": 10, "tier": 0},  # Frost Sigil
-            10: {"level": 20, "tier": 4},  # Quantum Core
-            11: {"level": 30, "tier": 7},  # All-Seeing Eye
-        }
         g = gates[payload.avatar]
         if lvl < g["level"] and peak_tier < g["tier"]:
             raise HTTPException(
