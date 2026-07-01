@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration-12 verified the ranked queue-toast flicker fix end-to-end. Backend: 11/11 queue endpoint tests pass (join/status/leave/ack/bot-fill match found within window). Frontend Playwright: (1) Ranked SEARCHING toast stays continuously visible with a smooth 4Hz-driven 00:01 -> 00:13 timer and locked ETA (~00:27) — zero flicker over 12s. (2) MATCH FOUND flow verified with 100ms DOM sampling: match-found overlay appeared at 29338ms, 3->2->1 countdown ticked at 1000/2002ms, /play navigation occurred at 33572ms — 42 events captured in that ~4.2s window with 0 hidden-toast events. Toast persisted continuously through the entire countdown + 1.2s pre-nav delay. (3) Cancel Ranked -> toast tears down and does NOT ghost-reappear during a 15s watch. (4) Casual Quick Match cancel -> 120 post-cancel samples over 12s show 0 reappearance. All 4 regression scenarios pass; the layered fixes in QueueContext.jsx (15s cancel-guard on matched:true + delayed setQueueState(null) inside 1200ms setTimeout) do resolve the user-reported 'toast disappears and randomly pops back up' bug.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_queue_endpoints_regression.py",
+    "/app/test_reports/pytest/queue_endpoints_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "QueueContext.jsx has three separate cancel-guard bumps (15s at matched, 10s at cancelRanked, 6s at miss-teardown). All correct but the magic numbers should be centralised into named constants for readability.",
+    "QueueContext.jsx cancelRanked sets cancelGuardUntilRef to 10s but the request comment (line 68) says 10s and line 65 says 15s in the matched branch — comment vs code is consistent, just noting for future clarity.",
+    "server.py remains at ~8100 lines (well beyond 700-line guideline). Iteration-10 already flagged. Splitting recommended in a future cleanup pass; not blocking.",
+    "Backend has proper QUEUE_LOCK usage on GET/DELETE/POST + MATCHED_USERS 60s stale-sweep — no race conditions observed in end-to-end tests.",
+    "Frontend log during startup: three unauthenticated 401s on initial /api/auth/me before login (still cosmetic, flagged in iteration_11)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_queue_endpoints_regression.py (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (4/4 flows: ranked-searching, match-found, ranked-cancel, casual-cancel)"},
+  "test_credentials": "player1@shooter.com / player123 (from /app/memory/test_credentials.md). NOTE: mid-test we hit the 10-min ranked-leave penalty because Playwright disconnects before match end; had to unset ranked_ban_until directly in Mongo between runs.",
+  "seed_data_creation": "None. To let ranked tests run cleanly I unset ranked_ban_until on player1 via MongoDB motor client (safe: just clears the ban field, doesn't touch stats). Command documented in context_for_next_testing_agent.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The ranked-leave penalty (10 min) auto-fires whenever a Playwright test disconnects mid-ranked-match. To re-run ranked-queue tests, first clear the ban: `cd /app/backend && python -c \"import os,asyncio;from motor.motor_asyncio import AsyncIOMotorClient;from dotenv import load_dotenv;load_dotenv();c=AsyncIOMotorClient(os.environ['MONGO_URL']);asyncio.run(c[os.environ['DB_NAME']].users.update_one({'email':'player1@shooter.com'},{'$unset':{'ranked_ban_until':'','ranked_ban_reason':''}}))\"`. Playwright pattern that reliably catches the match-found window: inject a setInterval(100ms) into the page BEFORE clicking ranked, sampling `document.querySelector('[data-testid=\"queue-match-found\"]')` + `[data-testid=\"queue-toast\"]` presence + `location.pathname`. Retrieve via `page.evaluate('() => window.__toastEvents')`. Direct Playwright `is_visible` polling at 250ms was too coarse to reliably catch the ~4.2s match-found window because of async batching. The 100ms setInterval pattern is bulletproof — captured 42 continuous events across the entire mf-to-nav window.",
+  "rca_of_the_issue": "Original bug: user reported ranked queue toast 'disappears and randomly pops back up' after match found. Fix (already applied by main agent in QueueContext.jsx, verified here): (1) cancelGuardUntilRef.current = Date.now() + 15000 the moment matched:true arrives — this blocks the 3s background poll from re-invoking beginActivePoll during the 3-2-1 countdown + 1.2s nav-delay window. (2) The setQueueState(null) + related teardown moved INSIDE the 1200ms setTimeout that fires after the 3-2-1 countdown completes, so the 'Match Found!' overlay stays mounted until the browser actually navigates to /play (QueueOverlay's own location.pathname.startsWith('/play') guard then hides it). Verification: 100ms-resolution DOM sampling shows 42 consecutive events between match-found and /play nav, all with toast_present=true and match_found_present=true — zero flicker."
+}

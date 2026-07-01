@@ -121,6 +121,15 @@ export function QueueProvider({ children }) {
           missesRef.current = 0;
           setQueueState(s);
           if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
+          // Slam the cancel-guard so the 3s background poll CANNOT
+          // re-invoke beginActivePoll while we're in the 3-2-1
+          // countdown → 1.2s nav-delay window. Without this, if the
+          // ack POST races the bg tick (or the ack fails silently
+          // due to a transient 5xx), the bg poll re-reads a still
+          // matched:true, spins up a NEW beginActivePoll, and the
+          // toast "reappears" moments after fading — exactly the
+          // symptom the user kept reporting.
+          cancelGuardUntilRef.current = Date.now() + 15000;
           try { await api.post("/queue/ranked/ack"); } catch {}
           // Clear the ETA lock — next queue starts fresh.
           lockedEtaRef.current = null;
@@ -132,37 +141,45 @@ export function QueueProvider({ children }) {
             if (sec <= 0) {
               clearInterval(matchTimerRef.current);
               matchTimerRef.current = null;
-              setMatchFoundSec(null);
-              setQueueState(null);
-              joinedAtRef.current = 0;
-              setWaitSec(0);
               if (localTimerRef.current) { clearInterval(localTimerRef.current); localTimerRef.current = null; }
               try {
                 window.dispatchEvent(
                   new CustomEvent("virtue-match-loading", { detail: { mode: "ranked" } }),
                 );
               } catch {}
-              setTimeout(
+              // Keep queueState/matchFoundSec set until AFTER we
+              // navigate — this way the "Match Found!" overlay stays
+              // visible during the 1.2s pre-nav delay instead of the
+              // toast blinking off, then the browser jumping to
+              // /play. The nav itself is what tears down the toast
+              // (QueueOverlay hides when location starts with /play).
+              setTimeout(() => {
                 // Stamp `state.fromLobby: true` so the MatchEntryGuard
                 // wrapper around /play doesn't bounce us back to the
                 // lobby. The ranked path doesn't go through
                 // `navigateToMatch` (we drive our own loading toast +
                 // timer here) so we set the flag inline.
-                () => nav("/play?mode=ranked", { replace: true, state: { fromLobby: true } }),
-                1200,
-              );
+                nav("/play?mode=ranked", { replace: true, state: { fromLobby: true } });
+                // Clear ephemeral state on the next tick — by now
+                // the location has flipped to /play so the overlay
+                // is hidden by its own location guard anyway.
+                setMatchFoundSec(null);
+                setQueueState(null);
+                joinedAtRef.current = 0;
+                setWaitSec(0);
+              }, 1200);
             } else {
               setMatchFoundSec(sec);
             }
           }, 1000);
         } else if (!s.in_queue) {
           // Tolerate transient `in_queue: false` blips — only tear down
-          // after 5 consecutive misses (~5s). Fixes the
-          // "toast disappears and reappears" flicker. Bumped from 3
-          // because a single network wobble was still enough to blip
-          // the toast on slower connections.
+          // after 10 consecutive misses (~10s). Bumped from 5 because
+          // some slow-network / mobile-backgrounded scenarios still
+          // tripped the teardown mid-queue. A legitimate force-remove
+          // (admin action, ws timeout) survives 10s of misses too.
           missesRef.current += 1;
-          if (missesRef.current >= 5) {
+          if (missesRef.current >= 10) {
             // Set the cancel guard so the bg poll doesn't instantly
             // re-invoke beginActivePoll on its next 3s tick. Without
             // this, the toast disappears and reappears in a tight
