@@ -948,6 +948,14 @@ export default function Lobby() {
                   CASUAL · FFA
                 </div>
               </div>
+              {!casualQueueState?.matched && Number.isFinite(casualQueueState?.estimated_wait_seconds) && (
+                <div
+                  className="mt-2 font-anton uppercase text-[11px] tracking-widest text-neutral-500"
+                  data-testid="quick-queue-eta"
+                >
+                  Est. wait <span className="text-[#E62429] tabular-nums">~{casualQueueState.estimated_wait_seconds}s</span>
+                </div>
+              )}
               <button
                 onClick={cancelQuickQueue}
                 className="mt-3 btn-pow bg-[#E62429] text-white w-full [&]:py-2 [&]:text-sm"

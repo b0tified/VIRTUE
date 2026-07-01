@@ -238,6 +238,10 @@ export function QueueProvider({ children }) {
   const casualJoinedAtRef = useRef(0);
   const casualPollRef = useRef(null);
   const casualLocalRef = useRef(null);
+  // ETA lock for casual — mirrors `lockedEtaRef` for ranked. Captured
+  // once on join and preserved across polls so the toast's "Est. wait"
+  // pill doesn't twitch.
+  const casualLockedEtaRef = useRef(null);
 
   const stopCasual = useCallback(() => {
     if (casualPollRef.current) { clearInterval(casualPollRef.current); casualPollRef.current = null; }
@@ -248,7 +252,15 @@ export function QueueProvider({ children }) {
     try {
       const { data } = await api.post("/queue/casual");
       casualJoinedAtRef.current = Date.now();
-      setCasualQueueState({ in_queue: true, matched: false, bot_fill_seconds: data.bot_fill_seconds || 10 });
+      casualLockedEtaRef.current = Number.isFinite(data.estimated_wait_seconds)
+        ? data.estimated_wait_seconds
+        : (data.bot_fill_seconds || 10);
+      setCasualQueueState({
+        in_queue: true,
+        matched: false,
+        bot_fill_seconds: data.bot_fill_seconds || 10,
+        estimated_wait_seconds: casualLockedEtaRef.current,
+      });
       setCasualWaitSec(0);
       casualLocalRef.current = setInterval(() => {
         setCasualWaitSec(Math.max(0, Math.floor((Date.now() - casualJoinedAtRef.current) / 1000)));
@@ -260,6 +272,7 @@ export function QueueProvider({ children }) {
             stopCasual();
             audioBus.matchFound();
             setCasualQueueState({ in_queue: false, matched: true });
+            casualLockedEtaRef.current = null;
             // Navigate to the casual room. Stamp `fromLobby: true`
             // for MatchEntryGuard, same as ranked.
             try {
@@ -293,6 +306,7 @@ export function QueueProvider({ children }) {
     casualJoinedAtRef.current = 0;
     setCasualWaitSec(0);
     setCasualQueueState(null);
+    casualLockedEtaRef.current = null;
     try { await api.delete("/queue/casual"); } catch {}
   }, [stopCasual]);
 

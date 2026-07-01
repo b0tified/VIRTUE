@@ -846,3 +846,27 @@ Every seeded (leaderboard) bot's public profile now displays an equipped "S1 · 
 - UI screenshot: clicking Rampage_Arc831 (#1 on leaderboard) opens the PublicProfileModal with the banner reading **"S1 · GOONMASTER"** across the top. Same for every other top-100 bot.
 - All 18 title + climb + seed tests still passing.
 
+
+## 2026-07-01 — Quick Play Queue Now Shows Est. Wait
+
+Casual/Quick Play queue now displays an estimated wait time on the toast, matching the ranked queue's ETA UX.
+
+### Backend (`server.py`)
+- **POST `/queue/casual`** — samples `estimated_wait_seconds` from `random.uniform(3.0, 12.0)`, stamps it onto the queue entry, and returns it.
+- **GET `/queue/casual`** — reads the same stamped value off the entry so multiple polls return a consistent number (no client-side flicker).
+
+### Frontend
+- **`QueueContext.jsx`** — new `casualLockedEtaRef` mirroring the ranked ETA lock. Captured on `joinCasual`, preserved across polls, cleared on match/leave.
+- **`Lobby.jsx` quick-queue toast** — new `"Est. wait ~Xs"` pill rendered below the `CASUAL · FFA` badge (only when not yet matched and the ETA is finite). `data-testid="quick-queue-eta"`.
+
+### Tests (all passing)
+- New `tests/test_casual_queue_eta.py` (3 cases): POST returns int in [3, 12]; GET reads the same value across polls; DELETE clears the entry.
+- All 8 casual queue tests still pass.
+
+### Live evidence
+Screenshot of Player1 clicking Quick Match: toast displays
+- Header: "SEARCHING FOR PLAYERS"
+- Timer: `1` (counting up)
+- Pills: `CASUAL · FFA` + `EST. WAIT ~8s`
+- LEAVE QUEUE button
+

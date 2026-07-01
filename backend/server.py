@@ -5975,25 +5975,31 @@ async def queue_ranked_ack(user: dict = Depends(get_current_user)):
 async def queue_casual_join(user: dict = Depends(get_current_user)):
     """Enqueue the caller for casual matchmaking. Single FIFO queue
     (no rank tiers). Matched head-to-head when another entry exists,
-    otherwise bot-filled after CASUAL_BOT_FILL_SEC (10s)."""
+    otherwise bot-filled after CASUAL_BOT_FILL_SEC (10s).
+
+    Returns an `estimated_wait_seconds` sampled inside the
+    3-12s window so the client can pin a stable "Est. wait ~Xs" pill
+    on the queue toast. The value re-rolls per join, but the client's
+    lockedEtaRef preserves it for the lifetime of the queue session so
+    the number doesn't tick down/jump around every second."""
     user_id = str(user["_id"])
     async with QUEUE_LOCK:
-        # Remove any prior queue entry — pressing Quick Match twice
-        # shouldn't stack entries. Also clear any stale matched flag
-        # so a fresh queue session starts cleanly.
         _remove_user_from_casual_queue(user_id)
         MATCHED_USERS.pop(user_id, None)
+        eta = random.uniform(3.0, 12.0)
         CASUAL_QUEUE.append({
             "user_id": user_id,
             "user_ids": [user_id],
             "username": user.get("username", "?"),
             "usernames": [user.get("username", "?")],
             "joined_at": time.time(),
+            "estimated_wait_seconds": int(round(eta)),
             "is_party": False,
         })
     return {
         "ok": True,
         "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
+        "estimated_wait_seconds": int(round(eta)),
         "queue_size": len(CASUAL_QUEUE),
     }
 
@@ -6027,6 +6033,11 @@ async def queue_casual_state(user: dict = Depends(get_current_user)):
                     "queue_position": idx + 1,
                     "queue_size": len(CASUAL_QUEUE),
                     "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
+                    # Stable ETA sampled at join — see /queue/casual POST.
+                    # The client also has an ETA lock that ignores server
+                    # variance across polls; this ensures the first poll
+                    # already carries the snapshot.
+                    "estimated_wait_seconds": int(e.get("estimated_wait_seconds", int(CASUAL_BOT_FILL_SEC))),
                 }
         return {"in_queue": False, "matched": False, "queue_size": len(CASUAL_QUEUE)}
 
