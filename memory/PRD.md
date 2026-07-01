@@ -946,3 +946,17 @@ New setting `lobbyBackgroundVariant` (default `"auto"`) with four values:
 - Setting `lobbyBackgroundVariant = "snow"` → lobby renders the snow BG, `lobby-bg-snow` data-testid present, snowflakes fall diagonally, cyan `FROST!/BLIZZARD!` + gold `FLURRY!` tags visible.
 - Music variant now routes through `effectiveVariant` — hot-swaps loops on setting change.
 
+
+
+---
+
+### Iteration 12 — **THIS SESSION (2026-02-25, fork)**
+- ✅ **Ranked queue-toast flicker FIXED (verified end-to-end)** — Root-cause was a 1200ms window between the 3-2-1 countdown finishing and the `nav("/play")` firing, during which `setQueueState(null)` had already torn the toast off. If the 3s background poll fired inside that window (or the `/queue/ranked/ack` POST raced it), it re-invoked `beginActivePoll` and the toast "reappeared" moments after fading. Two targeted client-side fixes in `/app/frontend/src/context/QueueContext.jsx`:
+  1. `cancelGuardUntilRef.current = Date.now() + 15000` set the instant `matched:true` is received — blocks the bg poll from re-invoking `beginActivePoll` for the entire countdown + nav-delay window.
+  2. `setQueueState(null)`, `setMatchFoundSec(null)`, and related teardown moved INSIDE the 1200ms `setTimeout` (was firing immediately after countdown). Now the "Match Found!" overlay stays visibly mounted continuously until the browser actually navigates to `/play`; `QueueOverlay`'s own `location.pathname.startsWith("/play")` guard hides it after nav.
+- ✅ **Verified by testing agent (iteration_12)**:
+  - Backend: 11/11 queue endpoint tests pass.
+  - Frontend Playwright w/ 100ms DOM sampling: 42 consecutive events captured across the ~4.2s match-found → /play window — **zero hidden-toast events, zero flicker**.
+  - Ranked cancel: toast tears down and does NOT ghost-reappear over a 15s watch.
+  - Casual cancel: 120 post-cancel samples over 12s → 0 reappearance.
+- New regression test file: `/app/backend/tests/test_queue_endpoints_regression.py`.
