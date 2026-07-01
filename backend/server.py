@@ -174,6 +174,11 @@ def public_user(user: dict) -> dict:
         "banner_icon": int(user.get("banner_icon", 0) or 0),
         "banner_color": int(user.get("banner_color", 0) or 0),
         "banner_animated": bool(user.get("banner_animated", False)),
+        # Past-season peak titles — array of {season, tier, tier_name, rp}
+        # stamped at each `maybe_reset_season` rollover. `title_season`
+        # is the currently-equipped title's season number (or null).
+        "past_seasons": list(user.get("past_seasons") or []),
+        "title_season": (int(user["title_season"]) if isinstance(user.get("title_season"), (int, float)) else None),
         "stats": stats,
         "level": lvl["level"],
         "xp": lvl["xp"],
@@ -268,6 +273,42 @@ async def maybe_reset_season() -> dict:
         # stay in `owned_skins` (append-only) so players keep cosmetics
         # they earned last season.
         SEASON_RESET_RP_DROP = 900  # 9 sub-tiers × 100 RP
+        # Stamp a past-season entry on every user who reached at least
+        # Bronze this season. `past_seasons` is an append-only array of
+        # `{season, tier, tier_name}` dicts consumed by the banner "title"
+        # picker so players can flex "SEASON 2 · DIAMOND" long after
+        # rollover wipes their live RP. Uses the FINAL rank_points (still
+        # in place at this point — we drop RP in the next update_many).
+        # Note: we can't compute tier inline via a Mongo pipeline
+        # (rank thresholds live in Python), so this is a discrete cursor
+        # pass. Rank tier is computed from the pre-reset RP.
+        finishing_season = int(doc.get("season_number", 1))
+        try:
+            cursor = db.users.find(
+                {"rank_points": {"$gt": 0}},
+                {"_id": 1, "rank_points": 1, "past_seasons": 1},
+            )
+            async for u in cursor:
+                pts = int(u.get("rank_points", 0) or 0)
+                t_idx, t_name = rank_for_points(pts)
+                past = list(u.get("past_seasons") or [])
+                # Idempotent — if we're re-running rollover for the same
+                # season number (shouldn't happen, but safe), skip.
+                if any(int(e.get("season", -1)) == finishing_season for e in past):
+                    continue
+                past.append({
+                    "season": finishing_season,
+                    "tier": int(t_idx),
+                    "tier_name": t_name,
+                    "rp": pts,
+                })
+                await db.users.update_one(
+                    {"_id": u["_id"]},
+                    {"$set": {"past_seasons": past}},
+                )
+        except Exception as e:
+            logger.warning("past_seasons stamp failed at S%d rollover: %s", finishing_season, e)
+
         await db.users.update_many(
             {"rank_points": {"$exists": True}},
             [{
@@ -1634,6 +1675,38 @@ async def set_banner(payload: BannerIn, user: dict = Depends(get_current_user)):
     return public_user(user)
 
 
+class TitleIn(BaseModel):
+    """Past-season title selector. `season` is either the number of the
+    past season the player wants displayed on their banner, or `None`
+    to clear the title entirely."""
+    season: Optional[int] = Field(default=None)
+
+
+@api.post("/profile/me/title")
+async def set_title(payload: TitleIn, user: dict = Depends(get_current_user)):
+    """Equip / clear the past-season peak-rank title shown alongside the
+    banner. Only seasons the player actually finished (present in their
+    `past_seasons` array) can be equipped — protects against a client
+    stamping "SEASON 99 · GOONMASTER" on themselves."""
+    if payload.season is None:
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"title_season": None}},
+        )
+        user["title_season"] = None
+        return public_user(user)
+    past = list(user.get("past_seasons") or [])
+    found = next((e for e in past if int(e.get("season", -1)) == int(payload.season)), None)
+    if not found:
+        raise HTTPException(status_code=404, detail="You didn't finish that season — nothing to display.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"title_season": int(payload.season)}},
+    )
+    user["title_season"] = int(payload.season)
+    return public_user(user)
+
+
 @api.post("/profile/me/avatar")
 async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
     # Animated avatars (idx 6..11) are gated by level OR peak rank.
@@ -2812,6 +2885,23 @@ class GameRoom:
                 # for the top tier so we still vary slightly).
                 high = (RANK_TIERS[ti + 1][0] - 1) if (ti + 1 < len(RANK_TIERS)) else (low + 400)
                 pts = random.randint(low, max(low, high))
+            # Snap to the ranked match grid (multiples of 15) — matches how
+            # the leaderboard seeds render, and guarantees the displayed RP
+            # is a value reachable through real +30/+15/0/-30/-60 match
+            # deltas. Without this a disguised bot could show RP like
+            # 1743, which no real player could ever land on.
+            pts = _snap_rp_to_match_grid(pts)
+            # For tier-aligned disguises (ranked bots) the snap may have
+            # dipped below the tier's floor (e.g. Silver low=110 → snap
+            # to 105). Nudge back onto the nearest grid inside the band.
+            if disguise_tier_idx is not None:
+                ti = max(0, min(len(RANK_TIERS) - 1, int(disguise_tier_idx)))
+                _low = RANK_TIERS[ti][0]
+                _high = (RANK_TIERS[ti + 1][0] - 1) if (ti + 1 < len(RANK_TIERS)) else (_low + 400)
+                if pts < _low:
+                    pts = _snap_rp_to_match_grid(_low + 14)  # first grid ≥ low
+                elif pts > _high:
+                    pts = _snap_rp_to_match_grid(_high)
             t_idx, t_name = rank_for_points(pts)
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name

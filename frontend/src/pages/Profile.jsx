@@ -149,6 +149,26 @@ export default function Profile() {
     setSavingAvatar(false);
   };
 
+  // ─────────────────────────────────────────────────────────────────
+  // Past-season titles — an array of `{season, tier, tier_name, rp}`
+  // stamped at each season rollover. The user can equip one via
+  // `POST /profile/me/title` and it renders as a small "S2 · DIAMOND"
+  // text overlay on their banner strip everywhere PlayerCard is used.
+  // ─────────────────────────────────────────────────────────────────
+  const pastSeasons = Array.isArray(user?.past_seasons) ? user.past_seasons : [];
+  const equippedTitleSeason = user?.title_season ?? null;
+  const [savingTitle, setSavingTitle] = useState(false);
+  const updateTitle = async (season) => {
+    setSavingTitle(true);
+    try {
+      await api.post("/profile/me/title", { season });
+      await refreshMe();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Could not save title");
+    }
+    setSavingTitle(false);
+  };
+
   const [history, setHistory] = useState(null); // null = loading, [] = empty
   const [historyError, setHistoryError] = useState(null);
   useEffect(() => {
@@ -260,6 +280,16 @@ export default function Profile() {
           playerLevel={lvl.level}
           saving={savingAvatar}
           onPick={updateAvatar}
+        />
+
+        {/* Past-season titles — flex your peak rank from every finished
+            season on your banner. Empty until the player's first season
+            rollover; hidden while there's nothing to show. */}
+        <TitlePicker
+          pastSeasons={pastSeasons}
+          equippedSeason={equippedTitleSeason}
+          saving={savingTitle}
+          onPick={updateTitle}
         />
 
         <SectionHeader title="Stats" testid="profile-section-stats" />
@@ -876,5 +906,81 @@ function BannerCustomizer({ iconIdx, colorIdx, animated, animatedUnlocked, savin
         </div>
       </div>
     </div>
+  );
+}
+
+
+/* TitlePicker — small card listing every finished season with the peak
+   tier the user hit. Selecting one equips it as the banner title (e.g.
+   "S2 · DIAMOND"); the "NONE" tile clears it. The whole card is hidden
+   when the user has no past seasons yet so brand-new accounts don't see
+   an empty state on their first sign-in. */
+function TitlePicker({ pastSeasons = [], equippedSeason = null, saving = false, onPick }) {
+  // Sort newest-season first so the most recent flex is easiest to grab.
+  const sorted = [...pastSeasons].sort((a, b) => Number(b?.season || 0) - Number(a?.season || 0));
+  if (sorted.length === 0) return null;
+  return (
+    <div className="mt-6" data-testid="profile-titles-card">
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-anton uppercase tracking-widest text-xs opacity-70">
+          Season Titles
+        </div>
+        <div className="font-anton uppercase tracking-widest text-[10px] opacity-50">
+          Shown on your banner
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {/* None option */}
+        <TitleTile
+          selected={equippedSeason == null}
+          disabled={saving}
+          onClick={() => onPick(null)}
+          label="NONE"
+          sublabel="No title"
+          testid="profile-title-tile-none"
+        />
+        {sorted.map((entry) => {
+          const s = Number(entry?.season || 0);
+          const active = Number(equippedSeason) === s;
+          const label = `S${s}`;
+          const sub = String(entry?.tier_name || "").toUpperCase() || "UNRANKED";
+          return (
+            <TitleTile
+              key={s}
+              selected={active}
+              disabled={saving}
+              onClick={() => onPick(s)}
+              label={label}
+              sublabel={sub}
+              testid={`profile-title-tile-s${s}`}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TitleTile({ selected, disabled, onClick, label, sublabel, testid }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testid}
+      className={`border-pow-thin p-3 text-left transition-all bg-white ${
+        selected ? "ring-4 ring-[#E62429] translate-y-[-2px]" : "hover:translate-y-[-1px]"
+      } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+    >
+      <div className="font-display text-2xl leading-none">{label}</div>
+      <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 mt-1">
+        {sublabel}
+      </div>
+      {selected && (
+        <span className="absolute mt-1 text-[9px] font-anton uppercase tracking-widest text-[#E62429]">
+          Equipped
+        </span>
+      )}
+    </button>
   );
 }

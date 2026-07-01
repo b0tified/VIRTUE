@@ -759,3 +759,45 @@ UI screenshot confirms every top-10 slot is Goonmaster:
 - #3 `RogueByte474 @ 3150 RP` (Goonmaster)
 - ... every visible row: Goonmaster
 
+
+## 2026-07-01 (night) — Past-Season Banner Titles + Bot RP Snapping
+
+### Feature 1 — Past-season peak-rank banner titles
+Players can now flex previous seasons' peak ranks on their banner (e.g. "S2 · GRANDMASTER").
+
+**Backend (`server.py`)**
+- `maybe_reset_season` now stamps a `past_seasons[]` array on every user with `rank_points > 0` at rollover: `{season, tier, tier_name, rp}`. Idempotent (skips if the same season is already listed). Runs BEFORE the RP wipe so the tier reflects the season's final rank.
+- New field on the user doc: `title_season` — the season number currently equipped as the banner title (or `null` to hide).
+- `public_user()` DTO exposes both `past_seasons[]` and `title_season` (surfaced via `/auth/me`, friend endpoints, party visitor lookups, etc.).
+- New endpoint `POST /profile/me/title` `{season: int|null}`:
+  - Validates the season is actually in the caller's `past_seasons[]` (returns 404 otherwise — prevents self-awarding "SEASON 99 · GOONMASTER").
+  - `null` clears the title.
+
+**Frontend**
+- New helper `/app/frontend/src/game/bannerTitle.js` — `formatBannerTitle(user)` returns the compact `"S2 · GRANDMASTER"` string (or `null`).
+- `PlayerCard.jsx` — new `bannerTitle` prop, rendered as centred text inside `BannerStrip` between the level chip and rank icon. `data-testid="player-card-banner-title"`.
+- `Lobby.jsx` + `PublicProfileModal.jsx` — pass `bannerTitle={formatBannerTitle(user)}` through so the title shows in every PlayerCard mount.
+- `Profile.jsx` — new `TitlePicker` card under the AvatarPicker. Grid of tiles (NONE + one per past season with tier name), red ring on the equipped tile, "EQUIPPED" label. Hidden when the user has no past seasons yet.
+
+### Feature 2 — Bot RP snapped to the leaderboard grid
+Every disguised bot's `disguise_rank_points` now snaps to the same **match-grid multiples of 15** the leaderboard seeds and real ranked matches use.
+
+**Backend (`server.py::GameRoom.spawn_bot`)**
+- After computing `pts` (casual/tier-aligned/player-aligned), pass through `_snap_rp_to_match_grid(pts)`.
+- Tier-aligned disguises re-clamp back into the tier band after snapping in case the snap dipped below the tier floor.
+- Same rule as `/admin/seed/veterans` — every visible RP value in the game is now reachable through actual +30/+15/0/-30/-60 match deltas. Bot RP is indistinguishable from real player RP.
+
+### Tests (all passing)
+`tests/test_titles_and_bot_rp.py` (6 cases):
+1. `test_ranked_bot_disguise_rp_is_snapped_to_grid` — every tier 0-6, 30 rolls each, RP % 15 == 0.
+2. `test_ranked_bot_disguise_rp_stays_inside_tier_band` — snap didn't push RP into a neighbouring tier.
+3. `test_casual_bot_disguise_rp_is_also_snapped` — casual disguise path (RP 0-850) also snaps.
+4. `test_player_aligned_disguise_rp_is_snapped` — player-aligned ±20 jitter path also snaps.
+5. `test_set_title_rejects_seasons_the_user_did_not_finish` — 404 on season not in past_seasons; clear (`null`) works.
+6. `test_public_user_exposes_past_seasons_and_title_season` — DTO carries both fields.
+
+### Live evidence
+- `POST /profile/me/title {season: 99}` → 404 `You didn't finish that season — nothing to display.`
+- `POST /profile/me/title {season: null}` → clears the title.
+- UI screenshot: Profile page shows the SEASON TITLES card with `NONE / S2 GRANDMASTER (equipped) / S1 DIAMOND` tiles laid out cleanly.
+

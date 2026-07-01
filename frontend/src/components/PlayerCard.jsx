@@ -135,7 +135,7 @@ export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, size = 40, 
   );
 }
 
-function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false, level = null }) {
+function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false, level = null, title = null }) {
   const c = BANNER_COLORS[Math.max(0, Math.min(BANNER_COLORS.length - 1, colorIdx | 0))];
   const I = BANNER_ICONS[Math.max(0, Math.min(BANNER_ICONS.length - 1, iconIdx | 0))];
   return (
@@ -167,6 +167,22 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false,
           </span>
         )}
       </div>
+      {/* Centre: optional past-season title ("S2 · DIAMOND"). Keeps the
+          typography consistent with the level chip on the left and the
+          rank icon on the right so the strip stays readable. */}
+      {title && (
+        <span
+          className="absolute left-1/2 -translate-x-1/2 font-anton uppercase tracking-widest leading-none whitespace-nowrap pointer-events-none"
+          style={{
+            color: c.fg,
+            fontSize: Math.max(8, height - 4),
+            textShadow: "0 1px 0 rgba(0,0,0,0.55)",
+          }}
+          data-testid="player-card-banner-title"
+        >
+          {title}
+        </span>
+      )}
       <I size={Math.max(10, height - 4)} strokeWidth={3} style={{ color: c.fg }} />
     </div>
   );
@@ -186,6 +202,7 @@ export default function PlayerCard({
   bannerIcon = null,
   bannerColor = null,
   bannerAnimated = false,
+  bannerTitle = null,   // e.g. "S2 · DIAMOND" — past-season peak-rank flex.
   level = null,
   leaderboardRank = null, // Goonmaster-only: global leaderboard position (1 = top).
   isBot = false,
@@ -212,7 +229,7 @@ export default function PlayerCard({
       className={`card-pow p-0 bg-white flex flex-col ${className}`}
       data-testid={testid}
     >
-      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} />}
+      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} title={bannerTitle} />}
       <div className="flex items-stretch">
         <div className="flex items-center justify-center px-2" style={{ background: avatarMeta(avatar, peakRankTier).bg }}>
           <Avatar idx={avatar} peakTier={peakRankTier} peakDivision={peakRankDivision} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />
