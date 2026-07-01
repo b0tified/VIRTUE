@@ -5924,31 +5924,37 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
     tier_idx, tier_name = rank_for_points(points)
     fill = bot_fill_seconds_for_tier_api(tier_idx)
     now_ts = time.time()
-    # Same 60s stale-flag sweep as POST /queue/ranked. Without this the
-    # background poll would report `matched: true` on every tick from a
-    # dead ack, causing the queue toast to flicker + spontaneous
-    # "match found" pops after returning to the lobby.
-    m = MATCHED_USERS.get(user_id)
-    if m and (now_ts - float(m.get("matched_at", 0.0))) > 60.0:
-        async with QUEUE_LOCK:
+    # Acquire QUEUE_LOCK for the read as well — otherwise the client
+    # can catch the matchmaking loop mid-pairing (queue entry removed,
+    # MATCHED_USERS not yet set) and get a spurious `in_queue: false`
+    # even though the player is very much matched a millisecond later.
+    # That race trips the client's miss-counter teardown, which is
+    # exactly the "timer keeps disappearing" symptom the user reported.
+    async with QUEUE_LOCK:
+        # Same 60s stale-flag sweep as POST /queue/ranked. Without this the
+        # background poll would report `matched: true` on every tick from a
+        # dead ack, causing the queue toast to flicker + spontaneous
+        # "match found" pops after returning to the lobby.
+        m = MATCHED_USERS.get(user_id)
+        if m and (now_ts - float(m.get("matched_at", 0.0))) > 60.0:
             MATCHED_USERS.pop(user_id, None)
-        m = None
-    if m:
-        return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill}
-    for ti, q in RANKED_QUEUE.items():
-        for i, e in enumerate(q):
-            uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
-            if user_id in uids:
-                elapsed = now_ts - e["joined_at"]
-                return {
-                    "in_queue": True, "tier": ti, "tier_name": tier_name,
-                    "position": i + 1, "tier_size": len(q),
-                    "wait_seconds": int(elapsed),
-                    "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti),
-                    "estimated_wait_seconds": estimate_wait_seconds(ti, elapsed),
-                    "is_party": bool(e.get("is_party")),
-                    "party_size": len(uids),
-                }
+            m = None
+        if m:
+            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill}
+        for ti, q in RANKED_QUEUE.items():
+            for i, e in enumerate(q):
+                uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+                if user_id in uids:
+                    elapsed = now_ts - e["joined_at"]
+                    return {
+                        "in_queue": True, "tier": ti, "tier_name": tier_name,
+                        "position": i + 1, "tier_size": len(q),
+                        "wait_seconds": int(elapsed),
+                        "bot_fill_seconds": bot_fill_seconds_for_tier_api(ti),
+                        "estimated_wait_seconds": estimate_wait_seconds(ti, elapsed),
+                        "is_party": bool(e.get("is_party")),
+                        "party_size": len(uids),
+                    }
     return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
 
 
