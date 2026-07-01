@@ -819,3 +819,30 @@ Follow-up after user reported "I do not see the titles". Root cause was two-fold
 - Backfill log: `past_seasons backfill: stamped 123 users with S1 entry`.
 - Same 6-test suite still passing.
 
+
+## 2026-07-01 (very late) — Bots Now Flex Titles Too
+
+### Bots on the leaderboard now show past-season titles
+Every seeded (leaderboard) bot's public profile now displays an equipped "S1 · GOONMASTER" (or similar) title on their banner, making them read as veteran players climbing across multiple seasons.
+
+**Backend changes (`server.py`)**
+
+1. **`_backfill_past_seasons_once` extended** — now runs TWO passes:
+   - Real-user pass (unchanged): stamp entries for users with `peak_rank_points > 0` and no past-seasons.
+   - **Seeded-bot pass (NEW)**: for every bot with `seed_target_rp > 0` and no past-seasons, stamp a title-tier entry keyed to the bot's target RP + `title_season: prev_season`. ~50% also get an OLDER lower-tier entry to sell the "veteran climbing over seasons" narrative.
+
+2. **New helpers**:
+   - `_CACHED_PREV_SEASON_NUMBER[0]` — module-level cache updated by both the backfill and `maybe_reset_season` so the synchronous seed endpoint can key new bot titles without a Mongo round-trip.
+   - `_prev_season_number()` — reads the cache with a safe fallback.
+   - `_seed_past_seasons_for(rp, rank_idx)` — builds a plausible `past_seasons` array + optional older-tier entry for a freshly-created bot doc.
+
+3. **Fresh bot seeds** (endpoint `/admin/seed/veterans`): every new bot doc is created with `past_seasons` + `title_season` already stamped so the flex is instant, not deferred to next boot.
+
+4. **`public_profile` endpoint**: both the private (bot) and full branches now expose `past_seasons` + `title_season` so PublicProfileModal renders the title.
+
+### Live evidence
+- Log: `past_seasons backfill (bots): stamped 69 seeded bots with S1 title`.
+- API: 69/69 seeded bots have `title_season = 1` and a past-seasons entry at their target tier.
+- UI screenshot: clicking Rampage_Arc831 (#1 on leaderboard) opens the PublicProfileModal with the banner reading **"S1 · GOONMASTER"** across the top. Same for every other top-100 bot.
+- All 18 title + climb + seed tests still passing.
+

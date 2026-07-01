@@ -273,6 +273,10 @@ async def maybe_reset_season() -> dict:
         # stay in `owned_skins` (append-only) so players keep cosmetics
         # they earned last season.
         SEASON_RESET_RP_DROP = 900  # 9 sub-tiers × 100 RP
+        finishing_season = int(doc.get("season_number", 1))
+        # Refresh the cached prev-season number so newly-created bots
+        # stamp their titles with the freshly-completed season.
+        _CACHED_PREV_SEASON_NUMBER[0] = int(finishing_season)
         # Stamp a past-season entry on every user who reached at least
         # Bronze this season. `past_seasons` is an append-only array of
         # `{season, tier, tier_name}` dicts consumed by the banner "title"
@@ -282,7 +286,6 @@ async def maybe_reset_season() -> dict:
         # Note: we can't compute tier inline via a Mongo pipeline
         # (rank thresholds live in Python), so this is a discrete cursor
         # pass. Rank tier is computed from the pre-reset RP.
-        finishing_season = int(doc.get("season_number", 1))
         try:
             cursor = db.users.find(
                 {"rank_points": {"$gt": 0}},
@@ -908,12 +911,20 @@ async def _backfill_past_seasons_once():
     — anyone who peaked at Diamond in Season 1 would see an empty
     picker forever.
 
-    Rule: for every user with `peak_rank_points > 0` and no
-    `past_seasons` yet (or empty list), stamp ONE synthetic entry for
-    the previous season (current_season - 1, min 1) using their all-
-    time peak. Idempotent — the second run finds no matches. Doesn't
-    touch users who already have a past-season array from the
-    forward-going rollover code.
+    Rules:
+      • Real accounts with `peak_rank_points > 0` and no past_seasons →
+        stamp ONE synthetic entry for the previous season using their
+        all-time peak.
+      • Seeded leaderboard bots (`is_seeded: True`) → stamp a past-
+        season entry based on their `seed_target_rp` so their public
+        profile also flexes a title like "S1 · GRANDMASTER", and equip
+        it via `title_season`. Seeded bots don't have `peak_rank_points`
+        set (their RP lerps toward `seed_target_rp` over the season)
+        so this branch is separate.
+
+    Idempotent — the second run finds no matches. Doesn't touch users
+    who already have a past-season array from the forward-going
+    rollover code.
     """
     try:
         # Small delay so the season doc + climb loop init have settled.
@@ -921,8 +932,15 @@ async def _backfill_past_seasons_once():
         season_doc = await db.season.find_one({"_id": "current"})
         cur = int((season_doc or {}).get("season_number", 1))
         prev_season = max(1, cur - 1)
+        # Cache for the synchronous seed-endpoint path so newly-inserted
+        # bots also get past-season titles keyed to the right season.
+        _CACHED_PREV_SEASON_NUMBER[0] = prev_season
+        # -----------------------------------------------------------
+        # Real-user backfill (peak-based)
+        # -----------------------------------------------------------
         cursor = db.users.find(
             {
+                "is_seeded": {"$ne": True},
                 "peak_rank_points": {"$gt": 0},
                 "$or": [
                     {"past_seasons": {"$exists": False}},
@@ -947,7 +965,63 @@ async def _backfill_past_seasons_once():
             )
             touched += 1
         if touched:
-            logger.info("past_seasons backfill: stamped %d users with S%d entry", touched, prev_season)
+            logger.info("past_seasons backfill (real): stamped %d users with S%d entry", touched, prev_season)
+        # -----------------------------------------------------------
+        # Seeded-bot backfill (target-RP-based) — every seeded bot
+        # gets a past-season entry at their target tier and equips it
+        # so a Grandmaster bot's public profile reads "S1 · GRANDMASTER".
+        # Some bots optionally get TWO entries (previous season + one
+        # older) so the picker on their public profile shows history
+        # too, adding to the illusion of veteran players.
+        # -----------------------------------------------------------
+        bot_cursor = db.users.find(
+            {
+                "is_seeded": True,
+                "seed_target_rp": {"$exists": True, "$gt": 0},
+                "$or": [
+                    {"past_seasons": {"$exists": False}},
+                    {"past_seasons": {"$size": 0}},
+                ],
+            },
+            {"_id": 1, "seed_target_rp": 1, "rank_points": 1},
+        )
+        bot_touched = 0
+        async for u in bot_cursor:
+            target = int(u.get("seed_target_rp", 0) or 0)
+            t_idx, t_name = rank_for_points(target)
+            past = [{
+                "season": prev_season,
+                "tier": int(t_idx),
+                "tier_name": t_name,
+                "rp": target,
+            }]
+            # ~50% of bots also get an OLDER (season-1) entry at one
+            # tier lower — a subtle "they've been climbing" story.
+            if prev_season >= 2 and random.random() < 0.5:
+                older_tier = max(0, t_idx - 1)
+                older_low = RANK_TIERS[older_tier][0]
+                older_high = (RANK_TIERS[older_tier + 1][0] - 1) if (older_tier + 1 < len(RANK_TIERS)) else (older_low + 400)
+                older_rp = _snap_rp_to_match_grid(random.randint(older_low, older_high))
+                _, older_name = rank_for_points(older_rp)
+                past.insert(0, {
+                    "season": max(1, prev_season - 1),
+                    "tier": int(older_tier),
+                    "tier_name": older_name,
+                    "rp": older_rp,
+                })
+            await db.users.update_one(
+                {"_id": u["_id"]},
+                {"$set": {
+                    "past_seasons": past,
+                    # Auto-equip the most recent (highest-tier) entry so
+                    # the bot's banner shows the title without a real
+                    # player having to do the picker click.
+                    "title_season": int(prev_season),
+                }},
+            )
+            bot_touched += 1
+        if bot_touched:
+            logger.info("past_seasons backfill (bots): stamped %d seeded bots with S%d title", bot_touched, prev_season)
     except Exception as e:
         logger.warning("past_seasons backfill failed: %s", e)
 
@@ -6791,6 +6865,62 @@ def _snap_rp_to_match_grid(rp: int) -> int:
     return (rp // 15) * 15
 
 
+def _prev_season_number() -> int:
+    """Return the cached previous-season number (min 1). Populated by
+    `_backfill_past_seasons_once` on startup from the season doc, then
+    kept fresh across rollovers by `maybe_reset_season`."""
+    try:
+        return max(1, int(_CACHED_PREV_SEASON_NUMBER[0]))
+    except Exception:
+        return 1
+
+
+def _seed_past_seasons_for(rp: int, rank_idx: int) -> list[dict]:
+    """Build a plausible `past_seasons` array for a freshly-created
+    seeded bot. Every bot gets an entry at its current target tier for
+    the previous season (so PublicProfileModal can flex an equipped
+    title immediately). Half of them also get an older lower-tier
+    entry to sell the "veteran climbing over time" story.
+    Season numbers use a defensive fallback of 1 when the season doc
+    isn't ready yet — this is fixed up by `_backfill_past_seasons_once`
+    on next boot if it ever races on the initial season insert.
+    """
+    prev = 1
+    try:
+        # The seed endpoint holds a synchronous handle to the season
+        # via the global — read from the last-known cached number if
+        # we've populated it. Otherwise fall back to 1.
+        prev = int(_CACHED_PREV_SEASON_NUMBER[0])
+    except Exception:
+        prev = 1
+    entries = [{
+        "season": prev,
+        "tier": int(rank_idx),
+        "tier_name": RANK_TIERS[rank_idx][1] if 0 <= rank_idx < len(RANK_TIERS) else "BRONZE",
+        "rp": _snap_rp_to_match_grid(rp),
+    }]
+    # ~50% carry an older season entry one tier lower — subtle history.
+    if prev >= 2 and random.random() < 0.5:
+        older_tier = max(0, rank_idx - 1)
+        if older_tier < len(RANK_TIERS):
+            lo = RANK_TIERS[older_tier][0]
+            hi = (RANK_TIERS[older_tier + 1][0] - 1) if (older_tier + 1 < len(RANK_TIERS)) else (lo + 400)
+            older_rp = _snap_rp_to_match_grid(random.randint(lo, hi))
+            entries.insert(0, {
+                "season": max(1, prev - 1),
+                "tier": int(older_tier),
+                "tier_name": RANK_TIERS[older_tier][1],
+                "rp": older_rp,
+            })
+    return entries
+
+
+# Small module-level cache updated by the season loop each tick so the
+# synchronous seed endpoint can read the previous-season number without
+# blocking on a fresh Mongo lookup.
+_CACHED_PREV_SEASON_NUMBER: list[int] = [1]
+
+
 def _synthesize_career(rp: int, rank_idx: int) -> tuple[int, int, int, int]:
     """Given a target `rp` (already snapped to multiples of 15) and a
     rank tier index, return a plausible (matches, kills, deaths, wins)
@@ -6939,6 +7069,15 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_career_v2": True,
             "seed_climb_offset": round(random.uniform(0.0, 0.08), 4),
             "seed_climb_speed": round(random.uniform(1.35, 2.4), 4),
+            # Give fresh seeds an already-equipped past-season title so
+            # their public profile flexes "S{prev} · {tier}" from the
+            # moment they hit the leaderboard. Season 1 seeds show a
+            # single "S0" fallback which we hide client-side (S0 stays
+            # in past_seasons for future rollover math).
+            "past_seasons": _seed_past_seasons_for(rp, rank_idx),
+            "title_season": max(1, _CACHED_PREV_SEASON_NUMBER[0]),
+            "seed_v3_boost": True,
+            "seed_v4_gm": True,
             "level": random.randint(5, 28 + rank_idx * 4),
             "xp": 0,
             "created_at": now - timedelta(days=random.randint(7, 120)),
@@ -7548,6 +7687,11 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             "banner_icon": int(u.get("banner_icon", 0) or 0),
             "banner_color": int(u.get("banner_color", 0) or 0),
             "banner_animated": bool(u.get("banner_animated", False)),
+            # Past-season peak-rank flex — bots seed these too so the
+            # "S2 · DIAMOND" title stamp shows on their banner in the
+            # public profile modal.
+            "past_seasons": list(u.get("past_seasons") or []),
+            "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
             "online": is_online(user_id),
         }
     cursor = db.match_history.find(
@@ -7585,6 +7729,10 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "banner_icon": int(u.get("banner_icon", 0) or 0),
         "banner_color": int(u.get("banner_color", 0) or 0),
         "banner_animated": bool(u.get("banner_animated", False)),
+        # Past-season peak-rank flex — surface these so the public
+        # profile modal renders the equipped title on the banner.
+        "past_seasons": list(u.get("past_seasons") or []),
+        "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
         "online": is_online(user_id),
         "history": history,
     }
