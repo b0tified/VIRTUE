@@ -5508,6 +5508,16 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
     fill = bot_fill_seconds_for_tier_api(tier_idx)
     now_ts = time.time()
     async with QUEUE_LOCK:
+        # Sweep stale `matched` flags before checking. If the ack never
+        # fired (client crash, tab close, ws error) MATCHED_USERS lingers
+        # and would spuriously short-circuit this join with a stale
+        # "match found". Anything older than 60s is definitely stale —
+        # legitimate matches consume the flag on ws connect (<5s) and
+        # the ranked ack pops it (<2s). 60s is a generous safety window.
+        for mid in list(member_ids):
+            m = MATCHED_USERS.get(mid)
+            if m and (now_ts - float(m.get("matched_at", 0.0))) > 60.0:
+                MATCHED_USERS.pop(mid, None)
         # If any of the resolved member ids is already matched, surface that.
         for mid in member_ids:
             if mid in MATCHED_USERS:
@@ -5541,8 +5551,16 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
     tier_idx, tier_name = rank_for_points(points)
     fill = bot_fill_seconds_for_tier_api(tier_idx)
     now_ts = time.time()
-    if user_id in MATCHED_USERS:
-        m = MATCHED_USERS[user_id]
+    # Same 60s stale-flag sweep as POST /queue/ranked. Without this the
+    # background poll would report `matched: true` on every tick from a
+    # dead ack, causing the queue toast to flicker + spontaneous
+    # "match found" pops after returning to the lobby.
+    m = MATCHED_USERS.get(user_id)
+    if m and (now_ts - float(m.get("matched_at", 0.0))) > 60.0:
+        async with QUEUE_LOCK:
+            MATCHED_USERS.pop(user_id, None)
+        m = None
+    if m:
         return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill}
     for ti, q in RANKED_QUEUE.items():
         for i, e in enumerate(q):
@@ -7336,6 +7354,14 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             )
         else:
             room = ranked_room
+        # Consume the matched flag now that we've resolved the room.
+        # Without this the flag survives the entire match and the next
+        # `/queue/ranked` poll after returning to lobby instantly
+        # reports "match found", short-circuiting the queue → forcing
+        # the player into another match with no queue time. Mirrors
+        # the casual mode's post-connect cleanup.
+        async with QUEUE_LOCK:
+            MATCHED_USERS.pop(u_id, None)
     elif mode == "practice":
         # Practice supports both FFA and TDM — driven by `?tdm=1` from the
         # PracticeMapSelector. TDM practice spawns into the dedicated

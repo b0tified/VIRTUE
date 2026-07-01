@@ -570,3 +570,25 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 ### Tests
 - `tests/test_news.py` (6 cases) — admin can create, non-admin gets 403, list sorts pinned-then-newest, unread counts posts after `news_last_read_at` (including the "never opened" baseline), admin can delete + re-delete 404s, malformed id returns 400. All passing.
 - Live e2e: admin creates pinned + regular post → list endpoint returns them in correct order with pinned first → unread is 0 after read; non-admin gets 403 on POST/DELETE. UI screenshots verify the page renders, compose modal works, and posts publish optimistically.
+
+
+## 2026-07-01 — Ranked Queue stale-flag flicker fix (verified)
+### Bug
+Ranked queue timer flickered/disappeared and instantly popped "match found" upon opening the game. Root cause: `MATCHED_USERS[uid]` lingered across sessions when the client `ack` never fired (tab close, network hiccup, ws error). Every subsequent `/queue/ranked` GET saw the stale flag and returned `matched: true`, triggering the client's 3-2-1 loading screen and blocking fresh queues.
+
+### Fix (backend, in `server.py`)
+- **`POST /api/queue/ranked`** — sweeps any `MATCHED_USERS` entry older than 60s before checking the join. Prevents stale flags from short-circuiting fresh joins with a ghost "match found".
+- **`GET /api/queue/ranked`** — same 60s sweep on the status path (the frontend background poller hits this every 3s). A rogue matched flag now self-clears on the next poll instead of spamming the client.
+- **`WS /api/ws/game?mode=ranked`** — connect-time `MATCHED_USERS.pop(uid)` mirrors the casual mode's cleanup. The ack path is now belt-and-suspenders (both ws-connect and explicit ack consume the flag).
+
+### Tests (all passing)
+- `tests/test_stale_matched_flag.py` (3 cases):
+  1. `test_stale_matched_flag_swept_on_get` — 61s-old flag → GET returns `matched:false`, flag popped.
+  2. `test_fresh_matched_flag_still_returns_matched` — brand-new flag → GET returns `matched:true`, flag retained.
+  3. `test_post_queue_ranked_sweeps_stale_flag_before_join` — 120s-old flag + POST → fresh queue entry created, flag gone.
+
+### Frontend
+No code change needed — the sweep is server-authoritative and the existing `QueueContext.jsx` already ignores `matched:false` responses gracefully.
+
+### Live smoke test
+Logged into `player1@shooter.com`, landed on `/lobby`: no ghost "match found" overlay, timer widgets absent (queue not started), buttons interactive. `RANKED LOCKED · 1:46` shows normally (unrelated 10-min leave-penalty from earlier automated tests).
