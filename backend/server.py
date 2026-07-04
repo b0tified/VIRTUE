@@ -2487,10 +2487,14 @@ MELEE_DAMAGE = 200
 MELEE_RANGE = 3.4
 MELEE_CONE = 0.95
 SHOT_RANGE = 100
-SHOT_COOLDOWN_MS = 250
+# AK is now full-auto (hold to fire). Fire rate slowed from 250ms → 400ms
+# per shot (~150 RPM) so held-down fire feels weighty and controllable
+# instead of a runaway laser hose. Bot cooldown scales up in the same
+# ratio so bots don't out-DPS players on the new cadence.
+SHOT_COOLDOWN_MS = 400
 LASER_COOLDOWN_MS = 90
 MELEE_COOLDOWN_MS = 600
-BOT_SHOT_COOLDOWN_MS = 600
+BOT_SHOT_COOLDOWN_MS = 750
 BOT_AIM_NOISE = 0.10
 TICK_RATE = 20
 NUM_BOTS = 3

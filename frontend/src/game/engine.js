@@ -113,6 +113,15 @@ export class GameEngine {
     this.localLaserHeat = 0;
     this.localLaserOverheated = false;
     this._laserFireHeld = false;
+    // AK full-auto hold-to-fire. Mirrors the laser's `_laserFireHeld`
+    // but with a client-side cooldown gate (`_akFireCooldownMs`) so the
+    // per-frame update loop doesn't queue more than one shot per
+    // server-enforced cadence. Slightly under the server's cooldown so
+    // ping jitter doesn't cause the client to skip shots — the server
+    // is authoritative and drops anything premature anyway.
+    this._akFireHeld = false;
+    this._lastAkFireMs = 0;
+    this._akFireCooldownMs = 380;
     this._remoteBeams = new Map(); // shooterId -> {ts, x,y,z,yaw,pitch,hitDist}
     // Jump / vertical physics
     this.vy = 0;
@@ -381,8 +390,23 @@ export class GameEngine {
       this.onLocalUpdate?.({ type: "reload-pressed" });
       return;
     }
+    // Client-side fire-rate gate: bail out if the last AK shot was
+    // fired within the weapon's cooldown window. Prevents the touch
+    // auto-repeat (50ms) and the desktop hold-to-fire tick from
+    // over-decrementing local ammo — server would just drop the shot
+    // and snap ammo back on next state, but the ammo counter would
+    // flicker visibly. `_lastAkFireMs === 0` means "never fired" so
+    // the first shot always passes.
+    const nowMs = performance.now();
+    if (this._lastAkFireMs && nowMs - this._lastAkFireMs < this._akFireCooldownMs) {
+      return;
+    }
     this.pendingShoot = true;
     this.pendingShootAim = { yaw: aimYaw, pitch: aimPitch };
+    // Stamp the shot time so the hold-to-fire tick in _update() knows
+    // when the next shot may be queued. Prevents the per-frame loop
+    // from filling `pendingShoot` faster than the server cooldown.
+    this._lastAkFireMs = performance.now();
     // Optimistically decrement local ammo so back-to-back clicks within one
     // 20Hz tick still see an updated value. Server is authoritative.
     this.localAmmo[w] = Math.max(0, (this.localAmmo[w] ?? 0) - 1);
@@ -401,12 +425,21 @@ export class GameEngine {
       if (this.currentWeapon !== "secondary") this.setADS(true);
       return;
     }
+    // Left click on primary (AK) → engage full-auto hold-to-fire. The
+    // first shot fires immediately for zero-latency feedback; the per-
+    // frame tick in _update() takes over for the sustained burst.
+    if (e.button === 0 && this.currentWeapon === "primary") {
+      this._akFireHeld = true;
+    }
     this._tryShoot(this.yaw, this.pitch);
   }
 
   _onMouseUp(e) {
     if (e.button === 2) this.setADS(false);
-    if (e.button === 0) this._laserFireHeld = false; // stop continuous beam
+    if (e.button === 0) {
+      this._laserFireHeld = false; // stop continuous beam
+      this._akFireHeld = false;    // stop AK auto-fire
+    }
   }
 
   _onContextMenu(e) {
@@ -4115,6 +4148,26 @@ export class GameEngine {
   _update(dt) {
     // Drive virtual inputs from a connected gamepad (Xbox / PS-style).
     this._pollGamepad(dt);
+
+    // AK full-auto hold-to-fire tick. If the player is holding the
+    // fire button (left mouse or the touch trigger) with the primary
+    // weapon selected, queue a shot every `_akFireCooldownMs`. The
+    // server enforces its own cooldown so the client rate here just
+    // avoids uselessly stamping `pendingShoot` every frame. Requires
+    // alive + locked (pointer captured or touch active) so the fire
+    // doesn't chatter through menus.
+    if (
+      this._akFireHeld &&
+      this.currentWeapon === "primary" &&
+      this.alive &&
+      (this.locked || this.touchActive) &&
+      !this.localReloading
+    ) {
+      const now = performance.now();
+      if (now - this._lastAkFireMs >= this._akFireCooldownMs) {
+        this._tryShoot(this.yaw, this.pitch);
+      }
+    }
 
     // Wind sway on grass blades — gentle, low-cost.
     if (this._grassBlades && this._grassBlades.length) {
