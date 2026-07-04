@@ -121,7 +121,7 @@ export class GameEngine {
     // is authoritative and drops anything premature anyway.
     this._akFireHeld = false;
     this._lastAkFireMs = 0;
-    this._akFireCooldownMs = 380;
+    this._akFireCooldownMs = 300;
     this._remoteBeams = new Map(); // shooterId -> {ts, x,y,z,yaw,pitch,hitDist}
     // Jump / vertical physics
     this.vy = 0;
