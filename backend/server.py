@@ -4444,6 +4444,15 @@ class GameRoom:
             # user feedback that ranked bots felt sluggish.
             if smart and self.is_ranked:
                 effective_cd += 40
+                # Floor ranked bot fire rate at the player's AK cadence.
+                # Without this, high-tier ranked bots (Diamond+, diff ≥
+                # 2.8) end up firing at ~200-260ms — significantly FASTER
+                # than the player's 320ms hold-to-fire cooldown. The
+                # ladder should scale via bot AIM and MOVEMENT, not by
+                # letting bots trigger-hack. Match the player's cadence
+                # so a good bot's edge is smarter positioning, not raw
+                # DPS the player can never match.
+                effective_cd = max(effective_cd, float(SHOT_COOLDOWN_MS))
             in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
