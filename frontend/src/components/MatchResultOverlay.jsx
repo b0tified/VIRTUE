@@ -33,9 +33,19 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
   // Determine outcome: TDM uses team win/loss/draw, FFA uses placement.
   let outcome; // "victory" | "defeat" | "draw"
   if (isTdm) {
-    if (winningTeam === null) outcome = "draw";
-    else if (myTeam && myTeam === winningTeam) outcome = "victory";
-    else outcome = "defeat";
+    if (!myTeam) {
+      // Edge case: match_end arrived before youId propagated through the
+      // HUD state loop (or the local player isn't in placements). Fall
+      // back to a neutral STALEMATE-style overlay rather than
+      // misclassifying the player as a loser.
+      outcome = "draw";
+    } else if (winningTeam === null) {
+      outcome = "draw";
+    } else if (myTeam === winningTeam) {
+      outcome = "victory";
+    } else {
+      outcome = "defeat";
+    }
   } else {
     outcome = myPlacement === 1 ? "victory" : "defeat";
   }

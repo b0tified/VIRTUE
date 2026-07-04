@@ -990,3 +990,31 @@ New setting `lobbyBackgroundVariant` (default `"auto"`) with four values:
   - LEAVE QUEUE tears down toast with 0 ghost re-appearance over 15s (75/75 samples clear).
   - Ranked rapid double-click still fires exactly ONE loading event.
   - Ranked end-to-end still passes (no regression from new `rankedJoiningRef` lock).
+
+
+---
+
+### Iteration 14 — **THIS SESSION (2026-02-25, fork, continued)**
+- ✅ **Custom TDM match-end screen shipped** — MatchResultOverlay now renders team-based **TEAM VICTORY! / TEAM DEFEAT / STALEMATE** for TDM instead of the old "1st place = winner" FFA logic that misclassified TDM outcomes.
+
+**Backend contract (in `/app/backend/server.py` `end_match` around line 4909):**
+The `match_end` WS payload now includes for TDM:
+- `game_mode: "tdm"` (FFA sets `"ffa"`)
+- `team_scores: {red: int, blue: int}`
+- `winning_team: "red" | "blue" | null` (null = draw)
+- each `placements[i]` gets a `team` field ("red"/"blue"/null)
+
+FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_scores`, `winning_team`, and per-row `team`.
+
+**Frontend (in `/app/frontend/src/components/MatchResultOverlay.jsx`):**
+- Outcome is derived from `myTeam === winningTeam` (VICTORY) / `winningTeam === null` (STALEMATE) / else DEFEAT for TDM; FFA still uses `myPlacement === 1`.
+- New palettes: gold for **TEAM VICTORY!** (Users icon), red for **TEAM DEFEAT** (Users icon), silver/blue for **STALEMATE** (Handshake icon).
+- New scoreboard band `data-testid="match-result-tdm-scoreboard"` shows `RED N — M BLUE` with the winning team side outlined in gold + a "WIN" badge.
+- Per-row team-color chip `match-end-team-tag-{i}` beside each player's name in the placement table.
+- Mode chip suffixed with `· TDM` when applicable (e.g. `RANKED · TDM`, `QUICK MATCH · TDM`).
+- Defensive fallback: if the local player isn't in placements (youId race on match_end), TDM renders STALEMATE instead of misclassifying as DEFEAT.
+
+**Verified by testing agent (iteration_14, 100% pass):**
+- Backend: 6/6 in `/app/backend/tests/test_tdm_match_end_payload.py` (RED win, BLUE win, DRAW, FFA regression, bot-without-team, and a code-drift assertion on server.py).
+- Frontend Playwright synthetic payload injection via `window.__virtue_sock.onMessage`: 5/5 scenarios pass (TDM VICTORY / DEFEAT / DRAW, FFA VICTORY 1st, FFA DEFEAT 2nd). All expected data attributes, headline text, WIN badge presence, icons, and team chips correctly rendered.
+- Existing tests: 30/30 TDM + queue tests still pass (no regression).
