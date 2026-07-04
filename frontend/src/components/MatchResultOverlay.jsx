@@ -5,41 +5,85 @@
    table is still rendered below so the player can see kills / Δ RP /
    final rank for every participant. */
 import { useEffect, useMemo, useState } from "react";
-import { Trophy, Skull, Star, Crosshair, Target, Home } from "lucide-react";
+import { Trophy, Skull, Star, Crosshair, Target, Home, Users, Handshake } from "lucide-react";
 import { rankIconFor, divisionRoman } from "@/game/rankIcons";
 import audioBus from "@/game/audio";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+// Team accent colors — matches the in-game team tint (red / blue).
+const TEAM_COLORS = { red: "#E62429", blue: "#0055FF" };
+const TEAM_LABELS = { red: "TEAM RED", blue: "TEAM BLUE" };
 
 export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby }) {
   const placements = matchEnd?.placements || [];
+  // TDM detection — the server tags the match_end payload with
+  // `game_mode: "tdm"` and includes `team_scores` + `winning_team` +
+  // per-placement `team`. For FFA we fall back to the legacy
+  // "1st place wins" logic.
+  const isTdm = matchEnd?.game_mode === "tdm";
+  const teamScores = matchEnd?.team_scores || null;
+  const winningTeam = matchEnd?.winning_team ?? null; // null = draw for tdm
   // Find the local player's row. If they aren't in placements (e.g. spectator
   // or a late joiner the server didn't include) we still render a defeat
   // screen — it reads less harshly than no overlay at all.
   const mine = placements.find((p) => p.id === youId) || placements.find((p) => p.user_id === youId);
   const myPlacement = mine ? placements.findIndex((p) => p === mine) + 1 : null;
-  const isVictory = myPlacement === 1;
-  const palette = isVictory
-    ? {
-        accent: "#FFD700",
-        accentDark: "#a36a00",
-        ink: "#0A0A0A",
-        bgFrom: "#FFD700",
-        bgTo: "#FF9500",
-        headline: "VICTORY!",
-        sub: "1st Place",
-        Icon: Trophy,
-      }
-    : {
-        accent: "#E62429",
-        accentDark: "#7a1115",
-        ink: "#FFFFFF",
-        bgFrom: "#240000",
-        bgTo: "#7a1115",
-        headline: "DEFEAT",
-        sub: myPlacement ? `${ordinal(myPlacement)} Place` : "Eliminated",
-        Icon: Skull,
-      };
+  const myTeam = mine?.team || null;
+
+  // Determine outcome: TDM uses team win/loss/draw, FFA uses placement.
+  let outcome; // "victory" | "defeat" | "draw"
+  if (isTdm) {
+    if (winningTeam === null) outcome = "draw";
+    else if (myTeam && myTeam === winningTeam) outcome = "victory";
+    else outcome = "defeat";
+  } else {
+    outcome = myPlacement === 1 ? "victory" : "defeat";
+  }
+  const isVictory = outcome === "victory";
+  const isDraw = outcome === "draw";
+
+  // Build palette per outcome. TDM keeps the same gold/red baseline
+  // but uses a distinct silver-blue palette for DRAW so the player can
+  // tell instantly that neither team won.
+  let palette;
+  if (isDraw) {
+    palette = {
+      accent: "#C0C0C0",
+      accentDark: "#5a5a5a",
+      ink: "#0A0A0A",
+      bgFrom: "#5BC0EB",
+      bgTo: "#2b3a55",
+      headline: "STALEMATE",
+      sub: teamScores ? `${teamScores.red} — ${teamScores.blue}` : "Tied",
+      Icon: Handshake,
+    };
+  } else if (isVictory) {
+    palette = {
+      accent: "#FFD700",
+      accentDark: "#a36a00",
+      ink: "#0A0A0A",
+      bgFrom: "#FFD700",
+      bgTo: "#FF9500",
+      headline: isTdm ? "TEAM VICTORY!" : "VICTORY!",
+      sub: isTdm
+        ? (myTeam ? `${TEAM_LABELS[myTeam]} · ${teamScores?.[myTeam] ?? 0} — ${teamScores?.[myTeam === "red" ? "blue" : "red"] ?? 0}` : "Team Wins")
+        : "1st Place",
+      Icon: isTdm ? Users : Trophy,
+    };
+  } else {
+    palette = {
+      accent: "#E62429",
+      accentDark: "#7a1115",
+      ink: "#FFFFFF",
+      bgFrom: "#240000",
+      bgTo: "#7a1115",
+      headline: isTdm ? "TEAM DEFEAT" : "DEFEAT",
+      sub: isTdm
+        ? (myTeam ? `${TEAM_LABELS[myTeam]} · ${teamScores?.[myTeam] ?? 0} — ${teamScores?.[myTeam === "red" ? "blue" : "red"] ?? 0}` : "Team Wiped")
+        : (myPlacement ? `${ordinal(myPlacement)} Place` : "Eliminated"),
+      Icon: isTdm ? Users : Skull,
+    };
+  }
 
   // Stagger entry animation — splash, then headline, then stats, then table.
   const [stage, setStage] = useState(0);
@@ -48,6 +92,8 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
     const b = setTimeout(() => setStage(2), 320);
     const c = setTimeout(() => setStage(3), 620);
     // Play the result sting exactly once when the overlay mounts.
+    // Draw uses the defeat sting (softer than victory) since neither
+    // team won — but the palette communicates it clearly.
     try {
       if (isVictory) audioBus.victory?.();
       else audioBus.defeat?.();
@@ -74,7 +120,8 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
     <div
       className="absolute inset-0 z-50 overflow-hidden flex items-center justify-center px-4 py-6 pointer-events-auto"
       data-testid="match-end-overlay"
-      data-result={isVictory ? "victory" : "defeat"}
+      data-result={outcome}
+      data-game-mode={isTdm ? "tdm" : "ffa"}
       style={{
         background: `radial-gradient(ellipse at center, ${palette.bgFrom}cc 0%, ${palette.bgTo} 60%, #000 100%)`,
       }}
@@ -165,7 +212,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
             opacity: stage >= 1 ? 1 : 0,
             animation: stage >= 1 ? "match-pop-in 480ms cubic-bezier(.2,1.2,.4,1) both" : "none",
           }}
-          data-testid={`match-result-headline-${isVictory ? "victory" : "defeat"}`}
+          data-testid={`match-result-headline-${outcome}`}
         >
           {/* diagonal stripes overlay */}
           <div
@@ -196,13 +243,70 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                     className="inline-flex items-center gap-1 px-2 py-0.5 border-2 text-xs"
                     style={{ background: palette.ink, color: palette.accent, borderColor: palette.ink }}
                   >
-                    {isRanked ? "RANKED" : "QUICK MATCH"}
+                    {isRanked ? "RANKED" : "QUICK MATCH"}{isTdm ? " · TDM" : ""}
                   </span>
                 )}
               </div>
             </div>
           </div>
         </div>
+
+        {/* TDM scoreboard band — big RED N — M BLUE with the winning
+            team's side glowing gold. Only rendered for TDM matches. */}
+        {isTdm && teamScores && (
+          <div
+            className="card-pow p-0 overflow-hidden"
+            style={{
+              opacity: stage >= 1 ? 1 : 0,
+              animation: stage >= 1 ? "match-slide-up 380ms ease-out 120ms both" : "none",
+            }}
+            data-testid="match-result-tdm-scoreboard"
+          >
+            <div className="grid grid-cols-2 bg-black">
+              {["red", "blue"].map((t) => {
+                const isWinner = winningTeam === t;
+                const isMine = myTeam === t;
+                return (
+                  <div
+                    key={t}
+                    className="relative px-4 py-4 flex items-center justify-center gap-3 border-r-4 border-black last:border-r-0"
+                    style={{
+                      background: TEAM_COLORS[t],
+                      color: "#FFFFFF",
+                      // Winner side gets a bright gold inset ring for a
+                      // "trophy plaque" feel; loser side stays flat.
+                      boxShadow: isWinner ? "inset 0 0 0 4px #FFD700" : "none",
+                    }}
+                    data-testid={`match-result-team-${t}`}
+                    data-team-winner={isWinner ? "true" : "false"}
+                  >
+                    <Users size={24} strokeWidth={3} />
+                    <div className="flex flex-col items-start leading-none">
+                      <div className="font-anton uppercase tracking-widest text-xs opacity-90">
+                        {TEAM_LABELS[t]}{isMine ? " · YOU" : ""}
+                      </div>
+                      <div
+                        className="font-display text-5xl sm:text-6xl tabular-nums"
+                        style={{ textShadow: "3px 3px 0 #0A0A0A" }}
+                        data-testid={`match-result-team-score-${t}`}
+                      >
+                        {teamScores[t] ?? 0}
+                      </div>
+                    </div>
+                    {isWinner && (
+                      <div
+                        className="absolute top-1 right-1 px-1.5 py-0.5 font-anton uppercase tracking-widest text-[10px] border-2 border-black"
+                        style={{ background: "#FFD700", color: "#0A0A0A" }}
+                      >
+                        WIN
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Stat strip — your kills / deaths / RP delta (or placement) */}
         {mine && (
@@ -266,6 +370,14 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                   >
                     <div className="col-span-1 font-display text-lg">{i + 1}</div>
                     <div className="col-span-5 font-anton uppercase truncate flex items-center gap-1">
+                      {isTdm && p.team && (
+                        <span
+                          className="inline-block w-2 h-4 rounded-sm border border-black"
+                          style={{ background: TEAM_COLORS[p.team] || "#666" }}
+                          title={TEAM_LABELS[p.team]}
+                          data-testid={`match-end-team-tag-${i}`}
+                        />
+                      )}
                       <span>{p.username}</span>
                       {isMe && <span className="text-[9px] text-neutral-500">(YOU)</span>}
                       {p.is_placement && (

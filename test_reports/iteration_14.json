@@ -1,0 +1,28 @@
+{
+  "summary": "TDM match-end overlay feature verified end-to-end. Backend contract pytest suite test_tdm_match_end_payload.py 6/6 PASS (game_mode/team_scores/winning_team/per-row team fields for TDM; FFA correctly omits TDM-only keys). Frontend synthetic-payload testing on /play?mode=offline via window.__virtue_sock.onMessage 5/5 PASS across TDM_VICTORY_RED, TDM_DEFEAT_BLUE, TDM_DRAW, FFA_VICTORY, FFA_DEFEAT. Each scenario verified: data-result, data-game-mode, headline text (TEAM VICTORY! / TEAM DEFEAT / STALEMATE / VICTORY! / DEFEAT), presence/absence of match-result-tdm-scoreboard, team scores (red/blue), data-team-winner=true only on the winner, WIN badge only on winner (not present on draw), lucide icon (users for TDM, trophy for FFA victory, skull for FFA defeat, handshake for draw), mode chip ('QUICK MATCH · TDM' for TDM, 'QUICK MATCH' for FFA), and match-end-team-tag-{i} row chips count matches placements count for TDM (0 for FFA). Ranked-mode chip 'RANKED · TDM' could not be verified via synthetic injection because Hud isRanked is derived from route mode (mode='offline' → false), not from msg.is_ranked — this is intentional client behavior; the codepath itself is trivially correct (line 246 of MatchResultOverlay: `${isRanked ? 'RANKED' : 'QUICK MATCH'}${isTdm ? ' · TDM' : ''}`).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_tdm_match_end_payload.py",
+    "/app/test_reports/pytest/tdm_match_end_iter14.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MatchResultOverlay outcome derivation relies on `mine?.team` — if a TDM match_end arrives before the engine's state loop has propagated hud.youId to Hud (a race that manifests immediately after mount), `mine` is null → the overlay falls back to TEAM DEFEAT with 'TEAM WIPED' sub even for a winning-team player. In production the state loop runs ~30-60Hz before end_match fires so this race is not observable, but if server ever ends a match in <100ms of welcome (edge case: instant forfeit or reconnect-into-ended-match), users could see a spurious DEFEAT splash. Consider passing engine.youId directly to Hud/MatchResultOverlay via a ref instead of routing through the throttled hud state, or gate MatchResultOverlay mount on `hud.youId != null`.",
+    "MatchResultOverlay.jsx line 246: `${isRanked ? 'RANKED' : 'QUICK MATCH'}${isTdm ? ' · TDM' : ''}` — mode-chip label ignores matchEnd.game_mode payload and only reads the prop. This is correct today but couples the chip label to route mode instead of to the actual played game_mode. Fine for now, but if server ever changes the mode mid-match (unlikely) the chip won't reflect it.",
+    "server.py end_match payload block (line ~4917-4940) does `row['team'] = team_by_id.get(row.get('id'))` which sets `team: None` for participants without a team. Overlay guards `isTdm && p.team &&` so this is safe; however the JSON `null` vs missing key subtly differ — the test test_ffa_omits_tdm_only_keys asserts 'team' is NOT in FFA rows, and the production code only injects `team` inside `if game_mode == 'tdm'`, so this is correct. Good.",
+    "server.py still ~8100 lines (pre-existing, tracked since iteration_10).",
+    "MatchResultOverlay ~480 lines is at the upper edge of the 700-line guideline; if more modes are added (e.g. Domination, KOTH) consider splitting the palette/outcome computation into a hook."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (6/6 pytest in test_tdm_match_end_payload.py)",
+    "frontend": "100% (5/5 synthetic scenarios: TDM victory, TDM defeat, TDM draw, FFA victory, FFA defeat)"
+  },
+  "test_credentials": "player1@shooter.com / player123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Used offline LocalSim + synthetic match_end payload injection via window.__virtue_sock.onMessage().",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "To test MatchResultOverlay without running an actual match: (1) login → /lobby → (2) push react-router state via `window.history.pushState({usr:{fromLobby:true}}, '', '/play?mode=offline'); window.dispatchEvent(new PopStateEvent('popstate', {state:{usr:{fromLobby:true}}}))` to enter Game with offline LocalSim, (3) wait for `window.__virtue_sock.me.id` to be set AND then wait ~5s for the engine's state loop to propagate hud.youId — otherwise mine=null and TDM outcome falls back to DEFEAT/TEAM WIPED. (4) Call `window.__virtue_sock.onMessage(synthPayload)` with placements[i].id/user_id == sock.me.id for the local player. This is the reliable pattern; also useful for future ranked-flow / bot-fill / stale-flag overlay testing. Do NOT try `mode=ranked` for injection — Hud reads `mode==='ranked'` for isRanked and won't have MatchEntryGuard.",
+  "rca of the issue": "Task was a feature add, no bug to reproduce. All acceptance criteria in the review request verified: (a) backend TDM payload contract (game_mode, team_scores, winning_team, per-row team) — pytest 6/6, (b) FFA regression — TDM keys absent, (c) frontend TEAM VICTORY/DEFEAT/STALEMATE outcomes and correct icon (Users/Skull/Handshake/Trophy) and palette differentiation, (d) FFA regression — 1st place still VICTORY (Trophy), non-1st still DEFEAT, no TDM scoreboard, (e) per-row match-end-team-tag-{i} present for TDM (count == placements) and absent for FFA (count == 0), (f) mode chip 'QUICK MATCH · TDM' for casual TDM, 'QUICK MATCH' for FFA."
+}

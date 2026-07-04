@@ -995,6 +995,10 @@ export class LocalSim {
         placements,
         duration: this.matchDuration,
         is_ranked: false,
+        // Offline practice is FFA-only; TDM offline is TODO. Setting
+        // this explicitly so the client's MatchResultOverlay renders
+        // the FFA layout deterministically.
+        game_mode: "ffa",
       });
     }
   }

@@ -4911,7 +4911,33 @@ class GameRoom:
             "placements": placements,
             "duration": self.match_duration,
             "is_ranked": self.is_ranked,
+            # TDM-specific fields — the client uses these to render the
+            # team-based VICTORY/DEFEAT/DRAW headline instead of the FFA
+            # "1st place wins" logic. Populated for TDM only; FFA leaves
+            # `game_mode: "ffa"` and null scores.
+            "game_mode": self.game_mode,
         }
+        if self.game_mode == "tdm":
+            red_score = int(self.team_scores.get("red", 0))
+            blue_score = int(self.team_scores.get("blue", 0))
+            if red_score > blue_score:
+                winning_team = "red"
+            elif blue_score > red_score:
+                winning_team = "blue"
+            else:
+                winning_team = None  # draw
+            payload["team_scores"] = {"red": red_score, "blue": blue_score}
+            payload["winning_team"] = winning_team
+            # Inject each participant's team onto their placement row so
+            # the client can look up "my team" -> compare to winning_team.
+            # We index by participant id to cover both real players and
+            # bots. Uses `all_participants` which is already in scope.
+            team_by_id = {
+                p.id: (getattr(p, "team", None) or "").lower() or None
+                for p in all_participants
+            }
+            for row in placements:
+                row["team"] = team_by_id.get(row.get("id"))
         self.last_match_end_payload = payload
         # Snapshot the match number BEFORE the broadcast so we can scope it
         # to exactly the players who joined this match. Late joiners (joining
