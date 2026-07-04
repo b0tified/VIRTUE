@@ -2743,8 +2743,19 @@ export class GameEngine {
     const equipped = this.currentWeapon === "tertiary"
       && this.alive
       && !this.isSpectator;
+    // Compute the auto-aim lock first — reticle needs it AND the beam
+    // is now gated on it. `aim != null` means an enemy is inside the
+    // laser's auto-aim range (22m + wide cone via `_laserAutoAimLock`).
+    const aim = equipped ? this._laserAutoAimLock() : null;
+    this._updateLockReticle(aim);
+    // Beam only "engages" when the auto-aim lock actually acquires a
+    // target — holding fire in empty air renders nothing (no beam
+    // mesh, no audio start event, no heat build-up). Matches the
+    // "laser only works in auto-aim range" behaviour and keeps the
+    // visual in sync with the server-side `laser_firing` gate below.
     const active = equipped
       && this._laserFireHeld
+      && aim != null
       && !this.localLaserOverheated;
     if (!this._beamOuter || !this._beamCore) return false;
     // Emit start/stop edge events so audio + HUD react crisply.
@@ -2752,12 +2763,6 @@ export class GameEngine {
       this._beamAudioActive = active;
       this.onLocalUpdate?.({ type: active ? "laser-beam-start" : "laser-beam-stop" });
     }
-    // Lock-on reticle — shown whenever the laser is equipped and a
-    // candidate target sits inside the auto-aim cone, even if the player
-    // isn't actively firing. Gives the player a clear cue that pulling
-    // the trigger right now will land.
-    const aim = equipped ? this._laserAutoAimLock() : null;
-    this._updateLockReticle(aim);
     if (!active) {
       this._beamOuter.visible = false;
       this._beamCore.visible = false;
@@ -5162,7 +5167,17 @@ export class GameEngine {
       // Laser beam — continuous-fire request flag. Server applies damage
       // per-tick while true (subject to overheat). Only meaningful when the
       // tertiary (laser) weapon is selected.
-      laser_firing: this.currentWeapon === "tertiary" && !!this._laserFireHeld,
+      //
+      // Auto-aim gate: the laser only engages when an enemy is inside
+      // its auto-aim lock range (`_laserAutoAimLock()`: 22m + wide
+      // cone). Player can hold the fire button all they want in empty
+      // air — the network flag stays false, so the server-side beam
+      // never starts and no heat accumulates. Matches the beam
+      // visual's identical gate in `_updateLaserBeamVisual()`.
+      laser_firing:
+        this.currentWeapon === "tertiary"
+        && !!this._laserFireHeld
+        && this._laserAutoAimLock() != null,
     };
   }
 }
