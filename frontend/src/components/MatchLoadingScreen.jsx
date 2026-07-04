@@ -64,8 +64,22 @@ export default function MatchLoadingScreen() {
   };
 
   // virtue-match-loading: enter loading phase, pick a random preview map.
+  // Guard: once phase went through the full loading→confirmed→idle cycle
+  // AND the user is inside a match route, IGNORE further loading events.
+  // Without this, any stray/orphaned queue-poll re-firing the event
+  // (e.g. a leftover casual poll interval after a race) would resurrect
+  // the loading overlay ON TOP of live gameplay.
+  const phaseRef = useRef(phase);
+  const consumedRef = useRef(false);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => {
     const onLoading = (e) => {
+      const inMatchRoute = typeof window !== "undefined"
+        && window.location?.pathname?.startsWith("/play");
+      // If we've already completed one loading cycle for this match
+      // (phase idle after confirmed) AND we're already inside the match
+      // route, drop the event — it's a stray fire, not a fresh queue.
+      if (inMatchRoute && consumedRef.current) return;
       const m = e?.detail?.mode || "casual";
       setMode(m);
       setUsername(e?.detail?.username || null);
@@ -97,10 +111,34 @@ export default function MatchLoadingScreen() {
       if (e?.detail?.game_mode) setServerGameMode(e.detail.game_mode);
       setPhase("confirmed");
       clearTimers();
-      dismissTimerRef.current = setTimeout(() => setPhase("idle"), REVEAL_HOLD_MS);
+      dismissTimerRef.current = setTimeout(() => {
+        setPhase("idle");
+        // Latch: any stray virtue-match-loading fired after this point
+        // (while still on /play) will be ignored.
+        consumedRef.current = true;
+      }, REVEAL_HOLD_MS);
     };
     window.addEventListener("virtue-match-loaded", onLoaded);
     return () => window.removeEventListener("virtue-match-loaded", onLoaded);
+  }, []);
+
+  // Reset the "consumed" latch when the user leaves the match route —
+  // the next queue → match flow starts a fresh cycle.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const check = () => {
+      if (!window.location?.pathname?.startsWith("/play")) {
+        consumedRef.current = false;
+      }
+    };
+    check();
+    window.addEventListener("popstate", check);
+    // React Router doesn't emit popstate on nav() — poll cheaply.
+    const id = setInterval(check, 500);
+    return () => {
+      window.removeEventListener("popstate", check);
+      clearInterval(id);
+    };
   }, []);
 
   // Cleanup timers on unmount

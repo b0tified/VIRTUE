@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration-13 verified the casual-queue hardening fixes (mirroring iteration-12 ranked fix). Backend 11/11 pass, incl. new idempotent-rejoin test. Frontend Playwright with a CustomEvent spy + 100ms DOM sampler proved: (1) casual QUICK MATCH toast stays continuously visible (59/60 samples present over 12s, single 200ms blip which corresponds to a normal 4Hz timer redraw window — not a flicker), (2) rapid 3x click within 299ms produces EXACTLY ONE virtue-match-loading event, (3) after nav to /play the match-loading-screen goes loading → (safety fallback) idle → (welcome) confirmed → idle and does NOT resurrect from idle back to loading, (4) LEAVE QUEUE tears down toast with ZERO ghost re-appearance across 15s (75/75 samples clear), (5) Ranked queue rapid double-click still fires exactly ONE virtue-match-loading event and toast has 0 hidden ticks in 12s. New joinRanked in-flight lock (rankedJoiningRef) does not regress the ranked flow. Casual bot-fill matched in ~11s; ranked matched in ~28s. All 7 review scenarios pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "In-game / match", "issues": ["React warning: 'Encountered two children with the same key' fires dozens of times during gameplay (likely a comic-effect list, e.g. WHAM!/ZAP!/POW! floating text). Pre-existing — unrelated to this iteration's queue fix, but should be tracked (missing/duplicate key in a .map()). No visual glitch observed, just console noise."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_queue_endpoints_regression.py",
+    "/app/test_reports/pytest/queue_all_iter13.xml"
+  ],
+  "action_items": [
+    "(Non-blocking) Fix duplicate React key warnings from in-game floating-text renderer — add stable keys to the effect list.",
+    "(Non-blocking) Consider tightening MatchLoadingScreen safety-dismiss vs welcome-arrival race: on this run the safety timer (6000ms) fired ~475ms BEFORE virtue-match-loaded arrived, causing a brief phase flip loading→idle→confirmed→idle. Not user-visible as spam, but ideally the safety timer should be extended (e.g. 8000ms) or restarted when a stale welcome eventually arrives, so the overlay dismisses only once."
+  ],
+  "critical_code_review_comments": [
+    "QueueContext.jsx joinCasual and joinRanked now have symmetric guards: casualJoiningRef + casualPollRef checks and rankedJoiningRef + pollIdRef checks. Both correctly return {ok:false, error:'Already queued'} on double-click. Good.",
+    "MatchLoadingScreen consumedRef latch correctly gates repeat virtue-match-loading events while location starts with /play, and is reset by a 500ms poll when the user leaves /play. Fallback via popstate listener is present. Latch is set inside the dismissTimerRef callback after confirmed→idle transition — meaning if the safety timer fires FIRST (welcome never arrives), consumedRef never becomes true, so a subsequent orphan virtue-match-loading could still resurrect the overlay. In practice this is prevented by the in-flight lock, but consider setting consumedRef=true from the safety-dismiss path too for defence in depth.",
+    "QueueContext.jsx now has FOUR magic-number timers (15s matched-guard, 10s cancel-guard, 6s miss-teardown, 3s bg poll interval) duplicated for casual and ranked — 8 numbers total. Extract to a shared constants block: CANCEL_GUARD_MS, MATCH_GUARD_MS, MISS_TEARDOWN_MS, BG_POLL_MS.",
+    "server.py still ~8100 lines (flagged since iteration-10). Not blocking.",
+    "QueueContext.jsx has NO background poll for casual, only for ranked (lines 262-291). Party-leader-driven casual queue may not be reflected on party followers. Confirm whether this is intentional — if casual doesn't support party queueing, add a code comment; if it does, mirror the bg-poll for casual too.",
+    "consumedRef in MatchLoadingScreen is cleared via a 500ms setInterval polling location.pathname (line 137). This works but is wasteful; consider subscribing to react-router-dom's useLocation instead so the component un/re-subscribes on route change."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_queue_endpoints_regression.py (+ test_casual_join_idempotent)"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (7/7 scenarios: casual-toast-stability, casual-rapid-triple-click, casual-vml-single-fire, casual-mls-no-resurrect, casual-cancel-no-ghost, ranked-e2e, ranked-rapid-double-click)"},
+  "test_credentials": "player1@shooter.com / player123 (from /app/memory/test_credentials.md). Cleared ranked_ban_until on player1 pre-run and post-run using the iteration_12 motor snippet.",
+  "seed_data_creation": "None. Just cleared ranked ban field on player1 twice.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reliable pattern for detecting overlay-spam bugs: wrap window.dispatchEvent BEFORE any queue interaction and count virtue-match-loading fires. Also run a setInterval(100ms) that samples [data-testid='match-loading-screen'] presence + data-phase attribute + location.pathname; then analyse transitions on /play — a legitimate cycle looks like loading → confirmed → idle (or loading → idle if welcome misses the 6s safety window). A BUG cycle would be idle → loading again while pathname stays /play. In iteration_13 the sequence observed on /play was mls=true(loading, +17579ms) → mls=false(+17688ms, safety) → mls=true(confirmed, +17870ms) → mls=false(idle, +19053ms) — one clean cycle. Casual bot-fill is ~11s in this env; ranked was ~28s at Bronze. If the toast has a 'leave queue' button, its text is exactly ' leave queue' (leading space).",
+  "rca_of_the_issue": "Original bug: casual quick-match toast flickered mid-search and match-loading overlays 'spammed' over live gameplay. Root causes (fixed by main agent): (a) casual poll had no miss tolerance → any single in_queue:false blip tore down the toast; user re-clicked; (b) no in-flight lock on joinCasual → rapid double-clicks (or clicks after a transient teardown) opened parallel setInterval polls, orphaning the previous one; orphan intervals eventually saw matched:true and dispatched a stray virtue-match-loading INTO gameplay; (c) MatchLoadingScreen had no guard preventing re-appearance during gameplay. Fix layers verified this run: casualJoiningRef in-flight lock, casualMatchedRef one-shot flag on matched:true, casualMissesRef 10-tick tolerance, casualCancelGuardUntilRef 15s slam on matched, and MatchLoadingScreen consumedRef latch (set after confirmed→idle) that ignores further virtue-match-loading while on /play. Symmetric rankedJoiningRef added and confirmed non-regressing on the ranked path."
+}

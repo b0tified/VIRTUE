@@ -163,3 +163,24 @@ class TestCasualQueue:
     def test_casual_leave(self, headers):
         r = requests.delete(f"{BASE_URL}/api/queue/casual", headers=headers, timeout=10)
         assert r.status_code == 200
+
+    def test_casual_join_idempotent(self, headers):
+        """iteration_13: rapid double-click / re-join must be idempotent
+        and NOT crash the queue endpoint."""
+        # Clean slate
+        requests.delete(f"{BASE_URL}/api/queue/casual", headers=headers, timeout=10)
+        r1 = requests.post(f"{BASE_URL}/api/queue/casual", headers=headers, timeout=10)
+        assert r1.status_code == 200, r1.text
+        d1 = r1.json()
+        assert d1.get("in_queue") is True or "bot_fill_seconds" in d1
+        g = requests.get(f"{BASE_URL}/api/queue/casual", headers=headers, timeout=10)
+        assert g.status_code == 200
+        # Second POST must not 4xx/5xx — must return a sensible payload.
+        r2 = requests.post(f"{BASE_URL}/api/queue/casual", headers=headers, timeout=10)
+        assert r2.status_code == 200, f"idempotent re-join failed: {r2.status_code} {r2.text}"
+        d2 = r2.json()
+        assert d2.get("in_queue") is True or "bot_fill_seconds" in d2
+        # Cleanup
+        rd = requests.delete(f"{BASE_URL}/api/queue/casual", headers=headers, timeout=10)
+        assert rd.status_code == 200
+        assert rd.json().get("ok") is True or "ok" in rd.json()

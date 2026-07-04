@@ -211,13 +211,24 @@ export function QueueProvider({ children }) {
     }, 1000);
   }, [nav, startLocalTimer, stopAll]);
 
+  const rankedJoiningRef = useRef(false);
   const joinRanked = useCallback(async () => {
+    // Same in-flight lock as casual — prevents rapid double-clicks
+    // from starting two overlapping poll intervals (the second one
+    // would overwrite pollIdRef inside beginActivePoll and orphan the
+    // first, which then keeps firing match-found events forever).
+    if (rankedJoiningRef.current || pollIdRef.current) {
+      return { ok: false, error: "Already queued" };
+    }
+    rankedJoiningRef.current = true;
     try {
       const { data } = await api.post("/queue/ranked");
       beginActivePoll(data);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.response?.data?.detail || e.message };
+    } finally {
+      rankedJoiningRef.current = false;
     }
   }, [beginActivePoll]);
 
@@ -234,6 +245,7 @@ export function QueueProvider({ children }) {
     setQueueState(null);
     lockedEtaRef.current = null;
     missesRef.current = 0;
+    rankedJoiningRef.current = false;
     try { await api.delete("/queue/ranked"); } catch {}
   }, [stopAll]);
 
@@ -279,22 +291,36 @@ export function QueueProvider({ children }) {
   }, [beginActivePoll, inMatchRoute]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Casual queue — simpler counterpart of the ranked queue. Same shape
-  // (server-side FIFO + 10s bot-fill) but without tiers, party
-  // followers, or the elaborate miss-tolerance the ranked path needs.
-  // The lobby's QUICK MATCH button used to be a pure client-side
-  // timer — this state replaces it so casual feels symmetric with
-  // ranked (proper server queue, cancellable, audio-acknowledged).
+  // Casual queue — mirrors the hardening of the ranked path after users
+  // reported the same failure mode: (1) toast disappears mid-search on
+  // a transient poll blip and (2) after clicking Quick Match again, the
+  // match-loading overlay ends up spamming over live gameplay because
+  // multiple overlapping poll intervals get orphaned and each one fires
+  // its own `virtue-match-loading` event on the next `matched:true`
+  // tick. Fixes below:
+  //   • `casualJoiningRef` — in-flight lock around POST /queue/casual to
+  //     stop rapid double-clicks from starting two parallel poll
+  //     intervals (the second setInterval would overwrite casualPollRef
+  //     and orphan the first — that ghost interval kept polling forever,
+  //     eventually seeing matched:true and dispatching stray loading
+  //     events during gameplay).
+  //   • `casualMatchedRef` — one-shot flag so once matched fires, any
+  //     late orphan tick or duplicate response is a no-op.
+  //   • `casualMissesRef` — 10-tick miss tolerance mirroring the ranked
+  //     path; single transient `in_queue:false` no longer nukes the
+  //     toast.
+  //   • Cancel-guard slam on matched (15s) — blocks stray polls from
+  //     re-firing virtue-match-loading during the 3-2-1 → nav window.
   // ─────────────────────────────────────────────────────────────────────
   const [casualQueueState, setCasualQueueState] = useState(null);
   const [casualWaitSec, setCasualWaitSec] = useState(0);
   const casualJoinedAtRef = useRef(0);
   const casualPollRef = useRef(null);
   const casualLocalRef = useRef(null);
-  // ETA lock for casual — mirrors `lockedEtaRef` for ranked. Captured
-  // once on join and preserved across polls so the toast's "Est. wait"
-  // pill doesn't twitch.
   const casualLockedEtaRef = useRef(null);
+  const casualJoiningRef = useRef(false);
+  const casualMatchedRef = useRef(false);
+  const casualMissesRef = useRef(0);
 
   const stopCasual = useCallback(() => {
     if (casualPollRef.current) { clearInterval(casualPollRef.current); casualPollRef.current = null; }
@@ -302,8 +328,22 @@ export function QueueProvider({ children }) {
   }, []);
 
   const joinCasual = useCallback(async () => {
+    // In-flight lock: rejects double-clicks that would otherwise start
+    // a second setInterval and orphan the first one. Without this the
+    // ghost interval kept firing `matched:true` events INTO gameplay,
+    // spamming the match-loading overlay over the live game.
+    if (casualJoiningRef.current || casualPollRef.current) {
+      return { ok: false, error: "Already queued" };
+    }
+    casualJoiningRef.current = true;
     try {
       const { data } = await api.post("/queue/casual");
+      // Belt-and-braces: even if the lock somehow raced, tear down any
+      // existing interval before creating a new one so orphans are
+      // impossible.
+      stopCasual();
+      casualMatchedRef.current = false;
+      casualMissesRef.current = 0;
       casualJoinedAtRef.current = Date.now();
       casualLockedEtaRef.current = Number.isFinite(data.estimated_wait_seconds)
         ? data.estimated_wait_seconds
@@ -324,36 +364,67 @@ export function QueueProvider({ children }) {
           // Drop the response if the user cancelled while we were
           // awaiting — otherwise the toast can reappear after LEAVE.
           if (Date.now() < casualCancelGuardUntilRef.current) return;
+          // One-shot: if we've already handled the match-found event
+          // (dispatched loading + scheduled nav), IGNORE every
+          // subsequent response so late/orphan ticks can't fire a
+          // second virtue-match-loading over live gameplay.
+          if (casualMatchedRef.current) return;
           if (s.matched) {
+            casualMatchedRef.current = true;
             stopCasual();
+            // Slam the cancel-guard so any stray poll (this one is
+            // already stopped, but a hypothetical orphan or an in-
+            // flight fetch about to resolve) can't re-fire the
+            // loading event during the 1.2s pre-nav window.
+            casualCancelGuardUntilRef.current = Date.now() + 15000;
             audioBus.matchFound();
             setCasualQueueState({ in_queue: false, matched: true });
             casualLockedEtaRef.current = null;
-            // Navigate to the casual room. Stamp `fromLobby: true`
-            // for MatchEntryGuard, same as ranked.
             try {
               window.dispatchEvent(
                 new CustomEvent("virtue-match-loading", { detail: { mode: "casual" } }),
               );
             } catch {}
             setTimeout(() => {
+              nav("/play?mode=casual", { replace: true, state: { fromLobby: true } });
+              // Clear ephemeral state after nav — the QueueOverlay /
+              // Lobby toast is location-scoped so it hides on its own,
+              // and we want the "MATCH FOUND!" banner visible right
+              // up to the nav flip.
               setCasualQueueState(null);
               casualJoinedAtRef.current = 0;
               setCasualWaitSec(0);
-              nav("/play?mode=casual", { replace: true, state: { fromLobby: true } });
             }, 1200);
           } else if (!s.in_queue) {
-            // Server lost track — tear down.
-            stopCasual();
-            casualJoinedAtRef.current = 0;
-            setCasualWaitSec(0);
-            setCasualQueueState(null);
+            // Tolerate transient `in_queue:false` for 10 ticks (~10s)
+            // before tearing the toast down. Same rationale as the
+            // ranked miss threshold: a single flaky poll used to nuke
+            // the toast, tricking the user into clicking Quick Match
+            // again and orphaning the previous interval.
+            casualMissesRef.current += 1;
+            if (casualMissesRef.current >= 10) {
+              casualCancelGuardUntilRef.current = Date.now() + 6000;
+              stopCasual();
+              casualJoinedAtRef.current = 0;
+              setCasualWaitSec(0);
+              setCasualQueueState(null);
+              casualMissesRef.current = 0;
+              casualLockedEtaRef.current = null;
+            }
+          } else {
+            // Healthy in_queue:true — reset miss counter.
+            casualMissesRef.current = 0;
           }
-        } catch { /* network blip — let next tick try again */ }
+        } catch {
+          // Network blip: treat as a soft miss too.
+          casualMissesRef.current += 1;
+        }
       }, 1000);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.response?.data?.detail || e.message };
+    } finally {
+      casualJoiningRef.current = false;
     }
   }, [nav, stopCasual]);
 
@@ -365,6 +436,9 @@ export function QueueProvider({ children }) {
     setCasualWaitSec(0);
     setCasualQueueState(null);
     casualLockedEtaRef.current = null;
+    casualMatchedRef.current = false;
+    casualMissesRef.current = 0;
+    casualJoiningRef.current = false;
     try { await api.delete("/queue/casual"); } catch {}
   }, [stopCasual]);
 
