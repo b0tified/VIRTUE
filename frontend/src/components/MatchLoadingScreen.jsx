@@ -38,7 +38,7 @@ const GAME_MODE_LABELS = {
   tdm: { label: "TEAM DEATHMATCH · 3V3",     short: "TDM" },
 };
 
-const SAFETY_DISMISS_MS = 6000;     // hard fallback if welcome never arrives
+const SAFETY_DISMISS_MS = 8000;     // hard fallback if welcome never arrives
 const REVEAL_HOLD_MS    = 900;      // how long the "CONFIRMED" screen lingers
 
 export default function MatchLoadingScreen() {
@@ -93,7 +93,14 @@ export default function MatchLoadingScreen() {
       setActualMap(null);
       setPhase("loading");
       clearTimers();
-      safetyTimerRef.current = setTimeout(() => setPhase("idle"), SAFETY_DISMISS_MS);
+      safetyTimerRef.current = setTimeout(() => {
+        setPhase("idle");
+        // Latch as consumed even on the safety-timeout path — otherwise
+        // a stray virtue-match-loading fired later (during gameplay)
+        // could still resurrect the overlay. Belt-and-braces defence
+        // matching the confirmed→idle path.
+        consumedRef.current = true;
+      }, SAFETY_DISMISS_MS);
     };
     window.addEventListener("virtue-match-loading", onLoading);
     return () => window.removeEventListener("virtue-match-loading", onLoading);

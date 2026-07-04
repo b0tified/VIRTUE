@@ -960,3 +960,33 @@ New setting `lobbyBackgroundVariant` (default `"auto"`) with four values:
   - Ranked cancel: toast tears down and does NOT ghost-reappear over a 15s watch.
   - Casual cancel: 120 post-cancel samples over 12s → 0 reappearance.
 - New regression test file: `/app/backend/tests/test_queue_endpoints_regression.py`.
+
+
+---
+
+### Iteration 13 — **THIS SESSION (2026-02-25, fork, continued)**
+- ✅ **Casual (Quick Match) queue toast disappearing FIXED** and **Match-loading overlay spamming over live gameplay FIXED** — mirrors the ranked fix plus a new critical piece: an in-flight join lock.
+
+**Root causes** (three layers, all in `/app/frontend/src/context/QueueContext.jsx` + `/app/frontend/src/components/MatchLoadingScreen.jsx`):
+1. Casual poll had **no miss tolerance** — a single transient `in_queue:false` blip immediately called `stopCasual()` and cleared state → toast disappeared.
+2. **No in-flight lock on `joinCasual`** — rapid double-clicks (or clicks after a transient teardown) started overlapping `setInterval` polls. The second interval overwrote `casualPollRef.current` and **orphaned the first**, which then polled forever. When the orphan later saw `matched:true`, it dispatched a stray `virtue-match-loading` event **INTO live gameplay**, causing the loading overlay to reappear behind the running game.
+3. **`MatchLoadingScreen` had no guard** against re-appearing during gameplay.
+
+**Fixes:**
+- `casualJoiningRef` — synchronous in-flight lock; second call returns `{ok:false, error:"Already queued"}`. Belt-and-braces: `stopCasual()` also called before creating the new interval, making orphans impossible.
+- `casualMatchedRef` — one-shot flag set on `matched:true`. Any late/orphan tick with matched:true after this is a no-op.
+- `casualMissesRef` — 10-tick miss tolerance (mirrors ranked). Toast survives ~10s of transient `in_queue:false` before tearing down.
+- `casualCancelGuardUntilRef` slam to +15000ms on `matched:true` — blocks any stray poll from re-firing loading events during the 1.2s pre-nav window.
+- Symmetric `rankedJoiningRef` added to `joinRanked` — same class of bug was possible on ranked, now closed.
+- `MatchLoadingScreen`: new `consumedRef` latch, set once loading→(confirmed OR safety-idle)→idle cycle completes. While `location.pathname.startsWith('/play')` AND `consumedRef.current` is true, further `virtue-match-loading` events are DROPPED. Latch resets when the user leaves `/play` (500ms location poll + popstate).
+- Safety-dismiss window extended `6000ms → 8000ms` for more reliable welcome-arrival before fallback.
+
+**Verified by testing agent (iteration_13):**
+- Backend 11/11 queue endpoint tests pass (incl. new idempotent-rejoin test).
+- Frontend Playwright with CustomEvent spy + 100ms DOM sampler, 7/7 scenarios pass:
+  - Casual toast stable during ~11s bot-fill (59/60 samples visible).
+  - Casual **rapid 3× click within 299ms → exactly ONE `virtue-match-loading` event**.
+  - After nav to /play, `match-loading-screen` phase transitions cleanly through loading → confirmed → idle. **NO resurrection** from idle back to loading (this is the "spam" bug).
+  - LEAVE QUEUE tears down toast with 0 ghost re-appearance over 15s (75/75 samples clear).
+  - Ranked rapid double-click still fires exactly ONE loading event.
+  - Ranked end-to-end still passes (no regression from new `rankedJoiningRef` lock).
