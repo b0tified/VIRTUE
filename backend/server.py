@@ -5779,6 +5779,7 @@ async def seeded_climb_loop():
                     "seed_target_kills": 1, "seed_target_deaths": 1,
                     "seed_target_wins": 1,
                     "seed_climb_offset": 1, "seed_climb_speed": 1,
+                    "peak_rank_points": 1,
                 },
             )
             async for u in cursor:
@@ -5813,20 +5814,37 @@ async def seeded_climb_loop():
                     new_m = new_w
                 placement = PLACEMENT_MATCHES if new_m >= PLACEMENT_MATCHES else new_m
                 cur_rp = int(u.get("rank_points", 0) or 0)
-                # Skip writes when nothing meaningful changed — keeps the
-                # update churn proportional to how fast the season ticks.
-                if new_rp == cur_rp and p > 0.0:
+                cur_peak = int(u.get("peak_rank_points", 0) or 0)
+                # Skip writes only when NOTHING meaningful changed — RP
+                # is stable AND peak is already at the target. Without
+                # the peak check, a bot that already reached its target
+                # RP would never get peak stamped.
+                if new_rp == cur_rp and cur_peak >= t_rp and p > 0.0:
                     continue
+                # Peak rank always reflects the season-end target, not
+                # the mid-climb value. Otherwise the profile's "Peak"
+                # card shows Bronze while the past-season title says
+                # Goonmaster — an obvious mismatch users reported. We
+                # only write peak_rank_points on the first climb tick
+                # (i.e. when it's missing or lower than the target) so
+                # subsequent ticks don't touch it.
+                update = {
+                    "rank_points": new_rp,
+                    "placement_matches_played": placement,
+                    "stats.matches": new_m,
+                    "stats.kills": new_k,
+                    "stats.deaths": new_d,
+                    "stats.wins": new_w,
+                }
+                if cur_peak < t_rp:
+                    peak_idx, peak_name = rank_for_points(t_rp)
+                    update["peak_rank_points"] = t_rp
+                    update["peak_rank_tier"] = int(peak_idx)
+                    update["peak_rank_name"] = peak_name
+                    update["peak_rank_division"] = rank_division_for_points(t_rp, peak_idx)
                 await db.users.update_one(
                     {"_id": u["_id"]},
-                    {"$set": {
-                        "rank_points": new_rp,
-                        "placement_matches_played": placement,
-                        "stats.matches": new_m,
-                        "stats.kills": new_k,
-                        "stats.deaths": new_d,
-                        "stats.wins": new_w,
-                    }},
+                    {"$set": update},
                 )
         except Exception as e:
             logger.warning("seeded_climb_loop error: %s", e)
@@ -7176,7 +7194,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         "ApexLumen_T1-R" inside a Master-tier match — the world feels
         coherent instead of having two disjoint name catalogs."""
         rp = _snap_rp_to_match_grid(rp)
-        rank_idx, _name = rank_for_points(rp)
+        rank_idx, rank_name = rank_for_points(rp)
         # Tier-aligned pool (falls back to all-tiers flat if anything's
         # missing — defensive only; every tier 0..7 is populated above).
         pool = TIERED_BOT_NAMES.get(rank_idx) or [n for sub in TIERED_BOT_NAMES.values() for n in sub]
@@ -7225,6 +7243,14 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_v3_boost": True,
             "seed_v4_gm": True,
             "seed_v5_all_gm": True,
+            # Peak = target from the moment the seed lands in the DB.
+            # Without this, the profile's "Peak" card would show 0 for
+            # the first climb tick (~30s window) and mismatch the
+            # past-season title.
+            "peak_rank_points": rp,
+            "peak_rank_tier": int(rank_idx),
+            "peak_rank_name": rank_name,
+            "peak_rank_division": rank_division_for_points(rp, rank_idx),
             "level": random.randint(5, 28 + rank_idx * 4),
             "xp": 0,
             "created_at": now - timedelta(days=random.randint(7, 120)),
