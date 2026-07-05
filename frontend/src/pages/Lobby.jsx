@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
@@ -379,18 +379,44 @@ export default function Lobby() {
   // Party invite polling — refresh every 5s while the lobby is open.
   const [partyInvites, setPartyInvites] = useState([]);
   const [party, setParty] = useState(null);
+  // Miss counter for /party/me — a single "no party" response used to
+  // instantly nuke the panel, so any transient blip (worker gc, JWT
+  // clock skew, load-balancer hiccup on prod) caused the party UI to
+  // flash off, then reappear on the next poll. Match the ranked-queue
+  // pattern: require 3 consecutive "no party" responses (~15s at 5s
+  // poll cadence) before believing the user actually left.
+  const partyMissesRef = useRef(0);
   const refreshParty = useCallback(async () => {
     try {
       const { data } = await api.get("/party/me");
-      // Only clear state when the server *confirms* the user has no
-      // party (empty payload). Throwing on a network blip used to set
-      // null → next poll restores it = the "party disappears and
-      // reappears" flicker.
-      setParty(data && data.party_id ? data : null);
+      if (data && data.party_id) {
+        // Confirmed in-party. Reset miss counter and slam state.
+        partyMissesRef.current = 0;
+        setParty(data);
+      } else {
+        // Server explicitly says "no party" — but be defensive against
+        // transient nulls (race between PARTY_MEMBER_INDEX rebuild
+        // and the read). Require N consecutive nulls before clearing.
+        partyMissesRef.current += 1;
+        if (partyMissesRef.current >= 3) {
+          setParty(null);
+        }
+      }
     } catch (e) {
       const status = e?.response?.status;
-      if (status === 404 || status === 401) {
+      if (status === 404) {
+        // Explicit 404 also goes through miss-tolerance (same
+        // rationale: don't nuke UI on a single flake).
+        partyMissesRef.current += 1;
+        if (partyMissesRef.current >= 3) {
+          setParty(null);
+        }
+      }
+      if (status === 401) {
+        // Auth genuinely died — clear immediately, the user needs to
+        // re-login and the panel would be stale anyway.
         setParty(null);
+        partyMissesRef.current = 0;
       }
       // Other failures (timeout, 5xx, network): leave existing state.
     }

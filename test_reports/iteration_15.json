@@ -1,0 +1,27 @@
+{
+  "summary": "Verified both party bug fixes end-to-end. Backend pytest (test_party_pmi_resync.py + test_party_ranked_queue.py) all 9/9 pass. Frontend E2E with two real accounts (partyleader, partyfollower): party panel formed on both users, ZERO flashes over 30s (truthy_ratio=1.0 both), leader clicked party-ranked-button and follower's PartyPanel updated to 'IN RANKED QUEUE @ BRONZE' within 2.4s, /api/queue/ranked GET for follower returned in_queue:true, is_party:true, party_size:2, and BOTH users auto-navigated to /play?mode=ranked at ~28s after bot fill.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_party_pmi_resync.py",
+    "/app/backend/tests/test_party_ranked_queue.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 8274 lines — well past the 700-line healthy limit. Consider splitting party/queue/match/auth modules for maintainability."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (all 3 e2e scenarios: panel stability, follower queue sync, joint /play navigation)"},
+  "test_credentials": "partyleader@test.com / pw123456 (id 6a49e7ad2f5e34ddc026a262), partyfollower@test.com / pw123456 (id 6a49e7ad2f5e34ddc026a263). Both boosted to Level 6 via stats.matches=50 update.",
+  "seed_data_creation": "Registered partyleader + partyfollower via /api/auth/register, bumped stats to reach Level 6 (ranked eligible), established mutual friendship via /api/friends/request + /api/friends/accept.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Party leader/follower accounts exist and are friends. When performing multi-user API tests, use SEPARATE browser contexts (browser.new_context()) per user — page.request shares cookies and login cookies will collide across users, causing 'Cannot invite yourself' etc. Screenshot .png does NOT support quality param — use .jpg. Both party bugs (flashing panel + follower not queued) are FIXED.",
+  "measured_results": {
+    "flashes_over_30s": {"leader": 0, "follower": 0},
+    "follower_sync_seconds": 2.4,
+    "follower_queue_api": {"in_queue": true, "is_party": true, "party_size": 2},
+    "both_navigated_to_play": true,
+    "navigate_seconds_after_queue": 28
+  }
+}

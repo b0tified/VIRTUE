@@ -5845,11 +5845,29 @@ RANKED_MIN_LEVEL = 5
 async def _party_for_user(user_id: str) -> Optional[dict]:
     """Look up the user's current party (if any). Returns the party dict
     from PARTIES or None. Wraps PARTY_MEMBER_INDEX for callers that don't
-    need to import the global directly."""
+    need to import the global directly.
+
+    Defensive resync: if PARTY_MEMBER_INDEX has no entry for this user
+    but a PARTY somewhere lists them in its members, that's a desync
+    (rare, but has been reported as party panel flashing off) — repair
+    the index on the fly and return the found party. Cheap because
+    PARTIES is small (server-wide there are only ever a few live
+    parties at once)."""
     pid = PARTY_MEMBER_INDEX.get(user_id)
-    if not pid:
-        return None
-    return PARTIES.get(pid)
+    if pid and pid in PARTIES:
+        # Additional safety: the party might have been created but the
+        # user removed from its members list somewhere. If so, the
+        # index is stale — clear it and fall through to the scan.
+        if user_id in PARTIES[pid].get("members", []):
+            return PARTIES[pid]
+        PARTY_MEMBER_INDEX.pop(user_id, None)
+    # Slow-path scan (only reached on desync). Whichever party actually
+    # lists the user wins — repair the index and return it.
+    for candidate_pid, party in PARTIES.items():
+        if user_id in party.get("members", []):
+            PARTY_MEMBER_INDEX[user_id] = candidate_pid
+            return party
+    return None
 
 
 async def _max_party_tier(party: dict) -> tuple[int, str, str]:
@@ -7727,8 +7745,16 @@ async def party_leave(user: dict = Depends(get_current_user)):
 
 @api.get("/party/me")
 async def party_me(user: dict = Depends(get_current_user)):
-    """Current party state (or {party_id: null} if not in a party)."""
+    """Current party state (or {party_id: null} if not in a party).
+
+    Uses `_party_for_user` (which has the PMI-desync self-repair) so a
+    stale index entry can't cause the client's party panel to flash off
+    on a poll cycle."""
     me_id = str(user["_id"])
+    party = await _party_for_user(me_id)
+    if not party:
+        return {"party_id": None}
+    # Resolve back to party_id via the (now-repaired) index.
     party_id = PARTY_MEMBER_INDEX.get(me_id)
     if not party_id or party_id not in PARTIES:
         return {"party_id": None}
