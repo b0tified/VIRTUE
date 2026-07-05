@@ -5714,6 +5714,52 @@ async def seeded_climb_loop():
                     })
                 await db.users.update_one({"_id": u["_id"]}, {"$set": update})
 
+            # v5 migration — ALL seeded bots converge on Goonmaster by
+            # end of season. v4 only promoted ~65% of non-GM seeds; v5
+            # closes the loop and lifts EVERY remaining seed whose
+            # target is still below 2100 (Goonmaster floor) into the
+            # 2100..2700 range. Also widens `seed_climb_offset` to the
+            # new 0..0.20 band so the ladder looks like a full mix of
+            # tiers mid-season instead of everyone bunched at the top
+            # from week one. One-shot per doc via `seed_v5_all_gm:
+            # True`. Idempotent — re-running does nothing to already
+            # v5-migrated docs.
+            v5_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True},
+                 "seed_v5_all_gm": {"$exists": False}},
+                {"_id": 1, "seed_target_rp": 1, "seed_climb_offset": 1},
+            )
+            # Goonmaster starts at 2100; anchor targets in 2100..2700
+            # (a bit above the floor so top slots don't tie exactly).
+            GOONMASTER_FLOOR = 2100
+            async for u in v5_cursor:
+                rp_cur = int(u.get("seed_target_rp", 0) or 0)
+                update = {"seed_v5_all_gm": True}
+                # Widen offset for a more organic staggered climb (some
+                # bots start climbing later, filling lower tiers early
+                # season). ONLY WIDENS (never narrows) so already-
+                # organic offsets stay put.
+                cur_off = float(u.get("seed_climb_offset", 0.0) or 0.0)
+                if cur_off < 0.08:
+                    # Redistribute across the new [0, 0.20] band so
+                    # early-season the board isn't top-loaded.
+                    update["seed_climb_offset"] = round(random.uniform(0.0, 0.20), 4)
+                # Force target into Goonmaster range for anyone not
+                # already there. Don't touch bots already targeting
+                # GM — they're fine.
+                if rp_cur < GOONMASTER_FLOOR:
+                    rp_new = _snap_rp_to_match_grid(random.randint(2100, 2700))
+                    rank_idx, _ = rank_for_points(rp_new)
+                    t_m, t_k, t_d, t_w = _synthesize_career(rp_new, rank_idx)
+                    update.update({
+                        "seed_target_rp": rp_new,
+                        "seed_target_matches": t_m,
+                        "seed_target_kills": t_k,
+                        "seed_target_deaths": t_d,
+                        "seed_target_wins": t_w,
+                    })
+                await db.users.update_one({"_id": u["_id"]}, {"$set": update})
+
             doc = await get_or_init_season()
             start = doc.get("season_start")
             if isinstance(start, datetime) and start.tzinfo is None:
@@ -7058,20 +7104,17 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
     if payload.reset:
         await db.users.delete_many({"is_seeded": True})
 
-    # RP buckets: (low, high, weight). The weights add up to 100 and
-    # produce a long-tail distribution that looks like a real ladder —
-    # most players sit Gold/Plat/Diamond, fewer climb to Master+, only a
-    # handful reach Goonmaster.
+    # RP buckets: (low, high, weight). All seed bots now target the
+    # Goonmaster tier (2100+) — by the end of the season every seeded
+    # account is at Goonmaster. During the season, per-bot climb offsets
+    # + speeds spread the current-display RP across every tier so the
+    # ladder still LOOKS mixed (some bots at Bronze early, Diamond
+    # mid-season, GM late) — but the target endpoint is uniformly GM.
+    #
+    # Range 2100..2700 gives a natural spread WITHIN Goonmaster so
+    # placements 1..N at the top don't all share the exact same RP.
     buckets = [
-        (40,   95,   1),   # late Bronze (very rare)
-        (110,  240,  2),   # Silver
-        (260,  490,  3),   # Gold
-        (520,  790,  5),   # Platinum
-        (820, 1190, 10),   # Diamond
-        (1220, 1690, 14),  # Master
-        (1720, 2290, 15),  # Grandmaster
-        (2300, 3200, 50),  # Goonmaster ← dominant so most of the board
-                           # sits at the ceiling by the last week of the season
+        (2100, 2700, 100),   # GOONMASTER only — all seeds converge here
     ]
     weights = [b[2] for b in buckets]
     # Build a shuffled deck of handle suffixes so duplicates within a
@@ -7152,7 +7195,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_target_deaths": deaths,
             "seed_target_wins": wins,
             "seed_career_v2": True,
-            "seed_climb_offset": round(random.uniform(0.0, 0.08), 4),
+            "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
             "seed_climb_speed": round(random.uniform(1.35, 2.4), 4),
             # Give fresh seeds an already-equipped past-season title so
             # their public profile flexes "S{prev} · {tier}" from the
@@ -7163,6 +7206,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "title_season": max(1, _CACHED_PREV_SEASON_NUMBER[0]),
             "seed_v3_boost": True,
             "seed_v4_gm": True,
+            "seed_v5_all_gm": True,
             "level": random.randint(5, 28 + rank_idx * 4),
             "xp": 0,
             "created_at": now - timedelta(days=random.randint(7, 120)),
@@ -8125,8 +8169,14 @@ async def leaderboard_archive_index():
 
 @api.get("/leaderboard/archive/{season_number}")
 async def leaderboard_archive_season(season_number: int):
-    """Full top-100 archive for a single past season. 404 if the requested
-    season hasn't ended yet (or doesn't exist)."""
+    """Top-50 archive for a single past season. 404 if the requested
+    season hasn't ended yet (or doesn't exist).
+
+    Note: the archive is stored as `top_100` (the historical name)
+    but only the first 50 rows are exposed to clients — past-season
+    leaderboards are intentionally trimmed to a "hall of fame" top
+    50 rather than a full top-100 dump. `total_players` in the
+    metadata still reflects the true season-wide player count."""
     doc = await db.season_archive.find_one(
         {"_id": int(season_number)},
         {"_id": 0},  # drop ObjectId-style key explicitly; _id is the int season_number
@@ -8138,6 +8188,11 @@ async def leaderboard_archive_season(season_number: int):
         doc["started_at"] = doc["started_at"].isoformat()
     if isinstance(doc.get("ended_at"), datetime):
         doc["ended_at"]   = doc["ended_at"].isoformat()
+    # Trim to top 50 (was top 100). Kept as `top_100` in the response
+    # for backwards compatibility with clients that key on that field
+    # name — the field is now guaranteed ≤ 50 rows.
+    rows = list(doc.get("top_100") or [])
+    doc["top_100"] = rows[:50]
     return doc
 
 
@@ -8160,6 +8215,12 @@ async def me_season_history(user: dict = Depends(get_current_user)):
         rows = d.get("top_100") or []
         my_row = next((r for r in rows if r.get("user_id") == uid), None)
         if not my_row:
+            continue
+        # Past-season leaderboards are trimmed to top 50. If the user
+        # placed outside the top 50 they aren't part of the visible
+        # archive, so hide the row here too — keeps the profile
+        # widget consistent with what the leaderboard shows.
+        if int(my_row.get("rank", 0) or 0) > 50:
             continue
         out.append({
             "season_number": int(d.get("season_number", 0) or 0),

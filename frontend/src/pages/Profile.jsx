@@ -369,7 +369,7 @@ export default function Profile() {
         </div>
 
         {/* Past Seasons — every archived season where the user finished
-            top-100 shows here. Quiet section: only renders when at least
+            top-50 shows here. Quiet section: only renders when at least
             one archived placement exists so brand-new accounts don't see
             a confusing empty card. */}
         {seasonHistory !== null && seasonHistory.length > 0 && (
@@ -377,7 +377,7 @@ export default function Profile() {
             <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
               <Trophy size={18} strokeWidth={3} className="text-[#FFD700]" />
               <span className="font-anton uppercase tracking-widest">Past Seasons</span>
-              <span className="opacity-60 text-xs ml-auto">Your top-100 finishes</span>
+              <span className="opacity-60 text-xs ml-auto">Your top-50 finishes</span>
             </div>
             <div className="hidden md:grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
               <div className="col-span-2">Season</div>
