@@ -2980,9 +2980,17 @@ class GameRoom:
     def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None, disguise_rank_points: Optional[int] = None):
         bot = Player(ws=None, is_bot=True, bot_name=name)
         bot.is_dummy = False
-        # Difficulty scales HP, aim accuracy and fire rate at runtime (see _tick_bots).
+        # Difficulty scales aim accuracy and fire rate at runtime (see _tick_bots).
         bot.difficulty = max(0.5, float(difficulty))
-        bot.max_hp = int(BOT_MAX_HP * bot.difficulty)
+        # HP: Ranked bots share the player's HP pool (100) — no
+        # difficulty scaling. High-tier bots stay threatening via
+        # aim/movement/positioning, not by being HP-inflated damage
+        # sponges. Casual/offline bots keep the old scaled HP so
+        # practice bots remain forgiving.
+        if self.is_ranked:
+            bot.max_hp = MAX_HP
+        else:
+            bot.max_hp = int(BOT_MAX_HP * bot.difficulty)
         bot.hp = bot.max_hp
         # Human-like jump state (used only for smart ranked bots — see
         # `_tick_bots`). `_jump_start_ms` is the t=0 of the current jump
@@ -3751,6 +3759,17 @@ class GameRoom:
                         damage *= cfg["headshot_mult"]
                     elif body_part == "legs":
                         damage *= cfg["legs_mult"]
+                    # Distance falloff parity with players — a ranked
+                    # bot sniping from long range should deal the same
+                    # reduced damage a player would from the same
+                    # distance. Without this, ranked bots effectively
+                    # got a "no-scope" damage advantage the player
+                    # never had.
+                    if dist is not None:
+                        fs, fe, mn = cfg["falloff_start"], cfg["falloff_end"], cfg["min_damage_mult"]
+                        if dist > fs:
+                            t = min(1.0, (dist - fs) / max(0.001, fe - fs))
+                            damage *= 1.0 - t * (1.0 - mn)
                     damage = int(round(damage))
             else:
                 damage = cfg["damage"]
