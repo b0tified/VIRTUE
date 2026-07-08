@@ -2814,6 +2814,14 @@ export class GameEngine {
       this._laserFireHeld = false;
     }
     this.currentWeapon = name;
+    // If we cycled to a slot that can't ADS (secondary/tertiary or a
+    // non-sniper primary), drop any active zoom. Otherwise the FOV
+    // stays narrowed after switching away from the sniper mid-ADS.
+    if (this.ads) {
+      const canStayADS =
+        name === "primary" && this.primaryWeaponId === "sniper";
+      if (!canStayADS) this.setADS(false);
+    }
     if (this._primaryGroup) this._primaryGroup.visible = name === "primary";
     if (this._secondaryGroup) this._secondaryGroup.visible = name === "secondary";
     if (this._tertiaryGroup) this._tertiaryGroup.visible = name === "tertiary";
@@ -2823,6 +2831,26 @@ export class GameEngine {
   }
 
   setADS(on) {
+    // ADS is now sniper-exclusive. AK and laser both aim from the
+    // hip; only the sniper's primary slot may zoom in. Silently
+    // ignore ADS requests from other slots so the FOV can't be
+    // narrowed for the AK to gain an accuracy edge.
+    if (on) {
+      const canADS =
+        this.currentWeapon === "primary" && this.primaryWeaponId === "sniper";
+      if (!canADS) {
+        // Force-release any lingering ADS state if the player tries
+        // to right-click while holding a non-sniper primary.
+        if (this.ads) {
+          this.ads = false;
+          if (this.camera.fov !== 78) {
+            this.camera.fov = 78;
+            this.camera.updateProjectionMatrix();
+          }
+        }
+        return;
+      }
+    }
     this.ads = !!on;
     const targetFov = on ? 50 : 78;
     if (this.camera.fov !== targetFov) {
@@ -4920,7 +4948,10 @@ export class GameEngine {
       }
     }
     this._gpPrev.fire = fireDown;
-    this.ads = adsDown;
+    // Route gamepad ADS through setADS so the sniper-only gate applies
+    // (previously this direct assignment bypassed the check, letting
+    // controller players narrow FOV on the AK).
+    this.setADS(adsDown);
 
     // ---- Face buttons (configurable) ----
     const jumpBtn = btn(_ctrlBind("jump", 0));

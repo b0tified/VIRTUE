@@ -10,7 +10,6 @@ import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
 import WhisperToaster from "@/components/WhisperToaster";
 import PartyPanel from "@/components/PartyPanel";
-import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
@@ -714,17 +713,6 @@ export default function Lobby() {
           </div>
 
           <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 max-w-md">
-            {/* Weapon loadout picker — lets the player swap their
-                primary between the AK (full-auto, big mag) and the
-                Sniper (ADS-only, one shot per reload, 1-shot kill).
-                Saves to /profile/me/weapon; the server reads it at
-                WS connect. Compact two-button pill so it doesn't
-                dominate the queue-panel real estate. */}
-            <WeaponLoadoutPicker
-              user={user}
-              onChange={() => refreshMe?.()}
-              disabled={!!queueState || casualInQueue}
-            />
             {party && (
               <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
             )}

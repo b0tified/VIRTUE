@@ -2589,7 +2589,7 @@ WEAPON_CONFIGS = {
         "damage": 200,
         "cooldown_ms": 250,        # brief post-shot lockout (matches AK's old cd)
         "mag_size": 1,             # single-shot before mandatory reload
-        "reload_ms": 2000,         # per-user spec: 2s reload
+        "reload_ms": 1500,         # per-user tune: sniper reload feels snappier at 1.5s
         "headshot_mult": 1.0,      # already lethal; no bonus math
         "legs_mult": 1.0,          # per-user spec: 1-shot ANY body part
         "falloff_start": 200.0,    # effectively no falloff — range weapon

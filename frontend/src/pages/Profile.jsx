@@ -15,6 +15,7 @@ import { levelFromStats } from "@/game/level";
 import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
 import audioBus from "@/game/audio";
+import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -284,6 +285,17 @@ export default function Profile() {
 
         {/* Customization block — banner + avatar grouped together. */}
         <SectionHeader title="Customize" testid="profile-section-customize" />
+
+        {/* Weapon loadout picker — moved from lobby to here so the
+            match-start UI stays uncluttered and loadout is a
+            deliberate customisation choice (like banner / avatar).
+            Persists via /profile/me/weapon; the server reads it at
+            WS connect. */}
+        <WeaponLoadoutPicker
+          user={user}
+          onChange={() => refreshMe?.()}
+        />
+
         <BannerCustomizer
           iconIdx={bannerIcon}
           colorIdx={bannerColor}

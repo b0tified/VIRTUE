@@ -36,10 +36,11 @@ def test_sniper_config_one_shot_anywhere():
 
 
 def test_sniper_single_round_and_slow_reload():
-    """1 bullet before reload, 2s reload — the per-user spec."""
+    """1 bullet before reload, 1.5s reload — the per-user spec (tuned
+    from the initial 2s value)."""
     cfg = server.weapon_cfg("sniper")
     assert cfg["mag_size"] == 1
-    assert cfg["reload_ms"] == 2000
+    assert cfg["reload_ms"] == 1500
 
 
 def test_sniper_ads_only_flag():
