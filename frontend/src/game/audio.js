@@ -599,8 +599,9 @@ class AudioBus {
   /* Sniper: cinematic bolt-action boom.
      A single, LOUD report with an immediate high-freq CRACK (supersonic
      snap), a deep low-end THUMP (the powder concussion), and a long
-     tail echo that rolls off over ~0.8s. Roughly 1.6x louder than an
-     AK shot to sell the "one-shot kill cannon" feel. */
+     tail echo that rolls off over ~0.8s. Roughly 2.5x louder than an
+     AK shot to sell the "one-shot kill cannon" feel — deliberately
+     pushed into soft-clip territory so the transient reads as "big". */
   _sniperShot(shooterId, vol, out) {
     const ctx = this.ctx;
     out = out || this.sfxGain;
@@ -619,17 +620,29 @@ class AudioBus {
     const thump = ctx.createOscillator();
     thump.type = "sine";
     thump.frequency.setValueAtTime(90 * pitch, t0);
-    thump.frequency.exponentialRampToValueAtTime(30 * pitch, t0 + 0.22);
+    thump.frequency.exponentialRampToValueAtTime(30 * pitch, t0 + 0.24);
     const thumpG = ctx.createGain();
-    thumpG.gain.setValueAtTime(1.6 * vol, t0);
-    thumpG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
+    thumpG.gain.setValueAtTime(2.8 * vol, t0);
+    thumpG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.32);
     thump.connect(thumpG); thumpG.connect(out);
-    thump.start(t0); thump.stop(t0 + 0.32);
+    thump.start(t0); thump.stop(t0 + 0.36);
+
+    // 1b) Extra sub layer — a second, even-lower sine an octave down for
+    // real chest-thump. Pushes the report into "cannon" territory.
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(55 * pitch, t0);
+    sub.frequency.exponentialRampToValueAtTime(22 * pitch, t0 + 0.28);
+    const subG = ctx.createGain();
+    subG.gain.setValueAtTime(2.0 * vol, t0);
+    subG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.34);
+    sub.connect(subG); subG.connect(out);
+    sub.start(t0); sub.stop(t0 + 0.38);
 
     // 2) Supersonic CRACK — short white-noise burst pushed through a
     // sharp bandpass around 2.2 kHz. This is the "you just fired a
     // magnum" transient. Longer + hotter than the AK's crackle.
-    const crackDur = 0.14;
+    const crackDur = 0.16;
     const crackBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * crackDur), ctx.sampleRate);
     const cData = crackBuf.getChannelData(0);
     for (let i = 0; i < cData.length; i++) {
@@ -649,18 +662,18 @@ class AudioBus {
     hp.frequency.value = 300;
     const crackG = ctx.createGain();
     crackG.gain.setValueAtTime(0, t0);
-    crackG.gain.linearRampToValueAtTime(1.4 * vol, t0 + 0.004);
+    crackG.gain.linearRampToValueAtTime(2.6 * vol, t0 + 0.004);
     crackG.gain.exponentialRampToValueAtTime(0.001, t0 + crackDur);
     crackSrc.connect(hp); hp.connect(bp); bp.connect(crackG); crackG.connect(out);
     crackSrc.start(t0);
 
     // 3) Mid-body noise — broader lowpassed noise (the "boom" body).
-    const bodyDur = 0.36;
+    const bodyDur = 0.42;
     const bodyBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * bodyDur), ctx.sampleRate);
     const bData = bodyBuf.getChannelData(0);
     for (let i = 0; i < bData.length; i++) {
       const t = i / bData.length;
-      bData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.2);
+      bData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.0);
     }
     const bodySrc = ctx.createBufferSource();
     bodySrc.buffer = bodyBuf;
@@ -671,7 +684,7 @@ class AudioBus {
     bodyLP.frequency.exponentialRampToValueAtTime(180, t0 + bodyDur);
     const bodyG = ctx.createGain();
     bodyG.gain.setValueAtTime(0, t0);
-    bodyG.gain.linearRampToValueAtTime(1.1 * vol, t0 + 0.008);
+    bodyG.gain.linearRampToValueAtTime(2.0 * vol, t0 + 0.008);
     bodyG.gain.exponentialRampToValueAtTime(0.001, t0 + bodyDur);
     bodySrc.connect(bodyLP); bodyLP.connect(bodyG); bodyG.connect(out);
     bodySrc.start(t0);
@@ -682,7 +695,7 @@ class AudioBus {
     const tailDelays = [0.18, 0.42];
     for (let i = 0; i < tailDelays.length; i++) {
       const delay = tailDelays[i];
-      const tailDur = 0.22;
+      const tailDur = 0.26;
       const tailBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * tailDur), ctx.sampleRate);
       const tData = tailBuf.getChannelData(0);
       for (let j = 0; j < tData.length; j++) {
@@ -697,7 +710,7 @@ class AudioBus {
       tLP.frequency.setValueAtTime(1600, t0 + delay);
       tLP.frequency.exponentialRampToValueAtTime(220, t0 + delay + tailDur);
       const tG = ctx.createGain();
-      const echoVol = (i === 0 ? 0.55 : 0.28) * vol;
+      const echoVol = (i === 0 ? 1.0 : 0.55) * vol;
       tG.gain.setValueAtTime(0, t0 + delay);
       tG.gain.linearRampToValueAtTime(echoVol, t0 + delay + 0.008);
       tG.gain.exponentialRampToValueAtTime(0.001, t0 + delay + tailDur);
