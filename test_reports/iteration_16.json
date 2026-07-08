@@ -1,0 +1,43 @@
+{
+  "summary": "Sniper feature backend contract is fully correct (9/9 unit + 4/4 HTTP integration tests pass). Frontend lobby weapon-picker UI is fully correct (selection, persistence-across-refresh, positioning above QUICK MATCH all verified). However there is a CRITICAL integration bug that makes the sniper equip look like ak47 in-game: the client's input-tick payload hardcodes weapon='ak47', and the server (input handler) trusts that field and overwrites player.weapon every tick, clobbering the sniper seed. Net result: user selects sniper in lobby, enters a match, HUD shows AK-47 25/25 and all shots use AK config on the server. This must be fixed before the sniper feature can be released.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Lobby selects sniper -> enter match -> in-game weapon still ak47",
+        "issue": "Game.jsx line 464 hardcodes `curWeapon = engineRef.current?.currentWeapon === 'tertiary' ? 'laser' : 'ak47'` in the input-tick send. Server input handler at server.py:4130-4133 accepts `msg['weapon']` and overwrites `player.weapon` unconditionally when the value is in WEAPON_CONFIGS. So on every input tick the client resets the server-side sniper seed back to ak47. Cascade: server state broadcast then sends p.weapon='ak47' -> engine state-in handler (engine.js:3748) never sets primaryWeaponId='sniper' -> HUD stays on AK-47 25/25 -> subsequent shoot payloads (which use primaryWeaponId) also send weapon='ak47'. Observed live: after selecting SNIPER in lobby and entering PRACTICE -> Offline mode, `window.__virtueEngine.primaryWeaponId === 'ak47'`, HUD ammo shows 25/25 with 'AK-47' label, ammo dict is `{ak47:25, sniper:1, laser:60}` (so client knows about sniper, it's just never selected).",
+        "affected_selectors": ["window.__virtueEngine.primaryWeaponId", "HUD ammo counter"],
+        "priority": "HIGH"
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sniper_weapon.py",
+    "/app/backend/tests/test_weapon_endpoint_integration.py",
+    "/app/test_reports/pytest/pytest_sniper_integration.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/src/pages/Game.jsx around line 463-464, replace the hardcoded 'ak47' with engine.primaryWeaponId (mirror the same fallback used for the shoot payload at line 488). Suggested fix:\n    const primaryId = engineRef.current?.primaryWeaponId || 'ak47';\n    const curWeapon = engineRef.current?.currentWeapon === 'tertiary' ? 'laser' : primaryId;\nThis keeps the server-side player.weapon aligned with the lobby loadout and lets the sniper's ADS-only gate + 1-round mag actually take effect in-game.",
+    "Optional hardening (server): consider not accepting `msg['weapon']` on 'input' ticks for the primary-slot switch — the primary weapon is loadout-scoped, not a live switchable, so the input tick only needs to signal 'laser' vs 'primary'. That would prevent similar client-side regressions in the future."
+  ],
+  "critical_code_review_comments": [
+    "server.py:4130-4133 blindly trusts client-sent `weapon` on every input tick and overwrites the authoritative loadout — this is the amplification vector for the Game.jsx bug and is a general anti-pattern; consider restricting to laser/primary category instead of full weapon-id.",
+    "Game.jsx:464 and Game.jsx:488 duplicate the 'tertiary -> laser else primaryWeaponId' logic; extract a helper to avoid the two branches drifting again (that drift is exactly what caused this bug — the shoot payload was updated but the input tick was not).",
+    "engine.js:3748 gates primaryWeaponId update on p.weapon being ak47/sniper, which is fine — but there is no client-side cache of the lobby-selected weapon before the first state broadcast arrives. Consider seeding engine.primaryWeaponId from /profile/me on Game mount so the HUD isn't briefly wrong even after the server bug is fixed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_weapon_endpoint_integration.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "50% — lobby picker perfect, in-game equip broken"},
+  "test_credentials": "player1@shooter.com / player123 (used)",
+  "seed_data_creation": "None. Test flips player1's primary_weapon between sniper/ak47; final test leaves it as ak47.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After E1 fixes Game.jsx:464 to use primaryWeaponId, re-run the in-game verification: (1) login as player1, select sniper in lobby, (2) PRACTICE -> Offline mode, (3) wait for match start (~15-25s of intermission), (4) evaluate `window.__virtueEngine.primaryWeaponId` — must be 'sniper', (5) HUD label must read 'SNIPER' and ammo '1/1', (6) verify hipfire block by setting `window.__virtueEngine.ads=false` and calling `window.__virtueEngine._tryShoot()` — ammo must stay at 1, no shoot event, (7) verify ADS fire by setting ads=true and calling _tryShoot — ammo drops to 0 and 2s reload begins, (8) 1-shot-kill verification: aim at a bot and fire — killfeed entry must appear. Backend contract (test_sniper_weapon.py + test_weapon_endpoint_integration.py) is already 100% and stable — no need to re-run unless server.py changes.",
+  "rca of the issue": "Two coupled code paths must agree on the current primary weapon: (A) the client's shoot payload's `weapon` field (correctly wired to engine.primaryWeaponId in Game.jsx:488), and (B) the client's input tick's `weapon` field (Game.jsx:464 — this is the missed spot, still hardcoded to 'ak47'). The server input handler (server.py:4130-4133) mirrors msg.weapon into player.weapon on every input tick, so path (B) wins the race against the WS-connect seed. Because the state broadcast then echoes player.weapon='ak47' back, engine.primaryWeaponId also stays 'ak47' (engine.js:3748-3750 only updates on server-authoritative broadcast). Fix: change Game.jsx:463-464 to use engine.primaryWeaponId, identical to line 488. Reproduction (verified): (1) POST /api/profile/me/weapon {weapon:'sniper'} -> 200; (2) GET /api/profile/me -> primary_weapon:'sniper' (confirmed); (3) enter offline match; (4) `window.__virtueEngine.primaryWeaponId` -> 'ak47' (WRONG); (5) HUD shows AK-47 25/25 (WRONG). Mitigation: apply the one-line fix above; consider server-side tightening to not accept weapon changes via 'input' ticks."
+}

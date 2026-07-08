@@ -481,7 +481,12 @@ export default function Game() {
       // Mirror ADS into hud for the scope overlay.
       setHud((h) => (h.ads === !!snap.ads ? h : { ...h, ads: !!snap.ads }));
       if (snap.shoot) {
-        const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+        // Mirror the engine's live primary weapon id ("ak47" | "sniper")
+        // into the shoot payload so the server applies the right cfg
+        // (sniper has 1 mag, 200 dmg, ads_only). Falls back to "ak47"
+        // if primary hasn't yet resolved from a server broadcast.
+        const primaryId = engineRef.current?.primaryWeaponId || "ak47";
+        const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : primaryId;
         // Pass our last-measured RTT so the server can lag-compensate the
         // shot (rewinds each target to where the shooter actually saw
         // them). Clamped server-side to a safe 0..300ms window.

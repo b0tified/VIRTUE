@@ -199,6 +199,10 @@ def public_user(user: dict) -> dict:
         "coins": int(user.get("coins", 0) or 0),
         "owned_skins": owned,
         "selected_skin": selected,
+        # Primary-weapon loadout choice. Persisted via /profile/me/weapon.
+        # Defaults to "ak47" for legacy accounts. Read at WS connect to
+        # seed `player.weapon` so the match starts with the chosen gun.
+        "primary_weapon": (user.get("primary_weapon") or "ak47"),
         # Ranked early-leave penalty timer (epoch seconds remaining).
         # 0 when not banned — lobby UI hides the lock pill in that
         # case. Returned as an int so a quick client-side countdown
@@ -1361,6 +1365,36 @@ async def equip_skin(payload: SkinEquipIn, user: dict = Depends(get_current_user
         {"$set": {"selected_skin": skin["id"]}},
     )
     user["selected_skin"] = skin["id"]
+    return public_user(user)
+
+
+# Allowed primary-weapon choices. The client sends one of these strings
+# to /profile/me/weapon; the server stores it on the user doc and reads
+# it back at WS connect to initialise `player.weapon`.
+PRIMARY_WEAPON_CHOICES = {"ak47", "sniper"}
+
+
+class WeaponChoiceIn(BaseModel):
+    weapon: str
+
+
+@api.post("/profile/me/weapon")
+async def set_primary_weapon(payload: WeaponChoiceIn, user: dict = Depends(get_current_user)):
+    """Persist the player's primary-weapon loadout choice ("ak47" or
+    "sniper"). Read back at WS connect (`ws_game`) to seed
+    `player.weapon`. Returns the updated public user payload so the
+    lobby UI can refresh from the response."""
+    choice = (payload.weapon or "").strip().lower()
+    if choice not in PRIMARY_WEAPON_CHOICES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid weapon. Must be one of: {sorted(PRIMARY_WEAPON_CHOICES)}",
+        )
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"primary_weapon": choice}},
+    )
+    user["primary_weapon"] = choice
     return public_user(user)
 
 
@@ -2545,6 +2579,29 @@ WEAPON_CONFIGS = {
         "spread_decay": 4.0,    # per second
         "ads_spread_mult": 0.25,
     },
+    "sniper": {
+        # Bolt-action-style precision rifle. One-shot-kill anywhere on
+        # the target (server-enforced: damage=200 vs 100 HP → even leg
+        # hits are lethal). Trade-offs vs the AK: 1-round mag, slow
+        # reload, and CANNOT fire from the hip — `ads_only=True` makes
+        # the server reject any /shoot message when the player isn't
+        # scoped in.
+        "damage": 200,
+        "cooldown_ms": 250,        # brief post-shot lockout (matches AK's old cd)
+        "mag_size": 1,             # single-shot before mandatory reload
+        "reload_ms": 2000,         # per-user spec: 2s reload
+        "headshot_mult": 1.0,      # already lethal; no bonus math
+        "legs_mult": 1.0,          # per-user spec: 1-shot ANY body part
+        "falloff_start": 200.0,    # effectively no falloff — range weapon
+        "falloff_end": 300.0,
+        "min_damage_mult": 1.0,
+        "spread_base": 0.0,
+        "spread_per_shot": 0.0,
+        "spread_max": 0.0,
+        "spread_decay": 1.0,
+        "ads_spread_mult": 1.0,
+        "ads_only": True,          # server-enforced hip-fire lockout
+    },
     "laser": {
         "damage": LASER_DAMAGE,
         "dps": 90,                 # continuous beam — damage per second (buffed from 60)
@@ -2755,6 +2812,7 @@ class Player:
         self.weapon = "ak47"
         self.ammo: Dict[str, int] = {
             "ak47": WEAPON_CONFIGS["ak47"]["mag_size"],
+            "sniper": WEAPON_CONFIGS["sniper"]["mag_size"],
             "laser": WEAPON_CONFIGS["laser"]["mag_size"],
         }
         self.reload_until_ms: Dict[str, int] = {"ak47": 0, "laser": 0}
@@ -4093,6 +4151,13 @@ class GameRoom:
             if weapon == "laser":
                 return
             cfg = weapon_cfg(weapon)
+            # ADS-only weapons (currently the sniper) cannot hip-fire.
+            # Server rejects any shoot message that arrives while the
+            # player's `is_ads` flag is False. Prevents the client from
+            # working around the "must be scoped" restriction. Falls
+            # through cleanly for AK etc which don't set `ads_only`.
+            if cfg.get("ads_only") and not player.is_ads:
+                return
             cooldown = cfg["cooldown_ms"]
             if now_ms - player.last_shot_ms < cooldown:
                 return
@@ -8061,6 +8126,13 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
     except Exception:
         pass
     player = Player(websocket, user=user, is_bot=False)
+    # Seed primary-weapon loadout from the user's saved choice. `ak47`
+    # remains the default for legacy accounts and anyone who hasn't
+    # touched the lobby weapon-select. `sniper` is the only alternate
+    # right now; new choices go through `PRIMARY_WEAPON_CHOICES`.
+    saved_weapon = (user.get("primary_weapon") or "ak47")
+    if saved_weapon in PRIMARY_WEAPON_CHOICES:
+        player.weapon = saved_weapon
     if mode == "spectate":
         player.is_spectator = True
         # Find target's Player.id inside the room for camera-follow on the client.

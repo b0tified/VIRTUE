@@ -102,7 +102,13 @@ export class GameEngine {
     // Local ammo/reload mirror (updated from server state).
     // Used to gate client-side fire prediction so we don't play a muzzle
     // flash + gunshot SFX while reloading or empty.
-    this.localAmmo = { ak47: 25, laser: 60 };
+    // Primary-weapon loadout id. Server sends "ak47" or "sniper" in the
+    // local player's state; we mirror it here so `_tryShoot` +
+    // `localAmmo` key off the right weapon. Defaults to "ak47" so
+    // engine can hot-load a match before the first state broadcast
+    // arrives.
+    this.primaryWeaponId = "ak47";
+    this.localAmmo = { ak47: 25, sniper: 1, laser: 60 };
     this.localReloading = false;
     // AK reload animation state. _reloadT animates 0→1 across the reload
     // duration; the viewmodel + magazine sub-group are transformed each
@@ -321,7 +327,7 @@ export class GameEngine {
     if (!this.alive) return false;
     if (this.currentWeapon === "secondary") return true;
     if (this.localReloading) return false;
-    const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+    const w = this.currentWeapon === "tertiary" ? "laser" : this.primaryWeaponId;
     return (this.localAmmo[w] ?? 0) > 0;
   }
 
@@ -383,20 +389,26 @@ export class GameEngine {
       return;
     }
     if (this.localReloading) return;
-    const w = "ak47";
+    const w = this.primaryWeaponId;
+    // Sniper: server rejects any shot fired while not ADS. Mirror the
+    // rule client-side so the local ammo/reload prediction doesn't
+    // desync on rejected hipfire attempts.
+    if (w === "sniper" && !this.ads) {
+      return;
+    }
     if ((this.localAmmo[w] ?? 0) <= 0) {
       // Empty — kick off a reload locally and tell the server.
       this.localReloading = true;
       this.onLocalUpdate?.({ type: "reload-pressed" });
       return;
     }
-    // Client-side fire-rate gate: bail out if the last AK shot was
-    // fired within the weapon's cooldown window. Prevents the touch
-    // auto-repeat (50ms) and the desktop hold-to-fire tick from
-    // over-decrementing local ammo — server would just drop the shot
-    // and snap ammo back on next state, but the ammo counter would
-    // flicker visibly. `_lastAkFireMs === 0` means "never fired" so
-    // the first shot always passes.
+    // Client-side fire-rate gate: bail out if the last shot was fired
+    // within the weapon's cooldown window. Prevents the touch auto-
+    // repeat (50ms) and the desktop hold-to-fire tick from over-
+    // decrementing local ammo — server would just drop the shot and
+    // snap ammo back on next state, but the ammo counter would flicker
+    // visibly. `_lastAkFireMs === 0` means "never fired" so the first
+    // shot always passes.
     const nowMs = performance.now();
     if (this._lastAkFireMs && nowMs - this._lastAkFireMs < this._akFireCooldownMs) {
       return;
@@ -3727,9 +3739,20 @@ export class GameEngine {
           }
           this.hp = p.hp;
           this.alive = p.alive;
+          // Mirror the server-authoritative primary weapon id ("ak47"
+          // or "sniper"). Server sends this in `p.weapon`; we skip it
+          // when the player is holding melee/laser (those aren't the
+          // primary slot). Keeping `primaryWeaponId` current so
+          // `localAmmo`, `_tryShoot`, and the hold-to-fire tick all
+          // key on the right weapon.
+          if (p.weapon === "ak47" || p.weapon === "sniper") {
+            if (this.primaryWeaponId !== p.weapon) {
+              this.primaryWeaponId = p.weapon;
+            }
+          }
           // Mirror ammo + reloading from server so we can gate local fire prediction.
           if (typeof p.ammo === "number") {
-            const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+            const w = this.currentWeapon === "tertiary" ? "laser" : this.primaryWeaponId;
             this.localAmmo[w] = p.ammo;
           }
           this.localReloading = !!p.reloading;
@@ -3738,7 +3761,7 @@ export class GameEngine {
           // mid-reload because we only fire the edge once).
           if (this.localReloading && this._reloadT <= 0) {
             this._reloadT = 0.001;
-            this._reloadWeapon = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+            this._reloadWeapon = this.currentWeapon === "tertiary" ? "laser" : this.primaryWeaponId;
             this.onLocalUpdate?.({ type: "reload-start", weapon: this._reloadWeapon });
           }
           // Laser beam state (heat % + overheat lockout).
@@ -4154,16 +4177,14 @@ export class GameEngine {
     // Drive virtual inputs from a connected gamepad (Xbox / PS-style).
     this._pollGamepad(dt);
 
-    // AK full-auto hold-to-fire tick. If the player is holding the
-    // fire button (left mouse or the touch trigger) with the primary
-    // weapon selected, queue a shot every `_akFireCooldownMs`. The
-    // server enforces its own cooldown so the client rate here just
-    // avoids uselessly stamping `pendingShoot` every frame. Requires
-    // alive + locked (pointer captured or touch active) so the fire
-    // doesn't chatter through menus.
+    // AK full-auto hold-to-fire tick. Only applies to the AK primary —
+    // sniper is single-shot per click (server enforces mag_size=1 too),
+    // so we don't want the hold-to-fire tick spamming shoot messages
+    // during a 2s reload.
     if (
       this._akFireHeld &&
       this.currentWeapon === "primary" &&
+      this.primaryWeaponId === "ak47" &&
       this.alive &&
       (this.locked || this.touchActive) &&
       !this.localReloading
@@ -5132,7 +5153,7 @@ export class GameEngine {
     // a phantom muzzle/SFX or send a doomed shoot message.
     let shoot = this.pendingShoot;
     if (shoot && this.currentWeapon !== "secondary") {
-      const w = this.currentWeapon === "tertiary" ? "laser" : "ak47";
+      const w = this.currentWeapon === "tertiary" ? "laser" : this.primaryWeaponId;
       if (this.localReloading || (this.localAmmo[w] ?? 0) < 0) shoot = false;
     }
     const melee = this.pendingMelee;
