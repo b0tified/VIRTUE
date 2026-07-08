@@ -193,7 +193,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
             <div className="hud-panel" style={{ background: hud.timeLeft < 30 ? "rgba(230,36,41,0.95)" : (hud.isRanked ? "rgba(0,85,255,0.92)" : "rgba(10,10,10,0.85)") }}>
               <div className="flex items-center gap-3">
                 <Timer size={20} strokeWidth={3} />
-                <span className="text-xs opacity-80">{hud.isRanked ? "RANKED" : (hud.gameMode === "tdm" ? "TDM 3V3" : "QUICK")}</span>
+                <span className="text-xs opacity-80">{hud.isRanked ? "RANKED" : (hud.gameMode === "tdm" ? "TDM 4V4" : "QUICK")}</span>
                 <span className="font-display text-3xl" data-testid="hud-time-left">{formatTime(hud.timeLeft)}</span>
               </div>
             </div>
@@ -464,7 +464,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
               <div className="font-display text-3xl text-[#FFD700]">SCOREBOARD</div>
               <div className="flex items-center gap-3">
                 <div className="font-anton uppercase text-sm tracking-widest">
-                  {hud.gameMode === "tdm" ? "Team Deathmatch 3v3" : "Free-For-All"}
+                  {hud.gameMode === "tdm" ? "Team Deathmatch 4v4" : "Free-For-All"}
                 </div>
                 <button
                   onClick={() => onCloseScoreboard?.()}

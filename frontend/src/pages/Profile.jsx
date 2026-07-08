@@ -109,7 +109,7 @@ const MODE_META = {
 // top of the `mode` mapping above.
 const TDM_MODE_META = {
   Icon: Shield,
-  label: "TDM 3V3",
+  label: "TDM 4V4",
   color: "#9B59B6",  // distinctive purple — stands out from FFA red
 };
 

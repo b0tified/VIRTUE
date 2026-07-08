@@ -35,7 +35,7 @@ const MODE_LABELS = {
 // everything else (ranked = always FFA, practice = client picks TDM).
 const GAME_MODE_LABELS = {
   ffa: { label: "FREE-FOR-ALL · LOBBY OF 4", short: "FFA" },
-  tdm: { label: "TEAM DEATHMATCH · 3V3",     short: "TDM" },
+  tdm: { label: "TEAM DEATHMATCH · 4V4",     short: "TDM" },
 };
 
 const SAFETY_DISMISS_MS = 8000;     // hard fallback if welcome never arrives
@@ -114,7 +114,7 @@ export default function MatchLoadingScreen() {
       setActualMap(meta || null);
       // Capture the server-confirmed game mode so the subtitle locks in
       // (e.g. quick-match transitions from "DEPLOYING..." to "FFA" or
-      // "TDM 3V3" the instant welcome arrives).
+      // "TDM 4V4" the instant welcome arrives).
       if (e?.detail?.game_mode) setServerGameMode(e.detail.game_mode);
       setPhase("confirmed");
       clearTimers();

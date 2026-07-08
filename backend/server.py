@@ -477,7 +477,7 @@ def compute_rp_delta(placement: int, tier_idx: int) -> int:
       - Masters+:      +30 /   0 / -60 / -60 (1st through last).
 
     "Last" means everyone outside the podium — in a 4-player FFA lobby
-    that's just 4th, in a 6-player TDM that'd be 4th-6th, etc.
+    that's just 4th, in an 8-player TDM that'd be 4th-8th, etc.
     """
     tier_idx = max(0, min(len(RANK_TIERS) - 1, int(tier_idx)))
     if tier_idx >= MASTERS_TIER_IDX:
@@ -941,18 +941,18 @@ async def on_startup():
             b.is_dummy = True
             b.max_hp = 50
             b.hp = 50
-    # TDM quick-match room: pre-fill with 6 disguised smart bots so the
-    # room is permanently at 3v3 strength even with zero real players.
+    # TDM quick-match room: pre-fill with 8 disguised smart bots so the
+    # room is permanently at 4v4 strength even with zero real players.
     # `_maintain_tdm_population` (called on every join/leave) will swap
     # bots in/out 1-for-1 as humans arrive and depart. Disguised=True so
-    # the lobby reads as a 3v3 of "real" people (DISGUISED_BOT_NAMES are
+    # the lobby reads as a 4v4 of "real" people (DISGUISED_BOT_NAMES are
     # realistic handles; the BOT badge is suppressed in TDM scoreboard).
     tdm_bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2)
     for nm in tdm_bot_names:
         tdm_room.spawn_bot(nm, disguised=True, difficulty=1.45)
     # TDM practice room: same disguised pre-fill so practice mirrors the
     # quick-match feel exactly (a bored player solo-grinding bots still
-    # sees 3v3 of "humans" in the scoreboard).
+    # sees 4v4 of "humans" in the scoreboard).
     practice_tdm_bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2)
     for nm in practice_tdm_bot_names:
         practice_tdm_room.spawn_bot(nm, disguised=True, difficulty=1.2)
@@ -2760,7 +2760,7 @@ FFA_LOBBY_SIZE = 4
 RANKED_MIN_REAL_PLAYERS = 1
 # TDM mode constants
 TDM_KILL_TARGET = 30        # first team to N kills wins instantly
-TDM_TEAM_SIZE = 3           # each team's max size (3v3)
+TDM_TEAM_SIZE = 4           # each team's max size (4v4)
 TDM_QUICK_MATCH_ROLL = 0.50  # 50% of quick-match rooms become TDM
 QUEUE_BOT_FILL_SEC = 45.0
 QUEUE_BOT_FILL_SEC_HIGH = 120.0  # Master tier (5) and above wait longer
@@ -3193,7 +3193,7 @@ class GameRoom:
         self.in_intermission = False
         self.last_match_end_payload: Optional[dict] = None
         # Game mode — "ffa" (free-for-all, default) or "tdm" (team
-        # deathmatch 3v3). TDM enables team assignment + friendly-fire
+        # deathmatch 4v4). TDM enables team assignment + friendly-fire
         # blocking + team scoreboard. Ranked rooms stay FFA only.
         self.game_mode: str = game_mode if game_mode in ("ffa", "tdm") else "ffa"
         # Per-team kill totals — populated only in TDM. First team to
@@ -3380,7 +3380,7 @@ class GameRoom:
         """Keep the room at its target lobby size by swapping bots in/out
         as real players come and go.
 
-          - TDM rooms target TDM_TEAM_SIZE * 2 = 6 combat players (3v3).
+          - TDM rooms target TDM_TEAM_SIZE * 2 = 8 combat players (4v4).
           - FFA rooms (casual, ranked, practice) target FFA_LOBBY_SIZE
             = 4 so the player isn't drowned in bots.
 
@@ -3485,7 +3485,7 @@ class GameRoom:
             self._assign_team(player)
             self.players[player.id] = player
             # 1-for-1 bot swap: a real-player join displaces one bot so
-            # the room stays at its target lobby size (TDM=6, FFA=4).
+            # the room stays at its target lobby size (TDM=8, FFA=4).
             # Skipped for offline rooms (per-user roster) and bot joins.
             if (
                 not player.is_bot
@@ -3606,7 +3606,7 @@ class GameRoom:
         async with self.lock:
             self.players.pop(player.id, None)
             # 1-for-1 swap: when a real player leaves, spawn a replacement
-            # bot so the room stays at its target lobby size (TDM=6,
+            # bot so the room stays at its target lobby size (TDM=8,
             # FFA=4) for whoever's left. Offline rooms keep their fixed
             # per-user roster.
             if (
@@ -5338,7 +5338,7 @@ class GameRoom:
                         "ended_at": now,
                     }
                     # TDM extras: persist the player's team color, the
-                    # final 3v3 scoreline, and a precomputed `team_won`
+                    # final 4v4 scoreline, and a precomputed `team_won`
                     # flag so the UI can render WIN / LOSS / DRAW without
                     # reapplying the tie-break rules client-side.
                     if self.game_mode == "tdm":
@@ -5538,7 +5538,7 @@ ranked_room = GameRoom(is_ranked=True, match_duration=120.0)  # 2 minute Ranked
 practice_room = GameRoom(is_ranked=False, match_duration=99999.0)  # Practice never ends
 practice_room.is_practice = True
 # TDM practice room — same never-ending session, but team-mode so users
-# can rehearse the 3v3 format. Pre-filled with smart bots in start_event.
+# can rehearse the 4v4 format. Pre-filled with smart bots in start_event.
 practice_tdm_room = GameRoom(is_ranked=False, match_duration=99999.0, game_mode="tdm")
 practice_tdm_room.is_practice = True
 
@@ -5596,15 +5596,15 @@ OFFLINE_TDM_ROOM_TASKS: Dict[str, asyncio.Task] = {}
 
 
 async def get_or_create_offline_tdm_room(user_id: str) -> "GameRoom":
-    """Per-user 5-minute TDM-3v3 offline room. Pre-filled with 5 disguised
-    bots so the user (player #6) drops into a balanced 3v3 of "humans".
+    """Per-user 5-minute TDM-4v4 offline room. Pre-filled with disguised
+    bots so the user drops into a balanced 4v4 of "humans".
     `_maintain_tdm_population` swaps bots in/out if more players ever join."""
     room = OFFLINE_TDM_ROOMS.get(user_id)
     if room is not None:
         return room
     room = GameRoom(is_ranked=False, match_duration=300.0, game_mode="tdm")
     room.is_offline = True
-    bot_names = random.sample(DISGUISED_BOT_NAMES, 5)
+    bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2 - 1)
     for nm in bot_names:
         room.spawn_bot(nm, disguised=True, difficulty=1.2)
     OFFLINE_TDM_ROOMS[user_id] = room
@@ -8299,7 +8299,7 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
     elif mode == "practice":
         # Practice supports both FFA and TDM — driven by `?tdm=1` from the
         # PracticeMapSelector. TDM practice spawns into the dedicated
-        # tdm_room so the dummy bots aren't promoted into 3v3.
+        # tdm_room so the dummy bots aren't promoted into 4v4.
         room = practice_tdm_room if tdm else practice_room
     elif mode == "offline":
         # Offline-vs-AI also honours the TDM flag — the user picks FFA or

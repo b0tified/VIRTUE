@@ -1,6 +1,6 @@
 """Regression tests for TDM auto-balance + friendly-fire fixes.
 
-Covers three user-reported bugs in the 3v3 TDM room:
+Covers three user-reported bugs in the 4v4 TDM room:
   1. Bots used to target teammates (friendly fire visual confusion).
   2. Bots in TDM looked like bots (BOT-NAMES + -T suffix), breaking the
      "blends in with humans" feel that FFA already had.
@@ -9,10 +9,10 @@ Covers three user-reported bugs in the 3v3 TDM room:
 
 Fix under test:
   - `_tick_bots` target loop skips same-team allies in TDM.
-  - Boot spawns 6 disguised bots (`DISGUISED_BOT_NAMES`, disguised=True)
-    in every TDM room so the lobby reads as 3v3 of "humans".
+  - Boot spawns 8 disguised bots (`DISGUISED_BOT_NAMES`, disguised=True)
+    in every TDM room so the lobby reads as 4v4 of "humans".
   - `_maintain_tdm_population` runs on every real-player join/leave to
-    despawn / spawn bots so the head count stays at 6.
+    despawn / spawn bots so the head count stays at 8.
 """
 import sys
 import uuid
@@ -133,7 +133,7 @@ async def test_tdm_bots_are_disguised_in_serialize():
     """Every bot spawned in a TDM room should serialize as `is_bot=False`
     (disguise flag) so the scoreboard / killfeed show them as real
     players (matches the no-BOT-tag visual)."""
-    room = _make_tdm_room(num_bots=6)
+    room = _make_tdm_room(num_bots=8)
     for bot in room.players.values():
         assert getattr(bot, "disguised", False) is True, f"{bot.username} is not disguised"
         ser = bot.to_state()
@@ -146,18 +146,18 @@ async def test_tdm_bots_are_disguised_in_serialize():
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_real_player_join_despawns_a_bot():
-    """Adding a real player to a full TDM room (6 bots) must despawn one
-    bot so the room stays at 6 total = 3v3."""
-    room = _make_tdm_room(num_bots=6)
-    assert len(room.players) == 6
+    """Adding a real player to a full TDM room (8 bots) must despawn one
+    bot so the room stays at 8 total = 4v4."""
+    room = _make_tdm_room(num_bots=8)
+    assert len(room.players) == 8
 
     human = _real_player("alice")
     await room.add(human)
 
-    # Total players (incl. the new human) should be exactly 6.
+    # Total players (incl. the new human) should be exactly 8.
     combat = [p for p in room.players.values() if not getattr(p, "is_spectator", False)]
-    assert len(combat) == 6, \
-        f"After human join, expected 6 combat players, got {len(combat)}"
+    assert len(combat) == 8, \
+        f"After human join, expected 8 combat players, got {len(combat)}"
     # The new human is still in the room.
     assert human.id in room.players
 
@@ -165,33 +165,33 @@ async def test_real_player_join_despawns_a_bot():
 @pytest.mark.asyncio
 async def test_real_player_leave_spawns_a_bot_back():
     """Removing a real player from a TDM room must spawn one replacement
-    bot so the room stays at 6 total for any remaining players."""
-    room = _make_tdm_room(num_bots=6)
+    bot so the room stays at 8 total for any remaining players."""
+    room = _make_tdm_room(num_bots=8)
     human = _real_player("alice")
     await room.add(human)
-    assert len([p for p in room.players.values() if not getattr(p, "is_spectator", False)]) == 6
+    assert len([p for p in room.players.values() if not getattr(p, "is_spectator", False)]) == 8
 
     await room.remove(human)
 
     combat = [p for p in room.players.values() if not getattr(p, "is_spectator", False)]
-    assert len(combat) == 6, \
-        f"After human leave, expected 6 combat players (5 old bots + 1 new), got {len(combat)}"
+    assert len(combat) == 8, \
+        f"After human leave, expected 8 combat players (7 old bots + 1 new), got {len(combat)}"
     # The departing human is gone.
     assert human.id not in room.players
 
 
 @pytest.mark.asyncio
 async def test_two_humans_keep_population_balanced():
-    """Two real players join — both displace bots so the total stays at 6."""
-    room = _make_tdm_room(num_bots=6)
+    """Two real players join — both displace bots so the total stays at 8."""
+    room = _make_tdm_room(num_bots=8)
     alice = _real_player("alice")
     bob   = _real_player("bob")
     await room.add(alice)
     await room.add(bob)
 
     combat = [p for p in room.players.values() if not getattr(p, "is_spectator", False)]
-    assert len(combat) == 6, f"Expected 6 combat players, got {len(combat)}"
-    # Team split should be 3v3 (or as close as the balancer allows).
+    assert len(combat) == 8, f"Expected 8 combat players, got {len(combat)}"
+    # Team split should be 4v4 (or as close as the balancer allows).
     red  = sum(1 for p in combat if p.team == "red")
     blue = sum(1 for p in combat if p.team == "blue")
     assert abs(red - blue) <= 1, f"Teams not balanced: red={red} blue={blue}"
@@ -218,12 +218,12 @@ async def test_maintain_caps_ffa_at_lobby_size():
 
 @pytest.mark.asyncio
 async def test_spectator_join_does_not_displace_bots():
-    """Spectators don't count toward the 3v3 budget — they shouldn't
+    """Spectators don't count toward the 4v4 budget — they shouldn't
     cause a bot to be kicked from the playable lobby."""
-    room = _make_tdm_room(num_bots=6)
+    room = _make_tdm_room(num_bots=8)
     spec = _real_player("watcher")
     spec.is_spectator = True
     await room.add(spec)
 
     bots = [p for p in room.players.values() if p.is_bot]
-    assert len(bots) == 6, f"Bot count changed after spectator joined: {len(bots)}"
+    assert len(bots) == 8, f"Bot count changed after spectator joined: {len(bots)}"

@@ -1018,3 +1018,11 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - Backend: 6/6 in `/app/backend/tests/test_tdm_match_end_payload.py` (RED win, BLUE win, DRAW, FFA regression, bot-without-team, and a code-drift assertion on server.py).
 - Frontend Playwright synthetic payload injection via `window.__virtue_sock.onMessage`: 5/5 scenarios pass (TDM VICTORY / DEFEAT / DRAW, FFA VICTORY 1st, FFA DEFEAT 2nd). All expected data attributes, headline text, WIN badge presence, icons, and team chips correctly rendered.
 - Existing tests: 30/30 TDM + queue tests still pass (no regression).
+
+---
+
+### 2026-02-08 — TDM upgraded to 4v4
+- **Change**: `TDM_TEAM_SIZE` bumped from `3` → `4` in `/app/backend/server.py`. Every TDM room (quick-match, practice, offline-vs-AI) now targets **8 combat players (4v4)** instead of 6 (3v3).
+- **Auto-balance**: `_maintain_population()` still uses `TDM_TEAM_SIZE * 2` so pre-fill bots + real-player swap logic all scale automatically. Offline TDM room now spawns `TDM_TEAM_SIZE * 2 - 1 = 7` disguised bots so the user drops in as the 8th player.
+- **Labels updated** across `Hud.jsx`, `PracticeMapSelector.jsx`, `MatchLoadingScreen.jsx`, `Profile.jsx` — anywhere the UI displayed "3V3" now reads "4V4".
+- **Tests updated**: `test_tdm_mode.py` (constant check), `test_tdm_auto_balance.py` (num_bots=8, expected combat counts=8, comments), `test_match_history_tdm.py` (docstring). All 22 TDM tests pass.

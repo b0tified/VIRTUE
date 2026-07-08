@@ -1,6 +1,6 @@
 """TDM mode — backend contract tests:
   - GameRoom has `game_mode` and `team_scores` fields
-  - `_assign_team` balances 3v3
+  - `_assign_team` balances 4v4
   - Friendly fire is suppressed in TDM (source-level check on shoot/laser/melee paths)
   - Quick-match casual rolls TDM at the configured probability
   - WS handler accepts the `tdm` query param
@@ -16,7 +16,7 @@ import server  # noqa: E402
 
 def test_constants_present():
     assert server.TDM_KILL_TARGET == 30
-    assert server.TDM_TEAM_SIZE == 3
+    assert server.TDM_TEAM_SIZE == 4
     assert 0.0 < server.TDM_QUICK_MATCH_ROLL <= 1.0
 
 
@@ -37,7 +37,7 @@ def test_invalid_game_mode_coerces_to_ffa():
     assert r.game_mode == "ffa"
 
 
-def test_assign_team_balances_3v3():
+def test_assign_team_balances_4v4():
     """`_assign_team` should split players evenly across red/blue. With a
     fresh room, the first two assigns must produce one red + one blue."""
     r = server.GameRoom(is_ranked=False, game_mode="tdm")

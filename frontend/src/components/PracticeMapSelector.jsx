@@ -100,7 +100,7 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
                 active={gameMode === "tdm"}
                 onClick={() => setGameMode("tdm")}
                 title="TEAM DEATHMATCH"
-                subtitle="3v3 · first team to 30 kills wins"
+                subtitle="4v4 · first team to 30 kills wins"
                 accent="#9B59B6"
               />
             </div>
@@ -137,7 +137,7 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
             <span className="ml-2 opacity-60">·</span>
             <span className="ml-2">{trainingMode === "practice" ? <span className="text-[#9B59B6]">RANGE</span> : <span className="text-[#06A35F]">VS AI</span>}</span>
             <span className="ml-2 opacity-60">·</span>
-            <span className="ml-2">{gameMode === "tdm" ? <span className="text-[#9B59B6]">TDM 3V3</span> : <span className="text-[#E62429]">FFA</span>}</span>
+            <span className="ml-2">{gameMode === "tdm" ? <span className="text-[#9B59B6]">TDM 4V4</span> : <span className="text-[#E62429]">FFA</span>}</span>
           </div>
           <button
             type="button"

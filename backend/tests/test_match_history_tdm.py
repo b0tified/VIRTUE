@@ -1,6 +1,6 @@
 """Match-history TDM rendering tests.
 
-When a player finishes a TDM (3v3) match, the persisted
+When a player finishes a TDM (4v4) match, the persisted
 `match_history` row must carry the team scoreline, the player's team
 color, and a precomputed `team_outcome` (win/loss/draw) so the Profile
 UI can render a "WIN 12 — 10" card instead of the FFA "Nth of M"
