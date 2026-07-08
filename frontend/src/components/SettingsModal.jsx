@@ -4,6 +4,7 @@ import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
 import AdvancedControls from "@/components/AdvancedControls";
+import AccountSettingsCard from "@/components/AccountSettingsCard";
 import api from "@/api";
 
 // Matchmaking regions exposed in Account → Server Region. `basePing` seeds a
@@ -999,6 +1000,12 @@ export default function SettingsModal({ open, onClose }) {
 
           {tab === "account" && (
           <>
+          {/* Username change (7-day cooldown, historical entries keep
+              old name) + security question setup for the /forgot-
+              password flow. Both live server-side under /profile/me/*
+              — this component just wraps the calls. */}
+          <AccountSettingsCard user={user} refreshMe={refreshMe} />
+
           {/* Privacy: hide your profile from other players. Bots are
               always hidden server-side regardless of this toggle; this
               switch only affects how your real account appears in the
