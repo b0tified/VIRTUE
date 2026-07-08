@@ -16,6 +16,7 @@ import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
 import audioBus from "@/game/audio";
 import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
+import AccountSettingsCard from "@/components/AccountSettingsCard";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -295,6 +296,12 @@ export default function Profile() {
           user={user}
           onChange={() => refreshMe?.()}
         />
+
+        {/* Account settings — username change (7-day cooldown) +
+            security question for the /forgot-password flow. */}
+        <div className="mt-6">
+          <AccountSettingsCard user={user} refreshMe={refreshMe} />
+        </div>
 
         <BannerCustomizer
           iconIdx={bannerIcon}

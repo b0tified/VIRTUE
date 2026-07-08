@@ -7,6 +7,7 @@ import QueueOverlay from "@/components/QueueOverlay";
 import MatchLoadingScreen from "@/components/MatchLoadingScreen";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
+import ForgotPassword from "@/pages/ForgotPassword";
 import Lobby from "@/pages/Lobby";
 import Game from "@/pages/Game";
 import Profile from "@/pages/Profile";
@@ -99,6 +100,7 @@ export default function App() {
             <Route path="/" element={<Root />} />
             <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
             <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
+            <Route path="/forgot-password" element={<GuestOnly><ForgotPassword /></GuestOnly>} />
             <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
             <Route path="/play" element={<ProtectedRoute><MatchEntryGuard><Game /></MatchEntryGuard></ProtectedRoute>} />
             <Route path="/spectate/:username" element={<ProtectedRoute><Game /></ProtectedRoute>} />

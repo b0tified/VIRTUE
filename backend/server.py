@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import random
+import re
 import time
 import uuid
 from collections import deque
@@ -203,6 +204,10 @@ def public_user(user: dict) -> dict:
         # Defaults to "ak47" for legacy accounts. Read at WS connect to
         # seed `player.weapon` so the match starts with the chosen gun.
         "primary_weapon": (user.get("primary_weapon") or "ak47"),
+        # Security-question presence marker for the profile UI. We
+        # never return the answer hash (obviously). The UI uses this
+        # to decide whether to show "Set" vs "Update" copy.
+        "security_question": user.get("security_question") or None,
         # Ranked early-leave penalty timer (epoch seconds remaining).
         # 0 when not banned — lobby UI hides the lock pill in that
         # case. Returned as an int so a quick client-side countdown
@@ -796,16 +801,57 @@ async def get_current_user(request: Request) -> dict:
 # -------------------------------------------------------------------
 # Schemas
 # -------------------------------------------------------------------
+# Security-question presets. The user picks ONE at registration (or
+# adds it later via /profile/me/security-question). Answer is hashed
+# with bcrypt after lower-strip normalisation so verification is
+# case/whitespace insensitive but the plaintext is never stored.
+SECURITY_QUESTIONS = [
+    "What was the name of your first pet?",
+    "What city were you born in?",
+    "What is your mother's maiden name?",
+    "What was the make of your first car?",
+    "What was the name of your primary school?",
+]
+
+
+def _norm_answer(a: str) -> str:
+    return (a or "").strip().lower()
+
+
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=100)
     username: str = Field(min_length=2, max_length=20)
+    # Optional at register (backwards compat with legacy clients that
+    # don't collect the question). If present, we hash the answer and
+    # store both fields; if absent the user can add them later.
+    security_question: Optional[str] = None
+    security_answer: Optional[str] = Field(default=None, min_length=2, max_length=100)
 
 
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
     remember: bool = True
+
+
+class ForgotPasswordChallengeIn(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResetIn(BaseModel):
+    email: EmailStr
+    answer: str = Field(min_length=1, max_length=100)
+    new_password: str = Field(min_length=6, max_length=100)
+
+
+class SetSecurityQuestionIn(BaseModel):
+    question: str
+    answer: str = Field(min_length=2, max_length=100)
+
+
+class UsernameChangeIn(BaseModel):
+    username: str = Field(min_length=2, max_length=20)
 
 
 # -------------------------------------------------------------------
@@ -1052,6 +1098,14 @@ async def register(payload: RegisterIn, response: Response):
         "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0},
         "created_at": datetime.now(timezone.utc),
     }
+    # Optional security-question setup at register time. Answer stored
+    # as bcrypt(norm(answer)); never plaintext. If absent the user
+    # can set it later via /profile/me/security-question.
+    if payload.security_question and payload.security_answer:
+        if payload.security_question not in SECURITY_QUESTIONS:
+            raise HTTPException(400, detail="Invalid security question")
+        doc["security_question"] = payload.security_question
+        doc["security_answer_hash"] = hash_password(_norm_answer(payload.security_answer))
     res = await db.users.insert_one(doc)
     user = await db.users.find_one({"_id": res.inserted_id})
     access = create_access_token(str(user["_id"]), user["email"])
@@ -1216,6 +1270,152 @@ async def refresh_token(request: Request, response: Response):
         return {"access_token": access}
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Forgot-password (security-question flow) + username change
+# ─────────────────────────────────────────────────────────────────────
+# In-memory rate limiter for forgot-password/reset attempts, keyed by
+# email. 5 attempts per hour then locked out. Small dict; server-wide
+# concurrency is not the concern (auth requests are cheap and any
+# real DDoS would hit the ingress first).
+FORGOT_PW_ATTEMPTS: Dict[str, List[float]] = {}
+FORGOT_PW_MAX_ATTEMPTS = 5
+FORGOT_PW_WINDOW_S = 3600
+
+
+def _consume_forgot_pw_attempt(email: str) -> bool:
+    """Return True if this attempt is allowed, False if the address is
+    currently rate-limited. Always records the timestamp."""
+    now = time.time()
+    lst = FORGOT_PW_ATTEMPTS.setdefault(email, [])
+    # Prune old entries.
+    FORGOT_PW_ATTEMPTS[email] = [t for t in lst if now - t < FORGOT_PW_WINDOW_S]
+    if len(FORGOT_PW_ATTEMPTS[email]) >= FORGOT_PW_MAX_ATTEMPTS:
+        return False
+    FORGOT_PW_ATTEMPTS[email].append(now)
+    return True
+
+
+@api.get("/auth/security-questions")
+async def security_questions():
+    """List the available preset questions. Used by both the register
+    form and the profile settings pane."""
+    return {"questions": SECURITY_QUESTIONS}
+
+
+@api.post("/auth/forgot-password/challenge")
+async def forgot_password_challenge(payload: ForgotPasswordChallengeIn):
+    """Step 1: user submits their email; server returns their security
+    question so they can answer it. Returns a generic 'no question set'
+    for users who never configured one (identical response shape whether
+    the email exists or not — email-enumeration protection)."""
+    email = payload.email.lower()
+    user = await db.users.find_one({"email": email})
+    q = None
+    if user:
+        q = user.get("security_question")
+    if not q:
+        # Same shape regardless of existence so attackers can't tell.
+        return {"question": None, "message": "No security question is set for that account."}
+    return {"question": q}
+
+
+@api.post("/auth/forgot-password/reset")
+async def forgot_password_reset(payload: ForgotPasswordResetIn):
+    """Step 2: user submits email + answer + new password. Rate-limited
+    to 5 attempts per hour per email. Never leaks whether the email
+    exists — always returns the same generic result on failure."""
+    email = payload.email.lower()
+    if not _consume_forgot_pw_attempt(email):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+    user = await db.users.find_one({"email": email})
+    generic_fail = HTTPException(status_code=400, detail="Invalid email or security answer.")
+    if not user:
+        raise generic_fail
+    answer_hash = user.get("security_answer_hash")
+    if not answer_hash:
+        raise generic_fail
+    if not verify_password(_norm_answer(payload.answer), answer_hash):
+        raise generic_fail
+    # Success — update password. Clear the rate-limit bucket so a
+    # legitimate user isn't locked out immediately after resetting.
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    )
+    FORGOT_PW_ATTEMPTS.pop(email, None)
+    return {"ok": True, "message": "Password reset successful. Please sign in with your new password."}
+
+
+@api.post("/profile/me/security-question")
+async def set_security_question(payload: SetSecurityQuestionIn, user: dict = Depends(get_current_user)):
+    """Set or update the security question + answer while signed in.
+    Required before forgot-password/reset will work for the account."""
+    if payload.question not in SECURITY_QUESTIONS:
+        raise HTTPException(400, detail="Invalid security question")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "security_question": payload.question,
+            "security_answer_hash": hash_password(_norm_answer(payload.answer)),
+        }},
+    )
+    return {"ok": True, "message": "Security question updated."}
+
+
+# Username-change constants + validator. 7-day cooldown per user's
+# spec; historical entries (kill feed, match archives, leaderboard
+# snapshots) keep the old name (immutable audit trail).
+USERNAME_CHANGE_COOLDOWN_S = 7 * 24 * 3600
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{2,20}$")
+
+
+@api.post("/profile/me/username")
+async def change_username(payload: UsernameChangeIn, user: dict = Depends(get_current_user)):
+    """Change the signed-in user's username. Enforces:
+      - format: 2-20 chars, [A-Za-z0-9_.-] only
+      - uniqueness (case-insensitive) across all users
+      - 7-day cooldown from the last change
+    Historical kill-feed / archive entries keep the OLD name intact —
+    only `user.username` and `user.username_changed_at` mutate."""
+    new_name = (payload.username or "").strip()
+    if not USERNAME_PATTERN.match(new_name):
+        raise HTTPException(400, detail="Username must be 2-20 chars: letters, digits, _ . -")
+    # Cooldown check.
+    last_change = user.get("username_changed_at")
+    if isinstance(last_change, datetime):
+        # Coerce to UTC-aware (Mongo can hand back naive datetimes).
+        if last_change.tzinfo is None:
+            last_change = last_change.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last_change).total_seconds()
+        if elapsed < USERNAME_CHANGE_COOLDOWN_S:
+            remaining = USERNAME_CHANGE_COOLDOWN_S - elapsed
+            days_left = max(1, round(remaining / 86400))
+            raise HTTPException(
+                status_code=429,
+                detail=f"You can only change your username once every 7 days. Try again in ~{days_left}d.",
+            )
+    # No-op if the new name matches the current (case-sensitive).
+    if new_name == user.get("username"):
+        return public_user(user)
+    # Case-insensitive uniqueness check (excluding self).
+    conflict = await db.users.find_one({
+        "username": {"$regex": f"^{re.escape(new_name)}$", "$options": "i"},
+        "_id": {"$ne": user["_id"]},
+    })
+    if conflict:
+        raise HTTPException(409, detail="That username is taken.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "username": new_name,
+            "username_changed_at": datetime.now(timezone.utc),
+            "previous_username": user.get("username"),
+        }},
+    )
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    return public_user(fresh)
 
 
 # -------------------------------------------------------------------

@@ -151,6 +151,15 @@ export default function Login() {
             Sign up
           </Link>
         </div>
+        <div className="text-center text-xs text-neutral-500 pt-2">
+          <Link
+            to="/forgot-password"
+            className="hover:text-[#FFD700] underline"
+            data-testid="login-forgot-password-link"
+          >
+            Forgot password?
+          </Link>
+        </div>
       </form>
     </div>
   );
