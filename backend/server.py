@@ -281,7 +281,18 @@ async def maybe_reset_season() -> dict:
         # buttons in the new season. Skins that were already granted
         # stay in `owned_skins` (append-only) so players keep cosmetics
         # they earned last season.
-        SEASON_RESET_RP_DROP = 900  # 9 sub-tiers × 100 RP
+        # Season reset math per-tier:
+        #   - Goonmasters (RP ≥ 2100) hard-land at Diamond III (1200 RP)
+        #     per user policy: "you finished top of the ladder, but the
+        #     new season starts you at the top of the mid-ladder, not
+        #     Master-tier". Keeps GMs from crushing new-season lobbies
+        #     from day one while still respecting their end-of-season
+        #     ceiling via `peak_rank_points`.
+        #   - Everyone else drops SEASON_RESET_RP_DROP (900 RP = 3
+        #     sub-tiers) with a floor of 0.
+        SEASON_RESET_RP_DROP = 900  # 3 sub-tiers × 300 RP soft reset
+        GOONMASTER_FLOOR_RP = RANK_TIERS[-1][0]  # 2100 — dynamic in case tiers ever shift
+        DIAMOND_III_RP = RANK_TIERS[4][0]        # 1200 — start of Diamond III
         finishing_season = int(doc.get("season_number", 1))
         # Refresh the cached prev-season number so newly-created bots
         # stamp their titles with the freshly-completed season.
@@ -332,9 +343,18 @@ async def maybe_reset_season() -> dict:
                         ]
                     },
                     "rank_points": {
-                        "$max": [
-                            0,
-                            {"$subtract": [{"$ifNull": ["$rank_points", 0]}, SEASON_RESET_RP_DROP]},
+                        # $cond: if the player was Goonmaster (RP >= 2100),
+                        # snap them to Diamond III floor (1200). Otherwise
+                        # apply the standard -900 soft reset with a 0 floor.
+                        "$cond": [
+                            {"$gte": [{"$ifNull": ["$rank_points", 0]}, GOONMASTER_FLOOR_RP]},
+                            DIAMOND_III_RP,
+                            {
+                                "$max": [
+                                    0,
+                                    {"$subtract": [{"$ifNull": ["$rank_points", 0]}, SEASON_RESET_RP_DROP]},
+                                ]
+                            },
                         ]
                     },
                     "placement_matches_played": 0,
