@@ -535,6 +535,8 @@ class AudioBus {
       : this.sfxGain;
     if (weapon === "laser") {
       this._laserShot(vol, out);
+    } else if (weapon === "sniper") {
+      this._sniperShot(shooterId, vol, out);
     } else {
       this._akShot(shooterId, vol, out);
     }
@@ -592,6 +594,116 @@ class AudioBus {
     og.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.14);
     osc.connect(og); og.connect(out);
     osc.start(); osc.stop(ctx.currentTime + 0.16);
+  }
+
+  /* Sniper: cinematic bolt-action boom.
+     A single, LOUD report with an immediate high-freq CRACK (supersonic
+     snap), a deep low-end THUMP (the powder concussion), and a long
+     tail echo that rolls off over ~0.8s. Roughly 1.6x louder than an
+     AK shot to sell the "one-shot kill cannon" feel. */
+  _sniperShot(shooterId, vol, out) {
+    const ctx = this.ctx;
+    out = out || this.sfxGain;
+    const t0 = ctx.currentTime;
+    // Snipers all sound similar to each other — the huge report doesn't
+    // benefit from as much per-shooter timbre variance as the AK, but a
+    // tiny pitch jitter still helps back-to-back shots not sound looped.
+    let pitch = 1.0;
+    if (shooterId) {
+      const h = this._hashId(shooterId);
+      pitch = 0.94 + (h % 12) / 100; // 0.94..1.05
+    }
+
+    // 1) Powder concussion — deep 90 Hz → 30 Hz sine drop, LOUD.
+    // Uses a sine so it hits the subwoofer without a lot of harmonics.
+    const thump = ctx.createOscillator();
+    thump.type = "sine";
+    thump.frequency.setValueAtTime(90 * pitch, t0);
+    thump.frequency.exponentialRampToValueAtTime(30 * pitch, t0 + 0.22);
+    const thumpG = ctx.createGain();
+    thumpG.gain.setValueAtTime(1.6 * vol, t0);
+    thumpG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
+    thump.connect(thumpG); thumpG.connect(out);
+    thump.start(t0); thump.stop(t0 + 0.32);
+
+    // 2) Supersonic CRACK — short white-noise burst pushed through a
+    // sharp bandpass around 2.2 kHz. This is the "you just fired a
+    // magnum" transient. Longer + hotter than the AK's crackle.
+    const crackDur = 0.14;
+    const crackBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * crackDur), ctx.sampleRate);
+    const cData = crackBuf.getChannelData(0);
+    for (let i = 0; i < cData.length; i++) {
+      const t = i / cData.length;
+      cData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 1.6);
+    }
+    const crackSrc = ctx.createBufferSource();
+    crackSrc.buffer = crackBuf;
+    crackSrc.playbackRate.value = pitch;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(2200, t0);
+    bp.frequency.exponentialRampToValueAtTime(900, t0 + crackDur);
+    bp.Q.value = 1.2;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 300;
+    const crackG = ctx.createGain();
+    crackG.gain.setValueAtTime(0, t0);
+    crackG.gain.linearRampToValueAtTime(1.4 * vol, t0 + 0.004);
+    crackG.gain.exponentialRampToValueAtTime(0.001, t0 + crackDur);
+    crackSrc.connect(hp); hp.connect(bp); bp.connect(crackG); crackG.connect(out);
+    crackSrc.start(t0);
+
+    // 3) Mid-body noise — broader lowpassed noise (the "boom" body).
+    const bodyDur = 0.36;
+    const bodyBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * bodyDur), ctx.sampleRate);
+    const bData = bodyBuf.getChannelData(0);
+    for (let i = 0; i < bData.length; i++) {
+      const t = i / bData.length;
+      bData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.2);
+    }
+    const bodySrc = ctx.createBufferSource();
+    bodySrc.buffer = bodyBuf;
+    bodySrc.playbackRate.value = pitch;
+    const bodyLP = ctx.createBiquadFilter();
+    bodyLP.type = "lowpass";
+    bodyLP.frequency.setValueAtTime(1400, t0);
+    bodyLP.frequency.exponentialRampToValueAtTime(180, t0 + bodyDur);
+    const bodyG = ctx.createGain();
+    bodyG.gain.setValueAtTime(0, t0);
+    bodyG.gain.linearRampToValueAtTime(1.1 * vol, t0 + 0.008);
+    bodyG.gain.exponentialRampToValueAtTime(0.001, t0 + bodyDur);
+    bodySrc.connect(bodyLP); bodyLP.connect(bodyG); bodyG.connect(out);
+    bodySrc.start(t0);
+
+    // 4) Echo tail — two delayed, quieter crackle repeats to sell an
+    // outdoor arena. Not a real reverb (expensive) — just two damped
+    // taps that fade out over ~0.8s.
+    const tailDelays = [0.18, 0.42];
+    for (let i = 0; i < tailDelays.length; i++) {
+      const delay = tailDelays[i];
+      const tailDur = 0.22;
+      const tailBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * tailDur), ctx.sampleRate);
+      const tData = tailBuf.getChannelData(0);
+      for (let j = 0; j < tData.length; j++) {
+        const t = j / tData.length;
+        tData[j] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.0);
+      }
+      const tSrc = ctx.createBufferSource();
+      tSrc.buffer = tailBuf;
+      tSrc.playbackRate.value = pitch;
+      const tLP = ctx.createBiquadFilter();
+      tLP.type = "lowpass";
+      tLP.frequency.setValueAtTime(1600, t0 + delay);
+      tLP.frequency.exponentialRampToValueAtTime(220, t0 + delay + tailDur);
+      const tG = ctx.createGain();
+      const echoVol = (i === 0 ? 0.55 : 0.28) * vol;
+      tG.gain.setValueAtTime(0, t0 + delay);
+      tG.gain.linearRampToValueAtTime(echoVol, t0 + delay + 0.008);
+      tG.gain.exponentialRampToValueAtTime(0.001, t0 + delay + tailDur);
+      tSrc.connect(tLP); tLP.connect(tG); tG.connect(out);
+      tSrc.start(t0 + delay);
+    }
   }
 
   /* Laser: short sci-fi "pew" — descending square sweep + bright ring + zap noise. */

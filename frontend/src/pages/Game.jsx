@@ -277,6 +277,10 @@ export default function Game() {
     // a beat, then the label flips once state arrives.
     if (user?.primary_weapon === "ak47" || user?.primary_weapon === "sniper") {
       engine.primaryWeaponId = user.primary_weapon;
+      // Swap the viewmodel + muzzle flash to match — otherwise sniper
+      // users would see the AK model rendered until the first server
+      // state broadcast triggers the re-selection.
+      engine._applyPrimarySelection?.();
     }
     // Expose for in-browser debugging + e2e tests (cheap, single-instance).
     try { window.__virtueEngine = engine; } catch {}
@@ -289,9 +293,8 @@ export default function Game() {
       audioBus.set3DAudio?.(s.audio3D !== false);
     });
     engine.onShoot = () => {
-      // Use the same resolver as the network shoot payload so sniper
-      // fires trigger the right SFX (falls back to ak47 SFX for now
-      // — sniper doesn't have a dedicated sound yet).
+      // Route the SFX by the currently-held weapon. Sniper now has its
+      // own dedicated `_sniperShot` in the audio bus (loud + booming).
       const w = engine.currentWeapon === "tertiary" ? "laser" : (engine.primaryWeaponId || "ak47");
       audioBus.gunshot(engine.youId, 0, w);
     };

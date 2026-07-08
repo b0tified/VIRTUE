@@ -1026,3 +1026,14 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Auto-balance**: `_maintain_population()` still uses `TDM_TEAM_SIZE * 2` so pre-fill bots + real-player swap logic all scale automatically. Offline TDM room now spawns `TDM_TEAM_SIZE * 2 - 1 = 7` disguised bots so the user drops in as the 8th player.
 - **Labels updated** across `Hud.jsx`, `PracticeMapSelector.jsx`, `MatchLoadingScreen.jsx`, `Profile.jsx` — anywhere the UI displayed "3V3" now reads "4V4".
 - **Tests updated**: `test_tdm_mode.py` (constant check), `test_tdm_auto_balance.py` (num_bots=8, expected combat counts=8, comments), `test_match_history_tdm.py` (docstring). All 22 TDM tests pass.
+
+---
+
+### 2026-02-08 — Sniper gets its own viewmodel + booming shot SFX
+- **Distinct sniper viewmodel** (`/app/frontend/src/game/engine.js` `_buildWeapon`):
+  A separate `_sniperModel` group is built alongside the AK — sleek tactical stock, extended barrel, chunky suppressor-style muzzle, cheek riser, bolt handle sticking out the right side, big cylindrical scope with blue-tinted lens, elevation + windage turrets, bipod legs, and its own muzzle flash sprite `_sniperMuzzleFlash`.
+  Only one of the two primary models is visible at a time — `_applyPrimarySelection()` toggles visibility + swaps the `_muzzleFlash` reference whenever `primaryWeaponId` changes (state broadcast, initial seeding, or slot swap via `setWeapon`).
+- **Loud dedicated sniper SFX** (`/app/frontend/src/game/audio.js` `_sniperShot`):
+  Booming 4-layer bolt-action report — deep 90 → 30 Hz sine thump (1.6x gain), high-freq bandpassed CRACK burst, mid-body lowpass "boom", and two echo tails at 180ms + 420ms. Roughly 1.6x hotter than the AK, distinctly cinematic. `gunshot()` now routes `weapon === "sniper"` to `_sniperShot()`.
+- **LocalSim parity**: `WEAPONS` map gained a `sniper` entry (100 dmg, 900ms cooldown, 1-shot mag, 120m range). `LocalPlayer` now inits `weapon` from the user's `primary_weapon`; respawn resets and ammo dicts include sniper. Practice/Offline sniper users now see the sniper viewmodel + hear the sniper report locally.
+- **Game.jsx seeding fix**: After `engine.primaryWeaponId = user.primary_weapon`, we now call `engine._applyPrimarySelection()` so the correct viewmodel is on-screen before the first state broadcast lands.

@@ -283,8 +283,9 @@ const BOT_MAX_HP = 80;
 const MAX_HP = 100;
 
 const WEAPONS = {
-  ak47:  { damage: 22, cooldown_ms: 110, mag_size: 25, reload_ms: 1500, range: 60 },
-  laser: { damage: 9,  cooldown_ms: 70,  mag_size: 60, reload_ms: 1800, range: 80 },
+  ak47:   { damage: 22,  cooldown_ms: 110,  mag_size: 25, reload_ms: 1500, range: 60 },
+  sniper: { damage: 100, cooldown_ms: 900,  mag_size: 1,  reload_ms: 1600, range: 120 },
+  laser:  { damage: 9,   cooldown_ms: 70,   mag_size: 60, reload_ms: 1800, range: 80 },
 };
 const MELEE_DAMAGE = 100;
 const MELEE_RANGE = 2.6;
@@ -398,10 +399,10 @@ class LocalPlayer {
     this.invuln_until = performance.now() + 3000;
     this.last_shot_ms = 0;
     this.last_melee_ms = 0;
-    this.weapon = "ak47";
+    this.weapon = (opts.weapon === "sniper") ? "sniper" : "ak47";
     this.is_ads = false;
-    this.ammo = { ak47: WEAPONS.ak47.mag_size, laser: WEAPONS.laser.mag_size };
-    this.reload_until_ms = { ak47: 0, laser: 0 };
+    this.ammo = { ak47: WEAPONS.ak47.mag_size, sniper: WEAPONS.sniper.mag_size, laser: WEAPONS.laser.mag_size };
+    this.reload_until_ms = { ak47: 0, sniper: 0, laser: 0 };
     // Laser beam state (continuous-fire weapon)
     this.laser_heat = 0;
     this.laser_overheated = false;
@@ -515,6 +516,7 @@ export class LocalSim {
       peak_rank_tier: this.user?.peak_rank_tier ?? 0,
       level: this.user?.level ?? 1,
       skin: this.user?.selected_skin || "default",
+      weapon: this.user?.primary_weapon === "sniper" ? "sniper" : "ak47",
     });
     this.me = me;
     this.players.set(me.id, me);
@@ -860,8 +862,8 @@ export class LocalSim {
         p.hp = p.max_hp;
         p.alive = true;
         p.invuln_until = now + 3000;
-        p.ammo = { ak47: WEAPONS.ak47.mag_size, laser: WEAPONS.laser.mag_size };
-        p.reload_until_ms = { ak47: 0, laser: 0 };
+        p.ammo = { ak47: WEAPONS.ak47.mag_size, sniper: WEAPONS.sniper.mag_size, laser: WEAPONS.laser.mag_size };
+        p.reload_until_ms = { ak47: 0, sniper: 0, laser: 0 };
         // Reset laser state so a death-while-overheated doesn't lock the
         // weapon after respawn.
         p.laser_heat = 0;

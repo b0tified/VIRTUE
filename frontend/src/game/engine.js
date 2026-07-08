@@ -2330,14 +2330,15 @@ export class GameEngine {
     const lh = this._outlined(new THREE.SphereGeometry(0.12, 10, 8), 0xf2c08a, 1.08);
     lh.position.set(0, -0.05, -0.55);
     ak.add(lh);
-    // Muzzle flash sprite
+    // Muzzle flash sprite (AK)
     const flashTex = this._makeFlashTexture();
     const flashMat = new THREE.SpriteMaterial({ map: flashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0 });
     const flash = new THREE.Sprite(flashMat);
     flash.scale.set(0.85, 0.85, 1);
     flash.position.set(0, 0.03, -1.32);
     ak.add(flash);
-    this._muzzleFlash = flash;
+    this._akMuzzleFlash = flash;
+    this._muzzleFlash = flash; // active model's flash (swapped by setWeapon)
 
     // ===== Katana =====
     const kat = new THREE.Group();
@@ -2378,6 +2379,131 @@ export class GameEngine {
     kat.visible = false; // start with AK
 
     root.add(ak); root.add(kat);
+
+    // ===== Sniper Rifle =====
+    // Long, sleek bolt-action look with a real scope on top and an
+    // extended barrel. Sits in the same primary slot as the AK — only
+    // one of them is visible at any moment (see setWeapon).
+    const sniper = new THREE.Group();
+    // Tactical black stock (rear, slightly slanted).
+    const sStock = this._outlined(new THREE.BoxGeometry(0.12, 0.15, 0.56), 0x1a1a1a);
+    sStock.position.set(0, -0.04, 0.22);
+    sStock.rotation.x = 0.05;
+    sniper.add(sStock);
+    // Cheek riser on top of the stock.
+    const sCheek = this._outlined(new THREE.BoxGeometry(0.09, 0.05, 0.34), 0x0f0f0f, 1.06);
+    sCheek.position.set(0, 0.06, 0.18);
+    sCheek.rotation.x = 0.05;
+    sniper.add(sCheek);
+    // Slim receiver (thinner than the AK).
+    const sReceiver = this._outlined(new THREE.BoxGeometry(0.11, 0.13, 0.5), 0x2f2f36);
+    sReceiver.position.set(0, 0.01, -0.22);
+    sniper.add(sReceiver);
+    // Bolt handle sticking out to the right — the defining sniper detail.
+    const sBoltBase = this._outlined(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 8), 0x8a8a8a, 1.1);
+    sBoltBase.rotation.z = Math.PI / 2;
+    sBoltBase.position.set(0.10, 0.05, -0.10);
+    sniper.add(sBoltBase);
+    const sBoltKnob = this._outlined(new THREE.SphereGeometry(0.032, 10, 8), 0xb0b0b0, 1.12);
+    sBoltKnob.position.set(0.17, 0.05, -0.10);
+    sniper.add(sBoltKnob);
+    // Extra-long barrel — key visual difference vs. AK.
+    const sBarrel = this._outlined(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 14), 0x0d0d0d, 1.08);
+    sBarrel.rotation.x = Math.PI / 2;
+    sBarrel.position.set(0, 0.02, -1.10);
+    sniper.add(sBarrel);
+    // Suppressor-style thick muzzle brake at the tip.
+    const sMuzzle = this._outlined(new THREE.CylinderGeometry(0.055, 0.05, 0.18, 12), 0x080808, 1.12);
+    sMuzzle.rotation.x = Math.PI / 2;
+    sMuzzle.position.set(0, 0.02, -1.60);
+    sniper.add(sMuzzle);
+    // Three lateral vent slots on the muzzle brake for a bit more shape.
+    for (const z of [-1.56, -1.60, -1.64]) {
+      const slot = this._outlined(new THREE.BoxGeometry(0.005, 0.09, 0.028), 0x000000, 1.18);
+      slot.position.set(0, 0.02, z);
+      sniper.add(slot);
+    }
+    // Bipod front legs — folded back under the barrel.
+    for (const x of [-0.05, 0.05]) {
+      const leg = this._outlined(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 6), 0x2a2a2a, 1.1);
+      leg.rotation.x = 0.8;
+      leg.position.set(x, -0.09, -0.85);
+      sniper.add(leg);
+    }
+    // Scope — big cylindrical scope body on top.
+    const scopeBody = this._outlined(new THREE.CylinderGeometry(0.055, 0.055, 0.42, 14), 0x0a0a0a, 1.08);
+    scopeBody.rotation.x = Math.PI / 2;
+    scopeBody.position.set(0, 0.19, -0.28);
+    sniper.add(scopeBody);
+    // Objective lens bell — flared front end of the scope.
+    const scopeObj = this._outlined(new THREE.CylinderGeometry(0.075, 0.06, 0.09, 14), 0x0a0a0a, 1.1);
+    scopeObj.rotation.x = Math.PI / 2;
+    scopeObj.position.set(0, 0.19, -0.52);
+    sniper.add(scopeObj);
+    // Front lens (blue-tinted glass).
+    const scopeLens = this._outlined(new THREE.CircleGeometry(0.06, 18), 0x3a6aa8, 1.05);
+    scopeLens.position.set(0, 0.19, -0.565);
+    scopeLens.rotation.y = Math.PI;
+    sniper.add(scopeLens);
+    // Rear eyepiece bell.
+    const scopeEye = this._outlined(new THREE.CylinderGeometry(0.06, 0.05, 0.08, 12), 0x0a0a0a, 1.1);
+    scopeEye.rotation.x = Math.PI / 2;
+    scopeEye.position.set(0, 0.19, -0.02);
+    sniper.add(scopeEye);
+    // Elevation + windage turrets (two little knobs on top of the scope).
+    for (const [dx, dz] of [[0, -0.28], [0.05, -0.28]]) {
+      const turret = this._outlined(new THREE.CylinderGeometry(0.022, 0.022, 0.04, 10), 0x1a1a1a, 1.1);
+      turret.rotation.x = dx === 0 ? 0 : Math.PI / 2;
+      turret.position.set(dx, dx === 0 ? 0.24 : 0.19, dz);
+      sniper.add(turret);
+    }
+    // Two mount rings holding the scope to the receiver.
+    for (const z of [-0.44, -0.10]) {
+      const ring = this._outlined(new THREE.TorusGeometry(0.058, 0.012, 6, 14), 0x181818, 1.1);
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(0, 0.19, z);
+      sniper.add(ring);
+    }
+    // Trigger + guard.
+    const sTrigger = this._outlined(new THREE.BoxGeometry(0.025, 0.06, 0.04), 0xb8b8b8, 1.12);
+    sTrigger.position.set(0, -0.11, -0.05);
+    sniper.add(sTrigger);
+    const sTg = this._outlined(new THREE.TorusGeometry(0.05, 0.011, 6, 14), 0x161616, 1.1);
+    sTg.rotation.y = Math.PI / 2;
+    sTg.position.set(0, -0.12, -0.05);
+    sniper.add(sTg);
+    // Small single-round magazine well.
+    const sMag = this._outlined(new THREE.BoxGeometry(0.09, 0.10, 0.13), 0x1a1a1a);
+    sMag.position.set(0, -0.16, -0.16);
+    sniper.add(sMag);
+    // Pistol grip.
+    const sGrip = this._outlined(new THREE.BoxGeometry(0.09, 0.22, 0.12), 0x1a1a1a);
+    sGrip.position.set(0, -0.18, 0.02);
+    sGrip.rotation.x = -0.32;
+    sniper.add(sGrip);
+    // Grip hand.
+    const sHand = this._outlined(new THREE.SphereGeometry(0.13, 12, 8), 0xf2c08a, 1.08);
+    sHand.position.set(0, -0.07, 0.02);
+    sniper.add(sHand);
+    // Forward hand — further out to sell the long barrel.
+    const sLh = this._outlined(new THREE.SphereGeometry(0.12, 10, 8), 0xf2c08a, 1.08);
+    sLh.position.set(0, -0.05, -0.70);
+    sniper.add(sLh);
+    // Sniper muzzle flash (tighter + slightly whiter than AK's).
+    const sFlashTex = this._makeFlashTexture();
+    const sFlashMat = new THREE.SpriteMaterial({ map: sFlashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0 });
+    const sFlash = new THREE.Sprite(sFlashMat);
+    sFlash.scale.set(1.05, 1.05, 1);
+    sFlash.position.set(0, 0.02, -1.72);
+    sniper.add(sFlash);
+    this._sniperMuzzleFlash = sFlash;
+
+    sniper.position.set(0.22, -0.18, -0.05);
+    sniper.rotation.y = -0.05;
+    sniper.visible = false; // starts hidden; toggled based on primary_weapon
+    root.add(sniper);
+    this._akModel = ak;
+    this._sniperModel = sniper;
 
     // ===== Laser Rifle =====
     const laser = new THREE.Group();
@@ -2495,9 +2621,17 @@ export class GameEngine {
     root.add(laser);
 
     this._tertiaryGroup = laser;
-    this._weapon = ak;
-    this._primaryGroup = ak;
+    // Pick the active primary model based on the seeded loadout. Both
+    // AK and Sniper live under `root` as siblings; only one is visible
+    // at a time. `setWeapon()` and the primary-weapon state-mirror both
+    // call `_applyPrimarySelection()` to keep this in sync.
+    const startsSniper = this.primaryWeaponId === "sniper";
+    this._primaryGroup = startsSniper ? this._sniperModel : this._akModel;
+    this._muzzleFlash = startsSniper ? this._sniperMuzzleFlash : this._akMuzzleFlash;
+    if (this._akModel) this._akModel.visible = !startsSniper;
+    if (this._sniperModel) this._sniperModel.visible = startsSniper;
     this._secondaryGroup = kat;
+    this._weapon = this._primaryGroup;
     this.currentWeapon = "primary";
     this.meleeSwing = 0; // 0..1
 
@@ -2807,6 +2941,20 @@ export class GameEngine {
     return true;
   }
 
+  /* Sync visibility + `_primaryGroup` + `_muzzleFlash` to whichever
+     primary model the player is currently loadout-configured for. Safe
+     to call any time — no-op if the refs aren't built yet. */
+  _applyPrimarySelection() {
+    if (!this._akModel || !this._sniperModel) return;
+    const isSniper = this.primaryWeaponId === "sniper";
+    const primaryHeld = this.currentWeapon === "primary";
+    this._akModel.visible = !isSniper && primaryHeld;
+    this._sniperModel.visible = isSniper && primaryHeld;
+    this._primaryGroup = isSniper ? this._sniperModel : this._akModel;
+    this._muzzleFlash = isSniper ? this._sniperMuzzleFlash : this._akMuzzleFlash;
+    if (primaryHeld) this._weapon = this._primaryGroup;
+  }
+
   setWeapon(name) {
     if (name !== "primary" && name !== "secondary" && name !== "tertiary") return;
     // Stop the laser beam if we switch away from tertiary.
@@ -2822,12 +2970,16 @@ export class GameEngine {
         name === "primary" && this.primaryWeaponId === "sniper";
       if (!canStayADS) this.setADS(false);
     }
-    if (this._primaryGroup) this._primaryGroup.visible = name === "primary";
+    // Toggle secondary/tertiary directly; primary visibility is handled
+    // by `_applyPrimarySelection` so the correct model (AK vs Sniper)
+    // becomes visible.
     if (this._secondaryGroup) this._secondaryGroup.visible = name === "secondary";
     if (this._tertiaryGroup) this._tertiaryGroup.visible = name === "tertiary";
-    if (name === "primary") this._weapon = this._primaryGroup;
-    else if (name === "secondary") this._weapon = this._secondaryGroup;
-    else this._weapon = this._tertiaryGroup;
+    if (name === "secondary") this._weapon = this._secondaryGroup;
+    else if (name === "tertiary") this._weapon = this._tertiaryGroup;
+    // Sync the active primary model + hide the other one when we've
+    // just switched off/onto the primary slot.
+    this._applyPrimarySelection();
   }
 
   setADS(on) {
@@ -3776,6 +3928,10 @@ export class GameEngine {
           if (p.weapon === "ak47" || p.weapon === "sniper") {
             if (this.primaryWeaponId !== p.weapon) {
               this.primaryWeaponId = p.weapon;
+              // Swap the visible primary viewmodel to match — the AK
+              // and sniper live as sibling groups; only the active one
+              // is rendered.
+              this._applyPrimarySelection();
             }
           }
           // Mirror ammo + reloading from server so we can gate local fire prediction.
@@ -4413,8 +4569,8 @@ export class GameEngine {
         this._weapon.rotation.x = -this.recoil * 0.22 + reloadRotX;
         this._weapon.rotation.y = adsActive ? 0 : -0.05;
         this._weapon.rotation.z = reloadRotZ;
-        // Apply magazine offset (only on AK — laser viewmodel has no mag group).
-        if (this._akMagGroup && this.currentWeapon === "primary") {
+        // Apply magazine offset (only on AK — laser & sniper viewmodels have no mag group).
+        if (this._akMagGroup && this.currentWeapon === "primary" && this.primaryWeaponId === "ak47") {
           this._akMagGroup.position.set(0, magDy, magDz);
           this._akMagGroup.rotation.x = magRotX;
         } else if (this._akMagGroup) {
