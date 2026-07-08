@@ -4122,15 +4122,30 @@ class GameRoom:
             player.pitch = max(-1.5, min(1.5, pitch))
             if "ads" in msg:
                 player.is_ads = bool(msg["ads"])
-            # Client tells us its currently-equipped weapon every input tick
-            # so we can correctly resolve continuous-fire (laser) and hit-scan.
-            # Without this the server never sees a weapon switch from the
-            # client (discrete 'shoot' messages set it, but laser fire is
-            # continuous and goes via 'input' only).
+            # Client tells us its currently-equipped weapon every input
+            # tick so we can correctly resolve continuous-fire (laser)
+            # vs primary hit-scan. Loadout swaps (ak47 ↔ sniper) are
+            # LOBBY-scoped — the primary weapon is seeded from the
+            # user doc at WS connect (`saved_weapon`) and MUST NOT
+            # change mid-match via input ticks (that was the bug the
+            # sniper feature exposed: hardcoded 'ak47' in the input
+            # tick clobbered the server-side sniper seed). So we only
+            # let the client toggle between laser and their loaded
+            # primary — never between ak47 and sniper.
             if "weapon" in msg:
                 w = msg.get("weapon")
-                if w in WEAPON_CONFIGS:
-                    player.weapon = w
+                if w == "laser":
+                    player.weapon = "laser"
+                elif w in ("ak47", "sniper"):
+                    # Snap back to whichever primary the player
+                    # actually loaded (from PRIMARY_WEAPON_CHOICES).
+                    # If the seed matches `w`, no-op; if it doesn't,
+                    # we IGNORE the client's value to prevent
+                    # mid-match loadout swaps.
+                    saved = player._primary_loadout if hasattr(player, "_primary_loadout") else player.weapon
+                    if player.weapon not in ("ak47", "sniper"):
+                        # Just came off laser — restore the loaded primary.
+                        player.weapon = saved
             if "laser_firing" in msg:
                 # Stop the beam server-side if the client lets go; tick()
                 # handles the per-tick damage + heat ramp when firing == True.
@@ -8133,6 +8148,9 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
     saved_weapon = (user.get("primary_weapon") or "ak47")
     if saved_weapon in PRIMARY_WEAPON_CHOICES:
         player.weapon = saved_weapon
+    # Freeze the loaded primary so the input-tick handler can restore it
+    # after laser swaps and refuse mid-match ak47↔sniper reassignments.
+    player._primary_loadout = saved_weapon if saved_weapon in PRIMARY_WEAPON_CHOICES else "ak47"
     if mode == "spectate":
         player.is_spectator = True
         # Find target's Player.id inside the room for camera-follow on the client.

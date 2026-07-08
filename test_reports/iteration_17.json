@@ -1,0 +1,37 @@
+{
+  "summary": "P1 from iteration_16 IS FIXED. Confirmed: (a) resolveNetworkWeapon() helper in Game.jsx is now used by BOTH input tick and shoot payload (correctly reads engine.primaryWeaponId). (b) engine.primaryWeaponId is seeded from user.primary_weapon at Game mount (verified: pwid='sniper' at t=0 before any WS traffic). (c) Server WS-connect seeds player.weapon from user.primary_weapon (verified via temporary debug log: player.weapon=sniper on connect). (d) After sniper lobby → offline match, engine.primaryWeaponId stays 'sniper' stably (was flipping to 'ak47' every 50ms in iter16). (e) AK regression fully passes (pwid=ak47, ammo=25/25, hipfire works, no ADS required). All 13 backend contract tests (test_sniper_weapon.py + test_weapon_endpoint_integration.py) still pass. HOWEVER a NEW related UI-only bug was found: Hud.jsx:400 hardcodes the primary weapon label as 'AK-47' — even when sniper is equipped the HUD label reads 'AK-47'. This is a cosmetic label bug (independent of the game-state fix) and needs a small change in Hud.jsx.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Hud.jsx primary-weapon label",
+        "issue": "Line 400 hardcodes 'AK-47' as the primary-slot label. When engine.primaryWeaponId==='sniper' the HUD still displays 'AK-47' at the bottom-right weapon panel. Should use hud.primaryWeaponId (needs to be piped into hud state from engine) or a hud.weaponLabel field. Suggested fix: pass engine.primaryWeaponId into setHud state and change the ternary to `hud.weapon==='secondary' ? 'KATANA' : hud.weapon==='tertiary' ? 'LASER' : (hud.primaryWeaponId==='sniper' ? 'SNIPER' : 'AK-47')`. Also mag_size in the hud panel is server-authoritative (populated from you.mag_size / you.ammo at Game.jsx:149-150) so the count itself will be correct once the label is right.",
+        "selector": "[data-testid='hud-weapon']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sniper_weapon.py",
+    "/app/backend/tests/test_weapon_endpoint_integration.py"
+  ],
+  "action_items": [
+    "Fix Hud.jsx:400 to display 'SNIPER' when engine.primaryWeaponId==='sniper'. Requires piping primaryWeaponId into the hud state in Game.jsx (add `primaryWeaponId: engineRef.current?.primaryWeaponId` to at least one setHud path, or read it via a ref). Same pattern as this iteration's Game.jsx:264-269 seed."
+  ],
+  "critical_code_review_comments": [
+    "Game.jsx `resolveNetworkWeapon` helper looks clean and is correctly shared between input tick (line 486) and shoot payload (line 510). Good deduplication.",
+    "server.py:4135-4148 input-tick guard now correctly restricts ak47↔sniper swaps mid-match (only laser↔primary), with `_primary_loadout` frozen at WS connect (line 8153). Verified by inspection.",
+    "Hud.jsx:400 label hardcoded 'AK-47' is the same class of bug as the original P1 — the fix landed in Game.jsx but the HUD label was not updated. Recommend a quick audit for any other 'ak47' hardcodes in the frontend (grep found this one).",
+    "server.py:4179 in the shoot handler still does `player.weapon = weapon` unconditionally from the client msg. This is safe now because resolveNetworkWeapon can only produce 'ak47' | 'sniper' | 'laser' and the input-tick handler already refuses invalid primary swaps, but the shoot handler itself has no equivalent guard — worth mirroring the 4135-4148 restriction for defence-in-depth."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (13/13 pytest)", "frontend": "P1 fix confirmed working. HUD label cosmetic bug remaining."},
+  "test_credentials": "player1@shooter.com / player123 (used)",
+  "seed_data_creation": "None. Test flipped player1's primary_weapon between sniper and ak47; final state left as ak47.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iteration_17 confirmed the P1 fix (input-tick hardcoded ak47 → resolveNetworkWeapon helper) works end-to-end: engine.primaryWeaponId stays 'sniper' after entering an offline match with sniper equipped, and the AK path regressions cleanly. The remaining issue is Hud.jsx:400 hardcoding the label 'AK-47'. After E1 pipes primaryWeaponId into hud state and updates the label ternary, verify: (1) enter offline match with sniper equipped, (2) HUD bottom-right label reads 'SNIPER' not 'AK-47', (3) mag counter shows 1/1 not 25/25 (the ammo count itself should already flip to 1 once server-side player.weapon is 'sniper', but verify). ADS fire + 1-shot-kill live verification remained partially inconclusive in this run because (a) test called _tryShoot before _matchStarted became true and (b) bots aggressively killed the test player before a shot could land; recommend having E1 self-test those two flows manually in-browser or increase server invuln_until at match start for e2e.",
+  "rca of the issue": "The iteration_16 P1 (Game.jsx:464 hardcoded 'ak47' in input tick, clobbering server-side sniper seed every 50ms) is RESOLVED by the resolveNetworkWeapon helper. Additional server hardening (server.py:4135-4148) prevents future regressions of the same class by refusing ak47↔sniper reassignments via input ticks. The Game.jsx mount-time seed (line 264-269) removes the pre-broadcast HUD flicker. Newly-surfaced bug: Hud.jsx:400 hardcodes the label ternary's primary-slot leg to 'AK-47' — same anti-pattern as the original P1 (hardcoded weapon id) but in a different file. Fix is a one-liner once primaryWeaponId is available in hud state."
+}

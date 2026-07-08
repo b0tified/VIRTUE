@@ -259,6 +259,14 @@ export default function Game() {
       },
     });
     engineRef.current = engine;
+    // Seed the engine's primary-weapon id from the player's lobby
+    // loadout choice so HUD ammo / label / hipfire gate are correct
+    // BEFORE the first server state broadcast lands (~50-200ms after
+    // WS connect). Without this, sniper users see "AK-47 25/25" for
+    // a beat, then the label flips once state arrives.
+    if (user?.primary_weapon === "ak47" || user?.primary_weapon === "sniper") {
+      engine.primaryWeaponId = user.primary_weapon;
+    }
     // Expose for in-browser debugging + e2e tests (cheap, single-instance).
     try { window.__virtueEngine = engine; } catch {}
 
@@ -270,7 +278,10 @@ export default function Game() {
       audioBus.set3DAudio?.(s.audio3D !== false);
     });
     engine.onShoot = () => {
-      const w = engine.currentWeapon === "tertiary" ? "laser" : "ak47";
+      // Use the same resolver as the network shoot payload so sniper
+      // fires trigger the right SFX (falls back to ak47 SFX for now
+      // — sniper doesn't have a dedicated sound yet).
+      const w = engine.currentWeapon === "tertiary" ? "laser" : (engine.primaryWeaponId || "ak47");
       audioBus.gunshot(engine.youId, 0, w);
     };
     engine.start();
@@ -455,13 +466,24 @@ export default function Game() {
     }
 
     // Network send loop @ 20Hz
+    // Helper: resolve the network `weapon` id from the engine state.
+    // Tertiary slot is always "laser"; primary slot mirrors the
+    // player's loadout ("ak47" or "sniper"). Used by BOTH the input
+    // tick (line ~465) and the shoot payload (line ~495) — the drift
+    // between these two call sites is what previously broke sniper
+    // equip in-game (input tick hardcoded "ak47" and clobbered the
+    // server-side loadout every 50ms).
+    const resolveNetworkWeapon = () => {
+      const eng = engineRef.current;
+      if (eng?.currentWeapon === "tertiary") return "laser";
+      return eng?.primaryWeaponId || "ak47";
+    };
     const intervalId = setInterval(() => {
       if (!engineRef.current) return;
       // Spectators don't send any input — server ignores it anyway.
       if (engineRef.current.isSpectator) return;
       const snap = engineRef.current.snapshot();
-      const curWeapon =
-        engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+      const curWeapon = resolveNetworkWeapon();
       sock.send({
         type: "input",
         x: snap.x,
@@ -481,12 +503,11 @@ export default function Game() {
       // Mirror ADS into hud for the scope overlay.
       setHud((h) => (h.ads === !!snap.ads ? h : { ...h, ads: !!snap.ads }));
       if (snap.shoot) {
-        // Mirror the engine's live primary weapon id ("ak47" | "sniper")
-        // into the shoot payload so the server applies the right cfg
-        // (sniper has 1 mag, 200 dmg, ads_only). Falls back to "ak47"
-        // if primary hasn't yet resolved from a server broadcast.
-        const primaryId = engineRef.current?.primaryWeaponId || "ak47";
-        const weapon = engineRef.current?.currentWeapon === "tertiary" ? "laser" : primaryId;
+        // Uses the same resolveNetworkWeapon helper so server sees the
+        // right weapon (sniper has 1 mag, 200 dmg, ads_only). Falls
+        // back to "ak47" if primary hasn't yet resolved from a server
+        // broadcast.
+        const weapon = resolveNetworkWeapon();
         // Pass our last-measured RTT so the server can lag-compensate the
         // shot (rewinds each target to where the shooter actually saw
         // them). Clamped server-side to a safe 0..300ms window.
