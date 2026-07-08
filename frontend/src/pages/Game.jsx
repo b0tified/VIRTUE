@@ -244,7 +244,13 @@ export default function Game() {
           // Show the killer's PlayerCard on the death overlay.
           setHud((h) => ({ ...h, lastKiller: ev.killer }));
         } else if (ev.type === "reload-pressed") {
-          const w = engineRef.current?.currentWeapon === "tertiary" ? "laser" : "ak47";
+          // Use the engine's current primary loadout id — hardcoding
+          // "ak47" here was flipping sniper users back to AK on every
+          // reload (server treats the message as authoritative).
+          const eng = engineRef.current;
+          const w = eng?.currentWeapon === "tertiary"
+            ? "laser"
+            : (eng?.primaryWeaponId || "ak47");
           sockRef.current?.send({ type: "reload", weapon: w });
         } else if (ev.type === "laser-beam-start") {
           audioBus.laserBeamStart();

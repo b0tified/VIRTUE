@@ -4440,6 +4440,15 @@ class GameRoom:
             if not player.alive or player.is_bot:
                 return
             weapon = msg.get("weapon", player.weapon)
+            # Reload is LOBBY-scoped just like shoot/input: never allow
+            # the client to swap ak47 ↔ sniper via a stale reload
+            # payload. Snap back to the loaded primary if the client
+            # sends the wrong primary id (fixes: hardcoded 'ak47' in
+            # older clients flipping sniper users on every reload).
+            if weapon in ("ak47", "sniper"):
+                loaded = getattr(player, "_primary_loadout", None) or player.weapon
+                if loaded in ("ak47", "sniper") and weapon != loaded:
+                    weapon = loaded
             player.weapon = weapon if weapon in WEAPON_CONFIGS else player.weapon
             player.start_reload()
         elif mtype == "melee":
