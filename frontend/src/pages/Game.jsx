@@ -531,11 +531,19 @@ export default function Game() {
         // Pass our last-measured RTT so the server can lag-compensate the
         // shot (rewinds each target to where the shooter actually saw
         // them). Clamped server-side to a safe 0..300ms window.
+        //
+        // `ads` is echoed on the shoot message so the sniper's ads_only
+        // gate applies to the shot's own ADS state (not whatever the
+        // last 20Hz input tick happened to report). Without this, a
+        // right-click-then-immediately-left-click sequence could arrive
+        // at the server before the input tick's `ads: true` propagated,
+        // causing the very first sniper shot after ADS to be rejected.
         sock.send({
           type: "shoot",
           yaw: snap.shootYaw,
           pitch: snap.shootPitch,
           weapon,
+          ads: !!snap.ads,
           ping_ms: pingRef.current?.value | 0,
         });
       }

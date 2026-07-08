@@ -409,8 +409,14 @@ export class GameEngine {
     // snap ammo back on next state, but the ammo counter would flicker
     // visibly. `_lastAkFireMs === 0` means "never fired" so the first
     // shot always passes.
+    //
+    // Sniper skips this gate entirely: its mag is 1 so the auto-reload
+    // that fires immediately after each shot is the only cooldown that
+    // matters. Applying a 300ms client-side gate here made the ADS →
+    // fire loop feel sluggish (users reported "can't shoot the second
+    // I ADS" when they were re-firing between reloads).
     const nowMs = performance.now();
-    if (this._lastAkFireMs && nowMs - this._lastAkFireMs < this._akFireCooldownMs) {
+    if (w !== "sniper" && this._lastAkFireMs && nowMs - this._lastAkFireMs < this._akFireCooldownMs) {
       return;
     }
     this.pendingShoot = true;

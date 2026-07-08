@@ -4385,6 +4385,14 @@ class GameRoom:
             # (client sends 'laser_firing' on input instead).
             if weapon == "laser":
                 return
+            # Per-shot ADS mirror. The client echoes its `ads` state on
+            # every shoot message so a right-click-then-immediate-fire
+            # sequence isn't rejected while the 20Hz input tick's
+            # `ads: true` is still in-flight. Only applied when the
+            # value is present; missing = fall through to whatever the
+            # last input tick set.
+            if "ads" in msg:
+                player.is_ads = bool(msg["ads"])
             cfg = weapon_cfg(weapon)
             # ADS-only weapons (currently the sniper) cannot hip-fire.
             # Server rejects any shoot message that arrives while the
