@@ -396,8 +396,8 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           )
         )}
 
-        <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : "rgba(255,215,0,0.92)", color: "#0A0A0A" }} data-testid="hud-weapon">
-          <div className="text-xs">{hud.weapon === "secondary" ? "KATANA" : hud.weapon === "tertiary" ? "LASER" : "AK-47"}</div>
+        <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : (hud.primaryWeaponId === "sniper" ? "rgba(241,196,15,0.92)" : "rgba(255,215,0,0.92)"), color: "#0A0A0A" }} data-testid="hud-weapon">
+          <div className="text-xs">{hud.weapon === "secondary" ? "KATANA" : hud.weapon === "tertiary" ? "LASER" : (hud.primaryWeaponId === "sniper" ? "SNIPER" : "AK-47")}</div>
         </div>
       </div>
 

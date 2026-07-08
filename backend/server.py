@@ -4176,6 +4176,20 @@ class GameRoom:
             cooldown = cfg["cooldown_ms"]
             if now_ms - player.last_shot_ms < cooldown:
                 return
+            # Defence-in-depth: refuse to accept a primary-weapon swap
+            # via a shoot message. Loadout is lobby-scoped and frozen
+            # at WS connect (`_primary_loadout`). Same rationale as
+            # the input-tick guard above — closes off the last channel
+            # a malicious client could use to flip ak47↔sniper
+            # mid-match. If the shoot message specifies a primary that
+            # doesn't match the loaded one, snap back before applying.
+            if weapon in ("ak47", "sniper"):
+                loaded = getattr(player, "_primary_loadout", None) or player.weapon
+                if loaded in ("ak47", "sniper") and weapon != loaded:
+                    weapon = loaded
+                    cfg = weapon_cfg(weapon)
+                    if cfg.get("ads_only") and not player.is_ads:
+                        return
             player.weapon = weapon
             # Reject if reloading or out of ammo (auto-trigger reload when empty).
             if player.is_reloading():

@@ -77,6 +77,11 @@ export default function Game() {
     realCount: 0,
     minRealPlayers: 2,
     weapon: "primary",
+    // Loadout choice ("ak47" | "sniper") — seeded from the auth user
+    // so the HUD label is correct on first render (before the first
+    // server state broadcast). Updated per-tick from
+    // engineRef.current.primaryWeaponId.
+    primaryWeaponId: user?.primary_weapon === "sniper" ? "sniper" : "ak47",
   });
   const [pointerLocked, setPointerLocked] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -151,6 +156,12 @@ export default function Game() {
             reloading: you?.reloading ?? false,
             reloadProgress: you?.reload_progress ?? 1,
             spread: you?.spread ?? 0,
+            // Primary-slot weapon id ("ak47" | "sniper"). Piped into
+            // hud state so the bottom-right weapon label + colour
+            // reflect the equipped loadout (Hud.jsx keys on this
+            // field). Sourced from the engine mirror which itself is
+            // updated from the server-authoritative `p.weapon`.
+            primaryWeaponId: engineRef.current?.primaryWeaponId || "ak47",
             // Mirror laser heat + overheat state so the HUD can swap the
             // ammo block for a heat bar while the laser is equipped.
             laserHeat: you?.laser_heat ?? 0,
