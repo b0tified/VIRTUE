@@ -622,10 +622,10 @@ class AudioBus {
     thump.frequency.setValueAtTime(90 * pitch, t0);
     thump.frequency.exponentialRampToValueAtTime(30 * pitch, t0 + 0.24);
     const thumpG = ctx.createGain();
-    thumpG.gain.setValueAtTime(2.8 * vol, t0);
-    thumpG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.32);
+    thumpG.gain.setValueAtTime(4.2 * vol, t0);
+    thumpG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.34);
     thump.connect(thumpG); thumpG.connect(out);
-    thump.start(t0); thump.stop(t0 + 0.36);
+    thump.start(t0); thump.stop(t0 + 0.38);
 
     // 1b) Extra sub layer — a second, even-lower sine an octave down for
     // real chest-thump. Pushes the report into "cannon" territory.
@@ -634,10 +634,10 @@ class AudioBus {
     sub.frequency.setValueAtTime(55 * pitch, t0);
     sub.frequency.exponentialRampToValueAtTime(22 * pitch, t0 + 0.28);
     const subG = ctx.createGain();
-    subG.gain.setValueAtTime(2.0 * vol, t0);
-    subG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.34);
+    subG.gain.setValueAtTime(3.2 * vol, t0);
+    subG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.36);
     sub.connect(subG); subG.connect(out);
-    sub.start(t0); sub.stop(t0 + 0.38);
+    sub.start(t0); sub.stop(t0 + 0.40);
 
     // 2) Supersonic CRACK — short white-noise burst pushed through a
     // sharp bandpass around 2.2 kHz. This is the "you just fired a
@@ -662,7 +662,7 @@ class AudioBus {
     hp.frequency.value = 300;
     const crackG = ctx.createGain();
     crackG.gain.setValueAtTime(0, t0);
-    crackG.gain.linearRampToValueAtTime(2.6 * vol, t0 + 0.004);
+    crackG.gain.linearRampToValueAtTime(3.8 * vol, t0 + 0.004);
     crackG.gain.exponentialRampToValueAtTime(0.001, t0 + crackDur);
     crackSrc.connect(hp); hp.connect(bp); bp.connect(crackG); crackG.connect(out);
     crackSrc.start(t0);
@@ -684,7 +684,7 @@ class AudioBus {
     bodyLP.frequency.exponentialRampToValueAtTime(180, t0 + bodyDur);
     const bodyG = ctx.createGain();
     bodyG.gain.setValueAtTime(0, t0);
-    bodyG.gain.linearRampToValueAtTime(2.0 * vol, t0 + 0.008);
+    bodyG.gain.linearRampToValueAtTime(3.0 * vol, t0 + 0.008);
     bodyG.gain.exponentialRampToValueAtTime(0.001, t0 + bodyDur);
     bodySrc.connect(bodyLP); bodyLP.connect(bodyG); bodyG.connect(out);
     bodySrc.start(t0);
@@ -710,7 +710,7 @@ class AudioBus {
       tLP.frequency.setValueAtTime(1600, t0 + delay);
       tLP.frequency.exponentialRampToValueAtTime(220, t0 + delay + tailDur);
       const tG = ctx.createGain();
-      const echoVol = (i === 0 ? 1.0 : 0.55) * vol;
+      const echoVol = (i === 0 ? 1.5 : 0.85) * vol;
       tG.gain.setValueAtTime(0, t0 + delay);
       tG.gain.linearRampToValueAtTime(echoVol, t0 + delay + 0.008);
       tG.gain.exponentialRampToValueAtTime(0.001, t0 + delay + tailDur);

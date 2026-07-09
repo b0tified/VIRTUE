@@ -155,6 +155,11 @@ export class GameEngine {
     // Random roll direction so back-to-back deaths don't look identical.
     this._deathRollDir = 1;
 
+    // Screen-shake amount (0 = still, 1 = full kick). Decays each
+    // frame. Bumped up by heavy-recoil weapons on fire (sniper) to
+    // sell the punch of a big-caliber shot.
+    this._shakeAmt = 0;
+
     // Network state
     this.youId = null;
     this.players = new Map();
@@ -3089,6 +3094,12 @@ export class GameEngine {
       this._muzzleFlash.material.opacity = 1;
       this._muzzleFlash.scale.setScalar(0.5 + Math.random() * 0.35);
     }
+    // Sniper kick — the big report deserves a matching camera shake.
+    // AK/laser leave the shake alone so full-auto doesn't feel like an
+    // earthquake.
+    if (this.currentWeapon === "primary" && this.primaryWeaponId === "sniper") {
+      this._shakeAmt = 1.0;
+    }
   }
 
   // -------- Humanoid (remote player) --------
@@ -4537,6 +4548,21 @@ export class GameEngine {
     this.camera.rotation.x = this.pitch;
     this.camera.rotation.z = 0;
 
+    // Sniper kick — high-frequency micro-jitter on the camera that
+    // decays over ~150ms. Small enough to not disorient (players still
+    // see the target after firing), big enough to sell impact.
+    if (this._shakeAmt > 0.001) {
+      const s = this._shakeAmt;
+      // Random-signed offsets, weighted so pitch is punchier than yaw.
+      this.camera.rotation.x += (Math.random() - 0.5) * 0.028 * s;
+      this.camera.rotation.y += (Math.random() - 0.5) * 0.018 * s;
+      this.camera.rotation.z += (Math.random() - 0.5) * 0.020 * s;
+      // Decay: full amount → ~0 in ~150ms at 60fps (dt≈0.0167).
+      this._shakeAmt = Math.max(0, s - dt * 7.5);
+    } else {
+      this._shakeAmt = 0;
+    }
+
     // Local death "fall over" animation. Once the local player dies
     // (`_deathFallT > 0`) we advance the timer and layer a Y-drop +
     // Z-roll onto the camera so the first-person view crumples to
@@ -4619,6 +4645,22 @@ export class GameEngine {
           }
           if (t >= 1) {
             this._reloadT = 0;
+            // Client-side reload-complete prediction: as soon as the
+            // local animation timer hits 1.0, refill localAmmo + drop
+            // the localReloading flag ourselves so the very next click
+            // fires immediately (previously we waited for the server's
+            // state broadcast — up to 50ms of "1/1 shown but click is
+            // silently dropped" was the "sniper delay after reload"
+            // users reported). Server broadcast will confirm shortly.
+            const reloadedWeapon = this._reloadWeapon;
+            if (reloadedWeapon === "ak47" || reloadedWeapon === "sniper" || reloadedWeapon === "laser") {
+              const magSize = reloadedWeapon === "sniper" ? 1
+                : reloadedWeapon === "laser" ? 60 : 25;
+              if ((this.localAmmo[reloadedWeapon] ?? 0) < magSize) {
+                this.localAmmo[reloadedWeapon] = magSize;
+              }
+              this.localReloading = false;
+            }
             this._reloadWeapon = null;
           }
         }
