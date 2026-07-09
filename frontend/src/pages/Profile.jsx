@@ -202,8 +202,10 @@ export default function Profile() {
   const [openMatch, setOpenMatch] = useState(null);
   // Chained "click a player row → open their public profile" — the
   // scoreboard modal sets this via a callback so both modals can coexist
-  // (the scoreboard stays open behind the profile view).
-  const [openProfileUsername, setOpenProfileUsername] = useState(null);
+  // (the scoreboard stays open behind the profile view). Bots surface
+  // the same modal in `isBot` mode so they render as a private profile
+  // — visually indistinguishable from a real user with a locked profile.
+  const [openProfile, setOpenProfile] = useState(null); // {username, isBot}
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -441,13 +443,14 @@ export default function Profile() {
         <MatchScoreboardModal
           match={openMatch}
           onClose={() => setOpenMatch(null)}
-          onPickPlayer={(username) => setOpenProfileUsername(username)}
+          onPickPlayer={(username, isBot) => setOpenProfile({ username, isBot })}
         />
       )}
-      {openProfileUsername && (
+      {openProfile && (
         <PublicProfileModal
-          username={openProfileUsername}
-          onClose={() => setOpenProfileUsername(null)}
+          username={openProfile.username}
+          isBot={openProfile.isBot}
+          onClose={() => setOpenProfile(null)}
         />
       )}
     </div>
@@ -544,25 +547,25 @@ function MatchScoreboardModal({ match, onClose, onPickPlayer }) {
                 No players
               </div>
             ) : g.rows.map((p, i) => {
-              const clickable = !p.is_bot && !!p.username;
+              // Bots are clickable now too — their "private profile"
+              // rendering makes them visually indistinguishable from
+              // real users with locked-down profiles.
+              const clickable = !!p.username;
               return (
                 <div
                   key={`${g.key}-${i}`}
                   className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
-                  onClick={clickable ? () => onPickPlayer?.(p.username) : undefined}
+                  onClick={clickable ? () => onPickPlayer?.(p.username, !!p.is_bot) : undefined}
                   role={clickable ? "button" : undefined}
-                  title={clickable ? `View ${p.username}'s profile` : (p.is_bot ? "Bot" : undefined)}
+                  title={clickable ? `View ${p.username}'s profile` : undefined}
                   data-testid={`match-scoreboard-row-${g.key}-${i}`}
                 >
                   <div className="col-span-1 font-display text-lg">
                     {isTdm ? (i + 1) : (p.placement || (i + 1))}
                   </div>
                   <div className="col-span-1">
-                    {p.is_bot ? (
-                      <span className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-1.5 text-[10px] font-anton uppercase">
-                        <Bot size={10} strokeWidth={3} /> BOT
-                      </span>
-                    ) : null}
+                    {/* BOT badge removed from the scoreboard — bots now
+                        look identical to private-profile real players. */}
                   </div>
                   <div className="col-span-6 font-anton uppercase truncate">{p.username || "—"}</div>
                   <div className="col-span-2 text-right font-anton text-lg">{p.kills ?? 0}</div>

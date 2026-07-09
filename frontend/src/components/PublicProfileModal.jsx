@@ -1,12 +1,14 @@
 // Public profile modal — overlay shown when inspecting any other player.
 // Pulls /api/users/{username}/profile (email omitted server-side).
 import { useEffect, useState } from "react";
-import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star, Lock } from "lucide-react";
+import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star, Lock, Flag } from "lucide-react";
 import api from "@/api";
 import PlayerCard from "@/components/PlayerCard";
 import RankProgressBar from "@/components/RankProgressBar";
 import { divisionRoman } from "@/game/rankIcons";
 import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
+import { useAuth } from "@/context/AuthContext";
+import { ReportPlayerModal } from "@/components/Hud";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -16,13 +18,20 @@ const MODE_META = {
   offline: { label: "OFFLINE", color: "#06A35F", Icon: WifiOff },
 };
 
-export default function PublicProfileModal({ username, onClose }) {
+/* `isBot` prop: when true the modal renders a "private profile" state
+   locally (no API call, no data) — this makes bots visually
+   indistinguishable from real players who've set their profile to
+   private. Report button is hidden for bots and for the viewer's own
+   profile. */
+export default function PublicProfileModal({ username, isBot = false, onClose }) {
+  const { user: me } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
-    if (!username) return;
+    if (!username || isBot) return;
     setData(null);
     setError("");
     setLoading(true);
@@ -38,9 +47,13 @@ export default function PublicProfileModal({ username, onClose }) {
       }
     })();
     return () => { alive = false; };
-  }, [username]);
+  }, [username, isBot]);
 
   if (!username) return null;
+
+  // Show REPORT button only when we're inspecting someone else's real
+  // profile — never on our own, never on bots' pretend-private profiles.
+  const canReport = !isBot && !!username && me?.username && me.username !== username;
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-3 sm:p-6" data-testid="public-profile-modal" onClick={onClose}>
@@ -52,17 +65,41 @@ export default function PublicProfileModal({ username, onClose }) {
           {data?.online && (
             <span className="font-anton uppercase text-xs text-[#06D6A0]" data-testid="public-profile-online">● ONLINE</span>
           )}
+          {canReport && (
+            <button
+              onClick={() => setShowReport(true)}
+              className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs flex items-center gap-1"
+              data-testid="public-profile-report-btn"
+              title={`Report ${username}`}
+            >
+              <Flag size={14} strokeWidth={3} /> REPORT
+            </button>
+          )}
           <button onClick={onClose} className="font-anton hover:opacity-80" data-testid="public-profile-close">
             <X size={20} strokeWidth={3} />
           </button>
         </div>
 
-        {loading && (
+        {/* Bots render an identical "private profile" state to a real user
+            who's locked their profile — same padlock, same message, no
+            content. Callers pass `isBot={true}` when opening from a bot's
+            scoreboard row. */}
+        {isBot && (
+          <div className="px-5 py-14 text-center bg-white" data-testid="public-profile-private">
+            <Lock size={44} strokeWidth={3} className="inline text-neutral-400" />
+            <div className="font-display text-2xl mt-3 text-neutral-700">Private Profile</div>
+            <div className="font-anton uppercase text-xs mt-1 tracking-widest text-neutral-500">
+              This player&apos;s profile isn&apos;t public.
+            </div>
+          </div>
+        )}
+
+        {!isBot && loading && (
           <div className="px-5 py-12 text-center" data-testid="public-profile-loading">
             <Loader2 size={28} strokeWidth={3} className="inline animate-spin text-neutral-500" />
           </div>
         )}
-        {error && (
+        {!isBot && error && (
           <div className="px-5 py-6 font-anton uppercase text-center text-[#E62429]" data-testid="public-profile-error">
             {error}
           </div>
@@ -160,6 +197,12 @@ export default function PublicProfileModal({ username, onClose }) {
           </div>
         )}
       </div>
+      {showReport && (
+        <ReportPlayerModal
+          target={{ username }}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }

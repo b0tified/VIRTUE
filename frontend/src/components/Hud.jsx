@@ -768,7 +768,7 @@ export function ReportPlayerModal({ target, onClose }) {
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
       style={{ pointerEvents: "auto" }}
       data-testid="report-player-modal"
     >
