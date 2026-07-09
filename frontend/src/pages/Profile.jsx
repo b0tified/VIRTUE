@@ -16,6 +16,7 @@ import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import { LEVEL_REWARDS } from "@/game/levelRewards";
 import audioBus from "@/game/audio";
 import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
+import PublicProfileModal from "@/components/PublicProfileModal";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -196,6 +197,13 @@ export default function Profile() {
 
   const [history, setHistory] = useState(null); // null = loading, [] = empty
   const [historyError, setHistoryError] = useState(null);
+  // Match scoreboard modal — opened by clicking a history row. Holds the
+  // clicked match's roster + game_mode so the modal knows FFA vs TDM.
+  const [openMatch, setOpenMatch] = useState(null);
+  // Chained "click a player row → open their public profile" — the
+  // scoreboard modal sets this via a callback so both modals can coexist
+  // (the scoreboard stays open behind the profile view).
+  const [openProfileUsername, setOpenProfileUsername] = useState(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -374,7 +382,7 @@ export default function Profile() {
                 <div className="col-span-2 text-right">Rank</div>
               </div>
               {history.map((m, i) => (
-                <HistoryRow key={i} idx={i} m={m} />
+                <HistoryRow key={i} idx={i} m={m} onOpen={setOpenMatch} />
               ))}
             </>
           )}
@@ -425,11 +433,151 @@ export default function Profile() {
           </div>
         )}
       </div>
+      {/* Match scoreboard — opened by clicking any history row that has
+          a persisted roster. Displays every player who was in that match
+          (real + bots) with kills/deaths. Clicking a real player opens
+          their PublicProfileModal on top. */}
+      {openMatch && (
+        <MatchScoreboardModal
+          match={openMatch}
+          onClose={() => setOpenMatch(null)}
+          onPickPlayer={(username) => setOpenProfileUsername(username)}
+        />
+      )}
+      {openProfileUsername && (
+        <PublicProfileModal
+          username={openProfileUsername}
+          onClose={() => setOpenProfileUsername(null)}
+        />
+      )}
     </div>
   );
 }
 
-function HistoryRow({ idx, m }) {
+/* Scoreboard modal for a single completed match.
+   `match` is one row from /profile/me/history — it already carries the
+   full `players` roster (name / kills / deaths / placement / team /
+   is_bot) so the modal renders without a follow-up fetch. In TDM the
+   roster is grouped by team; in FFA it's sorted by placement. Clicking
+   a real player row lifts `onPickPlayer(username)` so the parent can
+   open the existing PublicProfileModal. */
+function MatchScoreboardModal({ match, onClose, onPickPlayer }) {
+  const isTdm = match.game_mode === "tdm";
+  const players = Array.isArray(match.players) ? match.players : [];
+  const modeMeta = isTdm
+    ? { label: "Team Deathmatch 4v4", color: "#9B59B6" }
+    : (MODE_META[match.mode] || MODE_META.casual);
+  const dateStr = match.ended_at ? new Date(match.ended_at).toLocaleString() : "";
+  // Group by team for TDM; simple sorted list for FFA.
+  const groups = isTdm
+    ? [
+        { key: "red",  label: "RED TEAM",  color: "#C1322B", rows: players.filter((p) => p.team === "red")  },
+        { key: "blue", label: "BLUE TEAM", color: "#2858B4", rows: players.filter((p) => p.team === "blue") },
+      ]
+    : [{ key: "ffa", label: "STANDINGS", color: "#0A0A0A", rows: players }];
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-3 sm:p-6"
+      data-testid="match-scoreboard-modal"
+      onClick={onClose}
+    >
+      <div
+        className="card-pow p-0 w-full max-w-2xl max-h-[92vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-black text-white px-5 py-3 flex items-center gap-3">
+          <span
+            className="font-anton uppercase text-xs px-2 py-1"
+            style={{ background: modeMeta.color, color: "#fff" }}
+          >
+            {modeMeta.label}
+          </span>
+          <div className="font-display text-xl sm:text-2xl text-[#FFD700] flex-1 truncate">
+            MATCH SCOREBOARD
+          </div>
+          <button
+            onClick={onClose}
+            className="font-anton hover:opacity-80"
+            data-testid="match-scoreboard-close"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        {dateStr && (
+          <div className="px-5 py-2 text-xs font-anton uppercase tracking-widest text-neutral-500 bg-white border-t-2 border-black">
+            {dateStr}
+          </div>
+        )}
+        {/* TDM header — team scoreline banner. Only rendered in TDM. */}
+        {isTdm && (
+          <div className="grid grid-cols-2 border-t-2 border-black">
+            {[
+              { label: "RED",  color: "#C1322B", score: match.team === "red"  ? match.team_score : match.enemy_team_score },
+              { label: "BLUE", color: "#2858B4", score: match.team === "blue" ? match.team_score : match.enemy_team_score },
+            ].map((t) => (
+              <div key={t.label} className="px-4 py-3 flex items-center justify-between" style={{ background: t.color, color: "#fff" }}>
+                <span className="font-anton uppercase tracking-widest text-sm">{t.label} TEAM</span>
+                <span className="font-display text-3xl tabular-nums">{t.score ?? 0}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {groups.map((g) => (
+          <div key={g.key}>
+            <div
+              className="px-4 py-1.5 font-anton uppercase tracking-widest text-xs border-t-2 border-black"
+              style={{ background: g.color, color: "#fff" }}
+            >
+              {g.label}
+            </div>
+            <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-1.5 font-anton uppercase tracking-widest text-xs border-t-2 border-black">
+              <div className="col-span-1">#</div>
+              <div className="col-span-1"></div>
+              <div className="col-span-6">Player</div>
+              <div className="col-span-2 text-right">K</div>
+              <div className="col-span-2 text-right">D</div>
+            </div>
+            {g.rows.length === 0 ? (
+              <div className="p-3 font-anton text-center uppercase text-sm bg-white border-t-2 border-black">
+                No players
+              </div>
+            ) : g.rows.map((p, i) => {
+              const clickable = !p.is_bot && !!p.username;
+              return (
+                <div
+                  key={`${g.key}-${i}`}
+                  className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
+                  onClick={clickable ? () => onPickPlayer?.(p.username) : undefined}
+                  role={clickable ? "button" : undefined}
+                  title={clickable ? `View ${p.username}'s profile` : (p.is_bot ? "Bot" : undefined)}
+                  data-testid={`match-scoreboard-row-${g.key}-${i}`}
+                >
+                  <div className="col-span-1 font-display text-lg">
+                    {isTdm ? (i + 1) : (p.placement || (i + 1))}
+                  </div>
+                  <div className="col-span-1">
+                    {p.is_bot ? (
+                      <span className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-1.5 text-[10px] font-anton uppercase">
+                        <Bot size={10} strokeWidth={3} /> BOT
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="col-span-6 font-anton uppercase truncate">{p.username || "—"}</div>
+                  <div className="col-span-2 text-right font-anton text-lg">{p.kills ?? 0}</div>
+                  <div className="col-span-2 text-right font-anton text-lg">{p.deaths ?? 0}</div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistoryRow({ idx, m, onOpen }) {
   // TDM rows use a dedicated badge + WIN/LOSS card in the placement
   // slot. FFA rows keep the original "Nth of M" placement card.
   const isTdm = m.game_mode === "tdm";
@@ -441,9 +589,16 @@ function HistoryRow({ idx, m }) {
   const deltaColor = m.rp_delta > 0 ? "#06A35F" : m.rp_delta < 0 ? "#E62429" : "#0A0A0A";
   const sign = m.rp_delta > 0 ? "+" : "";
   const outcome = isTdm ? (TDM_OUTCOME_META[m.team_outcome] || TDM_OUTCOME_META.draw) : null;
+  // Only rows with a persisted roster are clickable — legacy rows before
+  // the players[] snapshot landed just render as static rows so a click
+  // doesn't pop an empty modal.
+  const clickable = Array.isArray(m.players) && m.players.length > 0;
   return (
     <div
-      className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"}`}
+      className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
+      onClick={clickable ? () => onOpen?.(m) : undefined}
+      role={clickable ? "button" : undefined}
+      title={clickable ? "Click to view match scoreboard" : undefined}
       data-testid={`profile-history-row-${idx}`}
     >
       <div className="col-span-6 md:col-span-2 flex items-center gap-2">

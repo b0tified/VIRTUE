@@ -285,7 +285,7 @@ const MAX_HP = 100;
 const WEAPONS = {
   ak47:   { damage: 22,  cooldown_ms: 110,  mag_size: 25, reload_ms: 1500, range: 60 },
   sniper: { damage: 100, cooldown_ms: 900,  mag_size: 1,  reload_ms: 1600, range: 120 },
-  laser:  { damage: 9,   cooldown_ms: 70,   mag_size: 60, reload_ms: 1800, range: 80 },
+  laser:  { damage: 5,   cooldown_ms: 90,   mag_size: 60, reload_ms: 1800, range: 40 },
 };
 const MELEE_DAMAGE = 100;
 const MELEE_RANGE = 2.6;

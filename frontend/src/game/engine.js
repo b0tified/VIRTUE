@@ -2864,7 +2864,7 @@ export class GameEngine {
      enemy it's actually hitting (server already snaps damage to them).
      Cone widens further at point-blank (<8m) to match server. Returns
      {yaw, pitch} or null if no target in cone. */
-  _laserAutoAimLock(maxRange = 22.0, coneRad = 1.05) {
+  _laserAutoAimLock(maxRange = 15.0, coneRad = 1.05) {
     const cache = this._lastPlayersById;
     if (!cache || !this.youId) return null;
     const fx = -Math.sin(this.yaw);
@@ -2916,7 +2916,7 @@ export class GameEngine {
     // Billboard: face the camera.
     ret.quaternion.copy(this.camera.quaternion);
     // Distance-scale so the reticle stays ~constant screen size at
-    // typical lock ranges (1-22m). Clamped so very close enemies don't
+    // typical lock ranges (1-15m). Clamped so very close enemies don't
     // get a face-eating reticle.
     const dx = tx - this.position.x;
     const dy = ty - this.position.y;
@@ -2940,7 +2940,7 @@ export class GameEngine {
       && !this.isSpectator;
     // Compute the auto-aim lock first — reticle needs it AND the beam
     // is now gated on it. `aim != null` means an enemy is inside the
-    // laser's auto-aim range (22m + wide cone via `_laserAutoAimLock`).
+    // laser's auto-aim range (15m + wide cone via `_laserAutoAimLock`).
     const aim = equipped ? this._laserAutoAimLock() : null;
     this._updateLockReticle(aim);
     // Beam only "engages" when the auto-aim lock actually acquires a
@@ -5533,7 +5533,7 @@ export class GameEngine {
       // tertiary (laser) weapon is selected.
       //
       // Auto-aim gate: the laser only engages when an enemy is inside
-      // its auto-aim lock range (`_laserAutoAimLock()`: 22m + wide
+      // its auto-aim lock range (`_laserAutoAimLock()`: 15m + wide
       // cone). Player can hold the fire button all they want in empty
       // air — the network flag stays false, so the server-side beam
       // never starts and no heat accumulates. Matches the beam

@@ -2148,6 +2148,11 @@ async def profile_history(user: dict = Depends(get_current_user), limit: int = 1
             "rank_name_after": m.get("rank_name_after", "BRONZE"),
             "is_placement": bool(m.get("is_placement", False)),
             "ended_at": ts.isoformat() if isinstance(ts, datetime) else ts,
+            # Full match roster + composite match id for the click-to-open
+            # scoreboard modal. Empty list on legacy rows that pre-date the
+            # roster snapshot (the UI hides the click affordance in that case).
+            "match_id": m.get("match_id"),
+            "players": list(m.get("players") or []),
         }
         # TDM rows carry the team scoreline + outcome so the UI can
         # render "WIN 12 — 10" instead of an FFA placement card.
@@ -2735,7 +2740,7 @@ HEAL_ON_KILL = HEAL_ON_KILL_BODY
 # for any callsite that still imports it; rooms read from `self.arena`.
 HEALTHPACK_POSITIONS: List[tuple] = MAP_A["healthpacks"]
 SHOT_DAMAGE = 25
-LASER_DAMAGE = 8
+LASER_DAMAGE = 5           # nerfed from 8 — laser was outpacing AK at close range
 BOT_SHOT_DAMAGE = 16
 MELEE_DAMAGE = 200
 MELEE_RANGE = 3.4
@@ -2824,15 +2829,15 @@ WEAPON_CONFIGS = {
     },
     "laser": {
         "damage": LASER_DAMAGE,
-        "dps": 90,                 # continuous beam — damage per second (buffed from 60)
+        "dps": 55,                 # nerfed from 90 — laser was too dominant on hold-fire
         "cooldown_ms": LASER_COOLDOWN_MS,
         "mag_size": 60,
         "reload_ms": 1800,
-        "headshot_mult": 1.75,     # buffed from 1.5 — rewards aim
+        "headshot_mult": 1.35,     # nerfed from 1.75 — still rewards aim, less brutal
         "legs_mult": 0.9,
-        "falloff_start": 30.0,     # extended from 25m
-        "falloff_end": 85.0,       # extended from 70m
-        "min_damage_mult": 0.65,   # bumped floor from 0.6
+        "falloff_start": 15.0,     # nerfed from 30m — laser is now a close-range weapon
+        "falloff_end": 40.0,       # nerfed from 85m — hard drop-off past mid-range
+        "min_damage_mult": 0.30,   # nerfed from 0.65 — far-range shots barely tickle
         "spread_base": 0.0,
         "spread_per_shot": 0.0,
         "spread_max": 0.0,
@@ -5399,6 +5404,37 @@ class GameRoom:
                 }
                 docs = []
                 first_match_grants: List[str] = []
+                # Build the shared "players list" once — every real player's
+                # history row for this match gets the SAME roster so clicking
+                # any history row surfaces the full scoreboard (real players
+                # + bots). Bots include `is_bot: True` so the client can hide
+                # profile-link buttons for them.
+                #
+                # Composite key `match_id` is a shared UUID so future queries
+                # can group rows belonging to the same match without relying
+                # on ended_at ± tolerance heuristics.
+                match_id = uuid.uuid4().hex
+                shared_roster: List[dict] = []
+                for pl in self.players.values():
+                    if getattr(pl, "is_spectator", False):
+                        continue
+                    entry = placements_by_uid.get(pl.user_id) if not pl.is_bot else None
+                    shared_roster.append({
+                        "user_id": pl.user_id if not pl.is_bot else None,
+                        "username": pl.username,
+                        "is_bot": bool(pl.is_bot),
+                        "kills": int((entry.get("kills", pl.kills) if entry else pl.kills) or 0),
+                        "deaths": int((entry.get("deaths", pl.deaths) if entry else pl.deaths) or 0),
+                        "placement": placement_of.get(pl.id, 0),
+                        "team": (getattr(pl, "team", None) or None),
+                    })
+                # Stable sort so the persisted scoreboard reads top-down:
+                # winner first in FFA (placement asc), highest-kills first
+                # in TDM (placement isn't meaningful there).
+                if self.game_mode == "tdm":
+                    shared_roster.sort(key=lambda r: (-r["kills"], r["deaths"]))
+                else:
+                    shared_roster.sort(key=lambda r: (r["placement"] or 999, -r["kills"]))
                 for pl in real_players:
                     entry = placements_by_uid.get(pl.user_id) or {}
                     doc = {
@@ -5420,6 +5456,12 @@ class GameRoom:
                         "rank_name_after": entry.get("rank_name") or "BRONZE",
                         "is_placement": bool(entry.get("is_placement", False)),
                         "ended_at": now,
+                        # Full match roster + shared match_id so the profile
+                        # history UI can pop a scoreboard modal with every
+                        # player who was in this match (real + bots), each
+                        # real player linkable to their public profile.
+                        "match_id": match_id,
+                        "players": list(shared_roster),
                     }
                     # TDM extras: persist the player's team color, the
                     # final 4v4 scoreline, and a precomputed `team_won`
