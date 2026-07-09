@@ -142,7 +142,16 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     // fires while the crosshair is currently over an enemy — touching
     // the screen alone is no longer enough. Engine cooldown still gates
     // the actual shot rate.
-    if (autoFireRef.current && !autoFireTimerRef.current) {
+    //
+    // Skipped entirely for the SNIPER — it's a one-shot precision
+    // weapon; auto-firing on look-pad drags would either spam empty
+    // clicks (mag=1) or feel like "the sniper only shoots when I'm
+    // aimed at an enemy" (users report that exact behaviour). Sniper
+    // uses the dedicated SHOOT button which has no target-in-crosshair
+    // gate.
+    const eng = engineRef.current;
+    const sniperEquipped = eng?.currentWeapon === "primary" && eng?.primaryWeaponId === "sniper";
+    if (autoFireRef.current && !autoFireTimerRef.current && !sniperEquipped) {
       const fire = () => {
         const eng = engineRef.current;
         if (!eng) return;
