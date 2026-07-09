@@ -6,7 +6,7 @@ import { GameSocket } from "@/game/network";
 import { LocalSim } from "@/game/localSim";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
-import Hud from "@/components/Hud";
+import Hud, { ReportPlayerModal } from "@/components/Hud";
 import TouchControls from "@/components/TouchControls";
 import Chat from "@/components/Chat";
 import SettingsModal from "@/components/SettingsModal";
@@ -15,7 +15,7 @@ import RankUpOverlay from "@/components/RankUpOverlay";
 import RespawnOverlay from "@/components/RespawnOverlay";
 import DeathOverlay from "@/components/DeathOverlay";
 import { useQueue } from "@/context/QueueContext";
-import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play } from "lucide-react";
+import { Menu, Settings as SettingsIcon, UserPlus, LogOut, Play, Flag, X as XIcon } from "lucide-react";
 
 export default function Game() {
   const canvasRef = useRef(null);
@@ -86,6 +86,11 @@ export default function Game() {
   const [pointerLocked, setPointerLocked] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [showPause, setShowPause] = useState(false);
+  // Pause-menu player-report flow. `showReportPicker` toggles a modal
+  // that lists every other in-match player (bots hidden). Clicking a
+  // row sets `reportTarget` which opens ReportPlayerModal.
+  const [showReportPicker, setShowReportPicker] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
   const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   // Timestamp of the last respawn — used to (re)trigger RespawnOverlay.
   const [respawnAt, setRespawnAt] = useState(null);
@@ -580,17 +585,11 @@ export default function Game() {
       const kb = settingsStore.get()?.keybinds || {};
       if (e.code === (kb.scoreboard || "Tab")) {
         e.preventDefault();
-        // Toggle the scoreboard (was hold-to-show). When it opens we
-        // release pointer-lock so the user can actually click the
-        // REPORT button on a row. Closing the scoreboard restores the
-        // game (clicking the canvas re-locks the pointer).
-        setHud((h) => {
-          const next = !h.showScoreboard;
-          if (next) {
-            try { document.exitPointerLock?.(); } catch {}
-          }
-          return { ...h, showScoreboard: next };
-        });
+        // HOLD-to-show: while Tab is held, the scoreboard is visible.
+        // Releasing Tab hides it (see onKeyUp). Reporting has moved
+        // into the pause menu (ESC → REPORT PLAYER) so we no longer
+        // need to release pointer-lock here.
+        setHud((h) => (h.showScoreboard ? h : { ...h, showScoreboard: true }));
       }
       if (e.code === (kb.weapon1 || "Digit1")) {
         engineRef.current?.setWeapon("primary");
@@ -616,10 +615,11 @@ export default function Game() {
       }
     };
     const onKeyUp = (e) => {
-      // Scoreboard is now toggle-on/off via keydown — keyup is a no-op.
-      // (Pre-toggle behaviour was to close on Tab release, which made it
-      // impossible to click the REPORT button on a row.)
-      void e;
+      const kb = settingsStore.get()?.keybinds || {};
+      if (e.code === (kb.scoreboard || "Tab")) {
+        // Hide scoreboard when Tab is released (hold-to-show).
+        setHud((h) => (h.showScoreboard ? { ...h, showScoreboard: false } : h));
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
@@ -795,6 +795,13 @@ export default function Game() {
               >
                 <span className="flex items-center justify-center gap-2"><UserPlus size={18} strokeWidth={3} /> FRIENDS</span>
               </button>
+              <button
+                onClick={() => setShowReportPicker(true)}
+                className="btn-pow bg-[#9B59B6] text-white w-full text-lg [&]:py-2.5"
+                data-testid="pause-report-button"
+              >
+                <span className="flex items-center justify-center gap-2"><Flag size={18} strokeWidth={3} /> REPORT PLAYER</span>
+              </button>
               {/* Leave Match — hidden in ranked. Quitting a ranked
                   match drops a placement on every other player and
                   costs the queue real time, so we strip the convenient
@@ -844,6 +851,78 @@ export default function Game() {
       {/* In-match Settings + Friends modals (reuse lobby components). */}
       <SettingsModal open={showGameSettings} onClose={() => setShowGameSettings(false)} />
       <FriendsModal open={showGameFriends} onClose={() => setShowGameFriends(false)} />
+
+      {/* Player-report picker — opened from the pause menu.
+          Lists every other in-match player (bots hidden). Selecting
+          one opens ReportPlayerModal with that target. */}
+      {showReportPicker && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+          style={{ pointerEvents: "auto" }}
+          data-testid="report-picker-modal"
+        >
+          <div className="card-pow p-0 w-[min(520px,94vw)] max-h-[80vh] flex flex-col">
+            <div className="bg-black text-white px-5 py-3 flex items-center justify-between">
+              <div className="font-display text-2xl text-[#FFD700] flex items-center gap-2">
+                <Flag size={20} strokeWidth={3} /> REPORT PLAYER
+              </div>
+              <button
+                onClick={() => setShowReportPicker(false)}
+                className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1"
+                data-testid="report-picker-close-btn"
+                title="Close"
+              >
+                <XIcon size={14} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="bg-white p-3 space-y-2 overflow-y-auto">
+              <div className="font-anton uppercase tracking-widest text-xs opacity-70 px-2 py-1">
+                Select a player to report:
+              </div>
+              {(() => {
+                const eligible = (hud.players || []).filter(
+                  (p) => p && !p.is_bot && p.id !== hud.youId,
+                );
+                if (eligible.length === 0) {
+                  return (
+                    <div
+                      className="font-anton uppercase text-sm text-center py-6 opacity-60"
+                      data-testid="report-picker-empty"
+                    >
+                      No other real players in this match
+                    </div>
+                  );
+                }
+                return eligible.map((p, i) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setReportTarget(p);
+                      setShowReportPicker(false);
+                    }}
+                    className="w-full border-pow-thin bg-[#F4F4F5] hover:bg-[#FFE680] active:bg-[#FFD700] px-3 py-2 flex items-center justify-between transition-colors"
+                    data-testid={`report-picker-row-${i}`}
+                  >
+                    <span className="font-anton uppercase truncate">{p.username}</span>
+                    <span className="font-anton uppercase text-xs text-[#E62429] flex items-center gap-1">
+                      <Flag size={12} strokeWidth={3} /> REPORT
+                    </span>
+                  </button>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report submission modal — opened once a target has been picked.
+          Reuses the exact same component the scoreboard used to render. */}
+      {reportTarget && (
+        <ReportPlayerModal
+          target={reportTarget}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
 
       {/* Rank-up celebration — triggered by match_end when the local player
           gained a tier OR a sub-division this match. Auto-dismisses after 6.5s. */}

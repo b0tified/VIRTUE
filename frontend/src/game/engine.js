@@ -146,6 +146,15 @@ export class GameEngine {
     // Footstep cadence
     this._footAcc = 0;
 
+    // Death "fall over" animation. 0 = alive / no animation. Ramps
+    // from 0 → 1 over ~0.9s when the local player dies, driving a
+    // camera Y-drop + Z-roll so the first-person view crumples to
+    // the ground. Reset to 0 on respawn.
+    this._deathFallT = 0;
+    this._deathFallDurMs = 900;
+    // Random roll direction so back-to-back deaths don't look identical.
+    this._deathRollDir = 1;
+
     // Network state
     this.youId = null;
     this.players = new Map();
@@ -3943,6 +3952,9 @@ export class GameEngine {
             // state — horizontal movement is recomputed each tick from input).
             this.vy = 0;
             this.onGround = true;
+            // Respawn — reset the death-fall animation so the next death
+            // plays fresh instead of showing the previous fall's roll.
+            this._deathFallT = 0;
             // Fire a one-shot 'respawn' event so the HUD/Game layer can
             // play the comic-style respawn animation + SFX. Edge-triggered
             // on the !alive → alive transition.
@@ -3950,6 +3962,11 @@ export class GameEngine {
           } else if (!p.alive && this.alive) {
             // Edge-triggered death event — used by Game.jsx to play the
             // comic K.O. overlay + camera fall.
+            // Kick off the character-falls-over animation. Randomise
+            // the roll direction so consecutive deaths don't look
+            // identical.
+            this._deathFallT = 0.001;
+            this._deathRollDir = Math.random() < 0.5 ? -1 : 1;
             this.onLocalUpdate?.({ type: "died" });
           }
           this.hp = p.hp;
@@ -4518,6 +4535,31 @@ export class GameEngine {
     this.camera.rotation.order = "YXZ";
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
+    this.camera.rotation.z = 0;
+
+    // Local death "fall over" animation. Once the local player dies
+    // (`_deathFallT > 0`) we advance the timer and layer a Y-drop +
+    // Z-roll onto the camera so the first-person view crumples to
+    // the ground. Reset back to 0 on respawn (see state-broadcast
+    // handler). Runs for ~0.9s then holds at the ground pose until
+    // the respawn resets the timer.
+    if (!this.alive && this._deathFallT > 0) {
+      this._deathFallT = Math.min(1, this._deathFallT + dt * 1000 / this._deathFallDurMs);
+      // Ease-out cubic so the collapse decelerates near the ground.
+      const t = this._deathFallT;
+      const eased = 1 - Math.pow(1 - t, 3);
+      // Drop from eye height (~1.8m) down to ~0.35m — the "cheek on
+      // the pavement" look. We only add a negative Y delta relative
+      // to the current camera position; horizontal position stays
+      // frozen so the corpse doesn't slide.
+      const yDrop = 1.45 * eased;
+      this.camera.position.y -= yDrop;
+      // Simultaneously roll onto one side (random per-death via
+      // `_deathRollDir`) and pitch slightly downward so the crosshair
+      // isn't staring at the sky.
+      this.camera.rotation.z = this._deathRollDir * 1.35 * eased; // ~77° tilt
+      this.camera.rotation.x = this.pitch - 0.55 * eased;
+    }
 
     // Weapon sway + recoil + ADS
     if (this._weapon) {

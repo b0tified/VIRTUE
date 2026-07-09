@@ -59,9 +59,6 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
-  // Active player-report target (cleared on submit or close). Lives at
-  // HUD root so the modal renders above the scoreboard overlay.
-  const [reportTarget, setReportTarget] = useState(null);
 
   // React to live graphics settings (HUD scale, crosshair, toggles).
   useEffect(() => settingsStore.subscribe(setGfx), []);
@@ -456,9 +453,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
         </button>
       )}
 
-      {/* Scoreboard (Tab) */}
+      {/* Scoreboard (Tab — hold to view) */}
       {hud.showScoreboard && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" style={{ pointerEvents: "auto" }} data-testid="scoreboard-overlay">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6" style={{ pointerEvents: "none" }} data-testid="scoreboard-overlay">
           <div className="card-pow p-0 w-full max-w-3xl">
             <div className="bg-black text-white px-6 py-3 flex items-center justify-between">
               <div className="font-display text-3xl text-[#FFD700]">SCOREBOARD</div>
@@ -466,14 +463,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                 <div className="font-anton uppercase text-sm tracking-widest">
                   {hud.gameMode === "tdm" ? "Team Deathmatch 4v4" : "Free-For-All"}
                 </div>
-                <button
-                  onClick={() => onCloseScoreboard?.()}
-                  className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs flex items-center gap-1"
-                  data-testid="scoreboard-close-btn"
-                  title="Close scoreboard (Tab)"
-                >
-                  <X size={12} strokeWidth={3} /> CLOSE
-                </button>
+                <div className="font-anton uppercase text-[10px] tracking-widest text-white/60" data-testid="scoreboard-hold-hint">
+                  HOLD TAB
+                </div>
               </div>
             </div>
             {hud.gameMode === "tdm" ? (
@@ -483,17 +475,15 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                 myTeam={hud.minimap?.you?.team || null}
                 teamScores={hud.teamScores}
                 target={hud.tdmKillTarget || 30}
-                onReport={setReportTarget}
               />
             ) : (
               <>
                 <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
                   <div className="col-span-1">#</div>
                   <div className="col-span-1"></div>
-                  <div className="col-span-4">Player</div>
+                  <div className="col-span-6">Player</div>
                   <div className="col-span-2 text-right">Kills</div>
                   <div className="col-span-2 text-right">Deaths</div>
-                  <div className="col-span-2 text-right opacity-60">·</div>
                 </div>
                 {hud.players.map((p, i) => (
                   <div
@@ -513,21 +503,9 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
                         <PlatformIcon platform={p.platform} />
                       )}
                     </div>
-                    <div className="col-span-4 font-anton uppercase truncate">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
+                    <div className="col-span-6 font-anton uppercase truncate">{p.username}{p.id === hud.youId ? " · YOU" : ""}</div>
                     <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
                     <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
-                    <div className="col-span-2 flex justify-end">
-                      {p.id !== hud.youId && !p.is_bot && (
-                        <button
-                          onClick={() => setReportTarget(p)}
-                          className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-[10px] flex items-center gap-1"
-                          data-testid={`scoreboard-report-${i}`}
-                          title={`Report ${p.username}`}
-                        >
-                          <Flag size={11} strokeWidth={3} /> REPORT
-                        </button>
-                      )}
-                    </div>
                   </div>
                 ))}
                 {hud.players.length === 0 && (
@@ -537,12 +515,6 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
             )}
           </div>
         </div>
-      )}
-      {reportTarget && (
-        <ReportPlayerModal
-          target={reportTarget}
-          onClose={() => setReportTarget(null)}
-        />
       )}
     </div>
   );
@@ -767,7 +739,7 @@ const REPORT_REASONS = [
    in-match player. Submitted reports persist on the backend (deduped per
    reporter/target/reason within 1 hour). Modal closes after success and
    auto-dismisses any error within 4s. */
-function ReportPlayerModal({ target, onClose }) {
+export function ReportPlayerModal({ target, onClose }) {
   const [reason, setReason] = useState(REPORT_REASONS[0].id);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -889,7 +861,7 @@ function ReportPlayerModal({ target, onClose }) {
    The local player's team rises to the top so they always see their squad
    first. Bot badges are suppressed in TDM (the team colour already
    communicates allegiance — a "BOT" tag on a friendly is just noise). */
-function TdmScoreboardBody({ players, youId, myTeam, teamScores, target, onReport }) {
+function TdmScoreboardBody({ players, youId, myTeam, teamScores, target }) {
   const ts = teamScores || { red: 0, blue: 0 };
   // Stable per-team kill leaderboards.
   const sortRows = (team) =>
@@ -941,10 +913,9 @@ function TdmScoreboardBody({ players, youId, myTeam, teamScores, target, onRepor
           <div className="grid grid-cols-12 bg-[#FFD700] px-4 py-1.5 font-anton uppercase tracking-widest text-xs border-t-2 border-black">
             <div className="col-span-1">#</div>
             <div className="col-span-1"></div>
-            <div className="col-span-4">Player</div>
+            <div className="col-span-6">Player</div>
             <div className="col-span-2 text-right">Kills</div>
             <div className="col-span-2 text-right">Deaths</div>
-            <div className="col-span-2 text-right opacity-60">·</div>
           </div>
           {sec.rows.length === 0 ? (
             <div className="p-4 font-anton text-center uppercase text-sm bg-white border-t-2 border-black">
@@ -964,21 +935,9 @@ function TdmScoreboardBody({ players, youId, myTeam, teamScores, target, onRepor
                     communicates the only thing that matters (friend/foe). */}
                 {!p.is_bot && <PlatformIcon platform={p.platform} />}
               </div>
-              <div className="col-span-4 font-anton uppercase truncate">{p.username}{p.id === youId ? " · YOU" : ""}</div>
+              <div className="col-span-6 font-anton uppercase truncate">{p.username}{p.id === youId ? " · YOU" : ""}</div>
               <div className="col-span-2 text-right font-anton text-lg">{p.kills}</div>
               <div className="col-span-2 text-right font-anton text-lg">{p.deaths}</div>
-              <div className="col-span-2 flex justify-end">
-                {p.id !== youId && !p.is_bot && (
-                  <button
-                    onClick={() => onReport?.(p)}
-                    className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-[10px] flex items-center gap-1"
-                    data-testid={`scoreboard-tdm-report-${sec.key}-${i}`}
-                    title={`Report ${p.username}`}
-                  >
-                    <Flag size={11} strokeWidth={3} /> REPORT
-                  </button>
-                )}
-              </div>
             </div>
           ))}
         </div>
