@@ -2925,16 +2925,83 @@ RANKED_LEAVE_RP_LOSS = 30
 PLACEMENT_MULTIPLIER = 2
 
 
+def _spawn_point_safe(arena: dict, x: float, z: float) -> bool:
+    """Return True if (x, z) is a valid spawn location within `arena` —
+    inside the play field and not overlapping any obstacle. Uses the
+    same PLAYER_RADIUS margin as GameRoom.collides_obstacle so a spawn
+    that passes here won't immediately get depenetrated by the movement
+    tick."""
+    s = arena.get("size")
+    if s is None:
+        return True
+    if x < -s + PLAYER_RADIUS or x > s - PLAYER_RADIUS:
+        return False
+    if z < -s + PLAYER_RADIUS or z > s - PLAYER_RADIUS:
+        return False
+    for ob in arena.get("obstacles", []):
+        hx = ob["w"] / 2 + PLAYER_RADIUS
+        hz = ob["d"] / 2 + PLAYER_RADIUS
+        if abs(x - ob["x"]) < hx and abs(z - ob["z"]) < hz:
+            return False
+    return True
+
+
+def _find_nearest_safe_point(arena: dict, x: float, z: float, max_radius: float = 6.0):
+    """Spiral outward from (x, z) looking for a nearby (nx, nz) that's
+    not inside an obstacle. Used as a rescue path when a hardcoded
+    spawn point ends up inside a re-positioned obstacle. Returns the
+    original point if nothing safe is found within `max_radius` (caller
+    can fall back to global search)."""
+    if _spawn_point_safe(arena, x, z):
+        return (x, z)
+    # 8 rays × 6 rings = 48 candidates, plenty to escape any obstacle.
+    step = 1.0
+    for r in [1.0, 1.75, 2.5, 3.5, 4.5, max_radius]:
+        for i in range(8):
+            ang = (i / 8.0) * math.tau
+            nx = x + math.cos(ang) * r
+            nz = z + math.sin(ang) * r
+            if _spawn_point_safe(arena, nx, nz):
+                return (nx, nz)
+        step *= 1.4
+    return (x, z)
+
+
 def random_spawn(arena: Optional[dict] = None, *, occupants: Optional[List["Player"]] = None, min_dist: float = 14.0):
     """Return a random (x, z) spawn point for the given arena (or the
     legacy global ARENA when not supplied).
 
-    When `occupants` is provided we score every spawn point by its
-    distance to the nearest live opponent and pick a point that's at
-    least `min_dist` metres away. If no point meets the threshold we
-    fall back to the *farthest* available point — never the closest —
-    so respawning into a face-full of bullets stops happening."""
-    points = (arena or ARENA).get("spawn_points") or ARENA["spawn_points"]
+    Spawn selection is filtered to only points that don't overlap any
+    obstacle (see `_spawn_point_safe`) so players never spawn inside a
+    crate/wall. When `occupants` is provided we further score every
+    remaining spawn by its distance to the nearest live opponent and
+    pick a point that's at least `min_dist` metres away. If no point
+    meets the distance threshold we fall back to the *farthest*
+    available safe point — never the closest — so respawning into a
+    face-full of bullets stops happening.
+
+    If a map's hardcoded spawn points ALL overlap obstacles (edge case
+    for a broken map file), we nudge each one to the nearest clear
+    spot so gameplay isn't blocked."""
+    a = arena or ARENA
+    raw_points = a.get("spawn_points") or ARENA["spawn_points"]
+    # Filter to spawn points that are actually safe. If a map is broken
+    # (all points inside obstacles), rescue them with a nearest-safe
+    # search so we always have candidates to pick from.
+    points = []
+    for (sx, sz) in raw_points:
+        if _spawn_point_safe(a, sx, sz):
+            points.append((sx, sz))
+        else:
+            rescued = _find_nearest_safe_point(a, sx, sz)
+            # Only include the rescue if it actually cleared the obstacle
+            # (otherwise we'd re-introduce the "spawn inside a wall" bug).
+            if _spawn_point_safe(a, rescued[0], rescued[1]):
+                points.append(rescued)
+    if not points:
+        # Last-ditch fallback: pick a random raw point rather than crash.
+        # Shouldn't happen with any shipped map (all have >=8 clear spawns).
+        points = list(raw_points)
     if not occupants:
         return random.choice(points)
     # Score each point by min-distance to any living, non-spectator opponent.
