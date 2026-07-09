@@ -388,8 +388,26 @@ export class GameEngine {
       this._laserFireHeld = true;
       return;
     }
-    if (this.localReloading) return;
+    // Sniper mag=1 means the client's `localReloading` flag is true
+    // for the FULL 1500ms after every shot. Any state-broadcast drop
+    // or jitter that momentarily reports `reloading=true` after the
+    // reload actually completed would silently drop the next click
+    // (users reported "sometimes the sniper doesn't shoot" — no sound
+    // no ammo change).
+    //
+    // Fix: for the sniper, trust `localAmmo > 0` as the authoritative
+    // "can fire" signal and let the SERVER be the final arbiter of the
+    // reload timer. If ammo is 1 but reload is somehow stale-true,
+    // the server will still reject a premature shot (its own
+    // `is_reloading()` check is authoritative) and the client stays
+    // consistent via the next state broadcast. No silent drop.
     const w = this.primaryWeaponId;
+    const isSniper = this.currentWeapon === "primary" && w === "sniper";
+    if (!isSniper && this.localReloading) return;
+    if (isSniper && this.localReloading && (this.localAmmo[w] ?? 0) <= 0) {
+      // Genuinely mid-reload with an empty mag — no point sending.
+      return;
+    }
     // Sniper: server rejects any shot fired while not ADS. Mirror the
     // rule client-side so the local ammo/reload prediction doesn't
     // desync on rejected hipfire attempts.
@@ -442,6 +460,17 @@ export class GameEngine {
       // Right-click → ADS (only meaningful for primary/laser)
       if (this.currentWeapon !== "secondary") this.setADS(true);
       return;
+    }
+    // Safety net: if the RIGHT mouse button is physically held (bit 2
+    // in `e.buttons`) but our `this.ads` flag is false, sync it now.
+    // Fixes the "sniper sometimes doesn't shoot" symptom that happens
+    // when the right-click mousedown gets swallowed by a focus/pointer
+    // lock hiccup — user visually holds right-click but the engine
+    // never saw the event, so `_tryShoot`'s ADS gate silently drops
+    // the left-click shot with no feedback.
+    if (e.buttons & 2 && !this.ads && this.currentWeapon === "primary"
+        && this.primaryWeaponId === "sniper") {
+      this.setADS(true);
     }
     // Left click on primary (AK) → engage full-auto hold-to-fire. The
     // first shot fires immediately for zero-latency feedback; the per-
