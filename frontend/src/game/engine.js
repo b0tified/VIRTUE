@@ -3736,6 +3736,11 @@ export class GameEngine {
   }
 
   _hashColor(id) {
+    if (!id || typeof id !== "string") {
+      // Fallback so a malformed state row (missing/non-string id) can't
+      // crash the render loop via `id.length` / `id.charCodeAt`.
+      return 0xe62429;
+    }
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
     const palette = [0xe62429, 0x0055ff, 0xffd700, 0x00b894, 0xff7b00, 0x16a085];
@@ -4017,7 +4022,17 @@ export class GameEngine {
           continue;
         }
         let entry = this.players.get(p.id);
-        if (!entry) entry = this._addRemotePlayer(p);
+        if (!entry) {
+          // Defensive: wrap the mesh construction so a malformed player
+          // row (e.g. missing skin, bad id) can't crash the render loop.
+          // Skip the row instead — the next state tick will re-attempt.
+          try {
+            entry = this._addRemotePlayer(p);
+          } catch (err) {
+            console.error("[engine] _addRemotePlayer failed for", p?.id, p?.username, err);
+            continue;
+          }
+        }
         // Hot-swap mesh if the player equipped a new skin mid-session.
         // Cheap because skins don't share state — we rebuild from scratch.
         if (p.skin && entry.skinId && p.skin !== entry.skinId) {
@@ -4912,6 +4927,13 @@ export class GameEngine {
       // Runs over 1.0s total (up from the old 0.7s straight fall).
       // ─────────────────────────────────────────────────────────────
       if (entry.deathT > 0 && entry.deathT < 1) {
+        // Skip the animation entirely if the mesh doesn't have the
+        // expected limb rigging — otherwise we throw on the first
+        // `.rotation.x` access and kill the render loop. This has
+        // been observed after weapon/skin hot-swaps mid-match.
+        if (!entry.leftArm || !entry.rightArm || !entry.leftLeg || !entry.rightLeg || !entry.mesh) {
+          continue;
+        }
         // Snapshot arm/leg/torso rotation on the first tick after death
         // so the flail interpolates smoothly from the mid-stride pose.
         if (!entry.deathPose) {
@@ -5331,8 +5353,21 @@ export class GameEngine {
     }
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
-    this._update(dt);
-    this.renderer.render(this.scene, this.camera);
+    // Wrap the update+render in a try/catch so a single-frame exception
+    // (e.g. a malformed remote-player state row, a Three.js hiccup) can't
+    // permanently freeze the game — the previous behaviour was that any
+    // throw stopped the RAF chain entirely, leaving a black canvas with
+    // the HUD still visible. Log the first two errors per session for
+    // diagnostics, then silently swallow to keep frames flowing.
+    try {
+      this._update(dt);
+      this.renderer.render(this.scene, this.camera);
+    } catch (err) {
+      this._loopErrCount = (this._loopErrCount || 0) + 1;
+      if (this._loopErrCount <= 2) {
+        console.error("[engine] frame error (loop keeps running)", err);
+      }
+    }
     this._fpsFrames++;
     // Frame Generation — re-render with a sub-tick interpolation step so each
     // RAF produces multiple presents. The engine's _update() already advances
@@ -5343,8 +5378,10 @@ export class GameEngine {
     if (fgMul > 1) {
       const sub = dt / fgMul;
       for (let i = 1; i < fgMul; i++) {
-        this._update(sub);
-        this.renderer.render(this.scene, this.camera);
+        try {
+          this._update(sub);
+          this.renderer.render(this.scene, this.camera);
+        } catch { /* already logged above; keep frames flowing */ }
         this._fpsFrames++;
       }
     }
