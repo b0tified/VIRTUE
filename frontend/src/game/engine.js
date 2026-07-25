@@ -1070,14 +1070,20 @@ export class GameEngine {
     // visual mass, not "buildings" — a rooftop cap on a floating ceiling
     // looks wrong.
     if (!ob.crate && ob.h >= 2.5 && yBase === 0) {
-      // Add windows and roof line as flat painted planes on each face
-      const faceTex = this._makeBuildingFaceTexture(ob, this._isNight);
+      // For HOTEL, tall obstacles are interior walls / structural
+      // columns — swap the exterior window-facade texture for a
+      // subtle damask wallpaper so they read as "inside a building"
+      // rather than an apartment block.
+      const useHotel = this._currentMapId === "hotel";
+      const faceTex = useHotel
+        ? this._makeHotelWallTexture(ob)
+        : this._makeBuildingFaceTexture(ob, this._isNight);
       // 4 side faces — additive blending at night so the windows visibly
       // pop against the dark scene (acts like a poor man's bloom).
       const planeMat = new THREE.MeshBasicMaterial({
         map: faceTex,
         transparent: true,
-        blending: this._isNight ? THREE.AdditiveBlending : THREE.NormalBlending,
+        blending: (this._isNight && !useHotel) ? THREE.AdditiveBlending : THREE.NormalBlending,
         depthWrite: false,
       });
       const addFace = (w, h, x, y, z, rotY) => {
@@ -1093,10 +1099,18 @@ export class GameEngine {
       addFace(ob.d * 0.96, ob.h * 0.96, ob.w / 2 + e, 0, 0, Math.PI / 2);
       addFace(ob.d * 0.96, ob.h * 0.96, -ob.w / 2 - e, 0, 0, -Math.PI / 2);
 
-      // Roof cap (darker)
-      const roof = this._outlined(new THREE.BoxGeometry(ob.w + 0.4, 0.3, ob.d + 0.4), 0x2a2a2a, 1.03);
-      roof.position.y = ob.h / 2 + 0.15;
-      g.add(roof);
+      // Roof cap — outdoor buildings get a dark asphalt cap. Interior
+      // hotel walls/columns instead get a warm crown moulding (brass
+      // gold) so they read as "hotel finish".
+      if (useHotel) {
+        const crown = this._outlined(new THREE.BoxGeometry(ob.w + 0.4, 0.3, ob.d + 0.4), 0xd8b874, 1.03);
+        crown.position.y = ob.h / 2 + 0.15;
+        g.add(crown);
+      } else {
+        const roof = this._outlined(new THREE.BoxGeometry(ob.w + 0.4, 0.3, ob.d + 0.4), 0x2a2a2a, 1.03);
+        roof.position.y = ob.h / 2 + 0.15;
+        g.add(roof);
+      }
     }
 
     this._buildingsGroup.add(g);
@@ -2179,6 +2193,83 @@ export class GameEngine {
       }
     }
   }
+
+  /* Interior wallpaper texture for the HOTEL map. Painted with warm
+     wainscoting at the bottom, a chair-rail stripe, vertical damask
+     stripes above, and a gold cornice at the top — reads as "inside a
+     grand hotel lobby" rather than an exterior apartment block with
+     windows. Deterministic per-obstacle so all clients agree. */
+  _makeHotelWallTexture(ob) {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 256;
+    const ctx = c.getContext("2d");
+    // Base wall — warm cream (matches the marble palette).
+    ctx.fillStyle = "#efe1b6";
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Faint vertical stripes (wallpaper pattern).
+    ctx.fillStyle = "#e6d29a";
+    for (let x = 0; x < 256; x += 12) {
+      ctx.fillRect(x, 40, 5, 176);
+    }
+
+    // Damask diamond motif — deterministic seed keeps clients in sync.
+    const seed = Math.abs(((ob.x * 1000) | 0) ^ ((ob.z * 1000) | 0) ^ ((ob.h * 1000) | 0));
+    ctx.fillStyle = "#7a1e2b"; // burgundy accent
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 5; col++) {
+        const dx = 30 + col * 48 + ((row % 2) * 24);
+        const dy = 60 + row * 32;
+        // Skip a few tiles per obstacle for variety.
+        if (((seed >> ((row + col) & 15)) & 1) === 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(dx, dy);
+        ctx.lineTo(dx + 6, dy + 8);
+        ctx.lineTo(dx, dy + 16);
+        ctx.lineTo(dx - 6, dy + 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Wainscoting — dark walnut panel along the bottom third.
+    ctx.fillStyle = "#4a2a1a";
+    ctx.fillRect(0, 200, 256, 56);
+    // Panel dividers on the wainscoting.
+    ctx.strokeStyle = "#2a180d";
+    ctx.lineWidth = 2;
+    for (let x = 24; x < 256; x += 48) {
+      ctx.strokeRect(x, 208, 40, 40);
+    }
+
+    // Chair-rail stripe — thin brass moulding between wallpaper + wainscoting.
+    ctx.fillStyle = "#c9a24a";
+    ctx.fillRect(0, 196, 256, 4);
+    ctx.fillStyle = "#d8b874";
+    ctx.fillRect(0, 198, 256, 1);
+
+    // Top cornice — brass leaf trim near the ceiling line.
+    ctx.fillStyle = "#c9a24a";
+    ctx.fillRect(0, 8, 256, 8);
+    ctx.fillStyle = "#d8b874";
+    ctx.fillRect(0, 12, 256, 2);
+
+    // Comic-book black border (matches the outlined art style).
+    ctx.strokeStyle = "#0A0A0A";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 252, 252);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    // Repeat the pattern across large walls so a 96-unit-wide perimeter
+    // wall gets a proper repeating wallpaper look, not a stretched one.
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    const repeatX = Math.max(1, Math.round(Math.max(ob.w, ob.d) / 6));
+    tex.repeat.set(repeatX, 1);
+    return tex;
+  }
+
 
   _makeBuildingFaceTexture(ob, night = false) {
     const c = document.createElement("canvas");
@@ -4459,6 +4550,10 @@ export class GameEngine {
     if (x < -s + r || x > s - r) return true;
     if (z < -s + r || z > s - r) return true;
     for (const ob of this.obstacles) {
+      // Skip floating obstacles (mezzanine walkways, ceilings) — they
+      // exist above the player and must NOT block ground movement.
+      // Mirrors server-side `collides_obstacle` behavior.
+      if ((ob.y_base || 0) > 0) continue;
       const hx = ob.w / 2 + r;
       const hz = ob.d / 2 + r;
       if (Math.abs(x - ob.x) < hx && Math.abs(z - ob.z) < hz) return true;

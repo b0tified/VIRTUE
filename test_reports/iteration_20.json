@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only verification of hotel movement fix + interior wall visuals. Login admin@shooter.com/admin123 → Practice → Offline vs AI → Grand Hotel → START. After canvas click + ~6s countdown wait, held W (1.5s), A (1s), S (1s), D (1s). Confirmed movement WORKS: (a) SPAWN PROTECTED banner cleared, (b) HP dropped from 100 → 56 (took AI damage — impossible if frozen at spawn under protection), (c) camera perspective visibly shifted between screenshots. Wall visuals: cream wallpaper with vertical stripes + burgundy diamond damask motif, walnut wainscoting bottom, brass chair-rail line, brass cornice top — NO exterior window facades painted on hotel walls. Regression on DOWNTOWN: player can still move (HP 100 → 43 while walking, view changed) and buildings still show their exterior lit-window facades unchanged.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Grand Hotel arena", "issues": ["Open sky is visible between the interior walls and the ceiling in some angles (see screenshots 04/06) — the 100x100 y_base=14 ceiling doesn't visually close off the perimeter, so you can see stars/moon/blue sky over the wallpaper. This reads a bit odd for an 'interior' space but is not the reported bug. Consider adding an interior ceiling plane / crown filler between wall tops and the ceiling to fully sell the indoor feel."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "engine.js _collides fix (skip y_base>0) now mirrors localSim.collidesAABB and server-side behavior — good consistency. Recommend adding a small unit-like sanity check in future to prevent regressions on this important collision path.",
+    "Hotel ceiling at y_base=14 with 100x100 XZ footprint is fine for collision-skip logic but visually the ceiling is above the wall tops leaving a sky-gap; consider matching wall height to ceiling height or adding an inner ceiling plane."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% for both requested fixes"},
+  "test_credentials": "admin@shooter.com / admin123 (verified working)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Movement bug on hotel is FIXED (confirmed by HP loss + view delta after W/A/S/D). Interior wall texture (_makeHotelWallTexture) renders correctly with cream wallpaper, wainscoting, chair-rail, burgundy damask motif, brass cornice — no exterior window facades. Downtown regression clean. Only minor cosmetic follow-up: sky is visible above interior wall tops on hotel because the ceiling plane sits higher than wall tops; not a blocker.",
+  "rca of the issue": "Previous bug: engine.js _collides iterated ALL obstacles, including the new 100x100 hotel ceiling at y_base=14, whose XZ AABB covers the entire arena. Any player XZ position therefore collided with it, freezing the player at spawn. Fix (verified): _collides now skips y_base>0 obstacles (floating/ceiling/mezzanine), matching localSim and server. Player can now move freely across the hotel map."
+}
