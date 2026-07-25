@@ -5227,16 +5227,36 @@ class GameRoom:
                     placement_played_before = int((udoc or {}).get("placement_matches_played", 0) or 0)
                     is_placement = placement_played_before < PLACEMENT_MATCHES
                     if is_placement:
-                        # Placement matches: hard "win or lose 100" rule.
-                        # Only 1st place earns RP (+100); every other
-                        # placement loses 100. No tier scaling, no podium
-                        # softening — placement is meant to anchor the
-                        # player's true skill ceiling within the first few
-                        # ranked matches.
-                        if placement == 1:
-                            delta = 100
+                        # Placement matches: hard "win or lose 100" rule
+                        # PLUS a performance modifier on top so a
+                        # dominant carry doesn't earn the same as a
+                        # lucky 1st place, and a hard-throw doesn't
+                        # slip through with the same soft −100 as a
+                        # near-miss 2nd place.
+                        #
+                        # Placement is meant to anchor the player's
+                        # true skill ceiling within the first few
+                        # matches — the performance modifier
+                        # accelerates that convergence.
+                        base = 100 if placement == 1 else -100
+                        # Performance signal: kills weighted heavier
+                        # than deaths (encourages fragging over
+                        # camping). +10 per kill, −8 per death.
+                        perf_raw = p.kills * 10 - p.deaths * 8
+                        # Cap: up to +150 bonus (positive) and up to
+                        # −200 penalty (negative). Combined with the
+                        # base this gives a total range of
+                        #   worst:  −100 + (−200) = −300
+                        #   best:   +100 + (+150) = +250
+                        # matching the "up to 150 bonus / lose up to
+                        # 300" spec.
+                        PLACEMENT_PERF_BONUS_CAP = 150
+                        PLACEMENT_PERF_PENALTY_CAP = -200
+                        if perf_raw >= 0:
+                            perf = min(PLACEMENT_PERF_BONUS_CAP, perf_raw)
                         else:
-                            delta = -100
+                            perf = max(PLACEMENT_PERF_PENALTY_CAP, perf_raw)
+                        delta = base + perf
                         base_delta = delta
                     else:
                         base_delta = compute_rp_delta(placement, cur_tier_idx)
