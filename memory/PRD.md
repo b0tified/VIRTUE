@@ -1037,3 +1037,20 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   Booming 4-layer bolt-action report — deep 90 → 30 Hz sine thump (1.6x gain), high-freq bandpassed CRACK burst, mid-body lowpass "boom", and two echo tails at 180ms + 420ms. Roughly 1.6x hotter than the AK, distinctly cinematic. `gunshot()` now routes `weapon === "sniper"` to `_sniperShot()`.
 - **LocalSim parity**: `WEAPONS` map gained a `sniper` entry (100 dmg, 900ms cooldown, 1-shot mag, 120m range). `LocalPlayer` now inits `weapon` from the user's `primary_weapon`; respawn resets and ammo dicts include sniper. Practice/Offline sniper users now see the sniper viewmodel + hear the sniper report locally.
 - **Game.jsx seeding fix**: After `engine.primaryWeaponId = user.primary_weapon`, we now call `engine._applyPrimarySelection()` so the correct viewmodel is on-screen before the first state broadcast lands.
+
+
+---
+
+### 2026-02-24 — Hotel map now selectable in Practice Mode (P0 bug fix)
+- **Bug**: User reported "I can't select the map in practice mode" (specifically the newly added GRAND HOTEL). The `PracticeMapSelector` rendered the hotel card correctly, but clicking it silently fell back to a random map.
+- **Root cause**: `/app/frontend/src/game/localSim.js` had its own hardcoded `MAPS` array (`MAP_A`…`MAP_E`) that did **not** include `hotel`. When the selector called `_pickMap("hotel")`, the `find(...)` returned undefined and the code fell through to `MAPS[Math.floor(Math.random() * MAPS.length)]`.
+- **Fix**:
+  1. Added `MAP_F` (map_id `"hotel"`) to `localSim.js`, mirroring the ground-floor obstacles + second-story mezzanine (`y_base`) obstacles + spawn points from server `MAP_F` in `/app/backend/server.py`.
+  2. Included `MAP_F` in the `MAPS` array.
+  3. Patched `collidesAABB()` and `segBlockedByObstacles()` to skip obstacles with `y_base > 0` (mezzanine/ceiling geometry) so floating second-story cover doesn't block ground-floor bots/players or LOS — matches server's collision behavior at `server.py` L3106-3108.
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_18.json`):
+  - Hotel card renders in the selector (`practice-map-card-hotel`).
+  - Practice + hotel → `/play?mode=practice&map=hotel` loads the arena, no runtime errors.
+  - Offline vs AI + hotel → `/play?mode=offline&map=hotel` loads the arena, no runtime errors.
+  - Non-hotel maps (random) still load correctly (no regression).
+  - Frontend success rate: **100%**. No UI bugs, no integration issues.
