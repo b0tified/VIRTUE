@@ -21,7 +21,7 @@ def _hotel():
 
 def test_hotel_map_registered():
     hotel = _hotel()
-    assert hotel["name"] == "GRAND HOTEL"
+    assert hotel["name"] == "ROYAL GUARD"
     assert hotel["size"] == 50
     assert len(hotel["spawn_points"]) >= 8, "need at least 8 spawn points for FFA"
     assert len(hotel["healthpacks"]) >= 4

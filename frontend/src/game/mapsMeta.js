@@ -277,7 +277,7 @@ export const MAP_TUNDRA = {
 
 export const MAP_HOTEL = {
   map_id: "hotel",
-  name: "GRAND HOTEL",
+  name: "ROYAL GUARD",
   size: 50,
   tagline: "Fully indoor marble lobby · open atrium · mezzanine overlook.",
   palette: {

@@ -2764,7 +2764,7 @@ MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E]
 # gold, deep walnut. Set in engine.js `_currentMapId === "hotel"`.
 MAP_F = {
     "map_id": "hotel",
-    "name": "GRAND HOTEL",
+    "name": "ROYAL GUARD",
     "size": 50,
     "obstacles": [
         # ---- INDOOR PERIMETER WALLS ----

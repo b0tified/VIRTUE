@@ -265,7 +265,7 @@ const MAP_E = {
 
 const MAP_F = {
   map_id: "hotel",
-  name: "GRAND HOTEL",
+  name: "ROYAL GUARD",
   size: 50,
   obstacles: [
     // ---- INDOOR PERIMETER WALLS ----
