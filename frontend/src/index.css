@@ -1652,6 +1652,50 @@ html.virtue-no-ui-blur .hud-panel {
   100% { opacity: 0.9;  transform: scale(1.02); }
 }
 
+/* Flickering castle window light — small warm-gold radial glow that
+   sits over an arrow-slit rect painted into the silhouette SVG. Each
+   instance runs on its own timer (`animationDelay` + `animationDuration`
+   set inline) so the whole castle reads as "lived in" — some slits
+   brighter, some almost snuffed, all shifting independently. */
+.lobby-castle-window {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  background:
+    radial-gradient(circle,
+      rgba(255, 232, 150, 0.95) 0%,
+      rgba(255, 190, 90, 0.6) 30%,
+      rgba(200, 100, 40, 0.25) 55%,
+      transparent 75%);
+  border-radius: 50%;
+  filter: blur(2px);
+  transform: translate(-50%, 50%);
+  animation-name: lobby-castle-window-flicker;
+  animation-iteration-count: infinite;
+  animation-timing-function: steps(4, end);
+}
+.lobby-castle-window.window-gate {
+  /* Main-entrance glow — bigger + warmer so it clearly reads as the
+     gate lantern. Uses a smoother easing so it feels welcoming. */
+  width: 60px;
+  height: 60px;
+  background:
+    radial-gradient(circle,
+      rgba(255, 220, 140, 0.9) 0%,
+      rgba(255, 170, 60, 0.55) 30%,
+      rgba(210, 90, 30, 0.25) 55%,
+      transparent 78%);
+  filter: blur(3px);
+  animation-timing-function: ease-in-out;
+}
+@keyframes lobby-castle-window-flicker {
+  0%   { opacity: 0.35; transform: translate(-50%, 50%) scale(0.85); }
+  20%  { opacity: 1.0;  transform: translate(-50%, 50%) scale(1.15); }
+  40%  { opacity: 0.55; transform: translate(-50%, 50%) scale(0.95); }
+  70%  { opacity: 0.9;  transform: translate(-50%, 50%) scale(1.08); }
+  100% { opacity: 0.45; transform: translate(-50%, 50%) scale(0.9); }
+}
+
 /* Castle-themed drifting fog blobs. */
 .lobby-bg-blob.blob-castle-purple { background: #6a3a8a; animation-duration: 21s; opacity: 0.32; }
 .lobby-bg-blob.blob-castle-gold   { background: #c9a24a; animation-duration: 25s; animation-delay: -6s; opacity: 0.22; }
@@ -1664,5 +1708,6 @@ html.virtue-no-ui-blur .hud-panel {
   .lobby-castle-moon,
   .lobby-castle-moon-halo,
   .lobby-castle-banner,
+  .lobby-castle-window,
   .lobby-castle-torch { animation: none !important; }
 }

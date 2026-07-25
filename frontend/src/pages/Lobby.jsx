@@ -164,11 +164,14 @@ export default function Lobby() {
   const finishedSeasons = new Set((user?.past_seasons || []).map((e) => Number(e?.season) || 0));
   const canUseVariant = (v) => {
     if (v === "auto") return true;
+    // Snow variant has been retired from the settings picker — force
+    // any legacy `snow` selection to fall through to the auto / castle
+    // default instead of resurrecting the winter backdrop.
+    if (v === "snow") return false;
     if (isAdmin) return true;
     if (v === autoVariant) return true;
     if (v === "default") return finishedSeasons.has(1) || (seasonNumber !== null && seasonNumber >= 1);
     if (v === "meteor")  return finishedSeasons.has(2) || (seasonNumber !== null && seasonNumber >= 2);
-    if (v === "snow")    return finishedSeasons.has(3) || (seasonNumber !== null && seasonNumber >= 3);
     return false;
   };
   const effectiveVariant = (pickedVariant !== "auto" && canUseVariant(pickedVariant))

@@ -1113,3 +1113,15 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Music revert** — `startLobbyMusic` is now pinned to `"default"` (Season 1's `Am-F-C-G-Am-F-G-E` loop) regardless of variant picker or season. The meteor + snow remixes still exist in `audio.js` for future re-enablement.
 - **Verified** via smoke screenshot: `data-testid="lobby-bg-castle"` is present, `lobby-bg-snow` absent; castle silhouette + moon + banners + torches all rendered correctly. Music change is a single-line variant swap (no runtime risk).
 
+
+---
+
+### 2026-02-24 — Castle lobby polish
+- **User request**: "remove the season 3 lobby from setting; on the knight background remove the text and make lights flicker in the castles"
+- **Season 3 (snow) removed from settings**:
+  - `SettingsModal.jsx` `LobbyVariantPicker` — dropped the `snow` entry. Picker now shows `Auto`, `Season 1`, `Season 2` only.
+  - `Lobby.jsx` `canUseVariant` — returns `false` for `"snow"` so any legacy localStorage value falls through to auto (castle). Prevents stale winter backdrops from resurfacing.
+- **Removed floating text** from castle backdrop: deleted the "HONOR!/GUARD!/VALOR!/REIGN!/KNIGHTS!" comic-word cluster.
+- **Flickering window lights** — new `.lobby-castle-window` CSS class with a warm-gold radial-gradient dot + per-instance `animationDelay` / `animationDuration` staggering. 7 windows placed over the arrow-slit + gate positions in the silhouette SVG. Each pulses on its own timer via a `lobby-castle-window-flicker` keyframe (steps(4) timing gives a proper candle-flicker feel; the gate window uses a smoother ease-in-out for a welcoming "lantern" glow).
+- **Verified** via smoke screenshot: `lobby-bg-word count = 0`, `flicker windows = 7`, picker options = `['Auto','Season 1','Season 2']`. Castle silhouette shows warm flicker dots dancing on the towers + gate.
+

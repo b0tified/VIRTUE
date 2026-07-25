@@ -1285,9 +1285,8 @@ function ToggleRow({ label, note, checked, onChange, testid }) {
 /* LobbyVariantPicker — grid of tiles for the lobby background choice.
    Users unlock a variant by finishing (or currently playing) the season
    it originally shipped in:
-     · S1 → Default
+     · S1 → Default (now the Royal Guard castle backdrop)
      · S2 → Meteor
-     · S3+ → Snow
    AUTO is always available; admins see every option unlocked.
    Locked tiles render dimmed with a padlock; picking one triggers no
    change (defensive — the parent Lobby also gates the effective
@@ -1303,7 +1302,6 @@ function LobbyVariantPicker({ value, onChange, user }) {
     { id: "auto",    label: "Auto" },
     { id: "default", label: "Season 1", requires: 1 },
     { id: "meteor",  label: "Season 2", requires: 2 },
-    { id: "snow",    label: "Season 3", requires: 3 },
   ];
   return (
     <div className="mt-3" data-testid="settings-lobby-variant-picker">

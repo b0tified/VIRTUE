@@ -81,6 +81,22 @@ export default function LobbyBackgroundCastle({ animated = true }) {
           bottom third. Includes crenellated towers + curtain wall. */}
       <div className="absolute inset-0 lobby-castle-silhouette-front" aria-hidden />
 
+      {/* Flickering window lights — small warm-gold glows positioned
+          over the arrow-slit + gate windows in the front silhouette.
+          Each pulses on its own random-feeling timer so the castle
+          reads as "alive". Positions are tuned to line up with the
+          arrow-slit rects baked into the SVG at ~1600x500. */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+        <div className="lobby-castle-window" style={{ left: "9.4%",  bottom: "56%", animationDelay: "0.0s", animationDuration: "1.7s" }} />
+        <div className="lobby-castle-window" style={{ left: "30.3%", bottom: "70%", animationDelay: "0.6s", animationDuration: "2.1s" }} />
+        <div className="lobby-castle-window" style={{ left: "58.1%", bottom: "70%", animationDelay: "1.3s", animationDuration: "1.9s" }} />
+        <div className="lobby-castle-window" style={{ left: "81.6%", bottom: "58%", animationDelay: "0.9s", animationDuration: "2.4s" }} />
+        <div className="lobby-castle-window" style={{ left: "43.1%", bottom: "48%", animationDelay: "1.7s", animationDuration: "1.5s" }} />
+        <div className="lobby-castle-window" style={{ left: "68.1%", bottom: "48%", animationDelay: "0.3s", animationDuration: "1.8s" }} />
+        {/* Gate arch — brighter, slower flicker so it reads as the main entrance. */}
+        <div className="lobby-castle-window window-gate" style={{ left: "50%", bottom: "42%", animationDelay: "0.0s", animationDuration: "2.8s" }} />
+      </div>
+
       {/* Fluttering banners hanging off the castle towers. Two pennants
           on either side of the main gate. Colored burgundy with gold
           trim (matches the Royal Guard palette). */}
@@ -96,15 +112,6 @@ export default function LobbyBackgroundCastle({ animated = true }) {
         <div className="lobby-castle-torch" style={{ bottom: "24%", left: "36%", animationDelay: "0.8s" }} />
         <div className="lobby-castle-torch" style={{ bottom: "24%", left: "62%", animationDelay: "1.4s" }} />
         <div className="lobby-castle-torch" style={{ bottom: "22%", left: "80%", animationDelay: "0.4s" }} />
-      </div>
-
-      {/* Floating comic words — kingdom-themed callouts. */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <span className="lobby-bg-word word-gold   lobby-bg-word-wobble" style={{ top: "12%", left: "8%",  animationDelay: "0.0s" }}>HONOR!</span>
-        <span className="lobby-bg-word word-purple lobby-bg-word-wobble" style={{ top: "68%", left: "10%", animationDelay: "0.7s" }}>GUARD!</span>
-        <span className="lobby-bg-word word-red    lobby-bg-word-wobble" style={{ top: "20%", left: "70%", animationDelay: "1.3s" }}>VALOR!</span>
-        <span className="lobby-bg-word word-gold   lobby-bg-word-wobble" style={{ top: "58%", left: "76%", animationDelay: "2.0s" }}>REIGN!</span>
-        <span className="lobby-bg-word word-purple lobby-bg-word-wobble" style={{ top: "38%", left: "44%", animationDelay: "2.6s" }}>KNIGHTS!</span>
       </div>
 
       {/* Low fog drift — soft purple blobs breathing near the ground. */}
