@@ -293,6 +293,14 @@ async def maybe_reset_season() -> dict:
         SEASON_RESET_RP_DROP = 900  # 3 sub-tiers × 300 RP soft reset
         GOONMASTER_FLOOR_RP = RANK_TIERS[-1][0]  # 2100 — dynamic in case tiers ever shift
         DIAMOND_III_RP = RANK_TIERS[4][0]        # 1200 — start of Diamond III
+
+        # Roll-back helper — mirrors the aggregation logic in the
+        # `update_many` below so seeded bots use the SAME rules as real
+        # players.
+        def _rollback_rp(rp: int) -> int:
+            if rp >= GOONMASTER_FLOOR_RP:
+                return DIAMOND_III_RP
+            return max(0, rp - SEASON_RESET_RP_DROP)
         finishing_season = int(doc.get("season_number", 1))
         # Refresh the cached prev-season number so newly-created bots
         # stamp their titles with the freshly-completed season.
@@ -333,7 +341,7 @@ async def maybe_reset_season() -> dict:
             logger.warning("past_seasons stamp failed at S%d rollover: %s", finishing_season, e)
 
         await db.users.update_many(
-            {"rank_points": {"$exists": True}},
+            {"rank_points": {"$exists": True}, "is_seeded": {"$ne": True}},
             [{
                 "$set": {
                     "peak_rank_points": {
@@ -363,6 +371,56 @@ async def maybe_reset_season() -> dict:
                 }
             }],
         )
+
+        # Seeded leaderboard bots — separate pass so they get ROLLED BACK
+        # instead of the full-reset-to-0 they'd suffer if we let the
+        # `seeded_climb_loop` (which drives `rank_points = seed_target_rp
+        # * frac_elapsed`) rebuild them from `frac=0` at the start of
+        # the new season. That was leaving the leaderboard empty for
+        # the first few days of every season.
+        #
+        # Behaviour now (per user request "keep it full"):
+        #   1) `seed_start_rp` is set to the rolled-back RP using the
+        #      same rules as real players (Goonmaster→Diamond3 or −900
+        #      floor 0). This becomes the bot's baseline for the new
+        #      season's climb.
+        #   2) `rank_points` snaps to `seed_start_rp` immediately so the
+        #      leaderboard reflects the rolled-back values right after
+        #      rollover.
+        #   3) `seed_target_rp` is retained — bots continue climbing
+        #      back toward their end-of-last-season target across the
+        #      new season, so the leaderboard stays populated and grows
+        #      as the season progresses.
+        # The climb-loop lerp is updated below to interpolate from
+        # `seed_start_rp` instead of 0.
+        try:
+            seeded_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True, "$gt": 0}},
+                {"_id": 1, "seed_target_rp": 1, "rank_points": 1, "peak_rank_points": 1},
+            )
+            async for u in seeded_cursor:
+                # Use the bot's END-OF-SEASON target as the "final RP"
+                # to roll back — this is where they actually ended (or
+                # were headed) even if the mid-season snapshot in
+                # `rank_points` was lower.
+                end_rp = int(u.get("seed_target_rp", 0) or 0)
+                start_rp = _rollback_rp(end_rp)
+                cur_peak = int(u.get("peak_rank_points", 0) or 0)
+                await db.users.update_one(
+                    {"_id": u["_id"]},
+                    {"$set": {
+                        "seed_start_rp": start_rp,
+                        "rank_points": start_rp,
+                        # Stamp peak from the end-of-season target if
+                        # higher than what's on file (they earned it).
+                        "peak_rank_points": max(cur_peak, end_rp),
+                        "placement_matches_played": 0,
+                        "season_xp": 0,
+                        "claimed_season_tiers": [],
+                    }},
+                )
+        except Exception as e:
+            logger.warning("Seeded-bot rollback failed at S%d rollover: %s", finishing_season, e)
         await db.meta.update_one(
             {"_id": "season"},
             {"$set": {"season_number": next_num, "season_start": now}},
@@ -6219,6 +6277,7 @@ async def seeded_climb_loop():
                     "seed_target_kills": 1, "seed_target_deaths": 1,
                     "seed_target_wins": 1,
                     "seed_climb_offset": 1, "seed_climb_speed": 1,
+                    "seed_start_rp": 1,
                     "peak_rank_points": 1,
                 },
             )
@@ -6231,14 +6290,23 @@ async def seeded_climb_loop():
                 t_k = int(u.get("seed_target_kills", 0) or 0)
                 t_d = int(u.get("seed_target_deaths", 0) or 0)
                 t_w = int(u.get("seed_target_wins", 0) or 0)
-                # Lerp + snap RP to the ranked match grid (multiples of
-                # 15) so every snapshot value is reachable via real
-                # matchplay. Without this snap a 50%-elapsed seed with
-                # target=2578 would show 1289 RP — a value no player
-                # could have actually earned (+30/+15/0/-30/-60 deltas
-                # can never produce that). Stats lerp linearly; only RP
-                # is constrained to the grid.
-                new_rp = _snap_rp_to_match_grid(int(round(t_rp * p)))
+                # Season-start baseline (0 for legacy seeded bots that
+                # pre-date `seed_start_rp` — they behave as before). Set
+                # by `maybe_reset_season` at rollover so every seeded bot
+                # begins the new season at their rolled-back RP instead
+                # of the leaderboard-emptying `rank_points = 0` behaviour
+                # of the pre-`seed_start_rp` code.
+                start_rp = int(u.get("seed_start_rp", 0) or 0)
+                # Lerp from `start_rp` → `t_rp` over the season. RP is
+                # snapped to the ranked match grid (multiples of 15) so
+                # every snapshot value is reachable via real matchplay.
+                if t_rp <= start_rp:
+                    # Rollback already exceeded the target (edge case) —
+                    # freeze at start_rp so the leaderboard doesn't
+                    # oscillate.
+                    new_rp = _snap_rp_to_match_grid(start_rp)
+                else:
+                    new_rp = _snap_rp_to_match_grid(int(round(start_rp + (t_rp - start_rp) * p)))
                 new_m = int(round(t_m * p))
                 new_k = int(round(t_k * p))
                 new_d = int(round(t_d * p))
