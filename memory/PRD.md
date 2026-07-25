@@ -1054,3 +1054,25 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Offline vs AI + hotel → `/play?mode=offline&map=hotel` loads the arena, no runtime errors.
   - Non-hotel maps (random) still load correctly (no regression).
   - Frontend success rate: **100%**. No UI bugs, no integration issues.
+
+---
+
+### 2026-02-24 — Hotel map converted to fully indoor arena
+- **User request**: "make the hotel map completely inside and remove the building and make them building supports and and tables and make it so you can go in the middle"
+- **Changes** (mirrored across server MAP_F, `mapsMeta.js MAP_HOTEL`, and `localSim.js MAP_F`):
+  - **Removed** `_PERIMETER_BUILDINGS` (outdoor exterior buildings at ±42/±38).
+  - **Removed** the center lobby fountain at (0, 0) so the middle of the arena is now a wide open atrium — players can push straight through.
+  - **Added** solid indoor perimeter walls at ±48 (thick, h=8) that fully seal the arena as an interior space.
+  - **Added** 12 structural support columns around the perimeter (corners + mid-wall + cardinal directions) — these visually replace the exterior buildings as "load-bearing supports" for the hotel structure.
+  - **Added** 8 lobby tables (waist-high 1.4×0.9×1.4 blocks) scattered as crouch cover.
+  - **Extended** the ceiling coffer from 60×60 to 100×100 so the ceiling covers the entire arena footprint (no sky visible from any interior angle).
+- **Engine visuals** (`/app/frontend/src/game/engine.js`):
+  - New `_cityDecoGroup` (Three.js Group) initialised in `_buildArena` collects **all** outdoor city dressing: roads, driveways with curb stripes, dashed lane lines, fire hydrants, trees, foliage, lampposts, park benches, POW/BAM spawn decals, VIRTUE sign, central statue + plinth. Every previous `this.scene.add(...)` for these items now routes through `_cityDecoGroup.add(...)`.
+  - In `_rebuildArenaFromServer`, `_cityDecoGroup.visible = (arena.map_id !== "hotel")` — hides all outdoor dressing when the map is hotel and restores it for every other (outdoor) map.
+- **Tests**: Updated `test_hotel_map.py::test_ground_collision_ignores_floating_obstacles` — center (0,0) must now be walkable (no fountain). All 4 hotel + 3 spawn tests pass (7/7).
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_19.json`):
+  - Practice + hotel → indoor arena renders (marble floor, walls, columns, no roads/trees/hydrants/decals).
+  - Offline vs AI + hotel → indoor arena renders.
+  - Practice + downtown (regression) → outdoor city still fully visible (roads, buildings, sign).
+  - Frontend success: 100%. No regressions.
+
