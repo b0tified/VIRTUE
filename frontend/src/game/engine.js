@@ -422,12 +422,11 @@ export class GameEngine {
       // Genuinely mid-reload with an empty mag — no point sending.
       return;
     }
-    // Sniper: server rejects any shot fired while not ADS. Mirror the
-    // rule client-side so the local ammo/reload prediction doesn't
-    // desync on rejected hipfire attempts.
-    if (w === "sniper" && !this.ads) {
-      return;
-    }
+    // Sniper used to require ADS to fire (server rejected hip-fire).
+    // The `ads_only` restriction has been removed per user request —
+    // sniper now behaves like the AK for the fire gate: any shot goes
+    // through as long as the player has ammo. Kept the branch shell in
+    // case we ever re-introduce weapon-specific fire gates.
     if ((this.localAmmo[w] ?? 0) <= 0) {
       // Empty — kick off a reload locally and tell the server.
       this.localReloading = true;

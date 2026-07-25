@@ -284,7 +284,7 @@ const MAX_HP = 100;
 
 const WEAPONS = {
   ak47:   { damage: 22,  cooldown_ms: 110,  mag_size: 25, reload_ms: 1500, range: 60 },
-  sniper: { damage: 100, cooldown_ms: 900,  mag_size: 1,  reload_ms: 1600, range: 120 },
+  sniper: { damage: 50,  cooldown_ms: 250,  mag_size: 2,  reload_ms: 1500, range: 120, headshot_mult: 2.0 },
   laser:  { damage: 5,   cooldown_ms: 90,   mag_size: 60, reload_ms: 1800, range: 40 },
 };
 const MELEE_DAMAGE = 100;
@@ -694,8 +694,12 @@ export class LocalSim {
       // Head region: bullet hits above 1.45 (capsule now spans 0..2.05, so the
       // head crown is ~1.6-2.0). Matches the slightly-enlarged server head.
       const headshot = bestHit.hy > 1.45;
+      // Per-weapon headshot multiplier — sniper is 2.0x (so 50 body →
+      // 100 head = exactly 1-shot on 100HP), AK/laser fall back to
+      // the previous 1.6x default.
+      const hsMult = cfg.headshot_mult ?? 1.6;
       let damage = cfg.damage;
-      if (headshot) damage = Math.floor(damage * 1.6);
+      if (headshot) damage = Math.floor(damage * hsMult);
       bestHit.other.hp -= damage;
       this.pendingEvents.push({
         type: "hit",

@@ -2863,18 +2863,18 @@ WEAPON_CONFIGS = {
         "ads_spread_mult": 0.25,
     },
     "sniper": {
-        # Bolt-action-style precision rifle. One-shot-kill anywhere on
-        # the target (server-enforced: damage=200 vs 100 HP → even leg
-        # hits are lethal). Trade-offs vs the AK: 1-round mag, slow
-        # reload, and CANNOT fire from the hip — `ads_only=True` makes
-        # the server reject any /shoot message when the player isn't
-        # scoped in.
-        "damage": 200,
+        # Bolt-action-style precision rifle. Two-shot mag with a
+        # heavy body-shot damage (50) that needs 2 hits to down a
+        # 100-HP target, but a full 2.0x headshot mult that keeps
+        # 1-tap headshots on the table (50 × 2 = 100 = lethal). Hip
+        # fire is now allowed — the previous ads_only lockout was
+        # frustrating in close-range engagements.
+        "damage": 50,              # per-shot body damage (was 200 — 1-shot anywhere)
         "cooldown_ms": 250,        # brief post-shot lockout (matches AK's old cd)
-        "mag_size": 1,             # single-shot before mandatory reload
+        "mag_size": 2,             # up from 1: two shots before mandatory reload
         "reload_ms": 1500,         # per-user tune: sniper reload feels snappier at 1.5s
-        "headshot_mult": 1.0,      # already lethal; no bonus math
-        "legs_mult": 1.0,          # per-user spec: 1-shot ANY body part
+        "headshot_mult": 2.0,      # 50 × 2 = 100 → 1-shot headshot kills, exactly
+        "legs_mult": 0.85,         # leg hits do ~42.5 dmg → still 2-shot lethal on 100HP
         "falloff_start": 200.0,    # effectively no falloff — range weapon
         "falloff_end": 300.0,
         "min_damage_mult": 1.0,
@@ -2883,7 +2883,7 @@ WEAPON_CONFIGS = {
         "spread_max": 0.0,
         "spread_decay": 1.0,
         "ads_spread_mult": 1.0,
-        "ads_only": True,          # server-enforced hip-fire lockout
+        "ads_only": False,         # per-user request: sniper can now hip-fire
     },
     "laser": {
         "damage": LASER_DAMAGE,
