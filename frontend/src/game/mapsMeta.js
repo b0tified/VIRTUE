@@ -275,7 +275,49 @@ export const MAP_TUNDRA = {
   ],
 };
 
-export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE, MAP_CRASHSITE, MAP_TUNDRA];
+export const MAP_HOTEL = {
+  map_id: "hotel",
+  name: "GRAND HOTEL",
+  size: 50,
+  tagline: "Two-story marble lobby · mezzanine overlook · brass columns.",
+  palette: {
+    bg: "#d8c99a",       // polished marble floor
+    border: "#0A0A0A",
+    obstacle: "#7a1e2b", // deep burgundy
+    crate: "#c9a24a",    // brass luggage
+    accent: "#d8b874",   // gold-leaf trim
+  },
+  obstacles: [
+    // Ground-floor obstacles (mirrors server MAP_F for the minimap preview).
+    { x: 0,   z: -18, w: 22, h: 1.2, d: 2.0 },
+    { x: 11,  z: -14, w: 2.0, h: 1.2, d: 6.0 },
+    { x: -18, z: 18,  w: 6.0, h: 1.1, d: 2.0 },
+    { x:  12, z:  12, w: 2.5, h: 8,   d: 2.5 },
+    { x: -12, z:  12, w: 2.5, h: 8,   d: 2.5 },
+    { x:  12, z: -12, w: 2.5, h: 8,   d: 2.5 },
+    { x: -12, z: -12, w: 2.5, h: 8,   d: 2.5 },
+    { x: 0,   z: 0,   w: 4.0, h: 1.5, d: 4.0 },
+    { x: 30,  z: -6,  w: 2.0, h: 6,   d: 4.0 },
+    { x: 30,  z:  6,  w: 2.0, h: 6,   d: 4.0 },
+    { x: -30, z:  8,  w: 2.0, h: 3,   d: 6.0 },
+    { x: -30, z: -8,  w: 2.0, h: 4,   d: 6.0 },
+    { x:  6,  z:  22, w: 3.0, h: 1.0, d: 2.0 },
+    { x: -6,  z:  22, w: 3.0, h: 1.0, d: 2.0 },
+    { x:  6,  z: -24, w: 3.0, h: 1.0, d: 2.0 },
+    { x: -6,  z: -24, w: 3.0, h: 1.0, d: 2.0 },
+    { x: -22, z:  0,  w: 2.0, h: 4,   d: 10.0 },
+    { x: -22, z: -22, w: 2.0, h: 4,   d: 6.0 },
+    { x: -34, z:  0,  w: 2.0, h: 4,   d: 10.0 },
+    { x:  0,  z:  30, w: 3.5, h: 1.4, d: 2.0 },
+    { x:  8,  z:  4,  w: 1.6, h: 1.4, d: 1.6 },
+    { x: -8,  z: -4,  w: 1.6, h: 1.4, d: 1.6 },
+    { x:  16, z: -3,  w: 1.6, h: 1.4, d: 1.6 },
+    { x: -16, z:  3,  w: 1.6, h: 1.4, d: 1.6 },
+    ..._PERIMETER,
+  ],
+};
+
+export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE, MAP_CRASHSITE, MAP_TUNDRA, MAP_HOTEL];
 
 export function pickRandomMapMeta() {
   return MAPS_META[Math.floor(Math.random() * MAPS_META.length)];

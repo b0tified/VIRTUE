@@ -1052,9 +1052,18 @@ export class GameEngine {
     const g = new THREE.Group();
     const body = this._outlined(new THREE.BoxGeometry(ob.w, ob.h, ob.d), ob.color);
     g.add(body);
-    g.position.set(ob.x, ob.h / 2, ob.z);
-
-    if (!ob.crate && ob.h >= 2.5) {
+    // `y_base` (optional) lifts the whole obstacle group off the ground —
+    // used for the mezzanine ring on the HOTEL map so players walk under
+    // it at ground level while the "second story" is visible overhead.
+    // Server collision ignores `y_base` (it's XZ-only), so floating
+    // obstacles simply don't block ground movement — exactly what we
+    // want for a two-story visual.
+    const yBase = Number(ob.y_base || 0);
+    g.position.set(ob.x, yBase + ob.h / 2, ob.z);
+    // Skip window/roof decoration for floating mezzanine boxes — they're
+    // visual mass, not "buildings" — a rooftop cap on a floating ceiling
+    // looks wrong.
+    if (!ob.crate && ob.h >= 2.5 && yBase === 0) {
       // Add windows and roof line as flat painted planes on each face
       const faceTex = this._makeBuildingFaceTexture(ob, this._isNight);
       // 4 side faces — additive blending at night so the windows visibly
@@ -1125,6 +1134,10 @@ export class GameEngine {
       // deep steel-blue shadows, weathered dark timber for tree stumps,
       // and a soft powder-blue for ice highlights.
       arena.map_id === "tundra" ? [0xe4eef7, 0x9ec8e0, 0x4a6a88, 0x3a2a20, 0xbfd8ea] :
+      // HOTEL: opulent lobby palette — warm marble cream, deep burgundy
+      // carpet, polished brass, walnut wood, gold leaf trim. Reads as
+      // "grand entrance" the moment the round starts.
+      arena.map_id === "hotel" ? [0xe8d9b0, 0x7a1e2b, 0xc9a24a, 0x4a2a1a, 0xd8b874] :
       /* default */                  [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
     const colored = arena.obstacles.map((ob, i) => {
       const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
@@ -1163,6 +1176,11 @@ export class GameEngine {
         // so it reads as fresh powder + gets a slight sparkle vibe under
         // the cel-shaded toon gradient.
         newMat = new THREE.MeshToonMaterial({ color: 0xf1f6fb, gradientMap: this.toonMap });
+      } else if (arena.map_id === "hotel") {
+        // Polished marble floor — a warm cream so it reads as an
+        // indoor hotel lobby, not exterior concrete. Grass blades are
+        // hidden below (see `_grassBlades` gate).
+        newMat = new THREE.MeshToonMaterial({ color: 0xd8c99a, gradientMap: this.toonMap });
       } else {
         // Default grass texture
         newMat = new THREE.MeshToonMaterial({ map: this._makeGrassTexture(), gradientMap: this.toonMap });
@@ -1579,8 +1597,8 @@ export class GameEngine {
     if (Array.isArray(this._grassBlades)) {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
       // neither aesthetic wants tall green tufts. Also hide on crashsite
-      // (scorched ground) for the same reason.
-      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite" && arena.map_id !== "tundra";
+      // (scorched ground), tundra (snow), and hotel (indoor marble).
+      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite" && arena.map_id !== "tundra" && arena.map_id !== "hotel";
       this._grassBlades.forEach((b) => { b.visible = showBlades; });
     }
   }

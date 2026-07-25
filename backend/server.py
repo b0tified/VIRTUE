@@ -2752,6 +2752,102 @@ MAP_E = {
 
 MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E]
 
+# Map F — "HOTEL" — indoor two-story lobby. All cover is at floor
+# level; the second story is represented by a floating MEZZANINE RING
+# + supporting columns + a ceiling plane, all lifted by `y_base` so
+# they don't block ground movement. Server collision (`collides_obstacle`)
+# and `_spawn_point_safe` skip any obstacle with `y_base > 0` so the
+# floating geometry is purely visual — players walk under the mezzanine
+# and see the "second story" overhead, giving the two-story vibe the
+# game engine can't otherwise support (server is 2D).
+# Visual palette (client-side): warm marble creams, rich burgundy, brass
+# gold, deep walnut. Set in engine.js `_currentMapId === "hotel"`.
+MAP_F = {
+    "map_id": "hotel",
+    "name": "GRAND HOTEL",
+    "size": 50,
+    "obstacles": [
+        # ---- GROUND FLOOR ----
+        # Reception desk — long L-shape at the north end.
+        {"x": 0,   "z": -18, "w": 22, "h": 1.2, "d": 2.0},
+        {"x": 11,  "z": -14, "w": 2.0, "h": 1.2, "d": 6.0},
+        # Bell-desk / concierge stand — small counter, south end.
+        {"x": -18, "z": 18, "w": 6.0, "h": 1.1, "d": 2.0},
+        # Central marble columns — 4 square columns supporting the
+        # mezzanine above. They're solid ground-floor cover, and
+        # visually anchor the pillars that appear to hold up the
+        # floating mezzanine ring.
+        {"x":  12, "z":  12, "w": 2.5, "h": 8, "d": 2.5},
+        {"x": -12, "z":  12, "w": 2.5, "h": 8, "d": 2.5},
+        {"x":  12, "z": -12, "w": 2.5, "h": 8, "d": 2.5},
+        {"x": -12, "z": -12, "w": 2.5, "h": 8, "d": 2.5},
+        # Center lobby fountain — round-ish square block, sightline break.
+        {"x": 0, "z": 0, "w": 4.0, "h": 1.5, "d": 4.0},
+        # Elevator bank — two tall thin rectangles on the east wall.
+        {"x": 30, "z": -6, "w": 2.0, "h": 6, "d": 4.0},
+        {"x": 30, "z":  6, "w": 2.0, "h": 6, "d": 4.0},
+        # Staircase to mezzanine — two flights, visual only (players
+        # can't reach the second floor; the "stairs" are just cover).
+        {"x": -30, "z":  8, "w": 2.0, "h": 3, "d": 6.0},
+        {"x": -30, "z": -8, "w": 2.0, "h": 4, "d": 6.0},
+        # Lounge seating cluster — small platforms grouped in twos.
+        {"x":  6, "z":  22, "w": 3.0, "h": 1.0, "d": 2.0},
+        {"x": -6, "z":  22, "w": 3.0, "h": 1.0, "d": 2.0},
+        {"x":  6, "z": -24, "w": 3.0, "h": 1.0, "d": 2.0},
+        {"x": -6, "z": -24, "w": 3.0, "h": 1.0, "d": 2.0},
+        # Corridor walls partitioning the west wing into "rooms".
+        {"x": -22, "z":  0,  "w": 2.0, "h": 4, "d": 10.0},
+        {"x": -22, "z": -22, "w": 2.0, "h": 4, "d": 6.0},
+        {"x": -34, "z":  0,  "w": 2.0, "h": 4, "d": 10.0},
+        # Grand piano — small square in the south lounge.
+        {"x":  0, "z":  30, "w": 3.5, "h": 1.4, "d": 2.0},
+        # Luggage carts / crates.
+        {"x":   8, "z":   4, "w": 1.6, "h": 1.4, "d": 1.6},
+        {"x":  -8, "z":  -4, "w": 1.6, "h": 1.4, "d": 1.6},
+        {"x":  16, "z":  -3, "w": 1.6, "h": 1.4, "d": 1.6},
+        {"x": -16, "z":   3, "w": 1.6, "h": 1.4, "d": 1.6},
+
+        # ---- SECOND STORY (floating, `y_base` = 8 = above the columns) ----
+        # Mezzanine ring — 4 walkway segments floating overhead. Each
+        # is `h=0.8` thick — reads as a proper balcony from below.
+        {"x":  20, "z": 0,   "w": 3, "h": 0.8, "d": 26, "y_base": 8},
+        {"x": -20, "z": 0,   "w": 3, "h": 0.8, "d": 26, "y_base": 8},
+        {"x":   0, "z":  20, "w": 26, "h": 0.8, "d": 3, "y_base": 8},
+        {"x":   0, "z": -20, "w": 26, "h": 0.8, "d": 3, "y_base": 8},
+        # Mezzanine railing — short vertical walls sitting ON the ring.
+        {"x":  18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.8},
+        {"x": -18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.8},
+        {"x":  0, "z":  18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.8},
+        {"x":  0, "z": -18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.8},
+        # Ceiling coffer — a big flat plane at the top so looking up
+        # reads as an indoor space, not open sky.
+        {"x": 0, "z": 0, "w": 60, "h": 0.6, "d": 60, "y_base": 14},
+        # Second-story doorway lintels — three "hotel room door" facades
+        # along the west mezzanine wall (visible from ground floor when
+        # looking up + east).
+        {"x": -17,  "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x": -17,  "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x": -17,  "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        # Same on the east mezzanine.
+        {"x":  17,  "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x":  17,  "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x":  17,  "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (35, 35), (-35, 35), (35, -35), (-35, -35),
+        (0, 38), (0, -38), (38, 0), (-38, 0),
+        (26, 20), (-26, 20), (26, -20), (-26, -20),
+    ],
+    "healthpacks": [
+        (0.0, 8.0), (0.0, -8.0),
+        (14.0, 0.0), (-14.0, 0.0),
+        (20.0, 20.0), (-20.0, -20.0),
+        (20.0, -20.0), (-20.0, 20.0),
+    ],
+}
+
+MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F]
+
 def random_map() -> dict:
     """Pick a random map for a new match. All maps are equally likely."""
     return random.choice(MAPS)
@@ -3007,6 +3103,10 @@ def _spawn_point_safe(arena: dict, x: float, z: float) -> bool:
     if z < -s + PLAYER_RADIUS or z > s - PLAYER_RADIUS:
         return False
     for ob in arena.get("obstacles", []):
+        # Skip floating obstacles (`y_base > 0`) — they're mezzanine
+        # geometry, not ground-level cover, so spawning "in" one is fine.
+        if ob.get("y_base", 0) > 0:
+            continue
         hx = ob["w"] / 2 + PLAYER_RADIUS
         hz = ob["d"] / 2 + PLAYER_RADIUS
         if abs(x - ob["x"]) < hx and abs(z - ob["z"]) < hz:
@@ -3863,6 +3963,10 @@ class GameRoom:
         if z < -s + PLAYER_RADIUS or z > s - PLAYER_RADIUS:
             return True
         for ob in self.arena["obstacles"]:
+            # Floating obstacles (mezzanine ceiling on HOTEL) don't
+            # block ground movement — players walk under them.
+            if ob.get("y_base", 0) > 0:
+                continue
             hx, hz = ob["w"] / 2 + PLAYER_RADIUS, ob["d"] / 2 + PLAYER_RADIUS
             if abs(x - ob["x"]) < hx and abs(z - ob["z"]) < hz:
                 return True

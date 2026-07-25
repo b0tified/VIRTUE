@@ -12,9 +12,13 @@ import server  # noqa: E402
 
 
 def _point_in_any_obstacle(arena, x, z, radius=None):
-    """Mirror server._spawn_point_safe's obstacle check for use in tests."""
+    """Mirror server._spawn_point_safe's obstacle check for use in tests.
+    Skips floating obstacles (`y_base > 0` — e.g. mezzanine geometry on
+    the HOTEL map) since those don't block ground-level movement."""
     r = server.PLAYER_RADIUS if radius is None else radius
     for ob in arena.get("obstacles", []):
+        if ob.get("y_base", 0) > 0:
+            continue
         hx = ob["w"] / 2 + r
         hz = ob["d"] / 2 + r
         if abs(x - ob["x"]) < hx and abs(z - ob["z"]) < hz:
