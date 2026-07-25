@@ -1076,3 +1076,20 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Practice + downtown (regression) → outdoor city still fully visible (roads, buildings, sign).
   - Frontend success: 100%. No regressions.
 
+
+---
+
+### 2026-02-24 — Hotel movement bug fixed + interior wallpaper look
+- **User reported**: "you cant move on the hotel map and make the outer walls look like the walls inside a building"
+- **Bug 1 — Movement frozen (P0)**:
+  - **Root cause**: `engine.js._collides()` iterated ALL obstacles including floating ones. The new hotel ceiling (100×100 at `y_base=14`) had an XZ AABB covering the *entire* arena, so any position `(x, z)` on the map was inside the ceiling's XZ bounds → player always "collided" → couldn't move an inch after spawn.
+  - **Fix**: Added `if ((ob.y_base || 0) > 0) continue;` to `_collides()`, matching the same skip already present in server `collides_obstacle` and localSim `collidesAABB`.
+- **Bug 2 — Walls looked exterior (visual)**:
+  - Added `_makeHotelWallTexture(ob)` — procedural canvas texture with warm cream wallpaper base, faint vertical stripes, burgundy damask diamond motif, dark walnut wainscoting along the bottom third, brass chair-rail moulding, brass cornice at the top, and a comic-book black border. Repeats horizontally for long walls.
+  - In `_buildBuilding`, when `_currentMapId === "hotel"`, tall obstacles (h≥2.5, y_base=0) now use `_makeHotelWallTexture` instead of `_makeBuildingFaceTexture`, and get a brass "crown" cap instead of a dark asphalt roof cap. Additive blending disabled for hotel walls so wallpaper doesn't wash out.
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_20.json`):
+  - Movement confirmed: player took AI damage (HP 100→56) after W/A/S/D — impossible if still under spawn protection.
+  - Interior wallpaper visuals confirmed present on hotel; no exterior window facades on hotel walls.
+  - Downtown regression clean: movement works and buildings still show their lit-window facades.
+- **Known minor cosmetic (not reported, non-blocker)**: The 100×100 ceiling sits at y=14 while perimeter walls are h=8, so a strip of sky is visible between wall tops and the ceiling from some angles. Fix would be raising perimeter walls to h=14. Deferred as a polish item.
+
