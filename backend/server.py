@@ -2211,6 +2211,11 @@ async def profile_history(user: dict = Depends(get_current_user), limit: int = 1
             # roster snapshot (the UI hides the click affordance in that case).
             "match_id": m.get("match_id"),
             "players": list(m.get("players") or []),
+            # Per-player kill replays + arena size for the top-down
+            # inline expandable killcam in the match history UI.
+            "kill_events": list(m.get("kill_events") or []),
+            "arena_size": int(m.get("arena_size") or 40),
+            "arena_map_id": m.get("arena_map_id"),
         }
         # TDM rows carry the team scoreline + outcome so the UI can
         # render "WIN 12 — 10" instead of an FFA placement card.
@@ -3315,6 +3320,13 @@ class GameRoom:
     def __init__(self, is_ranked: bool = False, match_duration: float = 300.0, game_mode: str = "ffa"):
         self.players: Dict[str, Player] = {}
         self.events: List[dict] = []
+        # Kill log — every kill during the match with shooter/victim
+        # positions + yaw + weapon, keyed to the match timeline for
+        # the "click a match, replay each kill" feature. Reset in
+        # `start_match`. Capped at 400 entries per match so an
+        # extreme session can't balloon memory (well above the ~120
+        # kill limit of a 5-minute TDM).
+        self.kill_log: List[dict] = []
         self.lock = asyncio.Lock()
         self._last_tick = time.time()
         self.is_ranked = is_ranked
@@ -4062,10 +4074,43 @@ class GameRoom:
                     "melee": True,
                     "weapon": "katana",
                 })
+                self._record_kill_snapshot(attacker, best, "katana", headshot=False, melee=True)
                 if not attacker.is_bot and attacker.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(attacker.user_id)}, {"$inc": {"stats.kills": 1}}))
                 if not best.is_bot and best.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(best.user_id)}, {"$inc": {"stats.deaths": 1}}))
+
+
+    def _record_kill_snapshot(self, shooter: Player, victim: Player, weapon: str, headshot: bool, melee: bool = False) -> None:
+        """Append a compact kill record to `self.kill_log` for later
+        replay. Called from every kill path (shoot / laser / melee).
+        Bots' user_ids stay None so the frontend can skip profile
+        links; usernames are always captured. Position is snapped to
+        1 decimal to keep the persisted payload small."""
+        try:
+            t_ms = int((time.time() - self.match_start) * 1000)
+        except Exception:
+            t_ms = 0
+        self.kill_log.append({
+            "t_ms": max(0, t_ms),
+            "shooter_id": shooter.user_id if not shooter.is_bot else None,
+            "shooter_name": shooter.username,
+            "shooter_is_bot": bool(shooter.is_bot),
+            "shooter_x": round(shooter.x, 1),
+            "shooter_z": round(shooter.z, 1),
+            "shooter_yaw": round(shooter.yaw, 3),
+            "victim_id": victim.user_id if not victim.is_bot else None,
+            "victim_name": victim.username,
+            "victim_is_bot": bool(victim.is_bot),
+            "victim_x": round(victim.x, 1),
+            "victim_z": round(victim.z, 1),
+            "weapon": weapon,
+            "headshot": bool(headshot),
+            "melee": bool(melee),
+        })
+        # Safety cap so a long TDM can't balloon memory.
+        if len(self.kill_log) > 400:
+            self.kill_log = self.kill_log[-400:]
 
     def _award_kill_heal(self, killer: Player, *, headshot: bool = False) -> None:
         """Restore HP to the killer (capped at max_hp). Emits a `kill_heal`
@@ -4226,6 +4271,7 @@ class GameRoom:
                     "weapon": getattr(shooter, "weapon", "ak47"),
                     "headshot": head_hit,
                 })
+                self._record_kill_snapshot(shooter, hit, getattr(shooter, "weapon", "ak47"), headshot=head_hit)
                 if not shooter.is_bot and shooter.user_id:
                     _bg(db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}}))
                 if not hit.is_bot and hit.user_id:
@@ -4371,6 +4417,7 @@ class GameRoom:
                 "weapon": "laser",
                 "headshot": body_part == "head",
             })
+            self._record_kill_snapshot(shooter, hit, "laser", headshot=(body_part == "head"))
             if not shooter.is_bot and shooter.user_id:
                 _bg(db.users.update_one({"_id": ObjectId(shooter.user_id)}, {"$inc": {"stats.kills": 1}}))
             if not hit.is_bot and hit.user_id:
@@ -4415,6 +4462,9 @@ class GameRoom:
         self.match_started = True
         self.countdown_until = None
         self.match_start = time.time()
+        # New match — flush any stale kill snapshots from a prior match
+        # in the same room (persistent rooms hold multiple matches).
+        self.kill_log = []
         await self.broadcast({"type": "match_go", "forced": bool(forced)})
 
     async def handle_message(self, player: Player, msg: dict):
@@ -5540,6 +5590,24 @@ class GameRoom:
                         # real player linkable to their public profile.
                         "match_id": match_id,
                         "players": list(shared_roster),
+                        # Per-player kill replays: every kill event
+                        # where this player was either shooter OR
+                        # victim. Bounded by _record_kill_snapshot's
+                        # 400-entry cap and typical <40 kills/deaths
+                        # per player per match.
+                        "kill_events": [
+                            k for k in self.kill_log
+                            if (
+                                (not k.get("shooter_is_bot") and k.get("shooter_id") == pl.user_id)
+                                or (not k.get("victim_is_bot") and k.get("victim_id") == pl.user_id)
+                            )
+                        ],
+                        # Arena bounds so the client can draw a
+                        # correctly-scaled top-down killcam. Just
+                        # store size; obstacles are re-derivable from
+                        # the map id if we ever need them.
+                        "arena_size": int(self.arena.get("size", 40)) if getattr(self, "arena", None) else 40,
+                        "arena_map_id": (getattr(self, "arena", None) or {}).get("map_id"),
                     }
                     # TDM extras: persist the player's team color, the
                     # final 4v4 scoreline, and a precomputed `team_won`
@@ -5581,6 +5649,26 @@ class GameRoom:
                         pass
                 if docs:
                     await db.match_history.insert_many(docs)
+                    # Retention cap: keep only the last 20 matches per
+                    # user (per-user request). For each user we just
+                    # inserted a row for, find their 21st-newest and
+                    # delete anything older. Cheap because the users we
+                    # touched here is small (real players in this match).
+                    HISTORY_KEEP = 20
+                    for pl in real_players:
+                        try:
+                            skip_cursor = db.match_history.find(
+                                {"user_id": pl.user_id},
+                                {"_id": 1, "ended_at": 1},
+                            ).sort("ended_at", -1).skip(HISTORY_KEEP).limit(1)
+                            cutoff = await skip_cursor.to_list(length=1)
+                            if cutoff:
+                                await db.match_history.delete_many({
+                                    "user_id": pl.user_id,
+                                    "ended_at": {"$lt": cutoff[0]["ended_at"]},
+                                })
+                        except Exception as _e:
+                            logger.warning("history retention prune failed for %s: %s", pl.user_id, _e)
                 # Issue mech-skin grants outside the doc loop so failures
                 # don't roll back the match record.
                 for uid in first_match_grants:

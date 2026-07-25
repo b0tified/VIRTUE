@@ -596,14 +596,21 @@ function HistoryRow({ idx, m, onOpen }) {
   // the players[] snapshot landed just render as static rows so a click
   // doesn't pop an empty modal.
   const clickable = Array.isArray(m.players) && m.players.length > 0;
+  // Per-row expand/collapse for the inline killcam replay panel. When
+  // this row has `kill_events` we show a ▼ chevron on the far right;
+  // clicking it toggles the panel without opening the scoreboard modal.
+  const [expanded, setExpanded] = useState(false);
+  const killEvents = Array.isArray(m.kill_events) ? m.kill_events : [];
+  const hasReplays = killEvents.length > 0;
   return (
-    <div
-      className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
-      onClick={clickable ? () => onOpen?.(m) : undefined}
-      role={clickable ? "button" : undefined}
-      title={clickable ? "Click to view match scoreboard" : undefined}
-      data-testid={`profile-history-row-${idx}`}
-    >
+    <>
+      <div
+        className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
+        onClick={clickable ? () => onOpen?.(m) : undefined}
+        role={clickable ? "button" : undefined}
+        title={clickable ? "Click to view match scoreboard" : undefined}
+        data-testid={`profile-history-row-${idx}`}
+      >
       <div className="col-span-6 md:col-span-2 flex items-center gap-2">
         <span
           className="inline-flex items-center gap-1 border-pow-thin px-2 py-1 font-anton uppercase text-xs"
@@ -659,21 +666,159 @@ function HistoryRow({ idx, m, onOpen }) {
           <span className="ml-1 text-xs font-anton text-[#9B59B6]">2x</span>
         )}
       </div>
-      <div className="col-span-12 md:col-span-2 mt-1 md:mt-0 md:text-right">
+      <div className="col-span-12 md:col-span-2 mt-1 md:mt-0 md:text-right flex items-center gap-2 justify-start md:justify-end">
         <span
           className="inline-block font-anton uppercase text-xs px-2 py-1"
           style={{ background: rankColor, color: m.rank_name_after === "GOONMASTER" ? "#FFD700" : "#0A0A0A" }}
         >
           {m.rank_name_after || "BRONZE"}
         </span>
+        {hasReplays && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+            className="btn-pow bg-black text-[#FFD700] [&]:px-2 [&]:py-1 [&]:text-[10px] font-anton uppercase tracking-widest"
+            data-testid={`history-replay-toggle-${idx}`}
+            title={expanded ? "Hide killcam" : "Show killcam replays"}
+          >
+            REPLAYS {expanded ? "▲" : "▼"}
+          </button>
+        )}
       </div>
     </div>
+    {expanded && hasReplays && (
+      <KillReplayPanel
+        idx={idx}
+        killEvents={killEvents}
+        arenaSize={m.arena_size || 40}
+        myUsername={m.username_hint}
+        players={m.players || []}
+      />
+    )}
+  </>
   );
 }
 
 function rankIdxFromName(name) {
   const arr = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
   return arr.indexOf((name || "BRONZE").toUpperCase());
+}
+
+/* Inline killcam panel — rendered under a HistoryRow when the user
+   expands it via the ▼ REPLAYS button. Shows every kill involving the
+   viewer (as shooter OR victim) with a small top-down diorama:
+     - Arena outlined as a square (scaled to the row width).
+     - Shooter marker (red) with a directional cone pointing along
+       their yaw at the moment of the kill.
+     - Victim marker (blue).
+     - A dashed line between them representing the shot trajectory.
+     - Metadata: timestamp within the match, weapon icon, headshot
+       flag, killer/victim names.
+   No playback controls (per user spec: "just view timeline / kill
+   list") — each kill is a static snapshot. */
+function KillReplayPanel({ idx, killEvents, arenaSize }) {
+  const events = [...killEvents].sort((a, b) => (a.t_ms || 0) - (b.t_ms || 0));
+  return (
+    <div
+      className="col-span-12 border-t-2 border-black bg-white px-4 py-3"
+      data-testid={`history-replay-panel-${idx}`}
+    >
+      <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-2">
+        Kill replays · {events.length} event{events.length === 1 ? "" : "s"}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {events.map((k, i) => (
+          <KillReplayCard key={i} k={k} arenaSize={arenaSize} idx={idx} eventIdx={i} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* One kill entry — mini top-down SVG diorama + metadata line. */
+function KillReplayCard({ k, arenaSize, idx, eventIdx }) {
+  const size = Math.max(20, arenaSize);
+  // Map world (x, z) in [-size, size] to SVG (0, 120).
+  const toSvg = (x, z) => [
+    ((x + size) / (2 * size)) * 120,
+    ((z + size) / (2 * size)) * 120,
+  ];
+  const [sx, sz] = toSvg(k.shooter_x, k.shooter_z);
+  const [vx, vz] = toSvg(k.victim_x, k.victim_z);
+  // Shooter facing cone — 20° half-angle indicator so the viewer can
+  // eyeball whether the shot came from behind or in front.
+  const coneLen = 22;
+  const yaw = k.shooter_yaw || 0;
+  const cxA = sx + Math.sin(yaw + 0.35) * coneLen;
+  const czA = sz - Math.cos(yaw + 0.35) * coneLen;
+  const cxB = sx + Math.sin(yaw - 0.35) * coneLen;
+  const czB = sz - Math.cos(yaw - 0.35) * coneLen;
+  const cxT = sx + Math.sin(yaw) * coneLen;
+  const czT = sz - Math.cos(yaw) * coneLen;
+
+  const mm = Math.max(0, Math.floor((k.t_ms || 0) / 60000));
+  const ss = String(Math.floor(((k.t_ms || 0) % 60000) / 1000)).padStart(2, "0");
+  const timeLbl = `${mm}:${ss}`;
+  const weaponLbl = k.weapon === "sniper" ? "SNIPER"
+    : k.weapon === "laser" ? "LASER"
+    : k.weapon === "katana" ? "KATANA"
+    : "AK-47";
+  const weaponColor = k.weapon === "sniper" ? "#9B59B6"
+    : k.weapon === "laser" ? "#0055FF"
+    : k.weapon === "katana" ? "#E62429"
+    : "#0A0A0A";
+
+  return (
+    <div
+      className="border-pow-thin bg-[#F4F4F5] p-2 flex gap-3 items-stretch"
+      data-testid={`history-replay-card-${idx}-${eventIdx}`}
+    >
+      <svg viewBox="0 0 120 120" width="96" height="96" className="border-2 border-black bg-[#E8E8EA] shrink-0">
+        {/* Arena outline is the SVG viewBox itself. */}
+        {/* Shot line (dashed). */}
+        <line x1={sx} y1={sz} x2={vx} y2={vz} stroke="#000" strokeWidth="1.5" strokeDasharray="3 2" />
+        {/* Shooter cone. */}
+        <polygon
+          points={`${sx},${sz} ${cxA},${czA} ${cxT},${czT} ${cxB},${czB}`}
+          fill="#E62429" fillOpacity="0.28"
+          stroke="#E62429" strokeWidth="1"
+        />
+        {/* Victim marker. */}
+        <circle cx={vx} cy={vz} r="5" fill="#0055FF" stroke="#000" strokeWidth="1.5" />
+        {/* Shooter marker on top so the cone origin is visible. */}
+        <circle cx={sx} cy={sz} r="5" fill="#E62429" stroke="#000" strokeWidth="1.5" />
+        {k.headshot && (
+          <text x={vx} y={vz - 8} textAnchor="middle" fontSize="9" fontWeight="700" fill="#E62429">HS</text>
+        )}
+      </svg>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-anton uppercase text-[10px] tracking-widest bg-black text-white px-1.5 py-0.5">
+            {timeLbl}
+          </span>
+          <span
+            className="font-anton uppercase text-[10px] tracking-widest text-white px-1.5 py-0.5"
+            style={{ background: weaponColor }}
+          >
+            {weaponLbl}
+          </span>
+          {k.headshot && (
+            <span className="font-anton uppercase text-[10px] tracking-widest bg-[#E62429] text-white px-1.5 py-0.5">
+              HEADSHOT
+            </span>
+          )}
+        </div>
+        <div className="font-anton uppercase text-sm truncate leading-tight">
+          <span className="text-[#E62429]">{k.shooter_name || "—"}</span>
+        </div>
+        <div className="font-anton uppercase text-[10px] tracking-widest text-neutral-500 leading-tight">
+          KILLED
+        </div>
+        <div className="font-anton uppercase text-sm truncate leading-tight">
+          <span className="text-[#0055FF]">{k.victim_name || "—"}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Lightweight section header — small comic-style ribbon that breaks
