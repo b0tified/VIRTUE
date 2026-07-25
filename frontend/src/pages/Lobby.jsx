@@ -13,6 +13,7 @@ import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
+import LobbyBackgroundCastle from "@/components/LobbyBackgroundCastle";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import RankProgressBar from "@/components/RankProgressBar";
@@ -143,10 +144,13 @@ export default function Lobby() {
   // Season 3+ ships the snowy backdrop to everyone; admins get it
   // early as a preview.
   const isAdmin = user?.role === "admin";
-  const autoVariant =
-    seasonNumber !== null && seasonNumber >= 3 ? "snow" :
-    seasonNumber !== null && seasonNumber >= 2 ? "meteor" :
-    "default";
+  // Auto-picked lobby variant. We used to swap between default / meteor
+  // / snow based on the current season, but the lobby has been re-themed
+  // to the Royal Guard castle backdrop as the new baseline. Meteor and
+  // snow remain selectable via settings for players who unlocked them
+  // in past seasons, but "auto" now always resolves to the castle
+  // (rendered by the `default` branch below).
+  const autoVariant = "default";
   const [pickedVariant, setPickedVariant] = useState(() => settingsStore.get().lobbyBackgroundVariant || "auto");
   useEffect(() => {
     const onChange = () => setPickedVariant(settingsStore.get().lobbyBackgroundVariant || "auto");
@@ -308,13 +312,11 @@ export default function Lobby() {
   // fall back to the first interaction listener.
   useEffect(() => {
     let started = false;
-    // The lobby music variant follows the same effective-variant gate
-    // as the lobby background so the audio/visual pairing always
-    // matches (default → default loop, meteor → dark remix, snow →
-    // chime/bell remix of the default). Recomputed on every variant
-    // change so a season rollover or a setting toggle hot-swaps the
-    // loop in place.
-    const variant = effectiveVariant;
+    // User asked to "go back to original lobby music" — pin the loop
+    // to the Season 1 default variant regardless of season / picker
+    // state. The meteor and snow remixes remain in audio.js and can
+    // be re-enabled later by threading a variant back in here.
+    const variant = "default";
     const tryStart = () => {
       if (started) return;
       audioBus.startLobbyMusic(variant);
@@ -343,7 +345,7 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
-  }, [effectiveVariant]);
+  }, []);
 
   // Refresh the user payload whenever the Lobby mounts. After completing
   // a ranked match (where rank_points / rank_tier / level / coins can all
@@ -533,8 +535,15 @@ export default function Lobby() {
         </>
       ) : (
         <>
-          <span className="hidden" data-testid="lobby-bg-default" data-active="true" />
-          <LobbyBackground imageUrl={LOBBY_BG} />
+          {/* Castle / Royal Guard themed lobby backdrop. Replaces the
+              previous "default" meteor-city painting so the lobby vibe
+              matches the current Royal Guard map identity. */}
+          <span className="hidden" data-testid="lobby-bg-castle" data-active="true" />
+          <LobbyBackgroundCastle animated={animatedBg} />
+          {/* Retain LobbyBackground import path for future use — the
+              painted default background is available if we ever want to
+              restore it (see git history for original render path). */}
+          {false && <LobbyBackground imageUrl={LOBBY_BG} />}
         </>
       )}
 

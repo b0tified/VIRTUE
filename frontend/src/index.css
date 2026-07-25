@@ -1498,3 +1498,171 @@ html.virtue-no-ui-blur .hud-panel {
   .banner-title-anim-goonmaster::after { display: none !important; }
 }
 
+
+
+/* =============================================================
+   Castle lobby background — Royal Guard themed
+   --------------------------------------------------------------
+   Palette: deep indigo night sky → warm violet horizon, with a
+   pale gold moon, crenellated stone silhouettes, burgundy pennant
+   banners, flickering torch flames, and low purple ground fog.
+   ============================================================= */
+.lobby-castle-sky {
+  background:
+    linear-gradient(180deg,
+      #0a0a2e 0%,
+      #16113d 22%,
+      #2a1a55 45%,
+      #4a2260 68%,
+      #6a2a55 85%,
+      #7a2e4a 100%);
+}
+.lobby-castle-pulse {
+  animation: lobby-castle-sky-pulse 12s ease-in-out infinite;
+}
+@keyframes lobby-castle-sky-pulse {
+  0%, 100% { filter: brightness(1) saturate(1); }
+  50%      { filter: brightness(1.08) saturate(1.08); }
+}
+
+/* Twinkling pinprick star. */
+.lobby-castle-star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: #fff;
+  border-radius: 50%;
+  opacity: 0.6;
+  filter: drop-shadow(0 0 2px rgba(255, 245, 200, 0.7));
+  animation: lobby-castle-twinkle 3.4s ease-in-out infinite;
+}
+.lobby-castle-star.star-big {
+  width: 3px;
+  height: 3px;
+  filter: drop-shadow(0 0 4px rgba(255, 240, 180, 0.9));
+}
+@keyframes lobby-castle-twinkle {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50%      { opacity: 1.0;  transform: scale(1.4); }
+}
+
+/* Pale gold moon disc — sits upper-right, slowly breathes. */
+.lobby-castle-moon {
+  background:
+    radial-gradient(circle at 78% 22%,
+      #fff7d8 0%,
+      #ffe9a6 22%,
+      rgba(255, 220, 140, 0.4) 30%,
+      transparent 32%);
+  animation: lobby-castle-moon-breathe 8s ease-in-out infinite;
+}
+.lobby-castle-moon-halo {
+  background:
+    radial-gradient(circle at 78% 22%,
+      rgba(255, 226, 160, 0.28) 0%,
+      rgba(255, 200, 120, 0.14) 12%,
+      transparent 28%);
+  animation: lobby-castle-moon-halo-breathe 8s ease-in-out infinite;
+}
+@keyframes lobby-castle-moon-breathe {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.1); }
+}
+@keyframes lobby-castle-moon-halo-breathe {
+  0%, 100% { opacity: 0.75; }
+  50%      { opacity: 1.0; }
+}
+
+/* Distant castle silhouette (back parallax). Small, dim, low.
+   Uses a repeating clip-path effect via layered gradients to
+   simulate the crenellation without any images. */
+.lobby-castle-silhouette-back {
+  background:
+    /* Curtain wall base */
+    linear-gradient(180deg, transparent 76%, #1a0a24 76%, #1a0a24 100%),
+    /* Distant towers (three thin bumps) */
+    radial-gradient(ellipse at 12% 78%, #1a0a24 3%, transparent 3.5%),
+    radial-gradient(ellipse at 30% 76%, #1a0a24 2.5%, transparent 3%),
+    radial-gradient(ellipse at 68% 77%, #1a0a24 3%, transparent 3.5%),
+    radial-gradient(ellipse at 86% 78%, #1a0a24 2.8%, transparent 3.2%);
+  opacity: 0.85;
+}
+
+/* Foreground castle silhouette (front parallax). Uses SVG data URL
+   so we can bake proper crenellated battlements + towers with
+   arrow-slit windows without shipping an asset file. */
+.lobby-castle-silhouette-front {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 500' preserveAspectRatio='none'><path fill='%23100822' d='M0,500 L0,320 L60,320 L60,250 L120,250 L120,180 L180,180 L180,250 L240,250 L240,290 L340,290 L340,240 L400,240 L400,180 L460,180 L460,120 L540,120 L540,180 L600,180 L600,240 L660,240 L660,290 L760,290 L760,250 L820,250 L820,180 L900,180 L900,120 L980,120 L980,180 L1060,180 L1060,250 L1120,250 L1120,290 L1220,290 L1220,240 L1280,240 L1280,180 L1340,180 L1340,250 L1400,250 L1400,320 L1460,320 L1460,290 L1540,290 L1540,320 L1600,320 L1600,500 Z'/><!-- crenellations: notched tops on each tower/section --><g fill='%23100822'><rect x='60' y='240' width='14' height='12'/><rect x='90' y='240' width='14' height='12'/><rect x='120' y='170' width='14' height='12'/><rect x='150' y='170' width='14' height='12'/><rect x='400' y='170' width='14' height='12'/><rect x='430' y='170' width='14' height='12'/><rect x='460' y='110' width='14' height='12'/><rect x='500' y='110' width='14' height='12'/><rect x='540' y='170' width='14' height='12'/><rect x='570' y='170' width='14' height='12'/><rect x='820' y='170' width='14' height='12'/><rect x='860' y='170' width='14' height='12'/><rect x='900' y='110' width='14' height='12'/><rect x='940' y='110' width='14' height='12'/><rect x='980' y='170' width='14' height='12'/><rect x='1020' y='170' width='14' height='12'/><rect x='1280' y='170' width='14' height='12'/><rect x='1310' y='170' width='14' height='12'/></g><!-- narrow arrow-slit windows glowing warm --><g fill='%23c9a24a'><rect x='150' y='220' width='3' height='16'/><rect x='485' y='150' width='3' height='16'/><rect x='930' y='150' width='3' height='16'/><rect x='1305' y='210' width='3' height='16'/><rect x='690' y='260' width='3' height='16'/><rect x='1090' y='260' width='3' height='16'/></g><!-- main gate (double-door arch, dark) --><path fill='%23050310' d='M760,290 L760,240 A40,40 0 0 1 840,240 L840,290 Z'/><!-- gate frame glow --><path fill='%23c9a24a' opacity='0.55' d='M760,238 A40,40 0 0 1 840,238 L840,242 A40,40 0 0 0 760,242 Z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% auto;
+}
+
+/* Fluttering pennant banners hanging beside the main gate. */
+.lobby-castle-banner {
+  position: absolute;
+  width: 24px;
+  height: 92px;
+  background:
+    /* Burgundy pennant with gold trim */
+    linear-gradient(180deg,
+      #d8b874 0%, #d8b874 6%,
+      #7a1e2b 6%, #7a1e2b 90%,
+      transparent 90%, transparent 100%);
+  /* Cut a V-shape at the bottom for a pennant tail. */
+  clip-path: polygon(0 0, 100% 0, 100% 82%, 50% 100%, 0 82%);
+  transform-origin: 50% 0;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
+  animation: lobby-castle-banner-sway 4.2s ease-in-out infinite;
+}
+.lobby-castle-banner.banner-left {
+  bottom: 20%;
+  left: 44%;
+}
+.lobby-castle-banner.banner-right {
+  bottom: 20%;
+  right: 44%;
+  animation-delay: -1.6s;
+}
+@keyframes lobby-castle-banner-sway {
+  0%, 100% { transform: rotate(-4deg) skewY(-2deg); }
+  50%      { transform: rotate(4deg)  skewY(2deg);  }
+}
+
+/* Torch flame — warm radial halo that flickers on a fast timer to
+   sell the "living fire" feel. Positioned via inline top/bottom/left. */
+.lobby-castle-torch {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  background:
+    radial-gradient(circle,
+      rgba(255, 240, 170, 0.9) 0%,
+      rgba(255, 170, 60, 0.65) 22%,
+      rgba(230, 60, 30, 0.35) 45%,
+      transparent 70%);
+  border-radius: 50%;
+  filter: blur(4px);
+  animation: lobby-castle-torch-flicker 0.6s ease-in-out infinite;
+}
+@keyframes lobby-castle-torch-flicker {
+  0%   { opacity: 0.85; transform: scale(1); }
+  30%  { opacity: 1.0;  transform: scale(1.08); }
+  60%  { opacity: 0.7;  transform: scale(0.94); }
+  100% { opacity: 0.9;  transform: scale(1.02); }
+}
+
+/* Castle-themed drifting fog blobs. */
+.lobby-bg-blob.blob-castle-purple { background: #6a3a8a; animation-duration: 21s; opacity: 0.32; }
+.lobby-bg-blob.blob-castle-gold   { background: #c9a24a; animation-duration: 25s; animation-delay: -6s; opacity: 0.22; }
+.lobby-bg-blob.blob-castle-red    { background: #7a1e2b; animation-duration: 28s; animation-delay: -13s; opacity: 0.30; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby-castle-sky,
+  .lobby-castle-pulse,
+  .lobby-castle-star,
+  .lobby-castle-moon,
+  .lobby-castle-moon-halo,
+  .lobby-castle-banner,
+  .lobby-castle-torch { animation: none !important; }
+}

@@ -1093,3 +1093,23 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Downtown regression clean: movement works and buildings still show their lit-window facades.
 - **Known minor cosmetic (not reported, non-blocker)**: The 100×100 ceiling sits at y=14 while perimeter walls are h=8, so a strip of sky is visible between wall tops and the ceiling from some angles. Fix would be raising perimeter walls to h=14. Deferred as a polish item.
 
+
+---
+
+### 2026-02-24 — Castle lobby backdrop + reverted to original lobby music
+- **User request**: "change the lobby background to a castle theme and go back to original lobby music"
+- **New `LobbyBackgroundCastle` component** (`/app/frontend/src/components/LobbyBackgroundCastle.jsx`) — Royal Guard themed:
+  - Deep indigo → violet night-sky gradient with a slow torchlight pulse.
+  - 22 hand-placed twinkling stars (mix of small + big) across the top third.
+  - Pale gold moon disc + warm halo on the upper right.
+  - Two parallax layers of castle silhouette (back = distant towers via layered radial gradients; front = inline SVG with proper crenellated battlements, arrow-slit windows glowing warm gold, and a central gate with a gold-lit arch).
+  - Two burgundy pennant banners flanking the gate, swaying on a 4.2s ease loop.
+  - Four flickering torch flames (radial gradient halos, 0.6s flicker keyframes).
+  - Floating comic words: "HONOR!" / "GUARD!" / "VALOR!" / "REIGN!" / "KNIGHTS!".
+  - Low ground fog blobs (purple / gold / burgundy).
+  - Respects `prefers-reduced-motion` — calm subset renders sky + moon + silhouette only.
+- **All CSS** appended to `/app/frontend/src/index.css` under a `lobby-castle-*` prefix so it doesn't collide with `lobby-meteor-*` / `lobby-snow-*` themes.
+- **Lobby.jsx routing** — `autoVariant` now always resolves to `"default"` (no more season-based auto-swap to meteor/snow). The `default` branch in the JSX renders `LobbyBackgroundCastle`. Meteor/snow variants remain selectable via the settings picker for players who explicitly want them.
+- **Music revert** — `startLobbyMusic` is now pinned to `"default"` (Season 1's `Am-F-C-G-Am-F-G-E` loop) regardless of variant picker or season. The meteor + snow remixes still exist in `audio.js` for future re-enablement.
+- **Verified** via smoke screenshot: `data-testid="lobby-bg-castle"` is present, `lobby-bg-snow` absent; castle silhouette + moon + banners + torches all rendered correctly. Music change is a single-line variant swap (no runtime risk).
+
