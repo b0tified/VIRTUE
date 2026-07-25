@@ -263,7 +263,71 @@ const MAP_E = {
   ],
 };
 
-const MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E];
+const MAP_F = {
+  map_id: "hotel",
+  name: "GRAND HOTEL",
+  size: 50,
+  obstacles: [
+    // ---- GROUND FLOOR ---- (mirrors server MAP_F so LocalSim bot AI +
+    // client raycasts match the visuals rendered by engine.js).
+    { x: 0,   z: -18, w: 22, h: 1.2, d: 2.0 },       // Reception desk
+    { x: 11,  z: -14, w: 2.0, h: 1.2, d: 6.0 },
+    { x: -18, z:  18, w: 6.0, h: 1.1, d: 2.0 },      // Bell-desk
+    // Central marble columns (support the mezzanine visually).
+    { x:  12, z:  12, w: 2.5, h: 8, d: 2.5 },
+    { x: -12, z:  12, w: 2.5, h: 8, d: 2.5 },
+    { x:  12, z: -12, w: 2.5, h: 8, d: 2.5 },
+    { x: -12, z: -12, w: 2.5, h: 8, d: 2.5 },
+    { x: 0, z: 0, w: 4.0, h: 1.5, d: 4.0 },          // Lobby fountain
+    // Elevator bank
+    { x: 30, z: -6, w: 2.0, h: 6, d: 4.0 },
+    { x: 30, z:  6, w: 2.0, h: 6, d: 4.0 },
+    // Staircase
+    { x: -30, z:  8, w: 2.0, h: 3, d: 6.0 },
+    { x: -30, z: -8, w: 2.0, h: 4, d: 6.0 },
+    // Lounge seating
+    { x:  6, z:  22, w: 3.0, h: 1.0, d: 2.0 },
+    { x: -6, z:  22, w: 3.0, h: 1.0, d: 2.0 },
+    { x:  6, z: -24, w: 3.0, h: 1.0, d: 2.0 },
+    { x: -6, z: -24, w: 3.0, h: 1.0, d: 2.0 },
+    // Corridor walls
+    { x: -22, z:  0,  w: 2.0, h: 4, d: 10.0 },
+    { x: -22, z: -22, w: 2.0, h: 4, d: 6.0 },
+    { x: -34, z:  0,  w: 2.0, h: 4, d: 10.0 },
+    // Grand piano
+    { x:  0, z:  30, w: 3.5, h: 1.4, d: 2.0 },
+    // Luggage carts
+    { x:   8, z:   4, w: 1.6, h: 1.4, d: 1.6 },
+    { x:  -8, z:  -4, w: 1.6, h: 1.4, d: 1.6 },
+    { x:  16, z:  -3, w: 1.6, h: 1.4, d: 1.6 },
+    { x: -16, z:   3, w: 1.6, h: 1.4, d: 1.6 },
+    // ---- SECOND STORY (visual only — y_base > 0, engine skips ground
+    // collision) so bot AI won't get stuck on floating cover.
+    { x:  20, z: 0,   w: 3, h: 0.8, d: 26, y_base: 8 },
+    { x: -20, z: 0,   w: 3, h: 0.8, d: 26, y_base: 8 },
+    { x:   0, z:  20, w: 26, h: 0.8, d: 3, y_base: 8 },
+    { x:   0, z: -20, w: 26, h: 0.8, d: 3, y_base: 8 },
+    { x:  18.5, z:  0,  w: 0.4, h: 1.6, d: 26, y_base: 8.8 },
+    { x: -18.5, z:  0,  w: 0.4, h: 1.6, d: 26, y_base: 8.8 },
+    { x:  0, z:  18.5, w: 26, h: 1.6, d: 0.4, y_base: 8.8 },
+    { x:  0, z: -18.5, w: 26, h: 1.6, d: 0.4, y_base: 8.8 },
+    { x: 0, z: 0, w: 60, h: 0.6, d: 60, y_base: 14 },
+    { x: -17, z:  10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
+    { x: -17, z:   0, w: 2, h: 3, d: 0.4, y_base: 8.8 },
+    { x: -17, z: -10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
+    { x:  17, z:  10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
+    { x:  17, z:   0, w: 2, h: 3, d: 0.4, y_base: 8.8 },
+    { x:  17, z: -10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
+    ..._PERIMETER,
+  ],
+  spawn_points: [
+    [35, 35], [-35, 35], [35, -35], [-35, -35],
+    [0, 38], [0, -38], [38, 0], [-38, 0],
+    [26, 20], [-26, 20], [26, -20], [-26, -20],
+  ],
+};
+
+const MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F];
 
 // Active arena for this LocalSim run — re-rolled on each instance below.
 let ARENA = MAP_A;
@@ -311,6 +375,9 @@ function collidesAABB(x, z, r = PLAYER_RADIUS) {
   if (x < -ARENA.size + r || x > ARENA.size - r) return true;
   if (z < -ARENA.size + r || z > ARENA.size - r) return true;
   for (const ob of ARENA.obstacles) {
+    // Skip floating (mezzanine/ceiling) obstacles — they're visual only
+    // and shouldn't block ground movement. Mirrors server behavior.
+    if ((ob.y_base || 0) > 0) continue;
     const hx = ob.w / 2 + r, hz = ob.d / 2 + r;
     if (Math.abs(x - ob.x) < hx && Math.abs(z - ob.z) < hz) return true;
   }
@@ -320,6 +387,8 @@ function collidesAABB(x, z, r = PLAYER_RADIUS) {
 // 2D segment vs AABB intersection (used for line-of-sight). Returns true if blocked.
 function segBlockedByObstacles(x0, z0, x1, z1) {
   for (const ob of ARENA.obstacles) {
+    // Skip floating obstacles for LOS (bullets/sight travel under the mezzanine).
+    if ((ob.y_base || 0) > 0) continue;
     const minX = ob.x - ob.w / 2, maxX = ob.x + ob.w / 2;
     const minZ = ob.z - ob.d / 2, maxZ = ob.z + ob.d / 2;
     const dx = x1 - x0, dz = z1 - z0;

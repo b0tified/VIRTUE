@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only smoke test of the Practice Map Selector 'hotel' fix. Logged in as admin@shooter.com, opened PRACTICE modal, verified GRAND HOTEL card is present (data-testid=practice-map-card-hotel), selected it, and confirmed START navigates to /play?mode=practice&map=hotel with a rendered canvas and no runtime error. Repeated for OFFLINE VS AI (mode=offline&map=hotel). Smoke check of a non-hotel map (random) also loaded successfully. No page errors, no blank screens.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The 'random' card in practice modal produces /play?mode=practice with no map param (expected behavior since server picks the map). Confirmed still works.",
+    "PracticeMapSelector card text ('N\\nGRAND HOTEL') suggests a leading 'N' label glyph is rendered - visually unclear via text extraction; screenshot looks fine. Non-blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100%"},
+  "test_credentials": "admin@shooter.com / admin123 (worked)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The hotel map selection bug is fixed. All three tested flows (practice+hotel, offline+hotel, practice+random) load the game canvas and show GO! start banner with the hotel arena rendering (buildings visible in-game). No console pageerrors during game load. LocalSim MAP_F entry is being picked correctly by _pickMap('hotel').",
+  "rca of the issue": "Previous root cause (LocalSim MAPS array missing hotel) has been fixed by the main agent. Verified: selecting hotel card in either practice or offline vs AI mode now correctly navigates to /play?mode=<mode>&map=hotel and boots the arena without a blank screen or runtime error."
+}
