@@ -51,13 +51,15 @@ def test_hotel_spawn_points_all_safe():
 def test_ground_collision_ignores_floating_obstacles():
     """A player standing directly under the ceiling plane at (0,0)
     must NOT collide — the ceiling is at y_base=14 and doesn't block
-    ground movement."""
+    ground movement. The center of the lobby is now open (no fountain)
+    so (0,0) itself is walkable."""
     room = server.GameRoom()
     room.arena = _hotel()
-    # Center of arena — under the ceiling. There IS a fountain at (0,0)
-    # (w=4, d=4) so pick a nearby but clear point instead.
-    assert room.collides_obstacle(0, 0), "the center fountain SHOULD collide at ground level"
-    # (5, 5) is between fountain and columns — should be clear.
+    # Center of the lobby — no fountain any more, must be clear.
+    assert not room.collides_obstacle(0, 0), (
+        "the center of the hotel lobby should be OPEN (no fountain)"
+    )
+    # (5, 5) is between the marble columns — should also be clear.
     assert not room.collides_obstacle(5, 5), (
         "(5, 5) is under the mezzanine, not overlapping any ground "
         "obstacle — must NOT collide."

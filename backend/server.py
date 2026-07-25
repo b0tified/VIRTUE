@@ -2767,27 +2767,56 @@ MAP_F = {
     "name": "GRAND HOTEL",
     "size": 50,
     "obstacles": [
-        # ---- GROUND FLOOR ----
+        # ---- INDOOR PERIMETER WALLS ----
+        # Solid continuous walls at ±48 form the hotel's exterior wall
+        # (from the players' interior POV). Fully seals the arena so
+        # there is no "outside" visible — the map reads as a proper
+        # indoor lobby rather than an outdoor city block.
+        {"x": 0,   "z": -48, "w": 96, "h": 8, "d": 2},
+        {"x": 0,   "z":  48, "w": 96, "h": 8, "d": 2},
+        {"x": 48,  "z":  0,  "w": 2,  "h": 8, "d": 96},
+        {"x": -48, "z":  0,  "w": 2,  "h": 8, "d": 96},
+
+        # ---- STRUCTURAL SUPPORT COLUMNS ----
+        # Load-bearing columns that visually replace the exterior
+        # perimeter buildings the other maps use. Corner + mid-wall
+        # supports, spaced along the perimeter, tall (h=8) so they
+        # reach the ceiling and read as structural.
+        {"x":  40, "z":  40, "w": 2, "h": 8, "d": 2},
+        {"x": -40, "z":  40, "w": 2, "h": 8, "d": 2},
+        {"x":  40, "z": -40, "w": 2, "h": 8, "d": 2},
+        {"x": -40, "z": -40, "w": 2, "h": 8, "d": 2},
+        {"x":  40, "z":  14, "w": 2, "h": 8, "d": 2},
+        {"x":  40, "z": -14, "w": 2, "h": 8, "d": 2},
+        {"x": -40, "z":  14, "w": 2, "h": 8, "d": 2},
+        {"x": -40, "z": -14, "w": 2, "h": 8, "d": 2},
+        {"x":  14, "z":  40, "w": 2, "h": 8, "d": 2},
+        {"x": -14, "z":  40, "w": 2, "h": 8, "d": 2},
+        {"x":  14, "z": -40, "w": 2, "h": 8, "d": 2},
+        {"x": -14, "z": -40, "w": 2, "h": 8, "d": 2},
+
+        # ---- GROUND FLOOR COVER ----
         # Reception desk — long L-shape at the north end.
         {"x": 0,   "z": -18, "w": 22, "h": 1.2, "d": 2.0},
         {"x": 11,  "z": -14, "w": 2.0, "h": 1.2, "d": 6.0},
         # Bell-desk / concierge stand — small counter, south end.
         {"x": -18, "z": 18, "w": 6.0, "h": 1.1, "d": 2.0},
         # Central marble columns — 4 square columns supporting the
-        # mezzanine above. They're solid ground-floor cover, and
-        # visually anchor the pillars that appear to hold up the
-        # floating mezzanine ring.
+        # mezzanine above. Solid ground-floor cover that visually
+        # anchors the mezzanine ring.
         {"x":  12, "z":  12, "w": 2.5, "h": 8, "d": 2.5},
         {"x": -12, "z":  12, "w": 2.5, "h": 8, "d": 2.5},
         {"x":  12, "z": -12, "w": 2.5, "h": 8, "d": 2.5},
         {"x": -12, "z": -12, "w": 2.5, "h": 8, "d": 2.5},
-        # Center lobby fountain — round-ish square block, sightline break.
-        {"x": 0, "z": 0, "w": 4.0, "h": 1.5, "d": 4.0},
+        # NOTE: The center of the lobby (0, 0) is now WIDE OPEN — no
+        # fountain. Players can push through the middle for aggressive
+        # plays. The four marble columns still frame the central
+        # atrium so long sightlines are broken by cover.
+
         # Elevator bank — two tall thin rectangles on the east wall.
         {"x": 30, "z": -6, "w": 2.0, "h": 6, "d": 4.0},
         {"x": 30, "z":  6, "w": 2.0, "h": 6, "d": 4.0},
-        # Staircase to mezzanine — two flights, visual only (players
-        # can't reach the second floor; the "stairs" are just cover).
+        # Staircase to mezzanine — two flights, visual only.
         {"x": -30, "z":  8, "w": 2.0, "h": 3, "d": 6.0},
         {"x": -30, "z": -8, "w": 2.0, "h": 4, "d": 6.0},
         # Lounge seating cluster — small platforms grouped in twos.
@@ -2807,9 +2836,23 @@ MAP_F = {
         {"x":  16, "z":  -3, "w": 1.6, "h": 1.4, "d": 1.6},
         {"x": -16, "z":   3, "w": 1.6, "h": 1.4, "d": 1.6},
 
+        # ---- LOBBY TABLES ----
+        # Waist-high café/lounge tables scattered around the lobby.
+        # Short (h=0.9) so they only provide crouch-height cover — the
+        # eye-level sightlines stay open, keeping the arena feeling
+        # spacious. Placed away from spawn points and columns so they
+        # don't accidentally block key routes.
+        {"x":  20, "z":  25, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x": -20, "z":  25, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x":  20, "z": -25, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x": -20, "z": -25, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x":  32, "z":  32, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x": -32, "z":  32, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x":  32, "z": -32, "w": 1.4, "h": 0.9, "d": 1.4},
+        {"x": -32, "z": -32, "w": 1.4, "h": 0.9, "d": 1.4},
+
         # ---- SECOND STORY (floating, `y_base` = 8 = above the columns) ----
-        # Mezzanine ring — 4 walkway segments floating overhead. Each
-        # is `h=0.8` thick — reads as a proper balcony from below.
+        # Mezzanine ring — 4 walkway segments floating overhead.
         {"x":  20, "z": 0,   "w": 3, "h": 0.8, "d": 26, "y_base": 8},
         {"x": -20, "z": 0,   "w": 3, "h": 0.8, "d": 26, "y_base": 8},
         {"x":   0, "z":  20, "w": 26, "h": 0.8, "d": 3, "y_base": 8},
@@ -2819,20 +2862,19 @@ MAP_F = {
         {"x": -18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.8},
         {"x":  0, "z":  18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.8},
         {"x":  0, "z": -18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.8},
-        # Ceiling coffer — a big flat plane at the top so looking up
-        # reads as an indoor space, not open sky.
-        {"x": 0, "z": 0, "w": 60, "h": 0.6, "d": 60, "y_base": 14},
+        # Ceiling coffer — extended to cover the FULL 100x100 arena
+        # (matches the floor size) so no matter where a player looks up
+        # they see ceiling, not sky. Non-collidable (y_base > 0).
+        {"x": 0, "z": 0, "w": 100, "h": 0.6, "d": 100, "y_base": 14},
         # Second-story doorway lintels — three "hotel room door" facades
-        # along the west mezzanine wall (visible from ground floor when
-        # looking up + east).
-        {"x": -17,  "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x": -17,  "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x": -17,  "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        # Same on the east mezzanine.
-        {"x":  17,  "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x":  17,  "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x":  17,  "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-    ] + _PERIMETER_BUILDINGS,
+        # along the west + east mezzanine walls.
+        {"x": -17, "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x": -17, "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x": -17, "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x":  17, "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x":  17, "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        {"x":  17, "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+    ],
     "spawn_points": [
         (35, 35), (-35, 35), (35, -35), (-35, -35),
         (0, 38), (0, -38), (38, 0), (-38, 0),

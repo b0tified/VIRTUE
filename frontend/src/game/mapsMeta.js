@@ -279,7 +279,7 @@ export const MAP_HOTEL = {
   map_id: "hotel",
   name: "GRAND HOTEL",
   size: 50,
-  tagline: "Two-story marble lobby · mezzanine overlook · brass columns.",
+  tagline: "Fully indoor marble lobby · open atrium · mezzanine overlook.",
   palette: {
     bg: "#d8c99a",       // polished marble floor
     border: "#0A0A0A",
@@ -288,7 +288,25 @@ export const MAP_HOTEL = {
     accent: "#d8b874",   // gold-leaf trim
   },
   obstacles: [
-    // Ground-floor obstacles (mirrors server MAP_F for the minimap preview).
+    // Indoor perimeter walls — fully enclosed hotel exterior walls.
+    { x: 0,   z: -48, w: 96, h: 8, d: 2 },
+    { x: 0,   z:  48, w: 96, h: 8, d: 2 },
+    { x: 48,  z:  0,  w: 2,  h: 8, d: 96 },
+    { x: -48, z:  0,  w: 2,  h: 8, d: 96 },
+    // Structural support columns (perimeter supports — no exterior buildings).
+    { x:  40, z:  40, w: 2, h: 8, d: 2 },
+    { x: -40, z:  40, w: 2, h: 8, d: 2 },
+    { x:  40, z: -40, w: 2, h: 8, d: 2 },
+    { x: -40, z: -40, w: 2, h: 8, d: 2 },
+    { x:  40, z:  14, w: 2, h: 8, d: 2 },
+    { x:  40, z: -14, w: 2, h: 8, d: 2 },
+    { x: -40, z:  14, w: 2, h: 8, d: 2 },
+    { x: -40, z: -14, w: 2, h: 8, d: 2 },
+    { x:  14, z:  40, w: 2, h: 8, d: 2 },
+    { x: -14, z:  40, w: 2, h: 8, d: 2 },
+    { x:  14, z: -40, w: 2, h: 8, d: 2 },
+    { x: -14, z: -40, w: 2, h: 8, d: 2 },
+    // Ground-floor cover (mirrors server MAP_F for the minimap preview).
     { x: 0,   z: -18, w: 22, h: 1.2, d: 2.0 },
     { x: 11,  z: -14, w: 2.0, h: 1.2, d: 6.0 },
     { x: -18, z: 18,  w: 6.0, h: 1.1, d: 2.0 },
@@ -296,7 +314,7 @@ export const MAP_HOTEL = {
     { x: -12, z:  12, w: 2.5, h: 8,   d: 2.5 },
     { x:  12, z: -12, w: 2.5, h: 8,   d: 2.5 },
     { x: -12, z: -12, w: 2.5, h: 8,   d: 2.5 },
-    { x: 0,   z: 0,   w: 4.0, h: 1.5, d: 4.0 },
+    // NOTE: center of lobby (0, 0) is intentionally open — no fountain.
     { x: 30,  z: -6,  w: 2.0, h: 6,   d: 4.0 },
     { x: 30,  z:  6,  w: 2.0, h: 6,   d: 4.0 },
     { x: -30, z:  8,  w: 2.0, h: 3,   d: 6.0 },
@@ -313,7 +331,15 @@ export const MAP_HOTEL = {
     { x: -8,  z: -4,  w: 1.6, h: 1.4, d: 1.6 },
     { x:  16, z: -3,  w: 1.6, h: 1.4, d: 1.6 },
     { x: -16, z:  3,  w: 1.6, h: 1.4, d: 1.6 },
-    ..._PERIMETER,
+    // Lobby tables — waist-high crouch cover.
+    { x:  20, z:  25, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -20, z:  25, w: 1.4, h: 0.9, d: 1.4 },
+    { x:  20, z: -25, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -20, z: -25, w: 1.4, h: 0.9, d: 1.4 },
+    { x:  32, z:  32, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -32, z:  32, w: 1.4, h: 0.9, d: 1.4 },
+    { x:  32, z: -32, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -32, z: -32, w: 1.4, h: 0.9, d: 1.4 },
   ],
 };
 

@@ -689,6 +689,12 @@ export class GameEngine {
     // or match_start).
     this._buildingsGroup = new THREE.Group();
     this.scene.add(this._buildingsGroup);
+    // Outdoor city decorations (roads, driveways, curb stripes, fire
+    // hydrants). Grouped so we can hide them wholesale when the map is
+    // an indoor arena (HOTEL) — the marble floor otherwise gets ugly
+    // asphalt strips painted over it.
+    this._cityDecoGroup = new THREE.Group();
+    this.scene.add(this._cityDecoGroup);
     this.obstacles.forEach((ob) => this._buildBuilding(ob));
 
     // Center floating "VIRTUE" sign
@@ -706,7 +712,7 @@ export class GameEngine {
     signTex.colorSpace = THREE.SRGBColorSpace;
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 3), new THREE.MeshBasicMaterial({ map: signTex, transparent: true, side: THREE.DoubleSide }));
     sign.position.set(0, 11, 0);
-    this.scene.add(sign);
+    this._cityDecoGroup.add(sign);
     this._sign = sign;
 
     // Sky dome — multi-stop atmospheric gradient (zenith blue → bright
@@ -830,11 +836,11 @@ export class GameEngine {
     treeSpots.forEach(([x, z]) => {
       const trunk = this._outlined(new THREE.CylinderGeometry(0.18, 0.22, 1.4, 8), 0x5a3722, 1.06);
       trunk.position.set(x, 0.7, z);
-      this.scene.add(trunk);
+      this._cityDecoGroup.add(trunk);
       this._dayDecorations.push(trunk);
       const foliage = this._outlined(new THREE.SphereGeometry(0.85, 10, 8), 0x3aa84a, 1.06);
       foliage.position.set(x, 1.8, z);
-      this.scene.add(foliage);
+      this._cityDecoGroup.add(foliage);
       this._dayDecorations.push(foliage);
     });
 
@@ -843,13 +849,13 @@ export class GameEngine {
     lampSpots.forEach(([x, z]) => {
       const pole = this._outlined(new THREE.CylinderGeometry(0.08, 0.08, 3.8, 8), 0x2a2a2a, 1.08);
       pole.position.set(x, 1.9, z);
-      this.scene.add(pole);
+      this._cityDecoGroup.add(pole);
       const head = this._outlined(new THREE.BoxGeometry(0.4, 0.25, 0.4), 0x0a0a0a, 1.06);
       head.position.set(x, 3.85, z);
-      this.scene.add(head);
+      this._cityDecoGroup.add(head);
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff2a8 }));
       bulb.position.set(x, 3.7, z);
-      this.scene.add(bulb);
+      this._cityDecoGroup.add(bulb);
     });
 
     // Park benches near trees
@@ -868,7 +874,7 @@ export class GameEngine {
       lR.position.set(0.75, 0.2, 0); benchGroup.add(lR);
       benchGroup.position.set(x, 0, z);
       benchGroup.rotation.y = rot;
-      this.scene.add(benchGroup);
+      this._cityDecoGroup.add(benchGroup);
       this._dayDecorations.push(benchGroup);
     });
 
@@ -897,16 +903,16 @@ export class GameEngine {
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(4, 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
       plane.rotation.x = -Math.PI / 2;
       plane.position.set(x, 0.04, z);
-      this.scene.add(plane);
+      this._cityDecoGroup.add(plane);
     });
 
     // Central statue plinth (decorative, fits inside central tower)
     const plinth = this._outlined(new THREE.CylinderGeometry(1.2, 1.4, 0.5, 12), 0xd9aa3c, 1.05);
     plinth.position.set(0, 8.3, 0); // on top of central tower
-    this.scene.add(plinth);
+    this._cityDecoGroup.add(plinth);
     const statue = this._outlined(new THREE.ConeGeometry(0.6, 1.4, 8), 0xc94a4f, 1.06);
     statue.position.set(0, 9.4, 0);
-    this.scene.add(statue);
+    this._cityDecoGroup.add(statue);
 
     // ===== Roads (asphalt strips with dashed lines) =====
     const roadMat = this._toonMat(0x303237);
@@ -916,7 +922,7 @@ export class GameEngine {
       road.rotation.x = -Math.PI / 2;
       road.rotation.z = rotY;
       road.position.set(x, 0.03, z);
-      this.scene.add(road);
+      this._cityDecoGroup.add(road);
       // Dashed center line
       const dashLen = 1.4;
       const dashes = Math.floor(l / (dashLen * 1.8));
@@ -928,7 +934,7 @@ export class GameEngine {
         const c = Math.cos(rotY), s = Math.sin(rotY);
         d.position.set(x + (-s) * offset, 0.04, z + c * offset);
         d.rotation.z = rotY;
-        this.scene.add(d);
+        this._cityDecoGroup.add(d);
       }
     };
     // Cross of roads through the map (avoiding center tower)
@@ -949,7 +955,7 @@ export class GameEngine {
       drive.rotation.x = -Math.PI / 2;
       drive.rotation.z = ang;
       drive.position.set((x1 + x2) / 2, 0.035, (z1 + z2) / 2);
-      this.scene.add(drive);
+      this._cityDecoGroup.add(drive);
       // Curb stripes on both edges
       const stripeMat = this._toonMat(0xFFFFFF);
       for (const side of [-1, 1]) {
@@ -959,7 +965,7 @@ export class GameEngine {
         const px = -Math.cos(ang) * (w / 2 - 0.1) * side;
         const pz = Math.sin(ang) * (w / 2 - 0.1) * side;
         s.position.set((x1 + x2) / 2 + px, 0.038, (z1 + z2) / 2 + pz);
-        this.scene.add(s);
+        this._cityDecoGroup.add(s);
       }
     };
     // Connect the four cardinal road-spurs (roads run at z = ±25, x = ±25)
@@ -1014,10 +1020,10 @@ export class GameEngine {
     [[8, 24], [-8, 24], [8, -24], [-8, -24], [24, 8], [-24, 8]].forEach(([x, z]) => {
       const cap = this._outlined(new THREE.CylinderGeometry(0.18, 0.18, 0.6, 8), 0xe62429, 1.06);
       cap.position.set(x, 0.3, z);
-      this.scene.add(cap);
+      this._cityDecoGroup.add(cap);
       const top = this._outlined(new THREE.SphereGeometry(0.16, 8, 6), 0xe62429, 1.08);
       top.position.set(x, 0.7, z);
-      this.scene.add(top);
+      this._cityDecoGroup.add(top);
     });
   }
 
@@ -1150,6 +1156,14 @@ export class GameEngine {
       };
     });
     this.obstacles = colored;
+    // Toggle the city-decoration group (roads, driveways, sidewalks,
+    // hydrants, trees, benches, lampposts, VIRTUE sign, central statue,
+    // POW/BAM spawn decals) OFF when the map is a fully indoor arena
+    // like HOTEL — outdoor city dressing looks wrong on a marble lobby
+    // floor. Restored for every other (outdoor) map.
+    if (this._cityDecoGroup) {
+      this._cityDecoGroup.visible = arena.map_id !== "hotel";
+    }
     // Day-night theme MUST be applied before building meshes so the face
     // textures pick up the correct night/day variant. Downtown = night,
     // crashsite = dusky red overlay (still day, just tinted).

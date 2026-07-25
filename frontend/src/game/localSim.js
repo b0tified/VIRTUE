@@ -268,8 +268,28 @@ const MAP_F = {
   name: "GRAND HOTEL",
   size: 50,
   obstacles: [
-    // ---- GROUND FLOOR ---- (mirrors server MAP_F so LocalSim bot AI +
-    // client raycasts match the visuals rendered by engine.js).
+    // ---- INDOOR PERIMETER WALLS ----
+    // Fully seal the arena so it reads as a closed hotel interior,
+    // not an outdoor city block. Solid + tall so no gaps to shoot out.
+    { x: 0,   z: -48, w: 96, h: 8, d: 2 },
+    { x: 0,   z:  48, w: 96, h: 8, d: 2 },
+    { x: 48,  z:  0,  w: 2,  h: 8, d: 96 },
+    { x: -48, z:  0,  w: 2,  h: 8, d: 96 },
+    // ---- STRUCTURAL SUPPORT COLUMNS ----
+    // Load-bearing columns replacing the outdoor perimeter buildings.
+    { x:  40, z:  40, w: 2, h: 8, d: 2 },
+    { x: -40, z:  40, w: 2, h: 8, d: 2 },
+    { x:  40, z: -40, w: 2, h: 8, d: 2 },
+    { x: -40, z: -40, w: 2, h: 8, d: 2 },
+    { x:  40, z:  14, w: 2, h: 8, d: 2 },
+    { x:  40, z: -14, w: 2, h: 8, d: 2 },
+    { x: -40, z:  14, w: 2, h: 8, d: 2 },
+    { x: -40, z: -14, w: 2, h: 8, d: 2 },
+    { x:  14, z:  40, w: 2, h: 8, d: 2 },
+    { x: -14, z:  40, w: 2, h: 8, d: 2 },
+    { x:  14, z: -40, w: 2, h: 8, d: 2 },
+    { x: -14, z: -40, w: 2, h: 8, d: 2 },
+    // ---- GROUND FLOOR (center of lobby is now OPEN — no fountain) ----
     { x: 0,   z: -18, w: 22, h: 1.2, d: 2.0 },       // Reception desk
     { x: 11,  z: -14, w: 2.0, h: 1.2, d: 6.0 },
     { x: -18, z:  18, w: 6.0, h: 1.1, d: 2.0 },      // Bell-desk
@@ -278,7 +298,6 @@ const MAP_F = {
     { x: -12, z:  12, w: 2.5, h: 8, d: 2.5 },
     { x:  12, z: -12, w: 2.5, h: 8, d: 2.5 },
     { x: -12, z: -12, w: 2.5, h: 8, d: 2.5 },
-    { x: 0, z: 0, w: 4.0, h: 1.5, d: 4.0 },          // Lobby fountain
     // Elevator bank
     { x: 30, z: -6, w: 2.0, h: 6, d: 4.0 },
     { x: 30, z:  6, w: 2.0, h: 6, d: 4.0 },
@@ -301,6 +320,15 @@ const MAP_F = {
     { x:  -8, z:  -4, w: 1.6, h: 1.4, d: 1.6 },
     { x:  16, z:  -3, w: 1.6, h: 1.4, d: 1.6 },
     { x: -16, z:   3, w: 1.6, h: 1.4, d: 1.6 },
+    // ---- LOBBY TABLES (waist-high crouch cover) ----
+    { x:  20, z:  25, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -20, z:  25, w: 1.4, h: 0.9, d: 1.4 },
+    { x:  20, z: -25, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -20, z: -25, w: 1.4, h: 0.9, d: 1.4 },
+    { x:  32, z:  32, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -32, z:  32, w: 1.4, h: 0.9, d: 1.4 },
+    { x:  32, z: -32, w: 1.4, h: 0.9, d: 1.4 },
+    { x: -32, z: -32, w: 1.4, h: 0.9, d: 1.4 },
     // ---- SECOND STORY (visual only — y_base > 0, engine skips ground
     // collision) so bot AI won't get stuck on floating cover.
     { x:  20, z: 0,   w: 3, h: 0.8, d: 26, y_base: 8 },
@@ -311,14 +339,14 @@ const MAP_F = {
     { x: -18.5, z:  0,  w: 0.4, h: 1.6, d: 26, y_base: 8.8 },
     { x:  0, z:  18.5, w: 26, h: 1.6, d: 0.4, y_base: 8.8 },
     { x:  0, z: -18.5, w: 26, h: 1.6, d: 0.4, y_base: 8.8 },
-    { x: 0, z: 0, w: 60, h: 0.6, d: 60, y_base: 14 },
+    // Ceiling covers the full 100x100 arena so no sky is visible from inside.
+    { x: 0, z: 0, w: 100, h: 0.6, d: 100, y_base: 14 },
     { x: -17, z:  10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
     { x: -17, z:   0, w: 2, h: 3, d: 0.4, y_base: 8.8 },
     { x: -17, z: -10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
     { x:  17, z:  10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
     { x:  17, z:   0, w: 2, h: 3, d: 0.4, y_base: 8.8 },
     { x:  17, z: -10, w: 2, h: 3, d: 0.4, y_base: 8.8 },
-    ..._PERIMETER,
   ],
   spawn_points: [
     [35, 35], [-35, 35], [35, -35], [-35, -35],
