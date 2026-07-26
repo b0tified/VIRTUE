@@ -441,6 +441,40 @@ function segBlockedByObstacles(x0, z0, x1, z1) {
   return false;
 }
 
+// 3D segment vs AABB intersection for hitscan. Respects each obstacle's
+// height (and `y_base` for floating geometry) so bullets aimed above
+// short cover (tables, lounge seats, reception desk) pass over cleanly
+// instead of getting blocked by a full-height 2D shadow. Returns true
+// if the segment intersects any obstacle's full 3D box.
+function segBlockedByObstacles3D(x0, y0, z0, x1, y1, z1) {
+  const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+  for (const ob of ARENA.obstacles) {
+    const yb = Number(ob.y_base || 0);
+    const mnX = ob.x - ob.w / 2, mxX = ob.x + ob.w / 2;
+    const mnY = yb,              mxY = yb + ob.h;
+    const mnZ = ob.z - ob.d / 2, mxZ = ob.z + ob.d / 2;
+    let tmin = 0, tmax = 1;
+    let hit = true;
+    for (const [o, d, lo, hi] of [
+      [x0, dx, mnX, mxX],
+      [y0, dy, mnY, mxY],
+      [z0, dz, mnZ, mxZ],
+    ]) {
+      if (Math.abs(d) < 1e-9) {
+        if (o < lo || o > hi) { hit = false; break; }
+      } else {
+        let t1 = (lo - o) / d, t2 = (hi - o) / d;
+        if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) { hit = false; break; }
+      }
+    }
+    if (hit && tmin < 1 && tmax > 0) return true;
+  }
+  return false;
+}
+
 // Ray-vs-vertical-capsule for hitscan. Returns distance or null.
 function rayHitCapsule(ox, oy, oz, dx, dy, dz, cx, cz, capR = 0.45, ground = 0, top = PLAYER_HEIGHT) {
   // Cylinder intersection in xz.
@@ -780,9 +814,11 @@ export class LocalSim {
       if (now < (other.invuln_until || 0)) continue; // skip invulnerable targets
       const r = rayHitCapsule(ox, oy, oz, dx, dy, dz, other.x, other.z, 0.55, 0, PLAYER_HEIGHT + 0.25);
       if (r && r.t < bestT) {
-        // Line of sight (2D) — block on obstacles
-        const hx = ox + dx * r.t, hz = oz + dz * r.t;
-        if (segBlockedByObstacles(ox, oz, hx, hz)) continue;
+        // Line of sight (3D) — block only when the ray physically
+        // intersects an obstacle's full 3D box. Short cover (tables,
+        // lounge seats) no longer blocks shots aimed above the top.
+        const hx3 = ox + dx * r.t, hy3 = oy + dy * r.t, hz3 = oz + dz * r.t;
+        if (segBlockedByObstacles3D(ox, oy, oz, hx3, hy3, hz3)) continue;
         bestT = r.t;
         bestHit = { other, hy: r.y, t: r.t };
       }

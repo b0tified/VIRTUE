@@ -10,7 +10,10 @@ import server  # noqa: E402
 def test_crashsite_in_rotation():
     ids = [m["map_id"] for m in server.MAPS]
     assert "crashsite" in ids, f"crashsite not in MAPS rotation: {ids}"
-    assert ids == ["downtown", "crossfire", "shoreline", "crashsite", "tundra"], ids
+    # The full rotation grew as new maps were added — keep the earlier
+    # 5 maps in stable order and simply require any additional maps
+    # (e.g. hotel/Royal Guard) to follow.
+    assert ids[:5] == ["downtown", "crossfire", "shoreline", "crashsite", "tundra"], ids
 
 
 def test_crashsite_shape():

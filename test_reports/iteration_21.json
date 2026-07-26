@@ -1,0 +1,40 @@
+{
+  "summary": "Verified all 3 fixes: (1) sniper 2-round mag, (2) Royal Guard 3D LOS through short cover, (3) Silver Sentinel legendary knight skin. Backend: added /app/backend/tests/test_royal_guard_shoot_through.py (3 tests: shoot OVER h=0.9 table at (20,25) between (18,1.7,25)→(22,1.7,25) PASSES, ceiling at y_base=14 does NOT block horizontal eye-level LOS, tall column still blocks) and /app/backend/tests/test_knight_shop_skin.py (2 tests: catalog contains knight with Silver Sentinel/5000/legendary/shop, buy deducts 5000 coins and adds knight to owned_skins with GET-verified persistence). Ran 27 focused tests: test_royal_guard_shoot_through (3), test_hotel_map (4), test_sniper_rework (all), test_sniper_weapon (9 incl. mag=2 + ammo dict), test_sniper_ads_instant_fire (1), test_reload_loadout_lock (3), test_knight_shop_skin (2) — 27/27 PASS. Frontend Playwright: admin login OK → opened shop via coins badge → shop-skin-knight card visible with 'Silver Sentinel' 'LEGENDARY' price '5000' → clicked BUY → shop-skin-equipped-knight indicator appeared (auto-equip on purchase) → started PRACTICE→OFFLINE VS AI→hotel map → HUD ammo shows '2/2' with sniper equipped → 1st sniper shot: ammo goes 2→1 (mag NOT reloaded after 1 shot — bug fix confirmed) → 2nd sniper shot: ammo goes 1→0 then auto-reloads back to 2/2 (correct 2-shot behavior). Screenshots at /app/test_reports/knight_shop.png, sniper_hud_pre.png, sniper_hud_post.png, sniper_after_2_shots.png.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/shop/skins/buy", "issue": "Endpoint path in review request is stale — server actually exposes POST /api/shop/buy (no /skins segment). Not a bug, just doc drift. Test uses correct path."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sniper ADS scope view (Royal Guard/Hotel)", "issues": ["Scope overlay is a solid olive-green blur that occupies most of the screen with the sniper mesh nearly filling the right half — the crosshair sees very little of the arena while ADS'd. Not part of this review's fixes but worth revisiting for readability."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_royal_guard_shoot_through.py",
+    "/app/backend/tests/test_knight_shop_skin.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider standardizing the shop buy path documentation — code is /api/shop/buy while the review request mentioned /api/shop/skins/buy."
+  ],
+  "critical_code_review_comments": [
+    "_has_los uses 0.6m step size and only checks intermediate points (i in 1..steps-1). If shooter and target are >0.6m apart this is fine, but a very tall thin obstacle whose XZ center happens to fall between two sample steps could be missed at edge cases. Current tables/columns are wide enough that this isn't practically an issue.",
+    "raycast_hit's aabb_t now correctly respects y_base — good. Suggest adding one server-side unit test asserting a shot from (18,1.7,25) yaw'd toward (22,25) does NOT return the table obstacle (belt-and-braces to the LOS test).",
+    "shop_buy auto-equips on purchase which is user-friendly but changes selected_skin without an explicit user action — worth surfacing via a toast (currently silent for the caller in the E2E test)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_royal_guard_shoot_through.py (new)",
+    "/app/backend/tests/test_knight_shop_skin.py (new)"
+  ],
+  "success_rate": {"backend": "100% (27/27 in scoped suite)", "frontend": "100% (login+shop+buy+equip+sniper-2-mag all pass)"},
+  "test_credentials": "admin@shooter.com / admin123 — granted 20000 coins + primary_weapon='sniper' via mongo shell for the test.",
+  "seed_data_creation": "One ephemeral TEST_knight_<uuid>@shooter.com user registered per test run (backend test) + admin account coins bumped from 2700→20000 and primary_weapon set to 'sniper' in test_database for the frontend flow.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 fixes verified. New tests test_royal_guard_shoot_through.py and test_knight_shop_skin.py can be reused for regression. Note: shop buy endpoint is /api/shop/buy (not /api/shop/skins/buy). Sniper HUD ammo test flow: login admin (already has primary_weapon=sniper), practice→offline vs AI→hotel→click canvas after 10s countdown → 1st shot leaves 1/2 (no premature reload — this is the fix), 2nd shot drains to 0 and auto-reload restores 2/2. If HUD reads still '2/2' after first click, wait ~300ms more; the read fires slightly before the client's ammo tick.",
+  "rca of the issue": "N/A — this iteration was verification, not RCA. All 3 previously reported bugs verified fixed."
+}

@@ -813,6 +813,18 @@ SKINS_CATALOG: List[dict] = [
      "body": 0x0a0a0a, "leg": 0x000000, "head": 0xf2c08a, "accent": 0x00ffaa,
      "helmet": 0x000000, "visor": 0x00ffaa, "shoulder": 0x1a1a1a, "stripe": 0x00ffaa, "belt": 0x000000, "cape": 0x1a1a1a,
      "aura": 0x00ffaa, "aura_mode": "flicker"},
+
+    # ─── 2026-02 knight — detailed shop skin with custom render hooks ─────
+    # Triggered client-side by `id === "knight"` in `_buildHumanoid`:
+    # adds a closed pointed-top helmet with an eye slit, a tall red plume,
+    # pauldrons + gorget plating detail on the shoulders/neck, a wide
+    # metallic belt buckle, and a full kite shield with a golden cross
+    # mounted on the back. Palette leans polished silver / royal red /
+    # brass gold so the silhouette reads instantly as a classic knight.
+    {"id": "knight",    "name": "Silver Sentinel", "price": 5000, "rarity": "legendary", "obtain": "shop",
+     "body": 0xC8CBD1, "leg": 0xA8ABB1, "head": 0xF2C08A, "accent": 0xE6C74A,
+     "helmet": 0xC8CBD1, "visor": 0x1a1a1a, "shoulder": 0xB8BBC1, "stripe": 0xB80020, "belt": 0x8B6914, "cape": 0xB80020,
+     "aura": 0xE6C74A, "aura_mode": "pulse"},
 ]
 SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 
@@ -4015,23 +4027,37 @@ class GameRoom:
         return False
 
     def _has_los(self, shooter: Player, target: Player) -> bool:
-        """Cheap line-of-sight check (2D over obstacles full-height assumption)."""
-        ox, oz = shooter.x, shooter.z
-        tx, tz = target.x, target.z
-        dx, dz = tx - ox, tz - oz
+        """3D line-of-sight check. Steps along the shooter→target line
+        and rejects if any obstacle's XZ footprint overlaps the sample
+        AND the ray's Y at that step falls inside the obstacle's Y
+        slab (`y_base` .. `y_base + h`). Short cover like tables and
+        the mezzanine walkway ring no longer block sightlines when the
+        players' eye-level ray passes safely above them.
+        """
+        ox, oy, oz = shooter.x, shooter.y, shooter.z
+        tx, ty, tz = target.x, target.y, target.z
+        dx, dy, dz = tx - ox, ty - oy, tz - oz
         dist = math.hypot(dx, dz)
         if dist < 0.01:
             return True
         nx, nz = dx / dist, dz / dist
+        # Height slope (dy per unit horizontal distance) so we can
+        # interpolate the eye-line elevation at each sample step.
+        ny = dy / dist if dist > 0 else 0.0
         steps = max(2, int(dist / 0.6))
         for i in range(1, steps):
-            px = ox + nx * (i * 0.6)
-            pz = oz + nz * (i * 0.6)
+            step_dist = i * 0.6
+            px = ox + nx * step_dist
+            pz = oz + nz * step_dist
+            py = oy + ny * step_dist
             for ob in self.arena["obstacles"]:
                 hx = ob["w"] / 2
                 hz = ob["d"] / 2
                 if abs(px - ob["x"]) < hx and abs(pz - ob["z"]) < hz:
-                    return False
+                    y0 = float(ob.get("y_base", 0))
+                    y1 = y0 + float(ob["h"])
+                    if y0 <= py <= y1:
+                        return False
         return True
 
     def raycast_hit(self, shooter: Player, yaw_override: Optional[float] = None, pitch_override: Optional[float] = None, at_time: Optional[float] = None):
@@ -4056,8 +4082,14 @@ class GameRoom:
         ox, oy, oz = shooter.x, shooter.y, shooter.z
 
         def aabb_t(ob):
-            mn = (ob["x"] - ob["w"] / 2, 0.0, ob["z"] - ob["d"] / 2)
-            mx = (ob["x"] + ob["w"] / 2, ob["h"], ob["z"] + ob["d"] / 2)
+            # Respect `y_base` so floating obstacles (mezzanine walkways
+            # and the hotel ceiling) are treated as being UP in the air,
+            # not sitting at ground level. Without this, a ceiling at
+            # y_base=14 gets its AABB at y=[0, 0.6] and blocks any shot
+            # aimed slightly downward at ground targets.
+            y0 = float(ob.get("y_base", 0))
+            mn = (ob["x"] - ob["w"] / 2, y0, ob["z"] - ob["d"] / 2)
+            mx = (ob["x"] + ob["w"] / 2, y0 + ob["h"], ob["z"] + ob["d"] / 2)
             tmin = 0.0
             tmax = SHOT_RANGE
             for o, d, lo, hi in [

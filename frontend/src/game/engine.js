@@ -99,7 +99,6 @@ export class GameEngine {
     this.locked = false;
     this.pendingShoot = false;
     this.recoil = 0;
-    // Local ammo/reload mirror (updated from server state).
     // Used to gate client-side fire prediction so we don't play a muzzle
     // flash + gunshot SFX while reloading or empty.
     // Primary-weapon loadout id. Server sends "ak47" or "sniper" in the
@@ -108,7 +107,13 @@ export class GameEngine {
     // engine can hot-load a match before the first state broadcast
     // arrives.
     this.primaryWeaponId = "ak47";
-    this.localAmmo = { ak47: 25, sniper: 1, laser: 60 };
+    // Local ammo/reload mirror (updated from server state). Initial
+    // values match server WEAPON_CONFIGS mag_size so the HUD reads
+    // correctly for the ~50-200ms window before the first state
+    // broadcast arrives — otherwise a sniper user could fire once,
+    // then the client's stale `sniper: 1` counter would trigger a
+    // premature auto-reload after only one shot.
+    this.localAmmo = { ak47: 25, sniper: 2, laser: 60 };
     this.localReloading = false;
     // AK reload animation state. _reloadT animates 0→1 across the reload
     // duration; the viewmodel + magazine sub-group are transformed each
@@ -2900,8 +2905,9 @@ export class GameEngine {
     const arena = this._arena;
     if (arena && arena.obstacles) {
       for (const ob of arena.obstacles) {
+        const y0 = Number(ob.y_base || 0);
         const minx = ob.x - ob.w / 2, maxx = ob.x + ob.w / 2;
-        const miny = 0, maxy = ob.h;
+        const miny = y0, maxy = y0 + ob.h;
         const minz = ob.z - ob.d / 2, maxz = ob.z + ob.d / 2;
         let tmin = 0, tmax = bestT;
         const slabs = [
@@ -2960,9 +2966,12 @@ export class GameEngine {
     for (const ob of this.obstacles) {
       // Slab method against AABB. Slightly inflated (+0.06m) so the gun
       // visibly retracts before its barrel actually touches the surface.
+      // Respect `y_base` so floating mezzanine/ceiling geometry doesn't
+      // cause the viewmodel to pull back at ground level for no reason.
       const inf = 0.06;
+      const y0 = Number(ob.y_base || 0);
       const mnX = ob.x - ob.w / 2 - inf, mxX = ob.x + ob.w / 2 + inf;
-      const mnY = 0 - inf,                mxY = ob.h + inf;
+      const mnY = y0 - inf,               mxY = y0 + ob.h + inf;
       const mnZ = ob.z - ob.d / 2 - inf, mxZ = ob.z + ob.d / 2 + inf;
       let tmin = 0, tmax = maxDist;
       const slab = (o, d, lo, hi) => {
@@ -3605,6 +3614,168 @@ export class GameEngine {
       group.add(shine); astro.meshes.push(shine);
       astro.shine = shine;
     }
+
+    // ----- Knight-only extras (skin.id === "knight") -----
+    // A "Silver Sentinel" set — plate helmet with eye slit + tall red
+    // plume, pauldrons over each shoulder, gorget collar plate, a
+    // heavy brass belt buckle, and a kite shield with a gold cross
+    // mounted diagonally on the back. All meshes are added to
+    // `bodyMeshes` where visually appropriate so the death fall + hit
+    // flash tint them along with the base armor.
+    if (skin.id === "knight") {
+      // Great helm dome — a slightly-larger cylinder capping the head
+      // so the character reads as fully armored (no visible face).
+      const helmDome = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.30, 0.30, 0.36, 16),
+        new THREE.MeshLambertMaterial({ color: 0xC8CBD1 }),
+      );
+      helmDome.position.set(0, 1.68, 0);
+      bodyMeshes.push(helmDome); group.add(helmDome);
+      // Pointed cap on top of the great helm (medieval "sugarloaf" look).
+      const helmCap = new THREE.Mesh(
+        new THREE.ConeGeometry(0.30, 0.22, 16),
+        new THREE.MeshLambertMaterial({ color: 0xB8BBC1 }),
+      );
+      helmCap.position.set(0, 1.94, 0);
+      bodyMeshes.push(helmCap); group.add(helmCap);
+      // Horizontal eye slit — thin dark band across the front of the helm.
+      const eyeSlit = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.05, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0x0a0a0a }),
+      );
+      eyeSlit.position.set(0, 1.72, 0.30);
+      group.add(eyeSlit);
+      // Red plume — tall crimson cone rising off the helm cap for the
+      // classic knight silhouette. Slight forward tilt for character.
+      const plume = new THREE.Mesh(
+        new THREE.ConeGeometry(0.06, 0.55, 10),
+        new THREE.MeshLambertMaterial({ color: 0xB80020 }),
+      );
+      plume.position.set(0, 2.30, -0.02);
+      plume.rotation.z = 0.05;
+      bodyMeshes.push(plume); group.add(plume);
+      // Plume base collar — small brass ring where the plume meets the helm.
+      const plumeBase = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.08, 0.04, 12),
+        new THREE.MeshLambertMaterial({ color: 0xE6C74A }),
+      );
+      plumeBase.position.set(0, 2.06, 0);
+      group.add(plumeBase);
+      // Pauldrons — thicker rounded shoulder plates.
+      const buildPauldron = (xSign) => {
+        const p = new THREE.Mesh(
+          new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+          new THREE.MeshLambertMaterial({ color: 0xB8BBC1 }),
+        );
+        p.position.set(0.32 * xSign, 1.30, 0);
+        bodyMeshes.push(p); group.add(p);
+      };
+      buildPauldron(-1);
+      buildPauldron(+1);
+      // Gorget — flat collar plate protecting the neck, between helm
+      // and torso. Thin ring around the base of the head.
+      const gorget = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.30, 0.10, 14),
+        new THREE.MeshLambertMaterial({ color: 0xB8BBC1 }),
+      );
+      gorget.position.set(0, 1.45, 0);
+      bodyMeshes.push(gorget); group.add(gorget);
+      // Chest emblem — small brass cross on the front of the breastplate.
+      const crossV = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.28, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0xE6C74A }),
+      );
+      crossV.position.set(0, 1.14, 0.22);
+      bodyMeshes.push(crossV); group.add(crossV);
+      const crossH = new THREE.Mesh(
+        new THREE.BoxGeometry(0.20, 0.06, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0xE6C74A }),
+      );
+      crossH.position.set(0, 1.20, 0.22);
+      bodyMeshes.push(crossH); group.add(crossH);
+      // Wide brass belt buckle over the default belt band.
+      const buckle = new THREE.Mesh(
+        new THREE.BoxGeometry(0.20, 0.14, 0.03),
+        new THREE.MeshLambertMaterial({ color: 0xE6C74A }),
+      );
+      buckle.position.set(0, 0.86, 0.22);
+      bodyMeshes.push(buckle); group.add(buckle);
+      // Kite shield on the back — trapezoidal plane tilted vertically,
+      // slung diagonally across the shoulder blades. Two layers: main
+      // shield body (red enamel) and a smaller silver rim on top so it
+      // reads as a proper heraldic shield at any distance.
+      const shieldShape = new THREE.Shape();
+      shieldShape.moveTo(-0.24, 0.32);       // top-left
+      shieldShape.lineTo(0.24, 0.32);        // top-right
+      shieldShape.lineTo(0.20, -0.10);       // right taper
+      shieldShape.lineTo(0.00, -0.38);       // pointed bottom
+      shieldShape.lineTo(-0.20, -0.10);      // left taper
+      shieldShape.closePath();
+      const shieldGeo = new THREE.ExtrudeGeometry(shieldShape, { depth: 0.05, bevelEnabled: false });
+      const shieldBody = new THREE.Mesh(
+        shieldGeo,
+        new THREE.MeshLambertMaterial({ color: 0xB80020 }),
+      );
+      shieldBody.position.set(0, 1.15, -0.34);
+      shieldBody.rotation.z = 0.18; // sling angle
+      bodyMeshes.push(shieldBody); group.add(shieldBody);
+      // Silver rim — outline the shield with a slightly larger duplicate.
+      const rimShape = new THREE.Shape();
+      rimShape.moveTo(-0.26, 0.34);
+      rimShape.lineTo(0.26, 0.34);
+      rimShape.lineTo(0.22, -0.11);
+      rimShape.lineTo(0.00, -0.40);
+      rimShape.lineTo(-0.22, -0.11);
+      rimShape.closePath();
+      const rimHole = new THREE.Path();
+      rimHole.moveTo(-0.24, 0.32);
+      rimHole.lineTo(0.24, 0.32);
+      rimHole.lineTo(0.20, -0.10);
+      rimHole.lineTo(0.00, -0.38);
+      rimHole.lineTo(-0.20, -0.10);
+      rimHole.closePath();
+      rimShape.holes = [rimHole];
+      const rim = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(rimShape, { depth: 0.055, bevelEnabled: false }),
+        new THREE.MeshLambertMaterial({ color: 0xC8CBD1 }),
+      );
+      rim.position.set(0, 1.15, -0.345);
+      rim.rotation.z = 0.18;
+      bodyMeshes.push(rim); group.add(rim);
+      // Golden cross on the shield face — vertical + horizontal bars.
+      const shCrossV = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.44, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0xE6C74A }),
+      );
+      shCrossV.position.set(0.04, 1.13, -0.31);
+      shCrossV.rotation.z = 0.18;
+      group.add(shCrossV);
+      const shCrossH = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.06, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0xE6C74A }),
+      );
+      shCrossH.position.set(0.02, 1.24, -0.31);
+      shCrossH.rotation.z = 0.18;
+      group.add(shCrossH);
+      // Vambraces (forearm cuffs) — thin brass bands on each forearm
+      // so the armor detail carries into the arms. Positioned on the
+      // wrist end of each arm; both arms have their own group so this
+      // just adds a stationary decoration to the world (matches how
+      // pauldrons work in the default humanoid — arms swing but plates
+      // don't slip). Simple + reads fine at all distances.
+      const buildVambrace = (xSign) => {
+        const v = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14, 0.14, 0.10, 12),
+          new THREE.MeshLambertMaterial({ color: 0xE6C74A }),
+        );
+        v.position.set(0.36 * xSign, 0.72, 0);
+        bodyMeshes.push(v); group.add(v);
+      };
+      buildVambrace(-1);
+      buildVambrace(+1);
+    }
+
+
 
     // ----- Aura (skin-specific) -----
     // Two stacked rings at the player's feet + a soft halo sphere. The
@@ -4566,9 +4737,10 @@ export class GameEngine {
     this._pollGamepad(dt);
 
     // AK full-auto hold-to-fire tick. Only applies to the AK primary —
-    // sniper is single-shot per click (server enforces mag_size=1 too),
+    // sniper is single-shot per click (each click fires one bullet, and
+    // the 2-round mag reloads automatically after the second shot),
     // so we don't want the hold-to-fire tick spamming shoot messages
-    // during a 2s reload.
+    // during a reload.
     if (
       this._akFireHeld &&
       this.currentWeapon === "primary" &&
@@ -4795,7 +4967,7 @@ export class GameEngine {
             // users reported). Server broadcast will confirm shortly.
             const reloadedWeapon = this._reloadWeapon;
             if (reloadedWeapon === "ak47" || reloadedWeapon === "sniper" || reloadedWeapon === "laser") {
-              const magSize = reloadedWeapon === "sniper" ? 1
+              const magSize = reloadedWeapon === "sniper" ? 2
                 : reloadedWeapon === "laser" ? 60 : 25;
               if ((this.localAmmo[reloadedWeapon] ?? 0) < magSize) {
                 this.localAmmo[reloadedWeapon] = magSize;
