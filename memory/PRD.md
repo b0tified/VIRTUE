@@ -1125,3 +1125,34 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Flickering window lights** — new `.lobby-castle-window` CSS class with a warm-gold radial-gradient dot + per-instance `animationDelay` / `animationDuration` staggering. 7 windows placed over the arrow-slit + gate positions in the silhouette SVG. Each pulses on its own timer via a `lobby-castle-window-flicker` keyframe (steps(4) timing gives a proper candle-flicker feel; the gate window uses a smoother ease-in-out for a welcoming "lantern" glow).
 - **Verified** via smoke screenshot: `lobby-bg-word count = 0`, `flicker windows = 7`, picker options = `['Auto','Season 1','Season 2']`. Castle silhouette shows warm flicker dots dancing on the towers + gate.
 
+
+---
+
+### 2026-02-24 — Post-deploy bug batch: sniper mag, shoot-through, knight skin
+- **User report** (both preview + production): (1) some short objects on Royal Guard block bullets even though the eye passes over the top, (2) add a detailed classic-knight skin to the shop, (3) sniper "almost always" fires only 1 bullet before reloading instead of 2.
+
+**Fix 1 — Sniper 1-bullet auto-reload bug (P0)**
+- Two stale `mag_size = 1` references in `engine.js`:
+  - `this.localAmmo = { ak47: 25, sniper: 1, laser: 60 }` → now `sniper: 2`. Before the first server state broadcast arrives (~50-200ms), the client's stale local counter was firing an auto-reload after the very first shot.
+  - Reload-complete magSize (`reloadedWeapon === "sniper" ? 1 : ...`) → now `? 2 : ...`.
+- Also removed a stale duplicate `this.localAmmo` initializer and cleaned up an outdated comment.
+- Updated `tests/test_sniper_weapon.py` to lock in the current spec (mag=2, damage=50, ads_only=False, 2.0x headshot).
+
+**Fix 2 — Shoot-through short cover on Royal Guard (P0)**
+- **Server** (`_has_los`): rewritten from a 2D "obstacles are full-height walls" shadow check into a proper 3D check that samples the ray's Y elevation at each step and only blocks when the ray's Y is inside the obstacle's `[y_base, y_base + h]` slab.
+- **Server** (`raycast_hit`'s `aabb_t`): now uses `y0 = ob.get("y_base", 0)` for the min-Y and `y0 + ob["h"]` for the max-Y, so floating obstacles (mezzanine walkways, 100×100 ceiling) no longer get placed at ground level and block eye-height shots.
+- **Client** (`engine.js` `_laserCastEnd`, `_forwardObstacleDistance`): same y_base fix so the client's viewmodel retraction + laser cast agree with the server.
+- **LocalSim**: new `segBlockedByObstacles3D()` helper; `_handleShoot` now uses it instead of the 2D `segBlockedByObstacles`, so practice + offline bots can also shoot over tables/lounge seats/reception desks.
+
+**Fix 3 — New legendary knight skin (feature)**
+- **Backend catalog**: `SKINS_CATALOG` gains `id: "knight"`, name `"Silver Sentinel"`, price 5000, rarity legendary, obtain "shop". Palette: silver `#C8CBD1` armor, royal-red `#B80020` accents, brass-gold `#E6C74A` trim, dark visor.
+- **Client render hook** (`_buildHumanoid`, `if (skin.id === "knight")`): adds a full detailed set — great-helm dome + pointed cap + horizontal eye slit + tall red plume + brass plume-base collar + two rounded pauldrons + cylindrical gorget collar + chest brass cross emblem + wide brass belt buckle + kite shield on the back (extruded shield shape with silver rim + gold cross bars) + two brass vambraces on the forearms.
+
+**Verification** (`testing_agent` → `/app/test_reports/iteration_21.json`):
+- **Backend**: 27/27 tests pass in the scoped suite. New regression tests added: `tests/test_royal_guard_shoot_through.py` (3 tests — over-table LOS, ceiling non-blocking, tall column still blocks) and `tests/test_knight_shop_skin.py` (2 tests — catalog + buy flow).
+- **Frontend Playwright**: Admin login → shop → `shop-skin-knight` card at 5000 coins legendary → BUY → auto-equip → practice + hotel → sniper HUD reads 2/2 → 1st shot → 1/2 (no premature reload) → 2nd shot → 0/2 → auto-reload → back to 2/2. All flows pass.
+
+**Design notes surfaced (not part of fix scope, tracked for future)**:
+- Sniper ADS scope view is a solid olive-green blur — could be cleaner. Deferred.
+- Shop buy endpoint path is `/api/shop/buy` (single-tier), not `/api/shop/skins/buy`. Doc drift only.
+
