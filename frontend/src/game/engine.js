@@ -38,7 +38,39 @@ export class GameEngine {
 
     this.camera = new THREE.PerspectiveCamera(78, canvas.clientWidth / canvas.clientHeight, 0.05, 500);
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      // Prefer the discrete GPU on hybrid laptops. Without this hint,
+      // Chrome/Firefox often default to the integrated GPU which then
+      // runs out of VRAM once a second player + their humanoid skin
+      // meshes are added, dropping the WebGL context. Symptom on
+      // affected users: the canvas freezes but audio + WebSockets
+      // keep running (the JS thread never dies, only the GL context).
+      powerPreference: "high-performance",
+      // Don't fail hard on low-end integrated GPUs — better to run
+      // slowly than not at all.
+      failIfMajorPerformanceCaveat: false,
+    });
+    // Recover gracefully if the browser drops the WebGL context. The
+    // event fires on some laptops when a second player joins (VRAM
+    // pressure), when the OS switches between integrated + discrete
+    // GPUs, or when the user's power-saver kicks in. Without a
+    // handler the canvas stays frozen forever while audio keeps
+    // playing — exactly the symptom users reported.
+    // Strategy: preventDefault() so the browser tries to restore the
+    // context, dispatch a `webgl-context-lost` local event so the
+    // React shell can show a "Recovering graphics..." overlay + kick
+    // an auto-reload after ~2s if it doesn't come back.
+    canvas.addEventListener("webglcontextlost", (ev) => {
+      ev.preventDefault();
+      this._contextLost = true;
+      try { this.onLocalUpdate?.({ type: "webgl-context-lost" }); } catch { /* no-op */ }
+    }, false);
+    canvas.addEventListener("webglcontextrestored", () => {
+      this._contextLost = false;
+      try { this.onLocalUpdate?.({ type: "webgl-context-restored" }); } catch { /* no-op */ }
+    }, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -5657,6 +5689,14 @@ export class GameEngine {
     // throw stopped the RAF chain entirely, leaving a black canvas with
     // the HUD still visible. Log the first two errors per session for
     // diagnostics, then silently swallow to keep frames flowing.
+    // Also skip rendering entirely while the WebGL context is lost —
+    // calling .render() on a dead context throws warnings for every
+    // frame and burns CPU for nothing. The context-lost / restored
+    // handlers up top toggle `_contextLost`.
+    if (this._contextLost) {
+      this._scheduleFrame();
+      return;
+    }
     try {
       this._update(dt);
       this.renderer.render(this.scene, this.camera);

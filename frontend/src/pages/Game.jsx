@@ -66,6 +66,10 @@ export default function Game() {
     damaged: 0,
     damageMarkers: [],
     hitConfirm: 0,
+    // Set to Date.now() when the WebGL context is lost so the shell
+    // can render a "Recovering graphics..." overlay while the auto
+    // page-reload fires. Null while the context is healthy.
+    glLost: null,
     connected: false,
     fps: 0,
     ping: 0,
@@ -257,6 +261,23 @@ export default function Game() {
             ? "laser"
             : (eng?.primaryWeaponId || "ak47");
           sockRef.current?.send({ type: "reload", weapon: w });
+        } else if (ev.type === "webgl-context-lost") {
+          // Laptop integrated GPUs sometimes drop the WebGL context
+          // when a second player joins (VRAM pressure). Audio + JS
+          // keep running so the game *looks* frozen. Show an overlay
+          // and auto-reload after 2s — the fastest way back to a
+          // usable state without a manual page refresh.
+          setHud((h) => ({ ...h, glLost: Date.now() }));
+          setTimeout(() => {
+            try { window.location.reload(); } catch { /* no-op */ }
+          }, 2200);
+        } else if (ev.type === "webgl-context-restored") {
+          // If the browser restores the context before the reload
+          // timer fires, clear the overlay flag. We still let the
+          // scheduled reload happen because Three.js buffers/textures
+          // aren't automatically re-uploaded on restore — a fresh
+          // page + rejoin is the only reliably-clean recovery.
+          setHud((h) => ({ ...h, glLost: null }));
         } else if (ev.type === "laser-beam-start") {
           audioBus.laserBeamStart();
         } else if (ev.type === "laser-beam-stop") {
@@ -684,6 +705,28 @@ export default function Game() {
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
+      {/* WebGL context-lost recovery overlay. Some laptops (integrated
+          GPU + power-save + hybrid graphics) drop the WebGL context
+          when a second player joins the match, freezing the canvas
+          while audio + WebSockets keep running. When the engine
+          reports the loss, this overlay covers the frozen canvas and
+          the shell auto-reloads after ~2s. */}
+      {hud.glLost ? (
+        <div
+          className="absolute inset-0 z-[70] flex items-center justify-center bg-black/90 text-white pointer-events-auto"
+          data-testid="webgl-recover-overlay"
+        >
+          <div className="text-center px-6 max-w-md">
+            <div className="mx-auto mb-5 h-12 w-12 rounded-full border-4 border-white/20 border-t-white animate-spin" />
+            <div className="text-2xl font-extrabold tracking-wide mb-2" style={{ fontFamily: "Bangers, Anton, sans-serif", letterSpacing: "0.05em" }}>
+              GRAPHICS HICCUP
+            </div>
+            <div className="text-sm opacity-80">
+              Your GPU dropped its context. Reloading to recover…
+            </div>
+          </div>
+        </div>
+      ) : null}
       {/* Post-FX overlays + CSS filter wrapper. These hook into the new
           graphics settings (brightness/contrast/saturation/scanlines/etc.)
           without touching the WebGL renderer — purely CSS so they cost
