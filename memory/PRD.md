@@ -1156,3 +1156,20 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - Sniper ADS scope view is a solid olive-green blur — could be cleaner. Deferred.
 - Shop buy endpoint path is `/api/shop/buy` (single-tier), not `/api/shop/skins/buy`. Doc drift only.
 
+
+---
+
+### 2026-02-24 — Laptop freeze on 2nd player (WebGL context loss)
+- **User report** (both Preview + Production): "When 2 players are in the same server the laptop person's screen is frozen but you can still hear and the desktop version is normal."
+- **Root cause**: Classic WebGL context loss on integrated-GPU laptops. When a second player's humanoid + skin meshes (especially the new Silver Sentinel with 10+ extras) push VRAM past the integrated GPU's budget, the browser silently kills the WebGL context. The JS thread + Web Audio API + WebSocket keep running (that's why audio + game logic still worked), but the canvas stops rendering forever. The engine had no `webglcontextlost` handler so the failure was permanent.
+- **Fix**:
+  1. `THREE.WebGLRenderer` constructed with `powerPreference: "high-performance"` and `failIfMajorPerformanceCaveat: false` — asks the browser to bind the *discrete* GPU on hybrid laptops instead of the integrated one, preventing the context loss in most cases.
+  2. `webglcontextlost` listener on the canvas — calls `ev.preventDefault()` (asks the browser to attempt restoration), sets `this._contextLost=true`, dispatches an `onLocalUpdate({type:'webgl-context-lost'})` local event.
+  3. `webglcontextrestored` listener — clears the flag + emits `webgl-context-restored`.
+  4. `_loop` render guard — skips `_update()` + `renderer.render()` when the context is lost, just reschedules the next frame.
+  5. **Game.jsx overlay + auto-recover**: on `webgl-context-lost`, sets `hud.glLost=Date.now()` (renders a full-screen black overlay with a spinning ring + "GRAPHICS HICCUP — Reloading to recover…" — testid `webgl-recover-overlay`) and schedules `window.location.reload()` after 2.2s. Full page reload chosen over programmatic recovery because Three.js buffers/textures don't reliably re-upload on restore.
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_22.json`):
+  - Playwright triggered `WEBGL_lose_context.loseContext()` in a live match → overlay appeared within 2.5s → page reloaded within 2.2s → canvas re-initialised cleanly → overlay gone.
+  - Regression: healthy practice → offline vs AI still loads with zero overlay instances.
+  - Success rate: 100% (7/7 verifications). No new backend or frontend issues.
+
