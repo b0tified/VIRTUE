@@ -3501,6 +3501,23 @@ export class GameEngine {
     const gunMag = push(new THREE.BoxGeometry(0.1, 0.12, 0.1), skin.accent, 1.06);
     gunMag.position.set(0, -0.93, 0.08);
     heldGun.add(gunMag);
+    // Muzzle flash — small warm sphere at the barrel tip, opacity 0 by
+    // default. Lit up briefly by `_flashRemoteMuzzle` when the server
+    // reports a `shot` event for this player so third-person shooters
+    // read as visibly firing (previously other players' shots produced
+    // only a tracer with no local shooter feedback on the model).
+    const remoteMuzzleFlash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.11, 10, 8),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe488,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    remoteMuzzleFlash.position.set(0, -0.82, 0.62);
+    heldGun.add(remoteMuzzleFlash);
     rightArm.add(heldGun);
 
     // ----- Legs (pivots for swing) -----
@@ -3859,7 +3876,7 @@ export class GameEngine {
       group.add(aura);
     }
 
-    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro };
+    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, remoteMuzzleFlash };
   }
 
   _addRemotePlayer(state) {
@@ -3877,7 +3894,7 @@ export class GameEngine {
     // friend-vs-foe reads at a glance even mid-firefight. Local player and
     // FFA mode keep their cosmetic skin untouched.
     const skin = this._applyTeamSkin(state, baseSkin);
-    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro } = this._buildHumanoid(skin);
+    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, remoteMuzzleFlash } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     this.scene.add(group);
     const label = this._makeLabel(state.username, state.is_bot, this._relationFor(state));
@@ -3924,8 +3941,22 @@ export class GameEngine {
       tdmTeamKey: this._tdmTeamKeyFor(state),
       bodyMeshes,
       leftArm, rightArm, leftLeg, rightLeg, torso,
+      // Held weapon prop + its muzzle flash — animated on remote-shoot.
+      heldGun,
+      remoteMuzzleFlash,
+      // Firing-animation timer (ms remaining). Ticks down each frame;
+      // while positive the right arm gets a recoil kickback and the
+      // muzzle flash mesh brightens. Set by `_flashRemoteMuzzle`.
+      shootT: 0,
       lastHp: state.hp,
       flashUntil: 0,
+      // Server broadcasts state at 20Hz. `targetX/Z/Yaw` capture the
+      // last authoritative snapshot; `x/z/yaw` are the visually
+      // interpolated values the mesh actually renders at. The per-
+      // frame update lerps toward the target with a dt-based factor
+      // so movement is smooth at any render FPS regardless of the
+      // server tick rate.
+      targetX: state.x, targetZ: state.z, targetY: 0, targetYaw: state.yaw || 0,
       prevX: state.x, prevZ: state.z,
       animPhase: Math.random() * 6.28,
       movingSpeed: 0,
@@ -4464,8 +4495,15 @@ export class GameEngine {
         // sliding around at floor level. Clamp at 0 so we never sink.
         const PLAYER_BASE_Y = 1.8;
         const meshLift = Math.max(0, (p.y || PLAYER_BASE_Y) - PLAYER_BASE_Y);
-        entry.mesh.position.lerp(new THREE.Vector3(p.x, meshLift, p.z), 0.5);
-        entry.mesh.rotation.y = p.yaw;
+        // Store the target snapshot; the per-frame loop interpolates
+        // toward it with a dt-based factor for smooth movement at any
+        // render FPS regardless of the 20Hz server tick rate. The old
+        // `.lerp(target, 0.5)` here ran per-STATE-tick (~20 fps of
+        // interp), producing visible steppy motion at 60/120/144fps.
+        entry.targetX = p.x;
+        entry.targetZ = p.z;
+        entry.targetY = meshLift;
+        entry.targetYaw = p.yaw;
 
         // Death animation trigger
         if (entry.prevAlive && !p.alive) {
@@ -4523,6 +4561,21 @@ export class GameEngine {
           if (ev.shooter_id !== this.youId) {
             const dist = Math.hypot(ev.x - this.position.x, ev.z - this.position.z);
             this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist, weapon: ev.weapon || "ak47", pos: { x: ev.x, y: ev.y, z: ev.z } });
+            // Trigger a firing animation on the remote shooter's model:
+            // brighten the muzzle-flash mesh + kick the right arm back.
+            // The per-frame update decays both back to neutral so
+            // subsequent shots stack into a proper full-auto burst
+            // instead of looking like a single click.
+            const shooter = this.players.get(ev.shooter_id);
+            if (shooter) {
+              shooter.shootT = 120;   // ms
+              if (shooter.remoteMuzzleFlash) {
+                shooter.remoteMuzzleFlash.material.opacity = 1;
+                // Randomise scale so full-auto reads as flickering fire,
+                // not a static neon dot.
+                shooter.remoteMuzzleFlash.scale.setScalar(0.7 + Math.random() * 0.6);
+              }
+            }
           }
         } else if (ev.type === "melee") {
           this._spawnMeleeArc(ev);
@@ -5249,6 +5302,57 @@ export class GameEngine {
     const flashRed = new THREE.Color(0xff2a2a);
     for (const entry of this.players.values()) {
       // ─────────────────────────────────────────────────────────────
+      // POSITION SMOOTHING — dt-based lerp toward the last server
+      // snapshot. Server ticks at ~20Hz (every 50ms) but the render
+      // loop runs at 60/120/144fps; interpolating per-frame instead
+      // of per-tick removes the stuttery "state-update stairstep"
+      // motion. Uses exponential smoothing with a per-second factor
+      // (`smoothing = 1 - exp(-k * dt)`) so the ease is identical at
+      // any FPS. `k = 15` gives a snappy-but-smooth catch-up (~66ms
+      // to close 63% of the distance — about one server tick).
+      // ─────────────────────────────────────────────────────────────
+      if (entry.mesh && Number.isFinite(entry.targetX)) {
+        const k = 15;
+        const smooth = 1 - Math.exp(-k * dt);
+        entry.mesh.position.x += (entry.targetX - entry.mesh.position.x) * smooth;
+        entry.mesh.position.z += (entry.targetZ - entry.mesh.position.z) * smooth;
+        // Y lerps only when the target is above 0 (mid-jump) OR the
+        // mesh is above 0 (landing) — otherwise leave y alone so the
+        // walk-cycle bob (Math.abs(sin) below) isn't dampened out.
+        if (entry.targetY > 0 || entry.mesh.position.y > 0.02) {
+          entry.mesh.position.y += (entry.targetY - entry.mesh.position.y) * smooth;
+        }
+        // Yaw needs shortest-arc lerp so a wrap from +π → -π doesn't
+        // spin the model the long way round.
+        const cur = entry.mesh.rotation.y;
+        let delta = entry.targetYaw - cur;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        entry.mesh.rotation.y = cur + delta * smooth;
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // REMOTE SHOOTING ANIMATION — arm recoil + muzzle flash decay.
+      // Tick timer set by the `shot` event handler above. The actual
+      // arm rotation kick is applied further down in the loop (AFTER
+      // the walk cycle) so the recoil layers on top of the walk/idle
+      // pose instead of getting overwritten. We just tick the timer
+      // + fade the muzzle flash here.
+      // ─────────────────────────────────────────────────────────────
+      if (entry.shootT > 0) {
+        entry.shootT = Math.max(0, entry.shootT - dt * 1000);
+      }
+      if (entry.remoteMuzzleFlash && entry.remoteMuzzleFlash.material) {
+        // Muzzle flash opacity decays over ~90ms (faster than the arm
+        // kickback so the flash flickers with each new shot).
+        const m = entry.remoteMuzzleFlash.material;
+        m.opacity = Math.max(0, m.opacity - dt * 12);
+        // Hide entirely below a threshold so the additive-blend blob
+        // doesn't leave a permanent faint glow on the barrel.
+        entry.remoteMuzzleFlash.visible = m.opacity > 0.02;
+      }
+
+      // ─────────────────────────────────────────────────────────────
       // DEATH ANIMATION — 4-phase KO (recoil → buckle → topple → land)
       //   phase 0 (0.00–0.14) : head/torso jolt back + arms flail
       //   phase 1 (0.14–0.45) : knees buckle, legs fold under
@@ -5408,6 +5512,22 @@ export class GameEngine {
         }
       }
 
+      // Layer the shoot recoil on TOP of whatever walk/idle pose was
+      // just applied to the right arm. The walk cycle re-sets rightArm
+      // rotation.x/z each frame, so `+=` here isn't cumulative for the
+      // arm — it stacks a fresh recoil delta on the current pose.
+      // Torso.z is NOT touched by the walk cycle so we assign it
+      // directly (a `+=` would accumulate forever until shootT decays).
+      // Skipped during the death animation so the KO fall doesn't get
+      // jerked around by a stale in-flight shot event.
+      if (entry.deathT === 0 && entry.rightArm) {
+        const recoilU = entry.shootT > 0 ? (entry.shootT / 120) : 0;
+        entry.rightArm.rotation.x += -0.55 * recoilU;
+        entry.rightArm.rotation.z +=  0.18 * recoilU;
+        if (entry.torso) {
+          entry.torso.rotation.z = -0.08 * recoilU;
+        }
+      }
       // Astronaut-only extras animation — life-support LED heartbeat,
       // visor reflection sweep, and thruster flame flicker driven by the
       // same auraPhase counter the rest of the cosmetics use. Hidden

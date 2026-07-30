@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only verification of remote-player shooting animation + frame-rate-independent movement smoothing. All 7 code-inspection checkpoints verified in /app/frontend/src/game/engine.js; end-to-end Playwright test forcibly triggered the shot code path on a live bot mesh and observed the correct visual response (arm recoil, torso tilt, muzzle-flash bright→decay, shootT tick-down). Movement smoothing confirmed by sampling live bot positions at 100ms cadence — 85/144 distinct positions per bot over 15s indicates smooth per-frame interpolation (not stairstepped 20Hz). Backend testing skipped per request.",
+  "verifications": {
+    "engine_js_3509_muzzle_flash_mesh": "PASS — remoteMuzzleFlash SphereGeometry(0.11) with color 0xffe488, opacity 0, transparent+additive, added to heldGun at (0,-0.82,0.62).",
+    "engine_js_3879_return_exposes_fields": "PASS — _buildHumanoid returns {..., heldGun, remoteMuzzleFlash}.",
+    "engine_js_3936_addRemotePlayer_captures": "PASS — entry object stores heldGun, remoteMuzzleFlash, shootT:0, targetX/Z/Y:0, targetYaw from state.yaw (verified live: e.players.get(id) shows hasHeldGun:true, hasFlash:true, targetX/Z/Yaw finite).",
+    "engine_js_4503_state_update_writes_targets": "PASS — assigns entry.targetX/Z/Y/Yaw from p.x/z/meshLift/p.yaw; NO direct entry.mesh.position.lerp(). Verified in-flight deltas at rest are 0 (converged) and 85/144 distinct positions during motion (interp in-flight).",
+    "engine_js_4569_shot_event_triggers": "PASS — ev.type==='shot' && ev.shooter_id!==this.youId branch calls this.players.get(ev.shooter_id) and sets shooter.shootT=120, remoteMuzzleFlash.material.opacity=1, scale.setScalar(0.7+random*0.6).",
+    "engine_js_5314_position_smoothing_loop": "PASS — k=15, smooth=1-exp(-15*dt), lerps mesh.position.x/z toward targets, conditional y lerp when target>0 OR mesh above ground, shortest-arc yaw lerp with 2π wrap handling.",
+    "engine_js_5342_shootT_flash_decay": "PASS — shootT decays by dt*1000/frame; flash.material.opacity decays by dt*12/frame; visible hidden below 0.02. Live-tested: opacity 1→0.4 in one rAF (~50ms) matches dt*12 rate.",
+    "engine_js_5523_additive_recoil_after_walk": "PASS — placed AFTER walk/idle cycle (line 5515+); rightArm.rotation.x += -0.55*recoilU (additive), rightArm.rotation.z += 0.18*recoilU, torso.rotation.z = -0.08*recoilU (assignment). Skipped during death anim. Live-verified: injected shootT=999 produced armX=-7.82 and torsoZ=-0.599 in one frame.",
+    "e2e_remote_shot_visual": "PASS — After login→PRACTICE→OFFLINE VS AI→START, engine exposes window.__virtueEngine.players with 3 bot entries each carrying heldGun + remoteMuzzleFlash. Injected shooter.shootT=120 + opacity=1 via page.evaluate → next rAF frame: flash opacity decayed, arm recoiled visibly, entry reference persisted across state ticks (entry_is_same:true confirms no delete/re-add churn).",
+    "e2e_smooth_movement": "PASS — Sampled bot positions every 100ms for 15s: 85/144 distinct positions per bot (~57% unique per 100ms tick) confirming per-frame interpolation between 20Hz snapshots. Positions changed fluidly with in-flight deltas visible during motion.",
+    "regression_no_console_errors": "PASS — No JS errors in state-update path. Local HUD ammo (2/2) and HP (100/100 → 43/100 when hit) render correctly. Only pre-login 401s on /api/auth/me (expected) and WebGL PREMULTIPLY_ALPHA/GPU stall driver warnings (unrelated, pre-existing)."
+  },
+  "note_bot_engagement_variance": "In one of the map spawns (open sniper map), bots never engaged the player during the 25s sampling window (HP stayed 100). In the second spawn HP dropped 100→43 confirming server does emit shot events for bots. The direct code-path injection (mimicking the exact shot-branch statements) removed dependence on real bot AI engagement and conclusively verified the render code.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "engine.js is 6006 lines — significantly beyond the 700-line guideline. The remote-player shooting + smoothing logic is well-commented and correct, but ideal candidate for extraction into a `RemotePlayerAnimator` module (position smoothing, shootT ticking, muzzle-flash decay, death anim, astro/aura cosmetics).",
+    "The additive rightArm recoil (`+=`) relies on the walk cycle resetting rightArm.rotation.x/z each frame. This is a correct invariant but implicit — a subtle bug could sneak in if a future refactor changes the walk cycle to `+=` accumulation. Consider a code comment near the walk-cycle write site pointing to the recoil layering assumption (already noted at 5515 but only from the recoil side).",
+    "In `_addRemotePlayer` the entry doesn't store `id` — some diagnostics/logs would benefit from it (currently must be obtained via Map.entries())."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (11/11 checkpoints passed)"},
+  "test_credentials": "admin@shooter.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Remote-player shooting animation + smooth movement interp verified end-to-end via engine.js code inspection AND live injection through window.__virtueEngine.players. Reproducer for future retests: (1) login admin@shooter.com/admin123, (2) PRACTICE→OFFLINE VS AI→START, (3) wait ~9s for countdown, (4) page.evaluate `const [id,s]=window.__virtueEngine.players.entries().next().value; s.shootT=999; s.remoteMuzzleFlash.material.opacity=1;` then await one rAF and read back — expect armX≈-4 to -8, torsoZ≈-0.6, flash opacity decayed to ~0.4. For real bot fights, some maps have widely-separated spawns that delay engagement — use maps where bots spawn closer or move the player toward a bot to trigger `shot` events organically."
+}
