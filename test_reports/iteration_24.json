@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 24 — verified both bug fixes: (a) EXIT doesn't bounce user back into match, (b) jump broadcast wired end-to-end. Backend: 7/7 tests pass in new test_jump_broadcast.py (fresh player _jump_start_ms=0, to_state() sin-arc for humans mid-jump, snap-back+reset after 650ms, bots unaffected, static asserts for MATCHED_USERS.pop line and jump WS handler). Regression: sniper_rework + hotel_map + royal_guard_shoot_through 12/12 pass; queue_endpoints_regression 12/12 pass. Frontend E2E (Playwright): login admin@shooter.com → PRACTICE → OFFLINE VS AI → START → open pause → LEAVE MATCH; URL reached /lobby and stayed for 10s poll (no bounce). Also confirmed sockRef.send({type:'jump'}) fires successfully (jumpSent:true) after simulated space bind through WS.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_jump_broadcast.py",
+    "/app/test_reports/pytest/iteration_24_jump_broadcast.xml",
+    "/app/test_reports/pytest/iteration_24_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 9142 lines — over the 700-line guideline; a future iteration should split (rooms, tick loop, websocket routes, auth, queue).",
+    "conftest.py under /app/backend/tests currently a no-op; queue_endpoints_regression tests silently break when REACT_APP_BACKEND_URL is not exported to the pytest env (rstrip() on None) — consider a conftest fixture that loads /app/frontend/.env or fails fast with a clearer error.",
+    "Fresh Player() construction requires a real user['email'] because line 3279 does user['email'].split('@')[0]; consider .get('email','user') to make unit-testing Player easier."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_jump_broadcast.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@shooter.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None — used existing admin account.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 24 fixed two coupled bugs: (1) leave-loop — handleExit() now calls queueCtx.cancelRanked()+cancelCasual() (client-side 10s guard + DELETE /queue/... on server) BEFORE nav('/lobby'), plus ws_game finally block pops MATCHED_USERS[u_id_str] as belt-and-suspenders. (2) jump broadcast — Player._jump_start_ms=0 by default; ws 'jump' handler starts 650ms arc; Player.to_state() applies sin-arc-lifted Y for humans (bots update y directly in _tick_bots and are exempt). Client engine.js already emitted onLocalUpdate({type:'jump'}) on Space; Game.jsx now forwards it via sockRef.current?.send({type:'jump'}). Full remote-jump visibility requires two clients — single-client E2E only verifies the WS wire; backend unit test in /app/backend/tests/test_jump_broadcast.py covers the server-side arc computation directly.",
+  "rca of the issue": "Bounce-back RCA: /lobby QueueContext background poll (~3s) checks MATCHED_USERS server state. When user pressed EXIT, WS closed but server on-disconnect cleanup was delayed 5-10s, during which the poll saw matched:true and nav('/play')ed back. Fix: three layers — (a) handleExit sets client-side cancelGuardUntilRef=+10s so poll is ignored, (b) DELETE /queue/{ranked,casual} clears MATCHED_USERS server-side, (c) ws_game finally pops MATCHED_USERS[u_id_str] as fallback for crashes/tab-closes. Jump-broadcast RCA: to_state() previously always used self.y for humans, and there was no field to represent a client-initiated jump — remote clients only saw pitch/yaw. Fix: added _jump_start_ms to Player, WS 'jump' handler starts arc, to_state() computes elevated Y via 650ms sin arc for humans mid-jump; client-side interp (added iter_23) smooths the raise/lower on remote meshes."
+}

@@ -287,6 +287,12 @@ export default function Game() {
           setHud((h) => ({ ...h, laserOverheat: Date.now() }));
         } else if (ev.type === "reload-start") {
           audioBus.reload(ev.weapon || "ak47");
+        } else if (ev.type === "jump") {
+          // Broadcast the local player's jump to the server so other
+          // clients see the arc + play the "someone jumped" reads on
+          // remote humanoids. The server clamps the arc to 650ms and
+          // ignores repeats while airborne so we don't over-send.
+          sockRef.current?.send({ type: "jump" });
         } else if (ev.type === "respawn") {
           // Local player just transitioned dead → alive. Play the comic
           // respawn animation + revive SFX, and clear the last-killer so
@@ -700,8 +706,17 @@ export default function Game() {
     setShowGameSettings(false);
     setShowGameFriends(false);
     audioBus.laserBeamStop();
+    // Clear the server-side matched/queue state AND set the client
+    // cancel guards so the /lobby QueueContext background polls (which
+    // fire every 3s once we leave the /play route) don't see a stale
+    // `matched: true` and yank us right back into a match. Without
+    // this, users pressing EXIT would bounce between /lobby → /play
+    // in a loop until the server's on-disconnect cleanup finally
+    // fired (~5-10s later on slow networks).
+    try { queueCtx?.cancelRanked?.(); } catch { /* no-op */ }
+    try { queueCtx?.cancelCasual?.(); } catch { /* no-op */ }
     nav("/lobby");
-  }, [nav]);
+  }, [nav, queueCtx]);
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">

@@ -3317,6 +3317,12 @@ class Player:
         self.bot_burst_cooldown_until: int = 0
         self.bot_target_prev_pos: Optional[Tuple[float, float, float]] = None
         self.bot_target_prev_ts: float = 0.0
+        # Jump state — set by the client-initiated `{"type": "jump"}`
+        # WS message. `_jump_start_ms` is the wall-clock t=0 of the
+        # current arc (0 when grounded). Height is computed on-demand
+        # in `to_state()` so other players see the arc, and remote
+        # clients smoothly interpolate the Y with the animator.
+        self._jump_start_ms: int = 0
         # Weapon state (Overwatch-style)
         self.weapon = "ak47"
         self.ammo: Dict[str, int] = {
@@ -3400,6 +3406,19 @@ class Player:
         # state payload so the scoreboard's BOT badge doesn't give them away.
         # The flag is set at spawn-time by GameRoom.spawn_bot in casual mode.
         disguised = bool(getattr(self, "disguised", False)) and self.is_bot
+        # Apply jump arc for HUMAN players (bots update y directly in
+        # `_tick_bots`). Same 650ms sin arc + 1.2m peak the ranked bots
+        # use — keeps the visual language consistent across all
+        # jumpers. If the arc has expired, snap back to ground so the
+        # next jump starts from PLAYER_HEIGHT.
+        if not self.is_bot and self._jump_start_ms > 0:
+            now_ms = int(time.time() * 1000)
+            elapsed = now_ms - self._jump_start_ms
+            if elapsed < 650:
+                self.y = PLAYER_HEIGHT + math.sin((elapsed / 650.0) * math.pi) * 1.2
+            else:
+                self.y = PLAYER_HEIGHT
+                self._jump_start_ms = 0
         return {
             "id": self.id,
             "username": self.username,
@@ -4817,6 +4836,17 @@ class GameRoom:
                     weapon = loaded
             player.weapon = weapon if weapon in WEAPON_CONFIGS else player.weapon
             player.start_reload()
+        elif mtype == "jump":
+            # Broadcast a client-visible jump — sets the arc start time
+            # so `to_state()` returns lifted Y for the next ~650ms.
+            # Ignored while already mid-air or dead so a spamming client
+            # can't hover indefinitely.
+            if not player.alive:
+                return
+            now_ms = int(time.time() * 1000)
+            if player._jump_start_ms > 0 and (now_ms - player._jump_start_ms) < 650:
+                return
+            player._jump_start_ms = now_ms
         elif mtype == "melee":
             now_ms = int(time.time() * 1000)
             if not player.alive:
@@ -8891,6 +8921,14 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         ONLINE_USERS[u_id_str] = max(0, ONLINE_USERS.get(u_id_str, 1) - 1)
         if ONLINE_USERS.get(u_id_str, 0) == 0:
             ONLINE_USERS.pop(u_id_str, None)
+        # Belt-and-suspenders: clear any lingering MATCHED_USERS entry
+        # for this user. Otherwise the client's /lobby background queue
+        # poll (which fires ~3s after leaving /play) could see a stale
+        # `matched: true` and re-yank the user back into a match they
+        # just exited. Client also sets a 10s cancel guard on exit, so
+        # this is a redundancy layer for cases where the client crashes
+        # / tab-closes mid-match without going through handleExit.
+        MATCHED_USERS.pop(u_id_str, None)
         # Stamp last_seen on disconnect so "last seen" timer starts from now.
         try:
             await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
