@@ -1195,3 +1195,33 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Design/refactor notes surfaced by testing agent (deferred)**:
   - `engine.js` is now 6006 lines — a `RemotePlayerAnimator` extraction (position smoothing, shootT ticking, muzzle-flash decay, death anim) would be a natural first split when we do the P1 refactor.
 
+
+---
+
+### 2026-02-24 — Leave-loop fix + jump broadcast to remote players
+- **User reports**: (1) "game doesnt let you leave keeps putting you back in", (2) "make it so you can see when others jump".
+
+**Bug 1 — Leave-loop RCA + fix**
+- Root cause: `/lobby` `QueueContext` runs a 3s background poll of `/queue/{ranked,casual}/status`. When the user pressed EXIT during a match, the WS closed but the server's on-disconnect cleanup didn't touch `MATCHED_USERS`. During the 5-10s window before the on-disconnect handler ran, the bg poll saw `matched: true` from server state and called `beginActivePoll()` → `goToMatch()` → `nav('/play')` — yanking the user back into the just-abandoned match.
+- Three-layer fix:
+  1. **Client `handleExit`** (`Game.jsx`): now calls `queueCtx?.cancelRanked?.()` + `queueCtx?.cancelCasual?.()` before `nav('/lobby')`. These set the client `cancelGuardUntilRef = Date.now() + 10000` (blocks bg poll match-triggers for 10s) AND hit `DELETE /queue/{ranked,casual}` which clears MATCHED_USERS server-side.
+  2. **Server `ws_game` finally block**: pops `MATCHED_USERS[u_id_str]` on any WS disconnect (belt-and-suspenders for crashes / tab-closes / network drops).
+- Verified end-to-end: 10-second URL watch after EXIT stays at `/lobby` — no bounce.
+
+**Feature 2 — Jump broadcast**
+- Added `self._jump_start_ms: int = 0` to `Player.__init__` (default = grounded).
+- New WS message handler for `mtype == "jump"`: rejects when dead or already airborne (elapsed < 650ms), otherwise sets `player._jump_start_ms = now_ms`.
+- `Player.to_state()` applies the sin arc for HUMAN players (bots update y directly in `_tick_bots`): `y = PLAYER_HEIGHT + sin((elapsed/650) * π) * 1.2` for elapsed < 650ms, snap back to PLAYER_HEIGHT + reset `_jump_start_ms=0` afterwards. Same 650ms + 1.2m-peak arc as ranked smart bots for visual consistency.
+- Client engine already emitted `onLocalUpdate({type: 'jump'})` on Space keybind. `Game.jsx` now forwards it as `sockRef.current?.send({type: 'jump'})`.
+- Client-side smoothing added in iteration_23 (`entry.targetY` interpolation with `smooth = 1 - exp(-15 * dt)`) already renders the arc smoothly on remote humanoids at any FPS.
+
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_24.json`):
+  - Backend: 7/7 in the new `tests/test_jump_broadcast.py` (fresh player _jump_start_ms=0, arc math, snap-back after 650ms, bots exempt, static asserts on MATCHED_USERS cleanup + jump handler). Regression: 12/12 in sniper+hotel+royal_guard suite, 12/12 in queue endpoints.
+  - Frontend Playwright: login → practice → offline vs AI → pause → LEAVE MATCH → URL stays `/lobby` for the full 10s watch. Space keybind → confirmed `sockRef.current.send({type:'jump'})` fires.
+  - No console errors. Local HUD unaffected.
+
+**Design notes surfaced by testing agent (deferred)**:
+- `server.py` is now 9142 lines — well over the 700-line guideline. Ideal split: rooms / tick loop / websocket routes / auth / queue.
+- `Player(user={})` construction requires `user['email']` — use `.get('email','user')` for easier unit testing.
+- `queue_endpoints_regression.py` needs the `REACT_APP_BACKEND_URL` env var; a conftest fixture or clearer error would help future contributors.
+
