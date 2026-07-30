@@ -1173,3 +1173,25 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Regression: healthy practice → offline vs AI still loads with zero overlay instances.
   - Success rate: 100% (7/7 verifications). No new backend or frontend issues.
 
+
+---
+
+### 2026-02-24 — Remote player shooting animation + smooth movement interpolation
+- **User request**: "make it so you can see other players shooting animations and smoothen the player animations for the other players"
+- **Remote shooting animation** (visible on ALL non-local shooters — humans + bots):
+  - `_buildHumanoid` now attaches a `remoteMuzzleFlash` mesh to the `heldGun` group — small warm-yellow sphere (color `0xffe488`, additive blending, opacity 0 by default) positioned at the barrel tip. Returns `heldGun` + `remoteMuzzleFlash` alongside the other rig handles.
+  - `_addRemotePlayer` stores both on the entry + initialises `shootT: 0`.
+  - `shot` event handler (non-local shooter branch): sets `shooter.shootT = 120` ms + `remoteMuzzleFlash.material.opacity = 1` + randomises scale between 0.7 and 1.3 so full-auto flickers naturally instead of showing a static neon dot.
+  - Per-frame decay: `shootT -= dt*1000`, `muzzleFlash.opacity -= dt*12` (flash gone in ~85ms so each bullet flashes independently).
+  - Additive arm recoil applied **after** the walk/idle cycle (`rightArm.rotation.x += -0.55 * recoilU`, `.z += 0.18 * recoilU`) so it layers on top of the pose. Torso.rotation.z assigned (`= -0.08 * recoilU`) since the walk cycle doesn't touch that axis. Skipped during death animation.
+- **Smooth movement**:
+  - State-update handler previously called `mesh.position.lerp(target, 0.5)` per server tick (~20Hz) → visible stairstep at 60/120/144fps. Now writes `entry.targetX/Y/Z/targetYaw` to the entry only.
+  - Per-frame loop lerps position + yaw toward the targets with `smooth = 1 - exp(-15 * dt)` (dt-based exponential ease). Identical feel at any FPS — closes ~63% of the distance in one server tick (~66ms) which reads as snappy-but-smooth.
+  - Yaw uses shortest-arc lerp (unwrap ±π) so a wrap doesn't spin the model the long way round.
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_23.json`):
+  - 11/11 checkpoints pass. Playwright inspected `window.__virtueEngine.players` live, injected the shot code path, and observed the correct arm rotation + muzzle flash decay in one rAF.
+  - Movement smoothing confirmed by sampling bot positions at 100ms cadence: 85/144 distinct positions per bot over 15s indicates per-frame interpolation, not 20Hz stairstep.
+  - No console errors; local HUD unaffected.
+- **Design/refactor notes surfaced by testing agent (deferred)**:
+  - `engine.js` is now 6006 lines — a `RemotePlayerAnimator` extraction (position smoothing, shootT ticking, muzzle-flash decay, death anim) would be a natural first split when we do the P1 refactor.
+
