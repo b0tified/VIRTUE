@@ -3896,6 +3896,12 @@ export class GameEngine {
     const skin = this._applyTeamSkin(state, baseSkin);
     const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, remoteMuzzleFlash } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
+    // Humanoid rig's face + gun barrel point local +Z, but the game's
+    // yaw convention has forward = (-sin(yaw), -cos(yaw)) = local -Z.
+    // Rotate the mesh 180° so its face aligns with the direction the
+    // player is actually moving/shooting. Without this, other players
+    // appear to be facing backward while firing at you.
+    group.rotation.y = (state.yaw || 0) + Math.PI;
     this.scene.add(group);
     const label = this._makeLabel(state.username, state.is_bot, this._relationFor(state));
     label.position.set(0, 2.3, 0);
@@ -3956,7 +3962,7 @@ export class GameEngine {
       // frame update lerps toward the target with a dt-based factor
       // so movement is smooth at any render FPS regardless of the
       // server tick rate.
-      targetX: state.x, targetZ: state.z, targetY: 0, targetYaw: state.yaw || 0,
+      targetX: state.x, targetZ: state.z, targetY: 0, targetYaw: (state.yaw || 0) + Math.PI,
       prevX: state.x, prevZ: state.z,
       animPhase: Math.random() * 6.28,
       movingSpeed: 0,
@@ -4503,7 +4509,7 @@ export class GameEngine {
         entry.targetX = p.x;
         entry.targetZ = p.z;
         entry.targetY = meshLift;
-        entry.targetYaw = p.yaw;
+        entry.targetYaw = (p.yaw || 0) + Math.PI;
 
         // Death animation trigger
         if (entry.prevAlive && !p.alive) {
