@@ -89,19 +89,19 @@ export default function AccountSettingsCard({ user, refreshMe }) {
   const Msg = StatusMsg;
 
   return (
-    <div className="card-pow p-0 overflow-hidden" data-testid="account-settings-card">
-      <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
+    <div className="rounded border border-neutral-800 overflow-hidden bg-neutral-950" data-testid="account-settings-card">
+      <div className="bg-black text-white px-5 py-3 flex items-center gap-2 border-b border-neutral-800">
         <UserCog size={18} strokeWidth={3} className="text-[#FFD700]" />
         <span className="font-anton uppercase tracking-widest">Account</span>
       </div>
-      <div className="p-4 space-y-5 bg-white">
+      <div className="p-4 space-y-5 bg-neutral-950 text-white">
         {/* Change username */}
         <form onSubmit={submitName} className="space-y-2" data-testid="change-username-form">
-          <label className="font-anton uppercase tracking-widest text-xs">
+          <label className="font-anton uppercase tracking-widest text-xs text-neutral-200">
             Change Username
           </label>
-          <div className="text-xs text-neutral-500">
-            Current: <strong>{user?.username}</strong> · Cooldown: once every 7 days
+          <div className="text-xs text-neutral-400">
+            Current: <strong className="text-white">{user?.username}</strong> · Cooldown: once every 7 days
           </div>
           <div className="flex gap-2">
             <input
@@ -112,14 +112,14 @@ export default function AccountSettingsCard({ user, refreshMe }) {
               minLength={2}
               maxLength={20}
               pattern="[A-Za-z0-9_.\-]{2,20}"
-              className="flex-1 border-2 border-black px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD700] text-sm"
+              className="flex-1 rounded border border-neutral-800 bg-neutral-900 text-white placeholder:text-neutral-500 px-3 py-2 outline-none focus:border-[#FFD700] text-sm"
               data-testid="change-username-input"
               required
             />
             <button
               type="submit"
               disabled={nameBusy || !newName.trim() || newName.trim() === user?.username}
-              className="bg-[#0055FF] hover:bg-[#003fbf] disabled:opacity-60 text-white font-anton uppercase tracking-widest px-4 py-2 border-2 border-black text-sm"
+              className="rounded bg-[#0055FF] hover:bg-[#003fbf] disabled:opacity-60 text-white font-anton uppercase tracking-widest px-4 py-2 text-sm"
               data-testid="change-username-submit"
             >
               {nameBusy ? "..." : "Save"}
@@ -130,11 +130,11 @@ export default function AccountSettingsCard({ user, refreshMe }) {
 
         {/* Security question */}
         <form onSubmit={submitSecurity} className="space-y-2" data-testid="security-question-form">
-          <label className="font-anton uppercase tracking-widest text-xs flex items-center gap-1.5">
+          <label className="font-anton uppercase tracking-widest text-xs flex items-center gap-1.5 text-neutral-200">
             <KeyRound size={14} strokeWidth={3} />
             Security Question
           </label>
-          <div className="text-xs text-neutral-500">
+          <div className="text-xs text-neutral-400">
             {user?.security_question
               ? "Change your question or update the answer."
               : "Required for the Forgot-Password flow."}
@@ -142,7 +142,7 @@ export default function AccountSettingsCard({ user, refreshMe }) {
           <select
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            className="w-full border-2 border-black px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD700] text-sm bg-white"
+            className="w-full rounded border border-neutral-800 bg-neutral-900 text-white px-3 py-2 outline-none focus:border-[#FFD700] text-sm"
             data-testid="security-question-select"
             required
           >
@@ -158,14 +158,14 @@ export default function AccountSettingsCard({ user, refreshMe }) {
             onChange={(e) => setAnswer(e.target.value)}
             minLength={2}
             maxLength={100}
-            className="w-full border-2 border-black px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD700] text-sm"
+            className="w-full rounded border border-neutral-800 bg-neutral-900 text-white placeholder:text-neutral-500 px-3 py-2 outline-none focus:border-[#FFD700] text-sm"
             data-testid="security-question-answer-input"
             required
           />
           <button
             type="submit"
             disabled={secBusy || !question || !answer.trim()}
-            className="bg-[#0055FF] hover:bg-[#003fbf] disabled:opacity-60 text-white font-anton uppercase tracking-widest px-4 py-2 border-2 border-black text-sm"
+            className="rounded bg-[#0055FF] hover:bg-[#003fbf] disabled:opacity-60 text-white font-anton uppercase tracking-widest px-4 py-2 text-sm"
             data-testid="security-question-submit"
           >
             {secBusy ? "..." : user?.security_question ? "Update" : "Save"}
