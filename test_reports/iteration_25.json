@@ -1,0 +1,23 @@
+{
+  "summary": "Backend-only verification of performance-scaled ranked RP delta. Ran the new anchor-case pytest (test_ranked_perf_rp.py) plus placement scaling and full regression suite. All targeted tests pass (8/8 new + 31/31 regression = 39/39). Code inspected at server.py:5519-5543; formula matches spec exactly: base = compute_rp_delta(placement, tier_idx); perf_delta = kills*3 - deaths*5; delta = clamp(base+perf, -60, +35). Placement branch untouched, still uses its +150/-200 caps.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_ranked_perf_rp.py",
+    "/app/backend/tests/test_placement_performance_bonus.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Formula and comments in server.py:5519-5543 are clear and self-documenting with worked examples. No issues.",
+    "server.py is 9164 lines — long-term should be split into modules, but out of scope for this small change."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "N/A",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Ranked non-placement RP now performance-scaled with clamp [-60, +35]. Placement matches still use their own +150/-200 caps in the if-is_placement branch. Anchor tests locked at test_ranked_perf_rp.py.",
+  "rca of the issue": "N/A — feature verification, not a bug."
+}

@@ -5517,8 +5517,30 @@ class GameRoom:
                         delta = base + perf
                         base_delta = delta
                     else:
+                        # Non-placement ranked match — performance-scaled
+                        # RP delta so a dominant carry gets a real bump
+                        # over a lucky 1st place and a hard-throw pays
+                        # for it beyond the flat base.
+                        #
+                        # Formula:
+                        #   base    = compute_rp_delta(placement, tier_idx)
+                        #             (podium curve — see line ~529)
+                        #   perf    = kills * 3 − deaths * 5
+                        #   delta   = clamp(base + perf, −60, +35)
+                        #
+                        # Sanity checks (user-specified anchor cases):
+                        #   27 K / 3 D + 1st place, Silver:
+                        #     base = +30, perf = 81 − 15 = +66
+                        #     total = clamp(96, −60, +35) = +35  ✓ full max win
+                        #   3 K / 9 D + 4th place, Silver:
+                        #     base = −30, perf = 9 − 45 = −36
+                        #     total = clamp(−66, −60, +35) = −60 ✓ full max loss
+                        #   Balanced 10 K / 10 D + 2nd place:
+                        #     base = +15, perf = 30 − 50 = −20
+                        #     total = clamp(−5, −60, +35) = −5   (slight loss)
                         base_delta = compute_rp_delta(placement, cur_tier_idx)
-                        delta = base_delta
+                        perf_delta = p.kills * 3 - p.deaths * 5
+                        delta = max(-60, min(35, base_delta + perf_delta))
                     new_points = max(0, cur + delta)
                     tier_idx, tier_name = rank_for_points(new_points)
                     # Tier delta for the rank-up overlay: rank_change > 0
