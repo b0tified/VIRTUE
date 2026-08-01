@@ -7,7 +7,8 @@ import {
   Flame, Star, Zap, Bomb, Target, Skull, Sparkles, Award,
   Check, Lock, Gem, Snowflake, Atom, Shield, Users,
 } from "lucide-react";
-import { rankIconFor, divisionRoman } from "@/game/rankIcons";
+import { rankIconFor, divisionRoman, isUltimateGooner } from "@/game/rankIcons";
+import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import RankProgressBar from "@/components/RankProgressBar";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
@@ -273,6 +274,7 @@ export default function Profile() {
             name={currentName}
             division={user?.rank_division ?? 0}
             points={currentRP}
+            leaderboardRank={user?.leaderboard_rank ?? null}
             testid="profile-current-rank"
           />
           <RankCard
@@ -836,8 +838,10 @@ function SectionHeader({ title, testid }) {
 }
 
 
-function RankCard({ label, tier, name, division = 0, points, crown = false, testid }) {  const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
-  const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
+function RankCard({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid }) {
+  const ultimate = isUltimateGooner(tier, leaderboardRank);
+  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, tier))];
+  const textColor = ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A");
   const roman = divisionRoman(division);
   return (
     <div className="card-pow p-0 overflow-hidden" data-testid={testid}>
@@ -847,17 +851,26 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, test
       </div>
       <div className="flex items-stretch">
         <div className="font-display px-5 py-5 text-4xl uppercase flex-1 flex items-center gap-3" style={{ background: color, color: textColor }}>
-          <AnimatedRankIcon
-            tier={tier}
-            division={division}
-            size={60}
-            testid={`${testid}-icon`}
-          />
+          {ultimate ? (
+            <UltimateGoonerBadge rank={leaderboardRank} size={54} data-testid={`${testid}-ultimate-badge`} />
+          ) : (
+            <AnimatedRankIcon
+              tier={tier}
+              division={division}
+              size={60}
+              testid={`${testid}-icon`}
+            />
+          )}
           <div className="flex flex-col leading-none">
-            <span>{name}</span>
+            <span className={ultimate ? "text-3xl" : ""}>{ultimate ? "ULTIMATE GOONER" : name}</span>
             {roman && tier !== 7 && (
               <span className="font-anton tracking-widest text-base mt-1 opacity-90" data-testid={`${testid}-division`}>
                 {roman}
+              </span>
+            )}
+            {ultimate && (
+              <span className="font-anton tracking-widest text-sm mt-1" data-testid={`${testid}-leaderboard-tag`}>
+                #{leaderboardRank} GLOBAL
               </span>
             )}
           </div>

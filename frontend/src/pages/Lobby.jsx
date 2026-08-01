@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -914,9 +914,44 @@ export default function Lobby() {
                   </div>
                 );
               })}
+              {/* Ultimate Gooner — special sub-tier above Goonmaster,
+                  awarded to the top-50 GOONMASTER players globally. Not
+                  a real RP band (any Goonmaster qualifies) so it lives
+                  outside the RANK_TIERS map. Rendered in gold with a
+                  flame icon to sell the prestige. `data-testid` follows
+                  the tier-row naming so tests can find it. */}
+              <div
+                className="border-t-2 border-black bg-gradient-to-r from-[#FFF7D6] via-[#FFE9A6] to-[#FFF7D6]"
+                data-testid="tier-row-ultimate"
+              >
+                <div className="grid grid-cols-12 items-center">
+                  <div className="col-span-1 font-display text-2xl text-center py-3 text-[#B80020]">★</div>
+                  <div
+                    className="col-span-7 font-display text-2xl py-3 px-3 flex items-center gap-3"
+                    style={{ background: "#FFD700", color: "#0A0A0A" }}
+                  >
+                    <Flame
+                      size={38}
+                      strokeWidth={3}
+                      color="#0A0A0A"
+                      fill="#B80020"
+                      data-testid="tier-ultimate-icon"
+                    />
+                    <span>ULTIMATE GOONER</span>
+                  </div>
+                  <div className="col-span-4 font-anton uppercase text-[11px] sm:text-xs py-3 px-3 leading-tight">
+                    TOP&nbsp;50 GOONMASTERS
+                    <div className="text-[10px] text-neutral-600 mt-0.5 normal-case">
+                      Icon shows your global rank #
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div className="border-t-4 border-black bg-[#FFD700] px-4 py-3 font-anton uppercase text-xs leading-relaxed">
-                <div>BELOW MASTERS: +30 (1st) · +15 (2nd) · 0 (3rd) · -30 (lower)</div>
-                <div>MASTERS+: +30 (1st) · 0 (2nd) · -60 (3rd) · -60 (lower)</div>
+                <div>BASE: +30 (1st) · +15 (2nd) · 0 (3rd) · -30 (lower)</div>
+                <div>MASTERS+ BASE: +30 (1st) · 0 (2nd) · -60 (3rd) · -60 (lower)</div>
+                <div className="mt-1">PERFORMANCE: (KILLS × 3) − (DEATHS × 5) added on top</div>
+                <div>CAPPED AT: <span className="text-[#06A35F]">+35 max win</span> · <span className="text-[#E62429]">−60 max loss</span></div>
               </div>
             </div>
           </div>

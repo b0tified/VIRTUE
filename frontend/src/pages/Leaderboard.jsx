@@ -3,10 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
 import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive, Medal, Crown } from "lucide-react";
 import audioBus from "@/game/audio";
-import { divisionRoman } from "@/game/rankIcons";
+import { divisionRoman, isUltimateGooner, rankLabelFor } from "@/game/rankIcons";
 import { useAuth } from "@/context/AuthContext";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import PublicProfileModal from "@/components/PublicProfileModal";
+import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -163,9 +164,11 @@ export default function Leaderboard() {
                   <span className="tabular-nums">{me.rank_points ?? 0} RP</span>
                   <span
                     className="text-[10px] px-1.5 py-0.5 border-2 border-black"
-                    style={{ background: RANK_COLORS[Math.max(0, Math.min(7, me.rank_tier ?? 0))], color: (me.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A" }}
+                    style={{ background: isUltimateGooner(me.rank_tier, myIdx + 1) ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, me.rank_tier ?? 0))], color: isUltimateGooner(me.rank_tier, myIdx + 1) ? "#0A0A0A" : ((me.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A") }}
                   >
-                    {(me.rank_name || "BRONZE") + (divisionRoman(me.rank_division) ? ` ${divisionRoman(me.rank_division)}` : "")}
+                    {isUltimateGooner(me.rank_tier, myIdx + 1)
+                      ? "ULTIMATE GOONER"
+                      : ((me.rank_name || "BRONZE") + (divisionRoman(me.rank_division) ? ` ${divisionRoman(me.rank_division)}` : ""))}
                   </span>
                 </div>
               </div>
@@ -306,14 +309,29 @@ export default function Leaderboard() {
                         </span>
                       ) : null}
                     </div>
-                    <div className="col-span-2 text-right">
-                      <span
-                        className="font-anton uppercase text-sm px-2 py-1"
-                        style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
-                        data-testid={`leaderboard-rank-${i}`}
-                      >
-                        {(r.rank_name || "BRONZE") + (divisionRoman(r.rank_division) ? ` ${divisionRoman(r.rank_division)}` : "")}
-                      </span>
+                    <div className="col-span-2 text-right flex items-center justify-end gap-1.5">
+                      {(() => {
+                        const leaderPos = i + 1;
+                        const ultimate = isUltimateGooner(tier, leaderPos);
+                        return (
+                          <>
+                            <span
+                              className="font-anton uppercase text-sm px-2 py-1"
+                              style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A") }}
+                              data-testid={`leaderboard-rank-${i}`}
+                            >
+                              {ultimate ? "ULTIMATE GOONER" : rankLabelFor(tier, r.rank_division ?? 0, r.rank_name)}
+                            </span>
+                            {ultimate && (
+                              <UltimateGoonerBadge
+                                rank={leaderPos}
+                                size={22}
+                                data-testid={`leaderboard-ultimate-gooner-${i}`}
+                              />
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     <div className="col-span-2 text-right font-display text-2xl tabular-nums">{r.rank_points ?? 0}</div>
                   </button>
@@ -424,14 +442,29 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
                 />
                 <span className="truncate">{r.username}</span>
               </div>
-              <div className="col-span-2 text-right">
-                <span
-                  className="font-anton uppercase text-sm px-2 py-1"
-                  style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
-                  data-testid={`archive-rank-${i}`}
-                >
-                  {r.rank_name || "BRONZE"}
-                </span>
+              <div className="col-span-2 text-right flex items-center justify-end gap-1.5">
+                {(() => {
+                  const leaderPos = i + 1;
+                  const ultimate = isUltimateGooner(tier, leaderPos);
+                  return (
+                    <>
+                      <span
+                        className="font-anton uppercase text-sm px-2 py-1"
+                        style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A") }}
+                        data-testid={`archive-rank-${i}`}
+                      >
+                        {ultimate ? "ULTIMATE GOONER" : (r.rank_name || "BRONZE")}
+                      </span>
+                      {ultimate && (
+                        <UltimateGoonerBadge
+                          rank={leaderPos}
+                          size={20}
+                          data-testid={`archive-ultimate-gooner-${i}`}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div className="col-span-2 text-right font-display text-2xl tabular-nums">{r.rank_points ?? 0}</div>
             </div>
