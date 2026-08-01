@@ -64,10 +64,28 @@ export function divisionRoman(division) {
   return { 1: "I", 2: "II", 3: "III" }[Number(division || 0)] || "";
 }
 
+// Returns true when the player is one of the top-50 GOONMASTER globals —
+// the "ULTIMATE GOONER" tier. Tier index 7 (Goonmaster) is the required
+// base rank; leaderboardRank must be a finite integer in [1, 50].
+export function isUltimateGooner(tier, leaderboardRank) {
+  return (
+    tier === 7 &&
+    Number.isFinite(leaderboardRank) &&
+    leaderboardRank >= 1 &&
+    leaderboardRank <= 50
+  );
+}
+
 // Combined display label, e.g. "SILVER II" or "GOONMASTER". `name`
 // defaults to the tier-mapped name when omitted. Falls back to just
-// the tier name when division is missing/0.
-export function rankLabelFor(tier, division, name = null) {
+// the tier name when division is missing/0. When the player qualifies
+// for ULTIMATE GOONER (top-50 Goonmaster global), the label is
+// upgraded — every pill / scoreboard row / match-end row reads the
+// upgraded rank consistently.
+export function rankLabelFor(tier, division, name = null, leaderboardRank = null) {
+  if (isUltimateGooner(tier, leaderboardRank)) {
+    return "ULTIMATE GOONER";
+  }
   const baseIdx = Math.max(0, Math.min(RANK_NAMES.length - 1, Number.isFinite(tier) ? tier : 0));
   const base = name || RANK_NAMES[baseIdx];
   const rom = divisionRoman(division);

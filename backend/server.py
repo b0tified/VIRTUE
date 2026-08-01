@@ -166,6 +166,14 @@ def public_user(user: dict) -> dict:
     selected = user.get("selected_skin") or "default"
     if selected not in owned:
         selected = "default"
+    # Ultimate Gooner: attach leaderboard_rank from the cached top-50
+    # map so scoreboards / kill feed / friends list can render the
+    # flame + #N badge on any Ultimate Gooner (not just the requesting
+    # user). Outside of top-50 the field stays absent — the client
+    # treats missing/null as "not Ultimate Gooner".
+    uid_str = str(user.get("_id", ""))
+    ultimate_pos = TOP50_GOONER_IDS.get(uid_str)
+    payload_extras = {"leaderboard_rank": ultimate_pos} if ultimate_pos else {}
     return {
         "id": str(user["_id"]),
         "email": user["email"],
@@ -214,6 +222,7 @@ def public_user(user: dict) -> dict:
         # is trivial (`Math.max(0, remaining - secondsSinceFetch)`).
         "ranked_ban_seconds": _ranked_ban_seconds(user),
         "created_at": user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+        **payload_extras,
     }
 
 
@@ -513,6 +522,42 @@ RANK_TIERS = [
     (1800, "GRANDMASTER"),
     (2100, "GOONMASTER"),
 ]
+
+# ─── Ultimate Gooner cache ───────────────────────────────────────────────
+# The top-50 GOONMASTER players (globally, by rank_points) get a special
+# "ULTIMATE GOONER" display tier — a flame icon with their leaderboard
+# number overlaid. This cache maps user_id -> position (1..50) so that
+# every `public_user()` payload (scoreboard, kill feed, friends list,
+# match state) can flag the top-50 without paying a count_documents
+# query per user. Refreshed by `refresh_ultimate_gooner_cache()` at
+# startup + every 30s from the tick loop.
+TOP50_GOONER_IDS: Dict[str, int] = {}
+_ULTIMATE_GOONER_REFRESHED_AT: float = 0.0
+ULTIMATE_GOONER_REFRESH_INTERVAL_S = 30.0
+
+
+async def refresh_ultimate_gooner_cache() -> None:
+    """Recompute the top-50 GOONMASTER user_id → position map from Mongo.
+    Cheap ($sort + $limit(50) on an already-indexed rank_points field)
+    so it's safe to call every 30s from the background tick loop.
+    On DB failure the previous cache is preserved — we'd rather show a
+    slightly-stale badge than a wrong one."""
+    global TOP50_GOONER_IDS, _ULTIMATE_GOONER_REFRESHED_AT
+    try:
+        # Only GOONMASTER (rank_points >= 2100) can be Ultimate Gooner.
+        cursor = db.users.find(
+            {"rank_points": {"$gte": RANK_TIERS[-1][0]}},
+            {"_id": 1, "rank_points": 1},
+        ).sort("rank_points", -1).limit(50)
+        new_map: Dict[str, int] = {}
+        pos = 0
+        async for doc in cursor:
+            pos += 1
+            new_map[str(doc["_id"])] = pos
+        TOP50_GOONER_IDS = new_map
+        _ULTIMATE_GOONER_REFRESHED_AT = time.time()
+    except Exception as e:
+        logger.warning("ultimate-gooner refresh failed: %s", e)
 
 # RP deltas by placement at end of a ranked match. Two simple tiers:
 #  - Below Masters (tier_idx < 5): 1st = +30, 2nd = +15, 3rd = 0, last = -30.
@@ -951,7 +996,18 @@ class UsernameChangeIn(BaseModel):
 async def on_startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("username")
+    # rank_points is queried both by the top-50 Ultimate Gooner refresh
+    # and by any global leaderboard endpoints — index it descending.
+    await db.users.create_index([("rank_points", -1)])
     await db.match_history.create_index([("user_id", 1), ("ended_at", -1)])
+    # Prime the Ultimate Gooner cache once at boot so the very first
+    # /auth/me response after a restart carries the correct badge for
+    # any top-50 player. Subsequent refreshes are triggered by the
+    # background tick loop every ULTIMATE_GOONER_REFRESH_INTERVAL_S.
+    try:
+        await refresh_ultimate_gooner_cache()
+    except Exception as e:
+        logger.warning("initial ultimate-gooner cache prime failed: %s", e)
     # Friendships: bidirectional pair, status in {pending,accepted,blocked}.
     # Pending: `from_user_id` sent the request; `to_user_id` must accept.
     await db.friendships.create_index([("from_user_id", 1), ("to_user_id", 1)], unique=True)
@@ -1041,6 +1097,19 @@ async def on_startup():
     asyncio.create_task(seeded_climb_loop())
     asyncio.create_task(synthetic_online_loop())
     asyncio.create_task(_backfill_past_seasons_once())
+    asyncio.create_task(_ultimate_gooner_refresh_loop())
+
+
+async def _ultimate_gooner_refresh_loop():
+    """Refresh the top-50 GOONMASTER cache every 30s. Runs forever.
+    Failures inside `refresh_ultimate_gooner_cache` are already logged
+    + swallowed so we can't kill this loop by throwing."""
+    while True:
+        await asyncio.sleep(ULTIMATE_GOONER_REFRESH_INTERVAL_S)
+        try:
+            await refresh_ultimate_gooner_cache()
+        except Exception as e:
+            logger.warning("ultimate-gooner loop tick failed: %s", e)
 
 
 async def _backfill_past_seasons_once():

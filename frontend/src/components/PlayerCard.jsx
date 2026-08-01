@@ -10,8 +10,9 @@ import {
   Gem, Snowflake, Atom, Eye,
   Anchor, Cat, Dog, Rocket, Drama, Wind, Cherry, Bird, Diamond, Heart,
 } from "lucide-react";
-import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor, divisionRoman } from "@/game/rankIcons";
+import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor, divisionRoman, isUltimateGooner } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
+import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
 
 const RANK_COLORS = TIER_COLORS;
 
@@ -251,24 +252,31 @@ export default function PlayerCard({
             )}
           </div>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span
-              className={`font-anton uppercase tracking-widest px-2 py-0.5 border-2 border-black ${dims.rank}`}
-              style={{ background: rankColor, color: rankTextColor }}
-              data-testid={`${testid}-rank`}
-            >
-              {isBot ? "BOT" : (rankName + (divisionRoman(rankDivision) ? ` ${divisionRoman(rankDivision)}` : ""))}
-            </span>
-            {/* Goonmaster-only: show the player's global leaderboard
-                position (e.g. "#3") next to the rank pill. */}
-            {!isBot && t === 7 && Number.isFinite(leaderboardRank) && leaderboardRank > 0 && (
-              <span
-                className={`font-anton uppercase tracking-widest px-2 py-0.5 border-2 border-black bg-[#FFD700] text-black ${dims.rank}`}
-                data-testid={`${testid}-leaderboard-rank`}
-                title="Global leaderboard rank"
-              >
-                #{leaderboardRank}
-              </span>
-            )}
+            {(() => {
+              const ultimate = !isBot && isUltimateGooner(t, leaderboardRank);
+              return (
+                <>
+                  <span
+                    className={`font-anton uppercase tracking-widest px-2 py-0.5 border-2 border-black ${dims.rank}`}
+                    style={{ background: rankColor, color: rankTextColor }}
+                    data-testid={`${testid}-rank`}
+                  >
+                    {isBot ? "BOT" : (ultimate
+                      ? "ULTIMATE GOONER"
+                      : (rankName + (divisionRoman(rankDivision) ? ` ${divisionRoman(rankDivision)}` : "")))}
+                  </span>
+                  {/* Ultimate Gooner (top-50 Goonmaster) → flame + #N.
+                      Other Goonmasters just show the plain rank pill. */}
+                  {ultimate && (
+                    <UltimateGoonerBadge
+                      rank={leaderboardRank}
+                      size={22}
+                      data-testid={`${testid}-ultimate-gooner`}
+                    />
+                  )}
+                </>
+              );
+            })()}
             {!isBot && (
               <span className={`font-anton tabular-nums ${dims.points} text-neutral-700`} data-testid={`${testid}-rp`}>
                 {rankPoints} RP
