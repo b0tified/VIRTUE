@@ -1246,3 +1246,22 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Backend: 8/8 new anchor tests + 31/31 regression = **39/39 pass**.
   - No frontend changes needed — match-end overlay already renders whatever `delta` the server sends.
 
+
+---
+
+### 2026-02-24 — Ultimate Gooner tier (top-50 Goonmaster)
+- **User request**: "make top 50 players in goonmaster rank get a new rank called Ultimate gooner. make that rank icon be a flame with the number they are on the leaderboard"
+- **Backend** (`server.py`):
+  - `TOP50_GOONER_IDS: Dict[str, int]` cache — user_id → 1..50 position.
+  - `refresh_ultimate_gooner_cache()` — `db.users.find({rank_points: >=2100}).sort(-1).limit(50)` populates the cache. Failures preserve the previous cache. Indexed on rank_points at startup.
+  - `_ultimate_gooner_refresh_loop()` — background task refreshes every 30s. Initial refresh runs at `on_startup`.
+  - `public_user()` — attaches `leaderboard_rank` from the cache when the user_id is present (top-50). Absent otherwise so the client falls back to plain Goonmaster.
+- **Frontend**:
+  - `rankIcons.js` — new `isUltimateGooner(tier, leaderboardRank)` helper (true when tier===7 && rank in [1,50]). Updated `rankLabelFor(tier, division, name, leaderboardRank)` to return `'ULTIMATE GOONER'` for those users.
+  - `UltimateGoonerBadge.jsx` — new component: a golden Flame (lucide-react) with a warm halo behind + the leaderboard number overlaid in the flame's belly (Bangers/Anton stack, gold text-shadow for prestige). Sized to match the rank pill.
+  - `PlayerCard.jsx` — renders the badge next to an upgraded 'ULTIMATE GOONER' pill for top-50 Goonmasters. Non-top-50 Goonmasters see the standard 'GOONMASTER' pill (the old `#N` position pill is retired — only top-50 gets the highlight now).
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_26.json`):
+  - Backend: 5/5 new unit tests + 31/31 regression = **36/36 pass**.
+  - Live e2e: admin bumped to 2600 rank_points → `/api/auth/me` returned `rank_tier=7` + `leaderboard_rank=5` → PlayerCard header showed 'ULTIMATE GOONER' pill + golden flame badge with "5" inside. Restored → non-Goonmaster confirmed no badge.
+  - Screenshot: `/app/test_reports/ultimate_gooner_lobby.png`.
+
