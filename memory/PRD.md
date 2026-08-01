@@ -1225,3 +1225,24 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - `Player(user={})` construction requires `user['email']` — use `.get('email','user')` for easier unit testing.
 - `queue_endpoints_regression.py` needs the `REACT_APP_BACKEND_URL` env var; a conftest fixture or clearer error would help future contributors.
 
+
+---
+
+### 2026-02-24 — Performance-scaled ranked RP (non-placement matches)
+- **User request**: "add performance based gains and losses to ranked up to 35 points a win and 60 for a bad loss. ex kda 27/3 they should gain the full 35. ex kda 3/9 they should lose 60"
+- **Formula** (server.py `_end_match` non-placement `else` branch, line ~5519-5541):
+  - `base_delta = compute_rp_delta(placement, tier_idx)` — unchanged podium curve.
+  - `perf_delta = p.kills * 3 - p.deaths * 5`
+  - `delta = max(-60, min(35, base_delta + perf_delta))`
+- **Anchor cases** (locked in `/app/backend/tests/test_ranked_perf_rp.py`):
+  - `27 K / 3 D + 1st`: base +30, perf +66, sum +96 → clamped to **+35** ✓
+  - `3 K / 9 D + 4th`: base -30, perf -36, sum -66 → clamped to **-60** ✓
+  - `15 K / 5 D + 1st`: sum +50 → clamped to +35 (solid carry still capped)
+  - `0 K / 20 D + 4th` (Silver): base -30 + -100 → clamped to -60
+  - `0 K / 20 D + 4th` (Masters+): base -60 + -100 → clamped to -60 (Masters+ can't lose more than max)
+  - `10 K / 10 D + 2nd`: +15 base + (-20 perf) = -5 (a balanced 2nd-place is a slight net loss now)
+- **Placement matches UNCHANGED**: they keep their +150 bonus / -200 penalty scaling and hard win/lose ±100 base. Only non-placement ranked matches get the new -60/+35 clamp.
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_25.json`):
+  - Backend: 8/8 new anchor tests + 31/31 regression = **39/39 pass**.
+  - No frontend changes needed — match-end overlay already renders whatever `delta` the server sends.
+
