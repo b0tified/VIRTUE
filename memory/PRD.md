@@ -1265,3 +1265,26 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Live e2e: admin bumped to 2600 rank_points → `/api/auth/me` returned `rank_tier=7` + `leaderboard_rank=5` → PlayerCard header showed 'ULTIMATE GOONER' pill + golden flame badge with "5" inside. Restored → non-Goonmaster confirmed no badge.
   - Screenshot: `/app/test_reports/ultimate_gooner_lobby.png`.
 
+
+---
+
+### 2026-02-24 — Ultimate Gooner surfacing: leaderboard + profile + show-tiers
+- **User request**: "make the leaderboard show the new rank; show the rank on player profile; update show tiers button"
+- **Leaderboard** (`/app/frontend/src/pages/Leaderboard.jsx`):
+  - Live top-100 rows (line ~305): tier-7 rows at position ≤ 50 render an `ULTIMATE GOONER` gold pill + `UltimateGoonerBadge` (flame + #N).
+  - Archive rows (line ~450): same treatment.
+  - "You are #N" banner (line ~170): current user pill upgrades to ULTIMATE GOONER when their `myIdx + 1 ≤ 50` and they're tier 7.
+- **Profile** (`/app/frontend/src/pages/Profile.jsx`):
+  - `RankCard` accepts `leaderboardRank`. When `isUltimateGooner(tier, leaderboardRank)` is true, the icon slot renders a large 54px `UltimateGoonerBadge` in place of the animated tier icon, the label reads "ULTIMATE GOONER", and a "#N GLOBAL" subtitle appears under the label.
+  - Current Rank card gets `leaderboardRank={user?.leaderboard_rank ?? null}`. Peak Rank card intentionally left unchanged (peak is a historical high-water snapshot, not a live global position).
+- **Public Profile Modal** (`/app/frontend/src/components/PublicProfileModal.jsx`):
+  - `RankPill` upgraded to accept + render `leaderboardRank`, so kill-feed / friends-list / leaderboard-row profile clicks all show the ULTIMATE GOONER pill + flame badge consistently.
+- **Show-Tiers modal** (`/app/frontend/src/pages/Lobby.jsx`):
+  - New `tier-row-ultimate` row rendered below GOONMASTER — golden gradient background, Flame icon in burgundy fill, "TOP 50 GOONMASTERS" label with an "Icon shows your global rank #" subtitle. Marks the row as visually distinct from the RP-band tiers since it isn't itself an RP band.
+  - RP-formula footer updated to reflect iteration_25's new performance-scaled system: base curve + `(kills × 3) − (deaths × 5)`, capped at **+35 max win / −60 max loss**. Old flat +30/-30 line replaced.
+- **Verification** (`testing_agent` → `/app/test_reports/iteration_27.json`):
+  - Backend: 32/32 pass (5 new + 27 regression).
+  - Live e2e (admin bumped to 2600 RP): `/leaderboard` shows 50 ULTIMATE GOONER pills + flame badges, `/profile` Current Rank card shows the flame + "#5 GLOBAL" subtitle, `/lobby` Show Tiers modal contains the tier-row-ultimate row + updated formula footer.
+  - Regression: player1@shooter.com (Bronze) shows zero ULTIMATE GOONER text + zero ultimate-badge elements anywhere.
+  - Screenshots: `lb_ultimate.png`, `profile_ultimate.png`, `lobby_ultimate.png`.
+
