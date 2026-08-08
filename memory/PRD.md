@@ -1339,3 +1339,21 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `test_ranked_bots_still_have_100_hp`: pre-existing ranked normalization still works.
 - **Live verification**: backend hot-reload re-spawned the TDM pre-fill (14 disguised bots across quick-match + practice TDM rooms) under the fixed code path.
 
+
+### 2026-02-24 — Party Quick Match → shared casual queue
+- **User request**: "change party matches to just join the quick match queue"
+- **Old flow**: `PartyPanel` START QUICK MATCH called `POST /party/start`, which flipped `match_starting=true`, and every party-mate polled that flag and auto-navigated to a private bot-filled party FFA room (`GameRoom(is_ranked=False, is_party=True)`).
+- **New flow**: The button now calls `useQueue().joinCasual()` (same helper the lobby's own QUICK MATCH button uses). The whole party is enqueued as a single multi-user entry in `CASUAL_QUEUE`, and both members' casual-queue pollers see `in_queue: true` → `matched: true` → auto-nav into the SHARED casual room (real head-to-head OR bot-filled after 10s, whichever comes first, just like solo Quick Match).
+- **Backend** (`/app/backend/server.py`):
+  - `POST /queue/casual` now: (a) looks up caller's party via `_party_for_user`; (b) returns `403 "Only the party leader can queue Quick Match."` for non-leader party members; (c) enqueues one multi-user `CASUAL_QUEUE` entry with `user_ids: [leader, ...all members]` + `is_party: True` when partied, otherwise the classic solo entry; (d) returns `{is_party, party_size}` alongside the existing bot-fill / ETA fields.
+  - `DELETE /queue/casual` now scrubs `MATCHED_USERS` for EVERY member of the removed entry — mirrors ranked's clean cancel so a mid-match cancel by the leader doesn't leave a party-mate with a stale `matched` flag.
+- **Frontend** (`/app/frontend/src/components/PartyPanel.jsx`):
+  - Dropped the `useEffect` that watched `party.match_starting` + the `useNavigate` + `navigateToMatch` imports (dead code now).
+  - `startQuick` calls `joinCasual()`; new `cancelQuick` calls `cancelCasual()`. The button toggles between `QUICK MATCH` and `QUICK QUEUE · {casualWaitSec}s · CANCEL` based on `casualInQueue` (mirrors the ranked toggle right underneath).
+  - Non-leader now sees `IN QUICK QUEUE · {Ns}` (red) when the party is casual-queued, alongside the existing `IN RANKED QUEUE @ {tier}` (blue) state.
+  - Ranked button is disabled while the party is in the Quick Match queue (mutual exclusion).
+- **Tests** (`/app/backend/tests/test_party_casual_queue.py` — 2 new):
+  - `test_party_casual_queue_end_to_end`: follower 403 → leader enqueues → both `in_queue:true` → cancel scrubs BOTH from `MATCHED_USERS` + `CASUAL_QUEUE`.
+  - `test_solo_casual_queue_still_works`: solo user still enqueues 1 user with `is_party:False`.
+- **Live verification** (curl with partyleader + partyfollower test accounts): follower POST → 403 with correct copy; leader POST → both members poll `in_queue:true`, `queue_size:1`; leader DELETE → both cleared. `/party/start` endpoint kept intact for backwards compat with existing tests.
+

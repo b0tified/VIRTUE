@@ -7086,30 +7086,56 @@ async def queue_casual_join(user: dict = Depends(get_current_user)):
     (no rank tiers). Matched head-to-head when another entry exists,
     otherwise bot-filled after CASUAL_BOT_FILL_SEC (10s).
 
+    If the caller is in a party, the whole party is enqueued as a
+    single multi-user entry (mirroring the party-ranked flow). Only
+    the party leader may queue; non-leaders get a 403 explaining why.
+
     Returns an `estimated_wait_seconds` sampled inside the
     3-12s window so the client can pin a stable "Est. wait ~Xs" pill
     on the queue toast. The value re-rolls per join, but the client's
     lockedEtaRef preserves it for the lifetime of the queue session so
     the number doesn't tick down/jump around every second."""
     user_id = str(user["_id"])
+    party = await _party_for_user(user_id)
+    is_party = bool(party)
+    if is_party and party.get("leader_id") != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the party leader can queue Quick Match.",
+        )
+    if is_party:
+        member_ids = list(party["members"])
+        usernames: List[str] = []
+        for uid in member_ids:
+            mdoc = await db.users.find_one({"_id": ObjectId(uid)}, {"username": 1})
+            usernames.append((mdoc or {}).get("username", "?"))
+    else:
+        member_ids = [user_id]
+        usernames = [user.get("username", "?")]
     async with QUEUE_LOCK:
-        _remove_user_from_casual_queue(user_id)
-        MATCHED_USERS.pop(user_id, None)
+        # Yank any existing casual entries for every party member so a
+        # stale solo entry can't co-exist with the party entry.
+        for uid in member_ids:
+            _remove_user_from_casual_queue(uid)
+            MATCHED_USERS.pop(uid, None)
         eta = random.uniform(3.0, 12.0)
         CASUAL_QUEUE.append({
             "user_id": user_id,
-            "user_ids": [user_id],
+            "user_ids": member_ids,
             "username": user.get("username", "?"),
-            "usernames": [user.get("username", "?")],
+            "usernames": usernames,
             "joined_at": time.time(),
             "estimated_wait_seconds": int(round(eta)),
-            "is_party": False,
+            "is_party": is_party,
+            "party_id": (party or {}).get("party_id") if is_party else None,
         })
     return {
         "ok": True,
         "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
         "estimated_wait_seconds": int(round(eta)),
         "queue_size": len(CASUAL_QUEUE),
+        "is_party": is_party,
+        "party_size": len(member_ids),
     }
 
 
@@ -7153,11 +7179,17 @@ async def queue_casual_state(user: dict = Depends(get_current_user)):
 
 @api.delete("/queue/casual")
 async def queue_casual_leave(user: dict = Depends(get_current_user)):
-    """Leave the casual queue and clear any stale matched flag."""
+    """Leave the casual queue and clear any stale matched flag. When
+    the caller was queued as part of a party, `_remove_user_from_casual_queue`
+    yanks the whole multi-user entry — mirror that here by scrubbing
+    every party-mate's `MATCHED_USERS` too so nobody ends up half-matched."""
     user_id = str(user["_id"])
     async with QUEUE_LOCK:
-        _remove_user_from_casual_queue(user_id)
+        removed = _remove_user_from_casual_queue(user_id)
         MATCHED_USERS.pop(user_id, None)
+        if removed:
+            for uid in (removed.get("user_ids") or []):
+                MATCHED_USERS.pop(uid, None)
     return {"ok": True}
 
 

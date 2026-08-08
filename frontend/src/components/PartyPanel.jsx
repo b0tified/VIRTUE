@@ -1,39 +1,30 @@
 /* Persistent party panel — shown in the lobby when the user is in a party.
    Polls /api/party/me every 5s via the parent. Leader can:
-     - Start a Quick Match (sends every party-mate into the party room)
+     - Queue Quick Match (whole party enters the shared casual queue)
      - Queue Ranked together (whole party enters the ranked queue at the
        max tier across all members)
    Members can:
      - Leave
      - See the queue state + the ranked-anchor tier
-   All members auto-navigate to the party room when `match_starting=true`,
-   and to the ranked room when the queue resolves (via QueueContext).
+   All members auto-navigate to the shared match room when either queue
+   resolves (handled by QueueContext's casual/ranked pollers).
 */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useState } from "react";
 import { Users, Crown, Play, LogOut, Shield, Loader2, X } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
 import { divisionRoman } from "@/game/rankIcons";
 import { useQueue } from "@/context/QueueContext";
-import { navigateToMatch } from "@/lib/navigateToMatch";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 export default function PartyPanel({ party, myId, refresh, className = "" }) {
-  const nav = useNavigate();
-  const startedRef = useRef(false);
-  const { queueState, waitSec, joinRanked, cancelRanked } = useQueue();
+  const {
+    queueState, waitSec, joinRanked, cancelRanked,
+    casualQueueState, casualWaitSec, joinCasual, cancelCasual,
+  } = useQueue();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-
-  useEffect(() => {
-    if (party?.match_starting && !startedRef.current) {
-      startedRef.current = true;
-      navigateToMatch(nav, `/play?mode=party&party_id=${party.party_id}`, { mode: "party" });
-    }
-    if (!party?.match_starting) startedRef.current = false;
-  }, [party?.match_starting, party?.party_id, nav]);
 
   const leave = useCallback(async () => {
     try { await api.post("/party/leave"); } catch {}
@@ -43,14 +34,21 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
   const startQuick = useCallback(async () => {
     setBusy(true); setErr(null);
     try {
-      const { data } = await api.post("/party/start");
-      navigateToMatch(nav, `/play?mode=party&party_id=${data.party_id}`, { mode: "party" });
+      const r = await joinCasual();
+      if (r && !r.ok) {
+        setErr(r.error || "Couldn't join Quick Match queue.");
+      }
     } catch (e) {
-      setErr(e.response?.data?.detail || "Couldn't start party match.");
+      setErr(e.response?.data?.detail || "Couldn't join Quick Match queue.");
     } finally {
       setBusy(false);
     }
-  }, [nav]);
+  }, [joinCasual]);
+
+  const cancelQuick = useCallback(async () => {
+    setBusy(true);
+    try { await cancelCasual(); } finally { setBusy(false); }
+  }, [cancelCasual]);
 
   const queueRanked = useCallback(async () => {
     setBusy(true); setErr(null);
@@ -62,6 +60,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
   if (!party || !party.party_id) return null;
   const isLeader = party.leader_id === myId;
   const inRankedQueue = !!queueState && !queueState.matched;
+  const inCasualQueue = !!(casualQueueState && (casualQueueState.in_queue || casualQueueState.matched));
   const tier = party.ranked_tier_name || "BRONZE";
 
   return (
@@ -147,23 +146,37 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
         )}
         {isLeader ? (
           <>
-            <button
-              onClick={startQuick}
-              disabled={busy || inRankedQueue}
-              className="btn-pow bg-[#E62429] text-white w-full [&]:py-1.5 [&]:text-sm"
-              data-testid="party-start-button"
-            >
-              <span className="flex items-center justify-center gap-2">
-                <Play size={14} strokeWidth={3} /> START QUICK MATCH
-              </span>
-            </button>
+            {!inCasualQueue ? (
+              <button
+                onClick={startQuick}
+                disabled={busy || inRankedQueue}
+                className="btn-pow bg-[#E62429] text-white w-full [&]:py-1.5 [&]:text-sm"
+                data-testid="party-start-button"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <Play size={14} strokeWidth={3} /> QUICK MATCH
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={cancelQuick}
+                disabled={busy}
+                className="btn-pow bg-neutral-700 text-white w-full [&]:py-1.5 [&]:text-sm"
+                data-testid="party-quick-cancel"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 size={14} strokeWidth={3} className="animate-spin" />
+                  QUICK QUEUE · {casualWaitSec}s · CANCEL
+                </span>
+              </button>
+            )}
             {/* RANKED queue — the headline feature: parties queue together
                 at the highest member's tier. Backend handles eligibility
                 + tier resolution; this button just kicks the queue. */}
             {!inRankedQueue ? (
               <button
                 onClick={queueRanked}
-                disabled={busy}
+                disabled={busy || inCasualQueue}
                 className="btn-pow bg-[#0055FF] text-white w-full [&]:py-1.5 [&]:text-sm"
                 data-testid="party-ranked-button"
                 title={`Queues whole party at ${tier}`}
@@ -194,6 +207,14 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
             >
               <Loader2 size={12} strokeWidth={3} className="animate-spin" />
               IN RANKED QUEUE @ {tier} · {waitSec}s
+            </div>
+          ) : inCasualQueue ? (
+            <div
+              className="px-2 py-2 text-center font-anton uppercase text-xs text-[#E62429] flex items-center justify-center gap-2"
+              data-testid="party-member-quick-info"
+            >
+              <Loader2 size={12} strokeWidth={3} className="animate-spin" />
+              IN QUICK QUEUE · {casualWaitSec}s
             </div>
           ) : (
             <div
