@@ -188,6 +188,12 @@ def public_user(user: dict) -> dict:
         # is the currently-equipped title's season number (or null).
         "past_seasons": list(user.get("past_seasons") or []),
         "title_season": (int(user["title_season"]) if isinstance(user.get("title_season"), (int, float)) else None),
+        # `title_ultimate` — when True the player has equipped the
+        # "ULTIMATE GOONER" banner title. Only valid when they're
+        # currently in the top-50 GOONMASTER cache; renderers verify
+        # `leaderboard_rank` before actually displaying it so a stale
+        # flag left over from dropping out of top-50 is a no-op.
+        "title_ultimate": bool(user.get("title_ultimate", False)),
         "stats": stats,
         "level": lvl["level"],
         "xp": lvl["xp"],
@@ -2204,8 +2210,12 @@ async def set_banner(payload: BannerIn, user: dict = Depends(get_current_user)):
 class TitleIn(BaseModel):
     """Past-season title selector. `season` is either the number of the
     past season the player wants displayed on their banner, or `None`
-    to clear the title entirely."""
+    to clear the title entirely. `ultimate=True` equips the special
+    "ULTIMATE GOONER" title (only valid when the caller is currently
+    in the top-50 GOONMASTER leaderboard cache) — it is mutually
+    exclusive with `season`."""
     season: Optional[int] = Field(default=None)
+    ultimate: Optional[bool] = Field(default=None)
 
 
 @api.post("/profile/me/title")
@@ -2213,13 +2223,40 @@ async def set_title(payload: TitleIn, user: dict = Depends(get_current_user)):
     """Equip / clear the past-season peak-rank title shown alongside the
     banner. Only seasons the player actually finished (present in their
     `past_seasons` array) can be equipped — protects against a client
-    stamping "SEASON 99 · GOONMASTER" on themselves."""
+    stamping "SEASON 99 · GOONMASTER" on themselves. The special
+    ULTIMATE GOONER title is gated on live top-50 membership."""
+    # ── ULTIMATE GOONER path ──────────────────────────────────────
+    # `ultimate=True` → equip the Ultimate title (must be in top-50).
+    # `ultimate=False` explicitly clears just the flag, useful when
+    # the client wants to remove the Ultimate title but preserve the
+    # season pick. Any `season` value is ignored in that clear case.
+    if payload.ultimate is True:
+        uid_str = str(user["_id"])
+        if uid_str not in TOP50_GOONER_IDS:
+            raise HTTPException(status_code=403, detail="You must be a top-50 Goonmaster to equip this title.")
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"title_ultimate": True, "title_season": None}},
+        )
+        user["title_ultimate"] = True
+        user["title_season"] = None
+        return public_user(user)
+    if payload.ultimate is False:
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"title_ultimate": False}},
+        )
+        user["title_ultimate"] = False
+        return public_user(user)
+
+    # ── Season path (unchanged, plus title_ultimate reset) ─────────
     if payload.season is None:
         await db.users.update_one(
             {"_id": user["_id"]},
-            {"$set": {"title_season": None}},
+            {"$set": {"title_season": None, "title_ultimate": False}},
         )
         user["title_season"] = None
+        user["title_ultimate"] = False
         return public_user(user)
     past = list(user.get("past_seasons") or [])
     found = next((e for e in past if int(e.get("season", -1)) == int(payload.season)), None)
@@ -2227,9 +2264,10 @@ async def set_title(payload: TitleIn, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="You didn't finish that season — nothing to display.")
     await db.users.update_one(
         {"_id": user["_id"]},
-        {"$set": {"title_season": int(payload.season)}},
+        {"$set": {"title_season": int(payload.season), "title_ultimate": False}},
     )
     user["title_season"] = int(payload.season)
+    user["title_ultimate"] = False
     return public_user(user)
 
 

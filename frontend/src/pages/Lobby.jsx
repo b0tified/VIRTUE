@@ -684,7 +684,7 @@ export default function Lobby() {
           </h1>
 
           <div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
-            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} />
+            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} leaderboardRank={user?.leaderboard_rank ?? null} />
             {user?.in_placements && (
               <div
                 className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white"
@@ -1160,9 +1160,17 @@ const RANK_TIERS = [
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);
 
-function RankBadge({ tier, name, division, points }) {
-  const color = RANK_COLORS[Math.max(0, Math.min(7, tier))];
-  const textColor = tier === 7 ? "#FFD700" : "#0A0A0A";
+function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
+  // Ultimate Gooner (top-50 Goonmasters globally) upgrade the pill to
+  // gold + flame icon + "ULTIMATE GOONER" label. Sub-division is
+  // hidden — the Ultimate tier is undivided.
+  const ultimate =
+    tier === 7 &&
+    Number.isFinite(Number(leaderboardRank)) &&
+    Number(leaderboardRank) >= 1 &&
+    Number(leaderboardRank) <= 50;
+  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, tier))];
+  const textColor = ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A");
   const roman = { 1: "I", 2: "II", 3: "III" }[Number(division || 0)] || "";
   return (
     <div className="border-pow shadow-pow-sm flex items-center gap-0" data-testid="rank-badge">
@@ -1175,12 +1183,27 @@ function RankBadge({ tier, name, division, points }) {
         className="flex items-center justify-center px-3 py-2 relative"
         style={{ background: color, overflow: "visible" }}
       >
-        <AnimatedRankIcon tier={tier} division={division} size={48} testid="rank-badge-icon" />
+        {ultimate ? (
+          <Flame
+            size={48}
+            strokeWidth={3}
+            color="#0A0A0A"
+            fill="#B80020"
+            data-testid="rank-badge-ultimate-icon"
+          />
+        ) : (
+          <AnimatedRankIcon tier={tier} division={division} size={48} testid="rank-badge-icon" />
+        )}
       </div>
       <div className="font-display px-4 py-2 text-2xl uppercase flex items-baseline gap-1.5" style={{ background: color, color: textColor }}>
-        <span>{name}</span>
-        {roman && tier !== 7 && (
+        <span data-testid="rank-badge-name">{ultimate ? "ULTIMATE GOONER" : name}</span>
+        {!ultimate && roman && tier !== 7 && (
           <span className="font-anton text-sm tracking-widest opacity-90" data-testid="rank-badge-division">{roman}</span>
+        )}
+        {ultimate && (
+          <span className="font-anton text-sm tracking-widest opacity-80" data-testid="rank-badge-ultimate-tag">
+            #{Number(leaderboardRank)}
+          </span>
         )}
       </div>
       <div className="bg-white px-3 py-2 font-anton uppercase tracking-widest text-sm">

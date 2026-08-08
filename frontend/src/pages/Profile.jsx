@@ -184,11 +184,24 @@ export default function Profile() {
   // ─────────────────────────────────────────────────────────────────
   const pastSeasons = Array.isArray(user?.past_seasons) ? user.past_seasons : [];
   const equippedTitleSeason = user?.title_season ?? null;
+  const titleUltimateEquipped = !!user?.title_ultimate;
+  const leaderboardRankMe = Number(user?.leaderboard_rank);
+  const canEquipUltimate = Number.isFinite(leaderboardRankMe) && leaderboardRankMe >= 1 && leaderboardRankMe <= 50;
   const [savingTitle, setSavingTitle] = useState(false);
   const updateTitle = async (season) => {
     setSavingTitle(true);
     try {
       await api.post("/profile/me/title", { season });
+      await refreshMe();
+    } catch (e) {
+      alert(_apiErrorMessage(e, "Could not save title"));
+    }
+    setSavingTitle(false);
+  };
+  const updateTitleUltimate = async (equip) => {
+    setSavingTitle(true);
+    try {
+      await api.post("/profile/me/title", { ultimate: !!equip });
       await refreshMe();
     } catch (e) {
       alert(_apiErrorMessage(e, "Could not save title"));
@@ -336,8 +349,12 @@ export default function Profile() {
         <TitlePicker
           pastSeasons={pastSeasons}
           equippedSeason={equippedTitleSeason}
+          ultimateEquipped={titleUltimateEquipped}
+          canEquipUltimate={canEquipUltimate}
+          leaderboardRank={leaderboardRankMe}
           saving={savingTitle}
           onPick={updateTitle}
+          onPickUltimate={updateTitleUltimate}
         />
 
         <SectionHeader title="Stats" testid="profile-section-stats" />
@@ -1282,12 +1299,24 @@ function BannerCustomizer({ iconIdx, colorIdx, animated, animatedUnlocked, savin
 /* TitlePicker — small card listing every finished season with the peak
    tier the user hit. Selecting one equips it as the banner title (e.g.
    "S2 · DIAMOND"); the "NONE" tile clears it. The whole card is hidden
-   when the user has no past seasons yet so brand-new accounts don't see
-   an empty state on their first sign-in. */
-function TitlePicker({ pastSeasons = [], equippedSeason = null, saving = false, onPick }) {
+   when the user has no past seasons yet AND they don't qualify for the
+   Ultimate Gooner title (top-50 Goonmaster) so brand-new accounts don't
+   see an empty state on their first sign-in. */
+function TitlePicker({
+  pastSeasons = [],
+  equippedSeason = null,
+  ultimateEquipped = false,
+  canEquipUltimate = false,
+  leaderboardRank = null,
+  saving = false,
+  onPick,
+  onPickUltimate,
+}) {
   // Sort newest-season first so the most recent flex is easiest to grab.
   const sorted = [...pastSeasons].sort((a, b) => Number(b?.season || 0) - Number(a?.season || 0));
-  if (sorted.length === 0) return null;
+  // Hide the card only when there's absolutely nothing to display.
+  if (sorted.length === 0 && !canEquipUltimate && !ultimateEquipped) return null;
+  const noneSelected = equippedSeason == null && !ultimateEquipped;
   return (
     <div className="mt-6" data-testid="profile-titles-card">
       <div className="flex items-center justify-between mb-2">
@@ -1301,16 +1330,36 @@ function TitlePicker({ pastSeasons = [], equippedSeason = null, saving = false, 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {/* None option */}
         <TitleTile
-          selected={equippedSeason == null}
+          selected={noneSelected}
           disabled={saving}
           onClick={() => onPick(null)}
           label="NONE"
           sublabel="No title"
           testid="profile-title-tile-none"
         />
+        {/* Ultimate Gooner — special title above every season title.
+            Only rendered when the user is currently top-50 (canEquip)
+            OR still has it equipped from an earlier top-50 stint (so
+            they can toggle it off cleanly if desired). The gold + flame
+            styling matches the lobby / leaderboard treatment. */}
+        {(canEquipUltimate || ultimateEquipped) && (
+          <TitleTile
+            selected={ultimateEquipped}
+            disabled={saving || (!canEquipUltimate && !ultimateEquipped)}
+            onClick={() => onPickUltimate(!ultimateEquipped)}
+            label="ULTIMATE"
+            sublabel={
+              ultimateEquipped && Number.isFinite(leaderboardRank)
+                ? `#${leaderboardRank} GOONER`
+                : "GOONER"
+            }
+            testid="profile-title-tile-ultimate"
+            variant="ultimate"
+          />
+        )}
         {sorted.map((entry) => {
           const s = Number(entry?.season || 0);
-          const active = Number(equippedSeason) === s;
+          const active = !ultimateEquipped && Number(equippedSeason) === s;
           const label = `S${s}`;
           const sub = String(entry?.tier_name || "").toUpperCase() || "UNRANKED";
           return (
@@ -1330,17 +1379,32 @@ function TitlePicker({ pastSeasons = [], equippedSeason = null, saving = false, 
   );
 }
 
-function TitleTile({ selected, disabled, onClick, label, sublabel, testid }) {
+function TitleTile({ selected, disabled, onClick, label, sublabel, testid, variant = "default" }) {
+  const isUltimate = variant === "ultimate";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       data-testid={testid}
-      className={`border-pow-thin p-3 text-left transition-all bg-white ${
+      className={`border-pow-thin p-3 text-left transition-all relative ${
+        isUltimate
+          ? "bg-gradient-to-br from-[#FFD700] via-[#FFE9A6] to-[#FFD700] text-black"
+          : "bg-white"
+      } ${
         selected ? "ring-4 ring-[#E62429] translate-y-[-2px]" : "hover:translate-y-[-1px]"
       } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
     >
+      {isUltimate && (
+        <Flame
+          size={16}
+          strokeWidth={3}
+          color="#0A0A0A"
+          fill="#B80020"
+          className="absolute top-2 right-2"
+          data-testid={`${testid}-flame`}
+        />
+      )}
       <div className="font-display text-2xl leading-none">{label}</div>
       <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 mt-1">
         {sublabel}

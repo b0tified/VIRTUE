@@ -1288,3 +1288,28 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Regression: player1@shooter.com (Bronze) shows zero ULTIMATE GOONER text + zero ultimate-badge elements anywhere.
   - Screenshots: `lb_ultimate.png`, `profile_ultimate.png`, `lobby_ultimate.png`.
 
+
+
+### 2026-02-24 — Ultimate Gooner ranked TITLE + Lobby RANK pill
+- **User request**: "make the ultimate gooner rank have a ranked title and also appear in the lobby as the rank"
+- **Backend** (`/app/backend/server.py`):
+  - Added `title_ultimate: bool` field to the user document + `public_user` DTO (defaults False).
+  - Extended `TitleIn` Pydantic model with `ultimate: Optional[bool]`.
+  - `POST /profile/me/title` now handles three mutually-exclusive branches:
+    - `ultimate=True` → equip ULTIMATE GOONER title (403 unless `str(uid)` in `TOP50_GOONER_IDS`); clears `title_season`.
+    - `ultimate=False` → clears just the flag, preserving any season pick.
+    - `season=<n>` (or `season=None`) → sets/clears the season title AND clears `title_ultimate` (two titles are mutually exclusive).
+- **Frontend** (`/app/frontend/src/game/bannerTitle.js`):
+  - `formatBannerTitle` returns literal `"ULTIMATE GOONER"` when `user.title_ultimate === true` AND `user.leaderboard_rank ∈ [1,50]` (stale flag from a top-50 drop-out silently renders as no-title). Ultimate takes precedence over the season entry.
+  - `bannerTitleTierIdx` returns 7 for equipped ultimate → picks up the goonmaster shimmer CSS class (`banner-title-anim-goonmaster`).
+- **Lobby RankBadge** (`/app/frontend/src/pages/Lobby.jsx`):
+  - `RankBadge` now accepts `leaderboardRank`. When qualifying, the pill switches to `#FFD700` background, flame icon (`lucide-react` `Flame`, dark stroke + burgundy fill), label reads `ULTIMATE GOONER` with a small `#N` tag beside it. Division roman numeral is suppressed.
+  - Called with `leaderboardRank={user?.leaderboard_rank ?? null}` from the lobby hero row.
+- **Profile TitlePicker** (`/app/frontend/src/pages/Profile.jsx`):
+  - New special `ULTIMATE` tile — golden gradient background + flame corner icon — rendered above the season tiles when the user is currently top-50 (`canEquipUltimate`) OR still has it equipped (`ultimateEquipped`). Toggles via `POST /profile/me/title` with `{ultimate: true|false}`.
+  - Picking a season tile clears any equipped ultimate via the backend contract.
+  - Card no longer auto-hides for brand-new accounts that qualify for ultimate (previous "no past_seasons → return null" check now also checks the ultimate qualification).
+- **Tests** (`/app/backend/tests/test_ultimate_gooner_title.py` — 2 new):
+  - `test_ultimate_title_endpoint_flow`: end-to-end walk-through covering non-top-50 → 403, top-50 equip clears season, clear-via-ultimate=False, and season pick clears ultimate.
+  - `test_public_user_exposes_title_ultimate`: DTO surface + default fallback.
+- **Live verification** (curl + Playwright): admin @ leaderboard #1 equipped ULTIMATE via API and the lobby renders the gold+flame ranked pill "ULTIMATE GOONER #1" and the user PlayerCard shows "ULTIMATE GOONER" as the banner title.

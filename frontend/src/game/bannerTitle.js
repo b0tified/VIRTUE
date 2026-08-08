@@ -1,9 +1,14 @@
 /* Helper — builds the compact banner title string ("S2 · DIAMOND") for a
    user based on their `past_seasons[]` array + the currently-equipped
    `title_season`. Returns `null` when the user has no title equipped or
-   the equipped season isn't in their past-seasons list. */
+   the equipped season isn't in their past-seasons list.
+
+   Special case: when `user.title_ultimate === true` AND the user is
+   currently top-50 (`leaderboard_rank` in 1..50), the banner shows
+   "ULTIMATE GOONER" instead — the flex title for top-50 Goonmasters. */
 export function formatBannerTitle(user) {
   if (!user) return null;
+  if (_isUltimateEquipped(user)) return "ULTIMATE GOONER";
   const entry = _resolveEquippedEntry(user);
   if (!entry) return null;
   const tierName = (entry.tier_name || "").toString().toUpperCase();
@@ -12,8 +17,10 @@ export function formatBannerTitle(user) {
 
 /* Returns the tier index (0..7) of the currently-equipped title, or
    -1 when nothing is equipped. Callers use this to decide whether to
-   apply the Master+ (>= 5) animated CSS class. */
+   apply the Master+ (>= 5) animated CSS class. Ultimate title reports
+   tier 7 so it gets the top-tier goonmaster shimmer. */
 export function bannerTitleTierIdx(user) {
+  if (_isUltimateEquipped(user)) return 7;
   const entry = _resolveEquippedEntry(user);
   if (!entry) return -1;
   const t = Number(entry.tier);
@@ -29,6 +36,12 @@ export function bannerTitleAnimClass(user) {
   if (idx >= 6) return "banner-title-anim banner-title-anim-grandmaster";
   if (idx >= 5) return "banner-title-anim banner-title-anim-master";
   return "";
+}
+
+function _isUltimateEquipped(user) {
+  if (!user || !user.title_ultimate) return false;
+  const r = Number(user.leaderboard_rank);
+  return Number.isFinite(r) && r >= 1 && r <= 50;
 }
 
 function _resolveEquippedEntry(user) {
