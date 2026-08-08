@@ -8799,6 +8799,12 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     t_idx, t_name = rank_for_points(pts)
     p_idx, p_name = rank_for_points(peak)
     user_id = str(u["_id"])
+    # Ultimate Gooner: expose the cached top-50 leaderboard rank so the
+    # public-profile modal can render the flame + #N badge on both the
+    # Current AND Peak rank pills. Missing entry ⇒ not Ultimate ⇒ the
+    # client falls through to standard tier rendering.
+    ultimate_pos = TOP50_GOONER_IDS.get(user_id)
+    leaderboard_extras = {"leaderboard_rank": ultimate_pos} if ultimate_pos else {}
     if private:
         return {
             "id": user_id,
@@ -8826,7 +8832,9 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             # public profile modal.
             "past_seasons": list(u.get("past_seasons") or []),
             "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
+            "title_ultimate": bool(u.get("title_ultimate", False)),
             "online": is_online(user_id),
+            **leaderboard_extras,
         }
     cursor = db.match_history.find(
         {"user_id": user_id}, {"_id": 0}
@@ -8867,8 +8875,10 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         # profile modal renders the equipped title on the banner.
         "past_seasons": list(u.get("past_seasons") or []),
         "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
+        "title_ultimate": bool(u.get("title_ultimate", False)),
         "online": is_online(user_id),
         "history": history,
+        **leaderboard_extras,
     }
 
 

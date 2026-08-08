@@ -451,6 +451,35 @@ canvas { outline: none; display: block; }
   .banner-anim::after { animation: none !important; }
 }
 
+/* =============================================================
+   Ultimate Gooner flame — lobby rank pill animation.
+   Reuses the flame-flicker rhythm from `.avatar-anim-flame` but
+   scoped to a single Flame lucide icon (no wrapping wrapper needed
+   — the class goes straight on the <svg>). Adds a soft radial halo
+   via ::before on the surrounding relative container.
+   ============================================================= */
+.ultimate-flame-halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,200,60,0.85), rgba(230,36,41,0.5) 55%, transparent 78%);
+  filter: blur(6px);
+  z-index: 0;
+  animation: anim-flame-pulse 1.15s ease-in-out infinite;
+  pointer-events: none;
+}
+.ultimate-flame-icon {
+  position: relative;
+  z-index: 1;
+  animation: anim-flame-flicker 0.9s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255,180,20,0.9));
+  will-change: transform, filter;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ultimate-flame-halo, .ultimate-flame-icon { animation: none !important; }
+}
+
+
 
 /* =============================================================
    Lobby animated background

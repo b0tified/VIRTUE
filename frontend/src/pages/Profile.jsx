@@ -296,6 +296,7 @@ export default function Profile() {
             name={peakName}
             division={user?.peak_rank_division ?? 0}
             points={peakRP}
+            leaderboardRank={user?.leaderboard_rank ?? null}
             crown
             testid="profile-peak-rank"
           />

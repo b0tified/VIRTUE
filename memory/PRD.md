@@ -1313,3 +1313,18 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `test_ultimate_title_endpoint_flow`: end-to-end walk-through covering non-top-50 → 403, top-50 equip clears season, clear-via-ultimate=False, and season pick clears ultimate.
   - `test_public_user_exposes_title_ultimate`: DTO surface + default fallback.
 - **Live verification** (curl + Playwright): admin @ leaderboard #1 equipped ULTIMATE via API and the lobby renders the gold+flame ranked pill "ULTIMATE GOONER #1" and the user PlayerCard shows "ULTIMATE GOONER" as the banner title.
+
+### 2026-02-24 — Ultimate Gooner polish: friends peak pill + lobby flame animation
+- **User request**: "make peak rank on friends list profile show ultimate gooner ; animate the ultimate gooner icon in lobby"
+- **Backend** (`/app/backend/server.py` → `GET /users/{username}/profile`):
+  - Attach `leaderboard_rank` (from `TOP50_GOONER_IDS[user_id]`) + `title_ultimate` to BOTH the public and the private branches of the payload. Without this the `PublicProfileModal` peak pill defaulted to plain GOONMASTER even when the target was a top-50 player.
+- **Frontend — friends profile peak rank** (`/app/frontend/src/components/PublicProfileModal.jsx`):
+  - The `Peak` `<RankPill>` now receives `leaderboardRank={data.leaderboard_rank ?? null}`. The existing `isUltimateGooner(tier, leaderboardRank)` gate inside `RankPill` (tier === 7 required) means non-Goonmaster peaks stay unaffected, while top-50 Goonmasters correctly upgrade to the ULTIMATE GOONER + flame badge on both Current AND Peak.
+- **Frontend — Profile.jsx** applied the same fix to the self-profile Peak Rank card (`RankCard label="Peak Rank" leaderboardRank={user?.leaderboard_rank ?? null}`).
+- **Lobby flame animation** (`/app/frontend/src/pages/Lobby.jsx` + `/app/frontend/src/index.css`):
+  - New CSS classes `.ultimate-flame-halo` (radial gold→red glow, `anim-flame-pulse` 1.15s ease-in-out) and `.ultimate-flame-icon` (lucide flame gets `anim-flame-flicker` 0.9s ease-in-out + drop-shadow). Both respect `prefers-reduced-motion`.
+  - Ultimate variant of `RankBadge` now renders a `<span aria-hidden className="ultimate-flame-halo" />` behind the Flame, and the Flame itself gains `className="ultimate-flame-icon"`. Uses `data-testid="rank-badge-ultimate-halo"` for tests.
+- **Tests** (`/app/backend/tests/test_public_profile_ultimate.py` — 1 new):
+  - `test_public_profile_exposes_leaderboard_rank_and_title_ultimate`: a top-50 target user's public profile returns `leaderboard_rank == 3` + `title_ultimate == True`; a non-top-50 target has no `leaderboard_rank` key and `title_ultimate == False`.
+- **Live verification** (curl): `GET /users/TEST_newname_x/profile` as `player1@shooter.com` now returns `leaderboard_rank: 1`, `title_ultimate: True`. Lobby screenshot with admin equipped confirms the flame halo + flicker animation renders on the rank pill.
+

@@ -1184,13 +1184,17 @@ function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
         style={{ background: color, overflow: "visible" }}
       >
         {ultimate ? (
-          <Flame
-            size={48}
-            strokeWidth={3}
-            color="#0A0A0A"
-            fill="#B80020"
-            data-testid="rank-badge-ultimate-icon"
-          />
+          <>
+            <span aria-hidden className="ultimate-flame-halo" data-testid="rank-badge-ultimate-halo" />
+            <Flame
+              size={48}
+              strokeWidth={3}
+              color="#0A0A0A"
+              fill="#B80020"
+              className="ultimate-flame-icon"
+              data-testid="rank-badge-ultimate-icon"
+            />
+          </>
         ) : (
           <AnimatedRankIcon tier={tier} division={division} size={48} testid="rank-badge-icon" />
         )}

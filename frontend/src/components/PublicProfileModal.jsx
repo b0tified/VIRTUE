@@ -130,7 +130,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
               />
               <div className="flex flex-col gap-1">
                 <RankPill label="Current" tier={data.rank_tier} name={data.rank_name} division={data.rank_division ?? 0} points={data.rank_points} leaderboardRank={data.leaderboard_rank ?? null} testid="public-profile-current-rank" />
-                <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} division={data.peak_rank_division ?? 0} points={data.peak_rank_points} crown testid="public-profile-peak-rank" />
+                <RankPill label="Peak" tier={data.peak_rank_tier} name={data.peak_rank_name} division={data.peak_rank_division ?? 0} points={data.peak_rank_points} leaderboardRank={data.leaderboard_rank ?? null} crown testid="public-profile-peak-rank" />
                 <div className="mt-1" data-testid="public-profile-progress-wrap">
                   <RankProgressBar
                     tier={data.rank_tier}
