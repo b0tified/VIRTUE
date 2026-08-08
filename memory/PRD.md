@@ -1328,3 +1328,14 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `test_public_profile_exposes_leaderboard_rank_and_title_ultimate`: a top-50 target user's public profile returns `leaderboard_rank == 3` + `title_ultimate == True`; a non-top-50 target has no `leaderboard_rank` key and `title_ultimate == False`.
 - **Live verification** (curl): `GET /users/TEST_newname_x/profile` as `player1@shooter.com` now returns `leaderboard_rank: 1`, `title_ultimate: True`. Lobby screenshot with admin equipped confirms the flame halo + flicker animation renders on the rank pill.
 
+
+### 2026-02-24 — TDM bot HP normalized to 100
+- **User request**: "make sure all bots have 100hp in TDM"
+- **Problem**: `GameRoom.spawn_bot` normalized ranked bots to `MAX_HP` (100) but every other room (including both TDM rooms) fell through to `int(BOT_MAX_HP * difficulty)`. The TDM pre-fill spawns at difficulty=1.45 → 116 HP, and the practice-TDM pre-fill at difficulty=1.2 → 96 HP. Result: TDM bots didn't share the human player's 100 HP pool, so trade fights felt off.
+- **Fix** (`/app/backend/server.py` → `GameRoom.spawn_bot`): expanded the HP-normalization condition from `if self.is_ranked` to `if self.is_ranked or self.game_mode == "tdm"`. Every TDM bot (quick-match TDM room, practice-TDM room, per-party TDM room, mid-match bot-fills) now spawns with `max_hp = MAX_HP = 100`. FFA casual/offline bots keep their forgiving scaled HP so practice mode remains beginner-friendly. Practice dummies (which override `max_hp = 50` post-spawn) are unaffected.
+- **Tests** (`/app/backend/tests/test_tdm_bot_hp.py` — 3 new):
+  - `test_tdm_bots_have_full_100_hp_regardless_of_difficulty`: sweeps difficulty 0.6→2.5 in a TDM room; every bot must be `max_hp == 100`.
+  - `test_ffa_casual_bots_keep_scaled_hp`: regression guard that non-TDM FFA casual bots keep `BOT_MAX_HP * difficulty`.
+  - `test_ranked_bots_still_have_100_hp`: pre-existing ranked normalization still works.
+- **Live verification**: backend hot-reload re-spawned the TDM pre-fill (14 disguised bots across quick-match + practice TDM rooms) under the fixed code path.
+

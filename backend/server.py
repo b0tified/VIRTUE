@@ -3682,12 +3682,12 @@ class GameRoom:
         bot.is_dummy = False
         # Difficulty scales aim accuracy and fire rate at runtime (see _tick_bots).
         bot.difficulty = max(0.5, float(difficulty))
-        # HP: Ranked bots share the player's HP pool (100) — no
-        # difficulty scaling. High-tier bots stay threatening via
-        # aim/movement/positioning, not by being HP-inflated damage
-        # sponges. Casual/offline bots keep the old scaled HP so
+        # HP: Ranked bots + all TDM bots share the player's HP pool
+        # (100) — no difficulty scaling. High-tier bots stay threatening
+        # via aim/movement/positioning, not by being HP-inflated damage
+        # sponges. Casual FFA / offline bots keep the old scaled HP so
         # practice bots remain forgiving.
-        if self.is_ranked:
+        if self.is_ranked or self.game_mode == "tdm":
             bot.max_hp = MAX_HP
         else:
             bot.max_hp = int(BOT_MAX_HP * bot.difficulty)
