@@ -8856,6 +8856,22 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     # client falls through to standard tier rendering.
     ultimate_pos = TOP50_GOONER_IDS.get(user_id)
     leaderboard_extras = {"leaderboard_rank": ultimate_pos} if ultimate_pos else {}
+    # Ban surfacing: leaderboard rows still show a banned user (their old
+    # RP may keep them in the top-100 for a while) so the profile modal
+    # needs a clear "BANNED" indicator. `check_ban` returns None for
+    # unbanned users and expired suspensions so this is a no-op most of
+    # the time. We reveal `banned`, `ban_status` ("banned"|"suspended"),
+    # and — for suspensions — the `ban_until` timestamp so the client
+    # can show "Suspended until …". `ban_reason` is intentionally omitted
+    # from the public payload to avoid doxxing the target.
+    ban_info = check_ban(u) if not is_bot else None
+    ban_extras = {}
+    if ban_info:
+        ban_extras = {
+            "banned": True,
+            "ban_status": ban_info.get("status"),
+            "ban_until": ban_info.get("until"),
+        }
     if private:
         return {
             "id": user_id,
@@ -8886,6 +8902,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             "title_ultimate": bool(u.get("title_ultimate", False)),
             "online": is_online(user_id),
             **leaderboard_extras,
+            **ban_extras,
         }
     cursor = db.match_history.find(
         {"user_id": user_id}, {"_id": 0}
@@ -8930,6 +8947,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "online": is_online(user_id),
         "history": history,
         **leaderboard_extras,
+        **ban_extras,
     }
 
 

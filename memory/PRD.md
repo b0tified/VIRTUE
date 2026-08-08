@@ -1376,3 +1376,20 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Master placement losses stay at the full −300 floor.
 - **Live verification**: lobby screenshot shows the redesigned badge with no "2x" segment (`PLACEMENTS 0/5` only).
 
+
+### 2026-02-24 — Public profile shows BANNED / SUSPENDED indicator
+- **User request**: "show a banned text on a profile that has been banned on the leaderboard"
+- **Problem**: Leaderboard rows still show banned users (their old rank_points anchor them there until manually scrubbed). Clicking the row opened `PublicProfileModal` with no visible sign the account had been actioned, so viewers couldn't tell why the top-of-the-board user was inactive/silent.
+- **Backend** (`/app/backend/server.py` → `GET /users/{username}/profile`):
+  - Reuses the existing `check_ban(u)` helper (skips bots, treats expired suspensions as unbanned). When active, adds `{banned: true, ban_status: "banned"|"suspended", ban_until: ISO-datetime|null}` to both the private and public payloads. `ban_reason` is intentionally omitted from the public payload to avoid doxxing.
+- **Frontend** (`/app/frontend/src/components/PublicProfileModal.jsx`):
+  - Added `Ban` lucide icon.
+  - Header pill: red `SUSPENDED` / `BANNED` badge (with Ban icon) next to REPORT. The `ONLINE` indicator is hidden when the account is banned (dead accounts can't be online in a useful sense).
+  - Full-width red banner directly below the header: large `Account Suspended` / `Account Banned` heading. Suspensions include a localized "Suspended until …" timestamp; permanent bans read "This account has been removed for violating community guidelines."
+- **Tests** (`/app/backend/tests/test_public_profile_banned.py` — 1 new, 4 cases):
+  - Permanent ban → `banned: True`, `ban_status: "banned"`.
+  - Active suspension → `banned: True`, `ban_status: "suspended"`, `ban_until` set.
+  - Expired suspension → `check_ban` returns None → response has no ban fields.
+  - Clean account → no ban fields.
+- **Live verification**: admin banned `partyfollower` (24h suspension); partyleader opened partyfollower's profile via the friends list and saw both the red `SUSPENDED` pill in the header + the full "Account Suspended · Suspended until 8/9/2026" banner. Cleanup: partyfollower unbanned back to a clean state.
+

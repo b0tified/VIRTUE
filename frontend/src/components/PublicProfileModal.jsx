@@ -1,7 +1,7 @@
 // Public profile modal — overlay shown when inspecting any other player.
 // Pulls /api/users/{username}/profile (email omitted server-side).
 import { useEffect, useState } from "react";
-import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star, Lock, Flag } from "lucide-react";
+import { X, History, Bot, Crown, Trophy, Swords, WifiOff, Loader2, Star, Lock, Flag, Ban } from "lucide-react";
 import api from "@/api";
 import PlayerCard from "@/components/PlayerCard";
 import RankProgressBar from "@/components/RankProgressBar";
@@ -63,7 +63,21 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
           <div className="font-display text-2xl sm:text-3xl text-[#FFD700] flex-1" data-testid="public-profile-username">
             {data?.username || username}
           </div>
-          {data?.online && (
+          {data?.banned && (
+            <span
+              className="font-anton uppercase text-[10px] tracking-widest px-2 py-1 border-2 border-white bg-[#E62429] text-white flex items-center gap-1"
+              data-testid="public-profile-banned-pill"
+              title={
+                data.ban_status === "suspended" && data.ban_until
+                  ? `Suspended until ${new Date(data.ban_until).toLocaleString()}`
+                  : "Account banned"
+              }
+            >
+              <Ban size={12} strokeWidth={3} />
+              {data.ban_status === "suspended" ? "SUSPENDED" : "BANNED"}
+            </span>
+          )}
+          {data?.online && !data?.banned && (
             <span className="font-anton uppercase text-xs text-[#06D6A0]" data-testid="public-profile-online">● ONLINE</span>
           )}
           {canReport && (
@@ -80,6 +94,29 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
             <X size={20} strokeWidth={3} />
           </button>
         </div>
+
+        {/* Banned banner — shown right below the header on any profile
+            with an active ban/suspension. Keeps the pill in the header
+            for quick scan + this larger banner so the state is obvious
+            even for players who missed the pill. */}
+        {data?.banned && (
+          <div
+            className="border-b-4 border-black bg-[#E62429] text-white px-5 py-3 flex items-center gap-3"
+            data-testid="public-profile-banned-banner"
+          >
+            <Ban size={22} strokeWidth={3} className="shrink-0" />
+            <div className="min-w-0">
+              <div className="font-display text-xl leading-none uppercase">
+                {data.ban_status === "suspended" ? "Account Suspended" : "Account Banned"}
+              </div>
+              <div className="font-anton uppercase text-[10px] tracking-widest mt-1 opacity-90">
+                {data.ban_status === "suspended" && data.ban_until
+                  ? `Suspended until ${new Date(data.ban_until).toLocaleString()}`
+                  : "This account has been removed for violating community guidelines."}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bots render an identical "private profile" state to a real user
             who's locked their profile — same padlock, same message, no
