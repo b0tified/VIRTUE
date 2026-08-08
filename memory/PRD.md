@@ -1357,3 +1357,22 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `test_solo_casual_queue_still_works`: solo user still enqueues 1 user with `is_party:False`.
 - **Live verification** (curl with partyleader + partyfollower test accounts): follower POST → 403 with correct copy; leader POST → both members poll `in_queue:true`, `queue_size:1`; leader DELETE → both cleared. `/party/start` endpoint kept intact for backwards compat with existing tests.
 
+
+### 2026-02-24 — Placement UI cleanup + past-Diamond win cap
+- **User request**: "remove 2x from placement border" + "make placement matches past diamond only gain 150 on the best performance game"
+- **UI** (`/app/frontend/src/pages/Lobby.jsx`):
+  - Removed the gold `2x / 2x RP` segment on the right side of the placement streak badge. The badge now just shows the star + `PLACEMENTS X/5` label. Also updated the hover tooltip copy from "2x RP gains" → "performance-scaled RP anchors your first 5 ranked matches to your true skill" (matches the actual math since the old flat 2x multiplier was replaced by the base ±100 + perf modifier weeks ago).
+- **Backend RP math** (`/app/backend/server.py`):
+  - Extracted the placement-delta formula into a top-level testable helper `compute_placement_delta(kills, deaths, placement, cur_tier_idx)`.
+  - Added `PLACEMENT_HIGH_TIER_WIN_CAP = 150` — when `cur_tier_idx >= 5` (Master / Grandmaster / Goonmaster) AND the computed delta would be positive AND > 150, it's clamped down to 150. Loss-side is untouched (returning veterans still shed RP at the full −300 floor on hard-throws).
+  - Range summary post-fix:
+    - Tier 0-4 (Bronze..Diamond): unchanged, `[-300, +250]`.
+    - Tier 5-7 (Master+): `[-300, +150]` — cap only affects wins with strong perf.
+- **Tests** (`/app/backend/tests/test_placement_high_tier_cap.py` — 10 new):
+  - Below-Diamond behaviour unchanged: monster-win +250, hard-throw −300, average win scales.
+  - Diamond (tier 4) is BELOW the cap and still uncapped.
+  - Master/Grandmaster/Goonmaster placement wins with monster perf clamp at +150.
+  - Master placement wins with modest perf (<= 150 total) are untouched.
+  - Master placement losses stay at the full −300 floor.
+- **Live verification**: lobby screenshot shows the redesigned badge with no "2x" segment (`PLACEMENTS 0/5` only).
+

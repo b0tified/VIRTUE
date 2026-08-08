@@ -618,6 +618,42 @@ def rank_for_points(points: int):
     return idx, name
 
 
+# Placement-match RP math (extracted for unit testing). Placement
+# matches use a hard "win or lose 100" base + a kills/deaths performance
+# modifier; the total range is roughly [−300, +250]. When the player is
+# already past Diamond (tier >= 5 → Master / Grandmaster / Goonmaster),
+# the positive delta is capped at +150 so a returning veteran can't
+# rocket back to peak on placement wins alone — placements should
+# re-anchor, not fast-track the climb.
+PLACEMENT_PERF_BONUS_CAP = 150
+PLACEMENT_PERF_PENALTY_CAP = -200
+PLACEMENT_HIGH_TIER_WIN_CAP = 150
+
+
+def compute_placement_delta(kills: int, deaths: int, placement: int, cur_tier_idx: int) -> int:
+    """RP delta for a placement match.
+
+    Args:
+      kills / deaths: player's frag line this match.
+      placement: 1 = 1st place, anything else counts as a loss.
+      cur_tier_idx: player's tier BEFORE the match (0..7).
+
+    Returns the signed RP delta. Values are clamped by:
+      • perf modifier in `[PLACEMENT_PERF_PENALTY_CAP, PLACEMENT_PERF_BONUS_CAP]`
+      • an extra positive cap of `PLACEMENT_HIGH_TIER_WIN_CAP` when `cur_tier_idx >= 5`
+    """
+    base = 100 if placement == 1 else -100
+    perf_raw = int(kills) * 10 - int(deaths) * 8
+    if perf_raw >= 0:
+        perf = min(PLACEMENT_PERF_BONUS_CAP, perf_raw)
+    else:
+        perf = max(PLACEMENT_PERF_PENALTY_CAP, perf_raw)
+    delta = base + perf
+    if cur_tier_idx >= 5 and delta > PLACEMENT_HIGH_TIER_WIN_CAP:
+        delta = PLACEMENT_HIGH_TIER_WIN_CAP
+    return delta
+
+
 def rank_division_for_points(points: int, tier_idx: Optional[int] = None) -> int:
     """Return the sub-division WITHIN a tier (1 = highest, 3 = lowest entry).
 
@@ -5597,31 +5633,14 @@ class GameRoom:
                         # dominant carry doesn't earn the same as a
                         # lucky 1st place, and a hard-throw doesn't
                         # slip through with the same soft −100 as a
-                        # near-miss 2nd place.
-                        #
-                        # Placement is meant to anchor the player's
-                        # true skill ceiling within the first few
-                        # matches — the performance modifier
-                        # accelerates that convergence.
-                        base = 100 if placement == 1 else -100
-                        # Performance signal: kills weighted heavier
-                        # than deaths (encourages fragging over
-                        # camping). +10 per kill, −8 per death.
-                        perf_raw = p.kills * 10 - p.deaths * 8
-                        # Cap: up to +150 bonus (positive) and up to
-                        # −200 penalty (negative). Combined with the
-                        # base this gives a total range of
-                        #   worst:  −100 + (−200) = −300
-                        #   best:   +100 + (+150) = +250
-                        # matching the "up to 150 bonus / lose up to
-                        # 300" spec.
-                        PLACEMENT_PERF_BONUS_CAP = 150
-                        PLACEMENT_PERF_PENALTY_CAP = -200
-                        if perf_raw >= 0:
-                            perf = min(PLACEMENT_PERF_BONUS_CAP, perf_raw)
-                        else:
-                            perf = max(PLACEMENT_PERF_PENALTY_CAP, perf_raw)
-                        delta = base + perf
+                        # near-miss 2nd place. See `compute_placement_delta`
+                        # (top of file) for the full formula + caps.
+                        delta = compute_placement_delta(
+                            kills=p.kills,
+                            deaths=p.deaths,
+                            placement=placement,
+                            cur_tier_idx=cur_tier_idx,
+                        )
                         base_delta = delta
                     else:
                         # Non-placement ranked match — performance-scaled

@@ -689,7 +689,7 @@ export default function Lobby() {
               <div
                 className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white"
                 data-testid="placement-streak-badge"
-                title="Placement streak: 2x RP gains, no losses for your first 5 ranked matches."
+                title="Placement streak: performance-scaled RP anchors your first 5 ranked matches to your true skill."
               >
                 <div className="px-2 sm:px-3 py-1.5 sm:py-2 flex items-center gap-1.5 sm:gap-2">
                   <Star size={14} strokeWidth={3} className="text-[#FFD700]" />
@@ -699,9 +699,6 @@ export default function Lobby() {
                   <span className="font-display text-base sm:text-xl leading-none">
                     {user?.placement_matches_played ?? 0}/{user?.placement_matches_total ?? 5}
                   </span>
-                </div>
-                <div className="bg-[#FFD700] text-black font-anton uppercase tracking-widest text-[10px] sm:text-xs px-2 py-1.5 sm:py-2">
-                  2x<span className="hidden sm:inline"> RP</span>
                 </div>
               </div>
             )}
