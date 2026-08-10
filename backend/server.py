@@ -148,6 +148,21 @@ def compute_level(stats: dict) -> dict:
     return {"xp": xp, "level": level, "xp_into_level": xp_into, "xp_for_next": xp_for_next}
 
 
+def xp_threshold_for_level(level: int) -> int:
+    """Cumulative XP required to REACH the given level (i.e., the XP the
+    user needs to display at exactly `level` with 0 XP into it). Used by
+    the seeded-bot pipeline to pin their displayed level via `bonus_xp`.
+
+    Mirrors the `while` loop in `compute_level`:
+      threshold(L) = Σ (50 * i * (i+1))  for i in 1..L-1
+                   = 50 * (L-1) * L * (L+1) / 3
+    """
+    L = max(1, int(level))
+    if L <= 1:
+        return 0
+    return 50 * (L - 1) * L * (L + 1) // 3
+
+
 def public_user(user: dict) -> dict:
     points = int(user.get("rank_points", 0) or 0)
     peak = int(user.get("peak_rank_points", points) or points)
@@ -6722,6 +6737,55 @@ async def seeded_climb_loop():
                     })
                 await db.users.update_one({"_id": u["_id"]}, {"$set": update})
 
+            # v6 migration — climb-speed boost + higher target ceiling
+            # + level 10..25 pin. Three goals per user request:
+            #   1) Existing seeded bots climb FASTER (bump
+            #      `seed_climb_speed` into the new 2.5..4.0 band).
+            #   2) Existing seeded bots go HIGHER (push any target below
+            #      3000 RP into the 2600..3800 band so the top of the
+            #      board has real spread within Goonmaster).
+            #   3) Every seeded bot's displayed level lands in [10, 25]
+            #      by injecting `stats.bonus_xp` (level derives from
+            #      k*10 + w*50 + m*25 + bonus_xp — pinning bonus_xp to
+            #      the level's XP threshold parks the display level in
+            #      the target range even while stats lerp during climb).
+            # One-shot per doc via `seed_v6_boost: True`.
+            v6_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True},
+                 "seed_v6_boost": {"$exists": False}},
+                {"_id": 1, "seed_target_rp": 1, "seed_climb_speed": 1,
+                 "stats": 1},
+            )
+            async for u in v6_cursor:
+                rp_cur = int(u.get("seed_target_rp", 0) or 0)
+                cur_speed = float(u.get("seed_climb_speed", 1.0) or 1.0)
+                update = {"seed_v6_boost": True}
+                # Bump climb speed — only widen upward so bots already
+                # in the new band stay put. Lower band = 2.5, upper = 4.0.
+                if cur_speed < 2.5:
+                    update["seed_climb_speed"] = round(random.uniform(2.5, 4.0), 4)
+                # Push targets below 3000 up into the 2600..3800 band so
+                # the ceiling meaningfully rises. Bots already >= 3000
+                # stay put (they're at the top tail already).
+                if rp_cur < 3000:
+                    rp_new = _snap_rp_to_match_grid(random.randint(2600, 3800))
+                    rank_idx, _ = rank_for_points(rp_new)
+                    t_m, t_k, t_d, t_w = _synthesize_career(rp_new, rank_idx)
+                    update.update({
+                        "seed_target_rp": rp_new,
+                        "seed_target_matches": t_m,
+                        "seed_target_kills": t_k,
+                        "seed_target_deaths": t_d,
+                        "seed_target_wins": t_w,
+                    })
+                # Level 10..22 pin via bonus_xp (natural stats climb adds
+                # up to ~2-3 levels on top, keeping display within 10..25).
+                existing_bonus = int((u.get("stats") or {}).get("bonus_xp", 0) or 0)
+                if existing_bonus == 0:
+                    target_level = random.randint(10, 22)
+                    update["stats.bonus_xp"] = xp_threshold_for_level(target_level)
+                await db.users.update_one({"_id": u["_id"]}, {"$set": update})
+
             doc = await get_or_init_season()
             start = doc.get("season_start")
             if isinstance(start, datetime) and start.tzinfo is None:
@@ -8151,10 +8215,12 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
     # ladder still LOOKS mixed (some bots at Bronze early, Diamond
     # mid-season, GM late) — but the target endpoint is uniformly GM.
     #
-    # Range 2100..2700 gives a natural spread WITHIN Goonmaster so
-    # placements 1..N at the top don't all share the exact same RP.
+    # Range 2100..3800 (widened from 2700) so a chunk of the top tail
+    # sits well above the Goonmaster floor and the top-50 ULTIMATE
+    # GOONER cutoff has a real ~1200 RP spread instead of everyone
+    # bunched at 2100-2700.
     buckets = [
-        (2100, 2700, 100),   # GOONMASTER only — all seeds converge here
+        (2100, 3800, 100),   # GOONMASTER only — all seeds converge here
     ]
     weights = [b[2] for b in buckets]
     # Build a shuffled deck of handle suffixes so duplicates within a
@@ -8210,6 +8276,16 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         else:
             username = base
         matches, kills, deaths, wins = _synthesize_career(rp, rank_idx)
+        # Level 10..25: pin the bot's displayed level by injecting a
+        # baked-in `bonus_xp`. `compute_level` adds bonus_xp to the
+        # natural stats-derived XP (kills*10 + wins*50 + matches*25),
+        # so we pick a target level in [10, 22] and set the bonus to
+        # the exact XP threshold for that level. As the seed climbs
+        # and stats lerp toward their targets the level may drift up
+        # by 1-3 during peak Goonmaster, staying comfortably within
+        # the 10..25 band even at 100% climb.
+        target_level = random.randint(10, 22)
+        bonus_xp = xp_threshold_for_level(target_level)
         # Seeded accounts climb progressively across the season instead of
         # spawning at their final RP. We stash the *target* RP and stat
         # totals (matches/kills/deaths/wins) on the doc, then let
@@ -8226,7 +8302,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "username": username,
             "role": "user",
             "is_seeded": True,
-            "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0},
+            "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0, "bonus_xp": bonus_xp},
             "rank_points": 0,
             "placement_matches_played": 0,
             "seed_target_rp": rp,
@@ -8236,7 +8312,10 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_target_wins": wins,
             "seed_career_v2": True,
             "seed_climb_offset": round(random.uniform(0.0, 0.20), 4),
-            "seed_climb_speed": round(random.uniform(1.35, 2.4), 4),
+            # Faster climb speed (was 1.35..2.4) — bots reach their
+            # Goonmaster target faster and the top of the leaderboard
+            # populates earlier in the season.
+            "seed_climb_speed": round(random.uniform(2.5, 4.0), 4),
             # Give fresh seeds an already-equipped past-season title so
             # their public profile flexes "S{prev} · {tier}" from the
             # moment they hit the leaderboard. Season 1 seeds show a
@@ -8247,6 +8326,7 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             "seed_v3_boost": True,
             "seed_v4_gm": True,
             "seed_v5_all_gm": True,
+            "seed_v6_boost": True,
             # Peak = target from the moment the seed lands in the DB.
             # Without this, the profile's "Peak" card would show 0 for
             # the first climb tick (~30s window) and mismatch the

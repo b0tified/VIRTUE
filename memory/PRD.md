@@ -1393,3 +1393,20 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Clean account → no ban fields.
 - **Live verification**: admin banned `partyfollower` (24h suspension); partyleader opened partyfollower's profile via the friends list and saw both the red `SUSPENDED` pill in the header + the full "Account Suspended · Suspended until 8/9/2026" banner. Cleanup: partyfollower unbanned back to a clean state.
 
+
+### 2026-02-24 — Leaderboard bots climb faster, go higher, level 10-25
+- **User request**: "Make the bots on the leaderboard climb faster and go higher" + "Make the leaderboard bots have a level between 10-25"
+- **New helper** (`/app/backend/server.py`): `xp_threshold_for_level(level)` returns the cumulative XP needed to display exactly at `level`. Closed-form: `50 * (L-1) * L * (L+1) / 3`. Verified against `compute_level` in tests for L=1..29.
+- **New seeds** (`_build_and_insert`):
+  - `seed_climb_speed` now drawn from `random.uniform(2.5, 4.0)` (was 1.35..2.4).
+  - Target RP bucket now `(2100, 3800, 100)` (was 2700 ceiling) — spreads the Ultimate Gooner top-50 window across ~1200 RP instead of ~600.
+  - `stats.bonus_xp` seeded to `xp_threshold_for_level(random.randint(10, 22))` so the bot's displayed level pins in [10, 22] at 0% climb and drifts up by ~1-3 levels as stats lerp — final display always stays inside [10, 25].
+  - Doc stamped `seed_v6_boost: True` so the v6 migration is a no-op on fresh docs.
+- **v6 migration** (`seeded_climb_loop`) — one-shot per existing seed doc:
+  - Bumps `seed_climb_speed` into 2.5..4.0 when the current value is below 2.5.
+  - Pushes `seed_target_rp` under 3000 into the widened 2600..3800 window (re-syntheses stats via `_synthesize_career`).
+  - Injects `stats.bonus_xp = xp_threshold_for_level(random.randint(10, 22))` when `bonus_xp` is 0 or absent.
+  - Marks doc `seed_v6_boost: True`.
+- **Tests** (`/app/backend/tests/test_seeded_bot_climb_and_level.py` — 6 new): threshold ↔ `compute_level` sanity for L=1..29, level pin stays in [10, 25] across 0%→100% climb progression for target_level=10..22 against worst-case Goonmaster stats, source-level regression guards for the new 2.5..4.0 climb-speed and 3800 target-RP-ceiling literals.
+- **Live verification**: after backend hot-reload + one climb-loop cycle: 107 / 107 seeded bots migrated. `seed_target_rp >= 2600` for all of them, ranging up to 3765; `seed_climb_speed >= 2.5` for all (samples 2.64, 2.91, 3.50, 3.60); five sampled bots' public profile levels were 11 / 14 / 14 / 16 / 17 — every one inside the target [10, 25] band.
+
