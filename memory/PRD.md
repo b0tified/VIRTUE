@@ -1546,3 +1546,17 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `test_master_plus_rp_cap.py` NEW (6 tests): Bronze..Diamond still +35 win cap, Master +20 cap, GM/Goonmaster +15 cap, loss side untouched at −60 for all tiers, modest wins below cap unaffected.
 - **Live verification**: SHOW TIERS modal screenshot confirms uniform 100-RP sub-divisions across all 9 tiers. Emerald III: 1050 → 1149, Emerald I: 1250 → 1349, Diamond III: 1350 → 1449. Every row displays correctly.
 
+
+### 2026-02-24 — AK "bigger bullets" hitbox buff
+- **User request**: "Make the ak bullets bigger so they are easier to hit"
+- **Implementation** (`/app/backend/server.py`):
+  - `WEAPON_CONFIGS["ak47"]` gains `projectile_thickness: 0.45` (metres).
+  - `GameRoom.raycast_hit` reads the shooter's weapon thickness and inflates every hitbox sphere radius by that amount (head 0.70→1.15, torso 0.85→1.30, legs 0.80→1.25). Sniper / laser default to thickness 0.0 → stay pinpoint.
+  - Net effect: AK near-misses within ~0.45 m of the player capsule now register, while precision weapons keep their existing tight hitboxes.
+- **Tests** (`/app/backend/tests/test_ak_hitbox.py` — 5 cases, all pass):
+  - Config declares positive thickness; sniper/laser stay at 0.
+  - AK hits a target at 1.10 m lateral offset that the sniper misses.
+  - AK still misses a target 2.5 m off the aim line (buff is bounded).
+  - Dead-on AK shot still lands with correct body_part + distance.
+- **Related suites** (23/23 pass): lag compensation, sniper weapon, sniper rework, AK fire rate — no regressions.
+

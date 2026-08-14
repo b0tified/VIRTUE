@@ -3180,6 +3180,11 @@ WEAPON_CONFIGS = {
         "spread_max": 0.16,
         "spread_decay": 4.0,    # per second
         "ads_spread_mult": 0.25,
+        # Per-user request: AK bullets are "bigger" for easier hits.
+        # Inflates every player hitbox sphere by this many metres when the
+        # AK is the active weapon — effectively turns the pinpoint ray
+        # into a fat cylinder without touching sniper/laser precision.
+        "projectile_thickness": 0.45,
     },
     "sniper": {
         # Bolt-action-style precision rifle. Two-shot mag with a
@@ -4264,6 +4269,11 @@ class GameRoom:
         dz = -math.cos(yaw) * cp
         ox, oy, oz = shooter.x, shooter.y, shooter.z
 
+        # Per-weapon projectile "thickness" — inflates the target hitbox
+        # spheres so certain guns (AK) get near-miss forgiveness while
+        # precision weapons (sniper/laser) stay pinpoint. Zero by default.
+        thickness = float(weapon_cfg(getattr(shooter, "weapon", "ak47")).get("projectile_thickness", 0.0))
+
         def aabb_t(ob):
             # Respect `y_base` so floating obstacles (mezzanine walkways
             # and the hotel ceiling) are treated as being UP in the air,
@@ -4354,9 +4364,9 @@ class GameRoom:
             # sphere is the topmost and still tightest of the three.
             base = ty - PLAYER_HEIGHT
             spheres = [
-                ("head",  tx, base + 1.85, tz, 0.70),
-                ("torso", tx, base + 1.20, tz, 0.85),
-                ("legs",  tx, base + 0.40, tz, 0.80),
+                ("head",  tx, base + 1.85, tz, 0.70 + thickness),
+                ("torso", tx, base + 1.20, tz, 0.85 + thickness),
+                ("legs",  tx, base + 0.40, tz, 0.80 + thickness),
             ]
             for (label, cx, cy, cz, r) in spheres:
                 res = sphere_t(cx, cy, cz, r)
