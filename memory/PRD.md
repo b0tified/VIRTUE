@@ -1446,3 +1446,24 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Outer PlayerCard threads `leaderboardRank` through to `Avatar` AND swaps the left avatar-bar background to gold (`#FFD700`) instead of the tier-7 black so the crest reads as a single cohesive gold block.
 - **Live verification** (Playwright at 1920×900): confirmed all 6 animation layers active — halo pulse (2.2s), rays spin (6s), 3 orbit spins (1.4/2/2.6s), flame flicker (0.9s), sheen sweep every 3.5s. Screenshot shows the new crest rendering in both the lobby rank pill AND the header PlayerCard's peak-crest avatar with gold background + orbiting spark dots visible.
 
+
+### 2026-02-24 — Moderation dashboard: LIVE PLAYER STATS + mode popularity
+- **User request**: "Add live player statistics and player count numbers and what modes are more popular in moderation"
+- **Backend** — new `GET /api/admin/live-stats` (admin-only, 403 otherwise) in `/app/backend/server.py` (~150 lines). Aggregates:
+  - `real_online` (from `ONLINE_USERS` websocket registry) + `displayed_online` (synthetic value shown in the lobby).
+  - `rooms.*` — human player counts (bots filtered via `p.is_bot`) for `quick_match_ffa`, `quick_match_tdm`, `ranked`, `practice_ffa`, `practice_tdm`, `offline_ffa`, `offline_tdm`, `ranked_vs_bots`, `party_ffa`, `party_tdm`. Per-user room categories additionally report the active room count.
+  - `queues.casual_total`, `queues.ranked_total`, `queues.ranked_by_tier[]` — multi-user party entries are summed by member count, not entry count.
+  - `parties` count.
+  - `mode_popularity` — the two headline "how much FFA vs TDM is being played right now" numbers plus `ranked` and `in_match_total`.
+- **Frontend** — new `LivePlayerStats` component in `/app/frontend/src/pages/AdminReports.jsx` (~180 lines). Polls the endpoint every 5s and renders:
+  - Headline tile row: `Displayed Online`, `Real Online`, `In-Match`, `Parties`.
+  - Mode popularity section with proportional progress bars for `FFA · Casual`, `TDM · Casual`, `Ranked` — the leading mode gets a gold "leads" pill.
+  - Queues section: casual + ranked totals, plus per-tier ranked queue chips when populated.
+  - Rooms grid: 10 tiles with per-mode color dot, human count, and room count (for per-user categories). Empty rooms dim to 70% opacity for at-a-glance filtering.
+  - Full `data-testid` coverage for downstream tests.
+- **Import**: `Flame` icon added to the lucide-react import list.
+- **Tests** (`/app/backend/tests/test_admin_live_stats.py` — 2 new):
+  - `test_live_stats_admin_only`: non-admin caller → 403.
+  - `test_live_stats_shape_and_bot_filtering`: spawn bots into `game_room`/`tdm_room` + inject a 3-user party casual queue entry; assert `humans == 0` in the affected rooms (bot filter works) and `casual_total >= 3` (multi-user entries counted per-member). Also asserts all 10 room keys + all `mode_popularity` sub-keys are present.
+- **Live verification** (Playwright): admin route renders the LIVE PLAYER STATS card immediately below the existing stat cards; headline tiles show `displayed_online=17`, mode bars + queue counters + room tiles all populate correctly; second curl call showed `displayed_online` drifted to 24 confirming the 5s auto-poll updates.
+

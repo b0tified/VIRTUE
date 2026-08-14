@@ -8065,6 +8065,136 @@ async def admin_close_report(report_id: str, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+@api.get("/admin/live-stats")
+async def admin_live_stats(user: dict = Depends(get_current_user)):
+    """Snapshot of live player activity for the moderation dashboard.
+    Admin-only. Aggregates:
+      • Real online player count (from ONLINE_USERS websocket registry)
+      • Displayed "players online" (the synthetic value shown in the lobby)
+      • Per-room human player counts, broken out by mode (FFA vs TDM) and
+        room kind (Quick Match, Ranked, Practice, Offline vs AI, Ranked-vs-bots,
+        Party rooms)
+      • Queue depth by mode (ranked per-tier, casual)
+      • Party count
+      • Mode popularity totals — the two headline numbers admins actually
+        care about ("how many people are playing FFA vs TDM right now").
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    def _count_humans(room: "GameRoom") -> int:
+        return sum(1 for p in room.players.values() if not getattr(p, "is_bot", False))
+
+    # ── Fixed rooms ─────────────────────────────────────────────────
+    qm_ffa_humans = _count_humans(game_room)
+    qm_tdm_humans = _count_humans(tdm_room)
+    ranked_humans = _count_humans(ranked_room)
+    practice_ffa_humans = _count_humans(practice_room)
+    practice_tdm_humans = _count_humans(practice_tdm_room)
+
+    # ── Per-user rooms ──────────────────────────────────────────────
+    offline_ffa_humans = 0
+    offline_tdm_humans = 0
+    offline_ffa_rooms = 0
+    offline_tdm_rooms = 0
+    for room in OFFLINE_ROOMS.values():
+        h = _count_humans(room)
+        if room.game_mode == "tdm":
+            offline_tdm_humans += h
+            offline_tdm_rooms += 1 if h > 0 else 0
+        else:
+            offline_ffa_humans += h
+            offline_ffa_rooms += 1 if h > 0 else 0
+
+    ranked_bot_humans = 0
+    ranked_bot_rooms = 0
+    for room in RANKED_BOT_ROOMS.values():
+        h = _count_humans(room)
+        ranked_bot_humans += h
+        if h > 0:
+            ranked_bot_rooms += 1
+
+    # ── Party rooms ────────────────────────────────────────────────
+    party_ffa_humans = 0
+    party_tdm_humans = 0
+    party_ffa_rooms = 0
+    party_tdm_rooms = 0
+    for room in PARTY_ROOMS.values():
+        h = _count_humans(room)
+        if room.game_mode == "tdm":
+            party_tdm_humans += h
+            party_tdm_rooms += 1 if h > 0 else 0
+        else:
+            party_ffa_humans += h
+            party_ffa_rooms += 1 if h > 0 else 0
+
+    # ── Queues ────────────────────────────────────────────────────
+    ranked_queue_by_tier: List[dict] = []
+    ranked_queue_total = 0
+    for tier_idx, q in RANKED_QUEUE.items():
+        # A single queue entry can contain a party of N users.
+        tier_size = sum(len(e.get("user_ids") or [e.get("user_id")]) for e in q)
+        ranked_queue_total += tier_size
+        if tier_size > 0:
+            ranked_queue_by_tier.append({
+                "tier": tier_idx,
+                "tier_name": RANK_TIERS[tier_idx][1],
+                "players": tier_size,
+                "entries": len(q),
+            })
+    casual_queue_total = sum(len(e.get("user_ids") or [e.get("user_id")]) for e in CASUAL_QUEUE)
+
+    # ── Mode popularity totals ──────────────────────────────────────
+    ffa_in_match = (
+        qm_ffa_humans
+        + practice_ffa_humans
+        + offline_ffa_humans
+        + party_ffa_humans
+    )
+    tdm_in_match = (
+        qm_tdm_humans
+        + practice_tdm_humans
+        + offline_tdm_humans
+        + party_tdm_humans
+    )
+    # Ranked is FFA-only in this codebase (ranked_room is FFA). Keep it
+    # in its own bucket so admins can see ranked activity as a distinct
+    # signal from casual FFA.
+    ranked_all = ranked_humans + ranked_bot_humans
+
+    return {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "real_online": len(ONLINE_USERS),
+        "displayed_online": SYNTHETIC_ONLINE["value"],
+        "rooms": {
+            "quick_match_ffa": {"humans": qm_ffa_humans, "mode": "ffa"},
+            "quick_match_tdm": {"humans": qm_tdm_humans, "mode": "tdm"},
+            "ranked":          {"humans": ranked_humans, "mode": "ffa", "is_ranked": True},
+            "practice_ffa":    {"humans": practice_ffa_humans, "mode": "ffa"},
+            "practice_tdm":    {"humans": practice_tdm_humans, "mode": "tdm"},
+            "offline_ffa":     {"humans": offline_ffa_humans, "rooms": offline_ffa_rooms, "mode": "ffa"},
+            "offline_tdm":     {"humans": offline_tdm_humans, "rooms": offline_tdm_rooms, "mode": "tdm"},
+            "ranked_vs_bots":  {"humans": ranked_bot_humans, "rooms": ranked_bot_rooms, "mode": "ffa", "is_ranked": True},
+            "party_ffa":       {"humans": party_ffa_humans, "rooms": party_ffa_rooms, "mode": "ffa"},
+            "party_tdm":       {"humans": party_tdm_humans, "rooms": party_tdm_rooms, "mode": "tdm"},
+        },
+        "queues": {
+            "ranked_total": ranked_queue_total,
+            "ranked_by_tier": ranked_queue_by_tier,
+            "casual_total": casual_queue_total,
+        },
+        "parties": len(PARTIES),
+        "mode_popularity": {
+            "ffa_casual": ffa_in_match,
+            "tdm_casual": tdm_in_match,
+            "ranked": ranked_all,
+            # Total human players actively in a match right now (any
+            # mode) — sanity number that should be <= real_online.
+            "in_match_total": ffa_in_match + tdm_in_match + ranked_all,
+        },
+    }
+
+
 # Note: the seed-veteran name pool used to live here as a flat list, but
 # was replaced with `TIERED_BOT_NAMES` lookups inside `_build_and_insert`
 # so seeded leaderboard accounts share names with the in-game ranked bots

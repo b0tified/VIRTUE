@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -176,6 +176,11 @@ export default function AdminReports() {
         <StatCard label="Active Sanctions" value={bannedCount} color="#9B59B6" Icon={ShieldAlert} />
       </div>
 
+      {/* Live player activity + mode popularity — polls every 5s. */}
+      <div className="max-w-6xl mx-auto mb-6">
+        <LivePlayerStats />
+      </div>
+
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Reports list */}
         <div className="lg:col-span-2 card-pow p-0 overflow-hidden">
@@ -273,6 +278,215 @@ function StatCard({ label, value, color, Icon }) {
       <div className="bg-white px-4 py-3">
         <div className="font-display text-4xl text-pow-shadow">{value}</div>
       </div>
+    </div>
+  );
+}
+
+/* LivePlayerStats — real-time snapshot of who's playing what right now.
+   Polls `/api/admin/live-stats` every 5s. Shows:
+     • The headline "displayed / real online" pair (comic split badge).
+     • Mode popularity — FFA Casual vs TDM Casual vs Ranked, with the
+       most-popular row highlighted so it pops at a glance.
+     • Queue depth (ranked + casual).
+     • Per-room breakdown grid: quick match, ranked, practice,
+       offline vs AI, ranked-vs-bots, party rooms.
+   Renders a "waiting for first snapshot…" placeholder before the first
+   fetch completes; the parent handles admin route-guarding. */
+function LivePlayerStats() {
+  const [stats, setStats] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const { data } = await api.get("/admin/live-stats");
+        if (alive) { setStats(data); setErr(null); }
+      } catch (e) {
+        if (alive) setErr(e?.response?.data?.detail || "Failed to load live stats.");
+      }
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  if (err) {
+    return (
+      <div className="card-pow p-4 bg-white font-anton uppercase tracking-widest text-xs text-[#7a1115]" data-testid="live-stats-error">
+        {err}
+      </div>
+    );
+  }
+  if (!stats) {
+    return (
+      <div className="card-pow p-4 bg-white font-anton uppercase tracking-widest text-xs text-neutral-500" data-testid="live-stats-loading">
+        Loading live activity…
+      </div>
+    );
+  }
+  const pop = stats.mode_popularity || {};
+  const rooms = stats.rooms || {};
+  const q = stats.queues || {};
+  // Determine which mode has the most active players so it can be
+  // highlighted. Ties break in the order below.
+  const popTotal = (pop.ffa_casual || 0) + (pop.tdm_casual || 0) + (pop.ranked || 0);
+  const topMode = popTotal === 0
+    ? null
+    : Object.entries({
+        ffa_casual: pop.ffa_casual || 0,
+        tdm_casual: pop.tdm_casual || 0,
+        ranked: pop.ranked || 0,
+      }).sort((a, b) => b[1] - a[1])[0][0];
+  return (
+    <div className="card-pow p-0 overflow-hidden" data-testid="live-player-stats">
+      <div className="bg-black text-white px-4 py-2 font-display text-2xl text-pow-shadow flex items-center justify-between">
+        <span>LIVE PLAYER STATS</span>
+        <span className="font-anton uppercase tracking-widest text-xs opacity-70" data-testid="live-stats-ts">
+          Auto-refresh · 5s
+        </span>
+      </div>
+
+      {/* Top headline row: displayed count / real online / in-match / parties */}
+      <div className="bg-white grid grid-cols-2 md:grid-cols-4 divide-x-2 divide-black/10 border-b-2 border-black/10">
+        <HeadlineTile label="Displayed Online" value={stats.displayed_online} color="#0055FF" testid="live-headline-displayed" />
+        <HeadlineTile label="Real Online" value={stats.real_online} color="#06A35F" testid="live-headline-real" />
+        <HeadlineTile label="In-Match" value={pop.in_match_total || 0} color="#E62429" testid="live-headline-in-match" />
+        <HeadlineTile label="Parties" value={stats.parties || 0} color="#9B59B6" testid="live-headline-parties" />
+      </div>
+
+      {/* Mode popularity + queues side-by-side */}
+      <div className="bg-white grid grid-cols-1 md:grid-cols-2 gap-0 divide-x-0 md:divide-x-2 divide-black/10 border-b-2 border-black/10">
+        <div className="p-4">
+          <div className="font-anton uppercase tracking-widest text-xs mb-2 flex items-center gap-2 opacity-80">
+            <Flame size={14} strokeWidth={3} className="text-[#E62429]" />
+            <span>Mode Popularity</span>
+            {topMode && (
+              <span className="ml-auto font-anton uppercase tracking-widest text-[10px] bg-[#FFD700] text-black px-2 py-0.5">
+                {topMode === "ffa_casual" ? "FFA leads" : topMode === "tdm_casual" ? "TDM leads" : "RANKED leads"}
+              </span>
+            )}
+          </div>
+          <ModeRow label="FFA · Casual"  value={pop.ffa_casual || 0} color="#E62429" total={popTotal} isTop={topMode === "ffa_casual"} testid="mode-ffa" />
+          <ModeRow label="TDM · Casual"  value={pop.tdm_casual || 0} color="#0055FF" total={popTotal} isTop={topMode === "tdm_casual"} testid="mode-tdm" />
+          <ModeRow label="Ranked"        value={pop.ranked || 0}     color="#9B59B6" total={popTotal} isTop={topMode === "ranked"}      testid="mode-ranked" />
+        </div>
+        <div className="p-4">
+          <div className="font-anton uppercase tracking-widest text-xs mb-2 flex items-center gap-2 opacity-80">
+            <Clock size={14} strokeWidth={3} className="text-[#0055FF]" />
+            <span>Queues</span>
+          </div>
+          <QueueRow label="Casual Queue" value={q.casual_total || 0} color="#E62429" testid="queue-casual" />
+          <QueueRow label="Ranked Queue (all tiers)" value={q.ranked_total || 0} color="#9B59B6" testid="queue-ranked" />
+          {(q.ranked_by_tier || []).length > 0 && (
+            <div className="mt-2 pt-2 border-t border-black/10">
+              <div className="font-anton uppercase tracking-widest text-[10px] opacity-60 mb-1">Per-tier ranked queue</div>
+              <div className="flex flex-wrap gap-1.5" data-testid="queue-ranked-tiers">
+                {q.ranked_by_tier.map((t) => (
+                  <span
+                    key={t.tier}
+                    className="font-anton uppercase tracking-widest text-[10px] bg-neutral-200 text-neutral-800 px-2 py-0.5"
+                    data-testid={`queue-ranked-tier-${t.tier}`}
+                  >
+                    {t.tier_name} · {t.players}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Per-room breakdown grid */}
+      <div className="bg-white p-4">
+        <div className="font-anton uppercase tracking-widest text-xs mb-2 opacity-80 flex items-center gap-2">
+          <ShieldAlert size={14} strokeWidth={3} className="text-neutral-700" />
+          <span>Rooms — Human Players</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          <RoomTile name="QM · FFA"        room={rooms.quick_match_ffa} testid="room-qm-ffa" />
+          <RoomTile name="QM · TDM"        room={rooms.quick_match_tdm} testid="room-qm-tdm" />
+          <RoomTile name="Ranked"          room={rooms.ranked}          testid="room-ranked" />
+          <RoomTile name="Practice · FFA"  room={rooms.practice_ffa}    testid="room-practice-ffa" />
+          <RoomTile name="Practice · TDM"  room={rooms.practice_tdm}    testid="room-practice-tdm" />
+          <RoomTile name="Offline · FFA"   room={rooms.offline_ffa}     testid="room-offline-ffa" />
+          <RoomTile name="Offline · TDM"   room={rooms.offline_tdm}     testid="room-offline-tdm" />
+          <RoomTile name="Ranked vs Bots"  room={rooms.ranked_vs_bots}  testid="room-ranked-bots" />
+          <RoomTile name="Party · FFA"     room={rooms.party_ffa}       testid="room-party-ffa" />
+          <RoomTile name="Party · TDM"     room={rooms.party_tdm}       testid="room-party-tdm" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeadlineTile({ label, value, color, testid }) {
+  return (
+    <div className="px-4 py-3" data-testid={testid}>
+      <div className="font-anton uppercase tracking-widest text-[10px] flex items-center gap-1.5" style={{ color }}>
+        <span className="inline-block w-2 h-2 rounded-full" style={{ background: color }} />
+        {label}
+      </div>
+      <div className="font-display text-3xl text-pow-shadow leading-none tabular-nums">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ModeRow({ label, value, color, total, isTop, testid }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className={`flex items-center gap-3 py-1.5 ${isTop ? "opacity-100" : "opacity-90"}`} data-testid={testid}>
+      <div className="font-anton uppercase tracking-widest text-xs w-32 flex-shrink-0" style={{ color: isTop ? color : "#0A0A0A" }}>
+        {label}
+      </div>
+      <div className="flex-1 h-3 bg-neutral-200 border-2 border-black relative overflow-hidden">
+        <div
+          className="absolute inset-y-0 left-0 transition-all"
+          style={{ width: `${pct}%`, background: color }}
+          data-testid={`${testid}-bar`}
+        />
+      </div>
+      <div className="font-display text-lg text-pow-shadow tabular-nums w-12 text-right" data-testid={`${testid}-value`}>
+        {value}
+      </div>
+      <div className="font-anton uppercase tracking-widest text-[10px] opacity-60 w-10 text-right tabular-nums">
+        {pct}%
+      </div>
+    </div>
+  );
+}
+
+function QueueRow({ label, value, color, testid }) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1" data-testid={testid}>
+      <div className="font-anton uppercase tracking-widest text-xs">{label}</div>
+      <div className="font-display text-2xl leading-none tabular-nums px-2 py-0.5 border-2 border-black" style={{ background: color, color: "#fff" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function RoomTile({ name, room, testid }) {
+  const humans = (room && room.humans) || 0;
+  const roomsCount = room && Number.isFinite(room.rooms) ? room.rooms : null;
+  const modeColor = room?.mode === "tdm" ? "#0055FF" : "#E62429";
+  const empty = humans === 0;
+  return (
+    <div
+      className={`border-2 border-black p-2 flex flex-col ${empty ? "bg-neutral-100 opacity-70" : "bg-white"}`}
+      data-testid={testid}
+    >
+      <div className="font-anton uppercase tracking-widest text-[10px] flex items-center gap-1 mb-1">
+        <span className="inline-block w-1.5 h-1.5" style={{ background: modeColor }} />
+        <span className="truncate">{name}</span>
+      </div>
+      <div className="font-display text-2xl leading-none tabular-nums">{humans}</div>
+      {roomsCount !== null && (
+        <div className="font-anton uppercase tracking-widest text-[9px] opacity-60 mt-0.5">
+          {roomsCount} {roomsCount === 1 ? "room" : "rooms"}
+        </div>
+      )}
     </div>
   );
 }
