@@ -13,6 +13,7 @@ import {
 import { RANK_COLORS as TIER_COLORS, rankIconFor, rankColorFor, divisionRoman, isUltimateGooner } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
+import UltimateGoonerCrest from "@/components/UltimateGoonerCrest";
 
 const RANK_COLORS = TIER_COLORS;
 
@@ -98,7 +99,12 @@ export const AVATAR_COUNT = AVATARS.length;
 // `peakTier` + `peakDivision` only matter when `idx === 5` (Peak Crest):
 // in that case the bubble renders the player's animated rank icon with
 // division-aware ornaments instead of the static lucide icon.
-export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, size = 40, online = false, testid }) {
+// `leaderboardRank` (1..50) further upgrades the Peak Crest to the
+// full Ultimate Gooner emblem when the player's peak is Goonmaster AND
+// they currently hold a top-50 slot — swaps the static crown/flame for
+// the animated `UltimateGoonerCrest` (rotating rays, orbiting sparks,
+// halo pulse, sheen sweep).
+export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, leaderboardRank = null, size = 40, online = false, testid }) {
   const meta = avatarMeta(idx, peakTier);
   const I = meta.Icon;
   const animClass = meta.anim ? `avatar-anim-${meta.anim}` : "";
@@ -107,15 +113,28 @@ export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, size = 40, 
   // (orbiting sparkles, halo ring, Goonmaster flame, etc.). Falls back
   // to the static icon path if peakTier wasn't supplied.
   const isAnimatedPeakCrest = meta.isPeakCrest && Number.isFinite(peakTier);
+  // Ultimate Gooner override — must be a top-50 Goonmaster (tier 7).
+  const ultimateCrest =
+    isAnimatedPeakCrest &&
+    peakTier === 7 &&
+    Number.isFinite(leaderboardRank) &&
+    leaderboardRank >= 1 &&
+    leaderboardRank <= 50;
   return (
     <span
       className={`relative inline-flex items-center justify-center border-2 border-black shadow-pow-sm flex-shrink-0 ${animClass}`}
-      style={{ width: size, height: size, background: meta.bg }}
-      title={meta.label}
+      style={{ width: size, height: size, background: ultimateCrest ? "#FFD700" : meta.bg }}
+      title={ultimateCrest ? `Ultimate Gooner — Rank #${leaderboardRank}` : meta.label}
       data-testid={testid}
-      data-anim={meta.anim || (isAnimatedPeakCrest ? "peakcrest" : undefined)}
+      data-anim={ultimateCrest ? "ultimate" : (meta.anim || (isAnimatedPeakCrest ? "peakcrest" : undefined))}
     >
-      {isAnimatedPeakCrest ? (
+      {ultimateCrest ? (
+        <UltimateGoonerCrest
+          size={size}
+          rank={leaderboardRank}
+          data-testid={testid ? `${testid}-ultimate-crest` : undefined}
+        />
+      ) : isAnimatedPeakCrest ? (
         <AnimatedRankIcon
           tier={peakTier}
           division={peakDivision}
@@ -233,9 +252,25 @@ export default function PlayerCard({
     >
       {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} title={bannerTitle} titleClass={bannerTitleClass} />}
       <div className="flex items-stretch">
-        <div className="flex items-center justify-center px-2" style={{ background: avatarMeta(avatar, peakRankTier).bg }}>
-          <Avatar idx={avatar} peakTier={peakRankTier} peakDivision={peakRankDivision} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />
-        </div>
+        {(() => {
+          // Left "avatar bar" background. Normally uses the avatar's own
+          // theme color, but for the Peak-Crest avatar on an Ultimate
+          // Gooner (top-50 Goonmaster) we swap to gold so the Ultimate
+          // treatment reads as a single cohesive gold block instead of
+          // a black frame around a gold circle.
+          const isUltPeakCrest =
+            avatar === 5 &&
+            peakRankTier === 7 &&
+            Number.isFinite(leaderboardRank) &&
+            leaderboardRank >= 1 &&
+            leaderboardRank <= 50;
+          const avatarBg = isUltPeakCrest ? "#FFD700" : avatarMeta(avatar, peakRankTier).bg;
+          return (
+            <div className="flex items-center justify-center px-2" style={{ background: avatarBg }}>
+              <Avatar idx={avatar} peakTier={peakRankTier} peakDivision={peakRankDivision} leaderboardRank={leaderboardRank} size={dims.avatarSize} online={online} testid={`${testid}-avatar`} />
+            </div>
+          );
+        })()}
         <div className="flex flex-col px-3 py-1.5 justify-center min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <div className={`font-display uppercase ${dims.name} leading-tight truncate`} data-testid={`${testid}-username`}>

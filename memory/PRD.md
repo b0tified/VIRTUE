@@ -1432,3 +1432,17 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Touch now uses `COS_THRESHOLD = 0.970` (~14° cone). Previously the wobbly touch camera constantly slipped just outside the 2.5° gate so auto-fire silently dropped even when the enemy was clearly on screen. Aim-assist snap keeps the crosshair honest so the widened gate doesn't produce false-positive shots downrange.
 - **Live verification** (Playwright at 844×390): mobile lobby scrolls (`scrollHeight 523 > clientHeight 390`, `overflowY: auto` computed); desktop screenshot at 1920×1080 unchanged; touch controls into the practice range render with the full-screen look pad + move stick + fire button correctly layered.
 
+
+### 2026-02-24 — Rich animated UltimateGoonerCrest + Peak Crest Ultimate treatment
+- **User request**: "Make the ultimate gooner animated icon in lobby look better and more animated" + "Add ultimate gooner icon to peak crest"
+- **New shared component** (`/app/frontend/src/components/UltimateGoonerCrest.jsx`):
+  - Multi-layer animated emblem, scales from ~36px (avatar) to ~64px (lobby pill) via a single `size` prop.
+  - Layers (back → front): pulsing radial gold→red halo, 8-spoke rotating conic gradient rays, 3 counter-orbiting spark pips (durations 1.4 / 2 / 2.6s to break repetition), lucide Flame with existing `anim-flame-flicker`, diagonal gold sheen sweep every 3.5s. Optional overlay rank chip when caller passes `rank`.
+  - Full `prefers-reduced-motion` support + `paused` prop that halts every animation.
+- **CSS** (`/app/frontend/src/index.css`): added ~180 lines of `.ug-crest-*` classes + 5 keyframes (`ug-crest-halo-pulse`, `ug-crest-rays-spin`, `ug-crest-orbit-spin`, `ug-crest-spark-twinkle`, `ug-crest-sheen-sweep`).
+- **Lobby RankBadge** (`/app/frontend/src/pages/Lobby.jsx`): swapped the previous single-Flame + halo combo for `<UltimateGoonerCrest size={56} />`. Imports updated; `Flame` kept for other uses.
+- **Peak Crest avatar** (`/app/frontend/src/components/PlayerCard.jsx`):
+  - `Avatar` accepts new `leaderboardRank` prop. When the peak-crest avatar (idx 5) is at tier 7 (Goonmaster) AND `leaderboardRank ∈ [1, 50]`, it renders `<UltimateGoonerCrest rank={leaderboardRank} />` instead of the base AnimatedRankIcon — includes the overlay rank chip inside the flame belly.
+  - Outer PlayerCard threads `leaderboardRank` through to `Avatar` AND swaps the left avatar-bar background to gold (`#FFD700`) instead of the tier-7 black so the crest reads as a single cohesive gold block.
+- **Live verification** (Playwright at 1920×900): confirmed all 6 animation layers active — halo pulse (2.2s), rays spin (6s), 3 orbit spins (1.4/2/2.6s), flame flicker (0.9s), sheen sweep every 3.5s. Screenshot shows the new crest rendering in both the lobby rank pill AND the header PlayerCard's peak-crest avatar with gold background + orbiting spark dots visible.
+

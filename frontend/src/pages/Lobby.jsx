@@ -16,6 +16,7 @@ import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
 import LobbyBackgroundCastle from "@/components/LobbyBackgroundCastle";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
+import UltimateGoonerCrest from "@/components/UltimateGoonerCrest";
 import RankProgressBar from "@/components/RankProgressBar";
 import ShopModal from "@/components/ShopModal";
 import ProgressionModal from "@/components/ProgressionModal";
@@ -1182,17 +1183,16 @@ function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
         style={{ background: color, overflow: "visible" }}
       >
         {ultimate ? (
-          <>
-            <span aria-hidden className="ultimate-flame-halo" data-testid="rank-badge-ultimate-halo" />
-            <Flame
-              size={48}
-              strokeWidth={3}
-              color="#0A0A0A"
-              fill="#B80020"
-              className="ultimate-flame-icon"
-              data-testid="rank-badge-ultimate-icon"
-            />
-          </>
+          // Full-fat animated Ultimate Gooner crest — pulsing halo,
+          // rotating gold rays, 3 orbiting spark pips, sheen sweep,
+          // flame with flicker. The "#N" leaderboard chip lives beside
+          // the crest in the label span so we omit `rank` here for a
+          // clean emblem.
+          <UltimateGoonerCrest
+            size={56}
+            className="ultimate-gooner-crest-lobby"
+            data-testid="rank-badge-ultimate-icon"
+          />
         ) : (
           <AnimatedRankIcon tier={tier} division={division} size={48} testid="rank-badge-icon" />
         )}
