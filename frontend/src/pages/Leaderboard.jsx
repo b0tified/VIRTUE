@@ -9,7 +9,7 @@ import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import PublicProfileModal from "@/components/PublicProfileModal";
 import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 function fmtDHMS(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -164,7 +164,7 @@ export default function Leaderboard() {
                   <span className="tabular-nums">{me.rank_points ?? 0} RP</span>
                   <span
                     className="text-[10px] px-1.5 py-0.5 border-2 border-black"
-                    style={{ background: isUltimateGooner(me.rank_tier, myIdx + 1) ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, me.rank_tier ?? 0))], color: isUltimateGooner(me.rank_tier, myIdx + 1) ? "#0A0A0A" : ((me.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A") }}
+                    style={{ background: isUltimateGooner(me.rank_tier, myIdx + 1) ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, me.rank_tier ?? 0))], color: isUltimateGooner(me.rank_tier, myIdx + 1) ? "#0A0A0A" : ((me.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A") }}
                   >
                     {isUltimateGooner(me.rank_tier, myIdx + 1)
                       ? "ULTIMATE GOONER"
@@ -239,7 +239,7 @@ export default function Leaderboard() {
               <div className="p-8 font-anton text-center uppercase text-neutral-500">No frags yet. Be the first.</div>
             ) : (
               rows.map((r, i) => {
-                const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
+                const tier = Math.max(0, Math.min(8, r.rank_tier ?? 0));
                 const color = RANK_COLORS[tier];
                 const isYou = !!(user && (r.id === user.id || r.username === user.username));
                 // Top-3 medal icons (gold/silver/bronze). Top of the
@@ -317,7 +317,7 @@ export default function Leaderboard() {
                           <>
                             <span
                               className="font-anton uppercase text-sm px-2 py-1"
-                              style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A") }}
+                              style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A") }}
                               data-testid={`leaderboard-rank-${i}`}
                             >
                               {ultimate ? "ULTIMATE GOONER" : rankLabelFor(tier, r.rank_division ?? 0, r.rank_name)}
@@ -414,7 +414,7 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
         <div className="p-8 font-anton text-center uppercase text-neutral-500">No archived rows for this season.</div>
       ) : (
         rows.map((r, i) => {
-          const tier = Math.max(0, Math.min(7, r.rank_tier ?? 0));
+          const tier = Math.max(0, Math.min(8, r.rank_tier ?? 0));
           const color = RANK_COLORS[tier];
           const MedalEl = i === 0 ? Crown : i <= 2 ? Medal : null;
           const medalColor = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : null;
@@ -450,7 +450,7 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
                     <>
                       <span
                         className="font-anton uppercase text-sm px-2 py-1"
-                        style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A") }}
+                        style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A") }}
                         data-testid={`archive-rank-${i}`}
                       >
                         {ultimate ? "ULTIMATE GOONER" : (r.rank_name || "BRONZE")}

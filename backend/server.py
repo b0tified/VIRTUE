@@ -322,7 +322,7 @@ async def maybe_reset_season() -> dict:
         #     sub-tiers) with a floor of 0.
         SEASON_RESET_RP_DROP = 900  # 3 sub-tiers × 300 RP soft reset
         GOONMASTER_FLOOR_RP = RANK_TIERS[-1][0]  # 2100 — dynamic in case tiers ever shift
-        DIAMOND_III_RP = RANK_TIERS[4][0]        # 1200 — start of Diamond III
+        DIAMOND_III_RP = RANK_TIERS[5][0]        # 1200 — start of Diamond III (Emerald sits at index 4)
 
         # Roll-back helper — mirrors the aggregation logic in the
         # `update_many` below so seeded bots use the SAME rules as real
@@ -538,6 +538,7 @@ RANK_TIERS = [
     (300,  "SILVER"),
     (600,  "GOLD"),
     (900,  "PLATINUM"),
+    (1050, "EMERALD"),   # New tier inserted between Platinum and Diamond.
     (1200, "DIAMOND"),
     (1500, "MASTER"),
     (1800, "GRANDMASTER"),
@@ -589,7 +590,7 @@ async def refresh_ultimate_gooner_cache() -> None:
 # placement is relative to *all participants* including bots).
 # Masters' tier index in RANK_TIERS. Kept as a named constant so a future
 # tier-list shuffle only needs one edit.
-MASTERS_TIER_IDX = 5
+MASTERS_TIER_IDX = 6
 
 
 def compute_rp_delta(placement: int, tier_idx: int) -> int:
@@ -664,7 +665,7 @@ def compute_placement_delta(kills: int, deaths: int, placement: int, cur_tier_id
     else:
         perf = max(PLACEMENT_PERF_PENALTY_CAP, perf_raw)
     delta = base + perf
-    if cur_tier_idx >= 5 and delta > PLACEMENT_HIGH_TIER_WIN_CAP:
+    if cur_tier_idx >= MASTERS_TIER_IDX and delta > PLACEMENT_HIGH_TIER_WIN_CAP:
         delta = PLACEMENT_HIGH_TIER_WIN_CAP
     return delta
 
@@ -1453,11 +1454,11 @@ async def me(user: dict = Depends(get_current_user)):
     await credit_level_coins(user)
     payload = public_user(user)
     # Surface the player's global leaderboard rank when they're in
-    # GOONMASTER (tier 7) — the UI shows it on the lobby PlayerCard.
+    # GOONMASTER (top tier) — the UI shows it on the lobby PlayerCard.
     # Computed lazily so we don't pay the count for every lower-tier
     # user. The same data is exposed via /api/me/leaderboard_rank for
     # ad-hoc refreshes.
-    if payload.get("rank_tier") == 7:
+    if payload.get("rank_tier") == len(RANK_TIERS) - 1:
         try:
             higher = await db.users.count_documents({
                 "rank_points": {"$gt": int(user.get("rank_points", 0) or 0)}
@@ -2330,11 +2331,11 @@ async def set_avatar(payload: AvatarIn, user: dict = Depends(get_current_user)):
     # when the picked index actually has an entry in the map.
     gates = {
         6:  {"level": 5,  "tier": 0},  # Flaming Skull
-        7:  {"level": 15, "tier": 4},  # Pulsing Diamond
-        8:  {"level": 25, "tier": 5},  # Swirling Lightning
+        7:  {"level": 15, "tier": 5},  # Pulsing Diamond — Diamond+ gate
+        8:  {"level": 25, "tier": 6},  # Swirling Lightning — Master+ gate
         9:  {"level": 10, "tier": 0},  # Frost Sigil
-        10: {"level": 20, "tier": 4},  # Quantum Core
-        11: {"level": 30, "tier": 7},  # All-Seeing Eye
+        10: {"level": 20, "tier": 5},  # Quantum Core — Diamond+ gate
+        11: {"level": 30, "tier": 8},  # All-Seeing Eye — Goonmaster gate
     }
     if payload.avatar in gates:
         stats = user.get("stats", {})
@@ -2521,9 +2522,10 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
         cur_pts = int(user.get("rank_points", 0) or 0)
         cur_tier_idx, cur_tier_name = rank_for_points(cur_pts)
         steps = max(1, int(reward["rank_up_tiers"]))
-        # Cap target at tier 6 (Grandmaster). Tier 7 = Goonmaster, unreachable
-        # via code.
-        target_tier_idx = min(6, cur_tier_idx + steps)
+        # Cap target at Grandmaster (last-1). Goonmaster is earned-only
+        # so a code redemption can't teleport a player straight to the
+        # top tier.
+        target_tier_idx = min(len(RANK_TIERS) - 2, cur_tier_idx + steps)
         if target_tier_idx > cur_tier_idx:
             # Land the player at the *start* of the new tier's band so they
             # have to fight to climb further within it.
@@ -3152,7 +3154,7 @@ QUEUE_BOT_FILL_GOONMASTER_MAX = 180.0
 # the 20-45s window so ranked feels snappy end-to-end. Re-rolled per join.
 QUEUE_BOT_FILL_LOW_MIN = 20.0
 QUEUE_BOT_FILL_LOW_MAX = 45.0
-QUEUE_LOW_TIER_MAX = 4  # tiers 0..4 = BRONZE, SILVER, GOLD, PLATINUM, DIAMOND
+QUEUE_LOW_TIER_MAX = 5  # tiers 0..5 = BRONZE, SILVER, GOLD, PLATINUM, EMERALD, DIAMOND
 QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 
 # -------------------------------------------------------------------
@@ -5074,7 +5076,6 @@ class GameRoom:
                 bot.username = candidates.pop()
             # Re-roll cosmetic disguise so each match feels fresh.
             bot.avatar = random.randint(0, 4)
-            bot.level = random.randint(5, 11)
             if player_rp is not None:
                 jitter = random.randint(-20, 20)
                 pts = max(low, min(high, int(player_rp) + jitter))
@@ -5084,6 +5085,14 @@ class GameRoom:
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name
             bot.rank_tier = t_idx
+            # Higher displayed level for disguised bots — scales with the
+            # pretend tier so a "Goonmaster" bot doesn't read as a level
+            # 8 rookie. Rough shape: Bronze ~10-20, Diamond ~35-70,
+            # Goonmaster ~50-99. Base is 10, adds 5 per tier low and
+            # 10 per tier high.
+            _lvl_lo = 10 + t_idx * 5
+            _lvl_hi = min(99, 20 + t_idx * 10)
+            bot.level = random.randint(_lvl_lo, _lvl_hi)
 
     async def _update_bots(self, dt: float):
         now_ms = int(time.time() * 1000)

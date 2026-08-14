@@ -29,11 +29,11 @@ export default function AnimatedRankIcon({
   className = "",
   testid = "animated-rank-icon",
 }) {
-  const t = Math.max(0, Math.min(7, Number.isFinite(tier) ? tier : 0));
-  const d = t === 7 ? 0 : Math.max(1, Math.min(3, Number.isFinite(division) ? division : 3));
+  const t = Math.max(0, Math.min(8, Number.isFinite(tier) ? tier : 0));
+  const d = t === 8 ? 0 : Math.max(1, Math.min(3, Number.isFinite(division) ? division : 3));
   const Icon = rankIconFor(t);
   const color = rankColorFor(t);
-  const isGoon = t === 7;
+  const isGoon = t === 8;
   // Intensity ramp keyed to division (1 = strongest). Goonmaster is
   // treated as "always max" because it has no sub-divisions.
   const intensity = isGoon ? "goon" : `div${d}`;

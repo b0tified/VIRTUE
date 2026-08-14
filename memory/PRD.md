@@ -1467,3 +1467,30 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `test_live_stats_shape_and_bot_filtering`: spawn bots into `game_room`/`tdm_room` + inject a 3-user party casual queue entry; assert `humans == 0` in the affected rooms (bot filter works) and `casual_total >= 3` (multi-user entries counted per-member). Also asserts all 10 room keys + all `mode_popularity` sub-keys are present.
 - **Live verification** (Playwright): admin route renders the LIVE PLAYER STATS card immediately below the existing stat cards; headline tiles show `displayed_online=17`, mode bars + queue counters + room tiles all populate correctly; second curl call showed `displayed_online` drifted to 24 confirming the 5s auto-poll updates.
 
+
+### 2026-02-24 — EMERALD tier + higher-level disguised bots + animated match-result icons
+- **User request**: "Add a new rank between platinum and diamond called Emerald · Emerald 1-3 · Have the disguised bots have higher levels use animated icons and show either 1-3 after rank on the post match screen"
+- **Backend** (`/app/backend/server.py`):
+  - `RANK_TIERS` grew from 8 → 9 entries with `EMERALD` inserted at index 4 (RP threshold 1050). Diamond/Master/Grandmaster/Goonmaster shift up: 5/6/7/8. Emerald spans 1050..1200 (150 RP band → 50 RP per division: I/II/III).
+  - Constants shifted: `MASTERS_TIER_IDX 5 → 6`, `QUEUE_LOW_TIER_MAX 4 → 5`. All other tier math uses `len(RANK_TIERS)` and auto-adapts.
+  - Avatar unlock gates that referenced the old Diamond/Master/Goonmaster tier indices (avatars 7 / 8 / 10 / 11) all bumped.
+  - The special "cap target at Grandmaster" rank-up guard in code-redeem now uses `len(RANK_TIERS) - 2` so a future tier insert doesn't teleport players into Goonmaster.
+  - `_disguise_bots_as_players` (per-match freshening loop): bot displayed level upgraded from a flat `random.randint(5, 11)` to a per-tier band — `10 + t_idx*5 .. min(99, 20 + t_idx*10)` — so a Goonmaster disguised bot reads as level 50-99 instead of 5-11.
+- **Frontend** (`/app/frontend/src/game/rankIcons.js` + 12 other files):
+  - Canonical `RANK_COLORS`, `RANK_NAMES`, `RANK_ICONS`, `RANK_THRESHOLDS` arrays all expanded to 9 entries. Emerald color: `#2ECC71` (bright green); Emerald icon: lucide `Sparkles` (twinkly gems).
+  - All 8 hardcoded `RANK_COLORS` arrays across `QueueOverlay`, `Hud`, `MatchResultOverlay`, `FriendsModal`, `PartyPanel`, `PublicProfileModal`, `Leaderboard`, `Profile` bulk-patched via sed.
+  - 17 tier-clamp expressions `Math.min(7, ...)` bumped to `Math.min(8, ...)`.
+  - 12 Goonmaster tier-equality checks `=== 7` / `!== 7` / `== 7` bumped to `=== 8` / `!== 8` / `== 8`.
+  - `rankIdxFromName` name arrays in `PublicProfileModal` and `Profile.jsx` gained the `EMERALD` entry so match-history rows resolve the color/tier correctly.
+- **Post-match scoreboard** (`/app/frontend/src/components/MatchResultOverlay.jsx`):
+  - Rank chip now renders `<AnimatedRankIcon tier={p.rank_tier} division={p.rank_division ?? 3} size={12} />` — so disguised bots (and every real player) get the tier's ornaments (division sparkles, Master halo, Goonmaster flicker) instead of a flat lucide icon. Falls back to `rankIconFor` when `rank_tier` is undefined.
+  - Division roman (I/II/III) was ALREADY rendered in-line (`p.rank_name + " " + divisionRoman(p.rank_division)`) — verified this still lands correctly for Emerald.
+- **Tests** (`/app/backend/tests/test_emerald_tier.py` — 6 new + `/app/backend/tests/test_placement_high_tier_cap.py` refactored):
+  - Layout: 9 tiers, EMERALD at index 4, thresholds 0/300/600/900/1050/1200/1500/1800/2100.
+  - `rank_for_points` maps [1050, 1200) → EMERALD; 1049 stays Platinum, 1200 becomes Diamond.
+  - Emerald has 3 divisions (50 RP each): 1050 → III, 1100 → II, 1150 → I.
+  - `MASTERS_TIER_IDX == 6` and `QUEUE_LOW_TIER_MAX == 5`.
+  - `PLACEMENT_HIGH_TIER_WIN_CAP` now fires at tier 6 (Master), not tier 5 (Diamond). Diamond (5) and Emerald (4) placement wins can still reach +250.
+  - Existing placement-cap test file updated: every "Master" case bumped from `cur_tier_idx=5` → `6`, GM from `6` → `7`, Goon from `7` → `8`.
+- **Live verification**: 18 pytests pass. curl `/api/auth/me` for admin returns `rank_tier: 8, rank_name: GOONMASTER, rp: 6200`. Playwright: desktop lobby + full 100-row leaderboard render with zero JS errors; top rows correctly display the Ultimate Gooner crest on gold. Emerald boundary verified via internal helper: rp=1050→EMERALD III, 1150→EMERALD I, 1200→DIAMOND III.
+

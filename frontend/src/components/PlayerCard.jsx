@@ -81,11 +81,11 @@ export function avatarMeta(idx, peakTier = null) {
   const meta = AVATARS[i];
   // For the Peak-Crest avatar, resolve icon + bg dynamically from peakTier.
   if (meta.isPeakCrest && Number.isFinite(peakTier)) {
-    const tierIdx = Math.max(0, Math.min(7, peakTier));
+    const tierIdx = Math.max(0, Math.min(8, peakTier));
     return {
       Icon: rankIconFor(tierIdx),
       bg: rankColorFor(tierIdx),
-      iconColor: tierIdx === 7 ? "#FFD700" : "#0A0A0A",
+      iconColor: tierIdx === 8 ? "#FFD700" : "#0A0A0A",
       label: "Peak Crest",
       isPeakCrest: true,
     };
@@ -116,7 +116,7 @@ export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, leaderboard
   // Ultimate Gooner override — must be a top-50 Goonmaster (tier 7).
   const ultimateCrest =
     isAnimatedPeakCrest &&
-    peakTier === 7 &&
+    peakTier === 8 &&
     Number.isFinite(leaderboardRank) &&
     leaderboardRank >= 1 &&
     leaderboardRank <= 50;
@@ -232,9 +232,9 @@ export default function PlayerCard({
   className = "",
   testid = "player-card",
 }) {
-  const t = Math.max(0, Math.min(7, rankTier));
+  const t = Math.max(0, Math.min(8, rankTier));
   const rankColor = isBot ? "#9B59B6" : RANK_COLORS[t];
-  const rankTextColor = isBot || t === 7 ? "#FFD700" : "#0A0A0A";
+  const rankTextColor = isBot || t === 8 ? "#FFD700" : "#0A0A0A";
 
   const dims =
     size === "sm"
@@ -260,7 +260,7 @@ export default function PlayerCard({
           // a black frame around a gold circle.
           const isUltPeakCrest =
             avatar === 5 &&
-            peakRankTier === 7 &&
+            peakRankTier === 8 &&
             Number.isFinite(leaderboardRank) &&
             leaderboardRank >= 1 &&
             leaderboardRank <= 50;

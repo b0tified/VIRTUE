@@ -6,7 +6,7 @@ import MatchResultOverlay from "@/components/MatchResultOverlay";
 import settingsStore from "@/game/settings";
 import api from "@/api";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 const WEAPON_META = {
   ak47:   { Icon: Crosshair, color: "#FFD700", label: "AK-47" },

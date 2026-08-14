@@ -4,7 +4,7 @@ import { Trophy, Loader2, X } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useQueue } from "@/context/QueueContext";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 function fmtMS(sec) {
   const s = Math.max(0, Math.floor(sec || 0));
@@ -71,7 +71,7 @@ export default function QueueOverlay() {
               className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5"
               style={{
                 background: RANK_COLORS[queueState.tier ?? 0],
-                color: queueState.tier === 7 ? "#FFD700" : "#0A0A0A",
+                color: queueState.tier === 8 ? "#FFD700" : "#0A0A0A",
               }}
             >
               {queueState.tier_name || "BRONZE"}

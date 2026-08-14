@@ -19,7 +19,7 @@ const TABS = [
   { id: "search",   label: "ADD" },
 ];
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 // Format a unix timestamp (seconds) as a short relative-time string.
 // Used to show "LAST SEEN 5m AGO" / "2H AGO" / "3D AGO" / "JUST NOW" on offline friends.
@@ -223,8 +223,8 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
     }
   };
 
-  const rankColor = RANK_COLORS[Math.max(0, Math.min(7, u.rank_tier ?? 0))];
-  const rankText = (u.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A";
+  const rankColor = RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
+  const rankText = (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A";
 
   return (
     <div
@@ -448,14 +448,14 @@ function SearchPanel({ onChange, onInspect }) {
           <div className="px-1 py-6 text-center font-anton uppercase text-neutral-400 text-xs" data-testid="friends-search-no-results">No players found</div>
         )}
         {results.map((u, i) => {
-          const rankColor = RANK_COLORS[Math.max(0, Math.min(7, u.rank_tier ?? 0))];
+          const rankColor = RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
           return (
             <div key={u.id} className="px-2 py-2 flex items-center gap-3" data-testid={`friends-search-row-${i}`}>
               <Avatar idx={u.avatar} size={36} online={u.online} testid={`search-avatar-${i}`} />
               <div className="flex-1 min-w-0">
                 <div className="font-anton uppercase text-sm truncate">{u.username}</div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A" }}>
+                  <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A" }}>
                     {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
                   </span>
                   <span className="text-[10px] font-anton text-neutral-500">{u.rank_points} RP</span>

@@ -11,7 +11,7 @@ import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import { useAuth } from "@/context/AuthContext";
 import { ReportPlayerModal } from "@/components/Hud";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 const MODE_META = {
   ranked:  { label: "RANKED",  color: "#0055FF", Icon: Trophy },
@@ -266,7 +266,7 @@ function HistoryRow({ m, idx }) {
         {m.rp_delta !== 0 ? `${sign}${m.rp_delta}` : "—"}
       </div>
       <div className="col-span-2 text-right">
-        <span className="inline-block font-anton uppercase text-[10px] px-1.5 py-0.5" style={{ background: rankColor, color: tierIdx === 7 ? "#FFD700" : "#0A0A0A" }}>
+        <span className="inline-block font-anton uppercase text-[10px] px-1.5 py-0.5" style={{ background: rankColor, color: tierIdx === 8 ? "#FFD700" : "#0A0A0A" }}>
           {m.rank_name_after}
         </span>
       </div>
@@ -275,14 +275,14 @@ function HistoryRow({ m, idx }) {
 }
 
 function rankIdxFromName(name) {
-  const arr = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
+  const arr = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
   return Math.max(0, arr.indexOf((name || "BRONZE").toUpperCase()));
 }
 
 function RankPill({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid }) {
   const ultimate = isUltimateGooner(tier, leaderboardRank);
-  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, tier ?? 0))];
-  const textColor = ultimate ? "#0A0A0A" : ((tier ?? 0) === 7 ? "#FFD700" : "#0A0A0A");
+  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, tier ?? 0))];
+  const textColor = ultimate ? "#0A0A0A" : ((tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A");
   const roman = divisionRoman(division);
   return (
     <div className="flex items-center gap-2" data-testid={testid}>

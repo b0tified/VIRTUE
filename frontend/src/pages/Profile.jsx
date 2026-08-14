@@ -38,7 +38,7 @@ function isAvatarUnlocked(idx, level, peakTier) {
   return false;
 }
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 /* Turn any axios/FastAPI error into a readable, alert()-safe string.
    Handles three shapes:
@@ -129,10 +129,10 @@ export default function Profile() {
   const kd = s.deaths > 0 ? (s.kills / s.deaths).toFixed(2) : String(s.kills);
 
   const currentRP = user?.rank_points ?? 0;
-  const currentTier = Math.max(0, Math.min(7, user?.rank_tier ?? 0));
+  const currentTier = Math.max(0, Math.min(8, user?.rank_tier ?? 0));
   const currentName = user?.rank_name || "BRONZE";
   const peakRP = user?.peak_rank_points ?? currentRP;
-  const peakTier = Math.max(0, Math.min(7, user?.peak_rank_tier ?? currentTier));
+  const peakTier = Math.max(0, Math.min(8, user?.peak_rank_tier ?? currentTier));
   const peakName = user?.peak_rank_name || currentName;
 
   const bannerIcon = user?.banner_icon ?? 0;
@@ -429,7 +429,7 @@ export default function Profile() {
               <div className="col-span-3 text-right">Kills</div>
             </div>
             {seasonHistory.map((s, i) => {
-              const tier = Math.max(0, Math.min(7, s.rank_tier ?? 0));
+              const tier = Math.max(0, Math.min(8, s.rank_tier ?? 0));
               const color = RANK_COLORS[tier];
               return (
                 <div
@@ -441,7 +441,7 @@ export default function Profile() {
                   <div className="col-span-3">
                     <span
                       className="font-anton uppercase text-xs px-2 py-1"
-                      style={{ background: color, color: tier === 7 ? "#FFD700" : "#0A0A0A" }}
+                      style={{ background: color, color: tier === 8 ? "#FFD700" : "#0A0A0A" }}
                     >
                       {s.rank_name || "BRONZE"}
                     </span>
@@ -608,7 +608,7 @@ function HistoryRow({ idx, m, onOpen }) {
     ? { ...TDM_MODE_META, ...MODE_META[m.mode], Icon: TDM_MODE_META.Icon, label: TDM_MODE_META.label, color: TDM_MODE_META.color }
     : (MODE_META[m.mode] || MODE_META.casual);
   const M = meta.Icon;
-  const rankColor = RANK_COLORS[Math.max(0, Math.min(7, ((rankIdxFromName(m.rank_name_after)) || 0)))];
+  const rankColor = RANK_COLORS[Math.max(0, Math.min(8, ((rankIdxFromName(m.rank_name_after)) || 0)))];
   const deltaColor = m.rp_delta > 0 ? "#06A35F" : m.rp_delta < 0 ? "#E62429" : "#0A0A0A";
   const sign = m.rp_delta > 0 ? "+" : "";
   const outcome = isTdm ? (TDM_OUTCOME_META[m.team_outcome] || TDM_OUTCOME_META.draw) : null;
@@ -719,7 +719,7 @@ function HistoryRow({ idx, m, onOpen }) {
 }
 
 function rankIdxFromName(name) {
-  const arr = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
+  const arr = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
   return arr.indexOf((name || "BRONZE").toUpperCase());
 }
 
@@ -858,8 +858,8 @@ function SectionHeader({ title, testid }) {
 
 function RankCard({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid }) {
   const ultimate = isUltimateGooner(tier, leaderboardRank);
-  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, tier))];
-  const textColor = ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A");
+  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, tier))];
+  const textColor = ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A");
   const roman = divisionRoman(division);
   return (
     <div className="card-pow p-0 overflow-hidden" data-testid={testid}>
@@ -881,7 +881,7 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
           )}
           <div className="flex flex-col leading-none">
             <span className={ultimate ? "text-3xl" : ""}>{ultimate ? "ULTIMATE GOONER" : name}</span>
-            {roman && tier !== 7 && (
+            {roman && tier !== 8 && (
               <span className="font-anton tracking-widest text-base mt-1 opacity-90" data-testid={`${testid}-division`}>
                 {roman}
               </span>

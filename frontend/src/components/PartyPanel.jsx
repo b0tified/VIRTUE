@@ -16,7 +16,7 @@ import { Avatar } from "@/components/PlayerCard";
 import { divisionRoman } from "@/game/rankIcons";
 import { useQueue } from "@/context/QueueContext";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 export default function PartyPanel({ party, myId, refresh, className = "" }) {
   const {
@@ -96,7 +96,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
       <div className="bg-neutral-50">
         {party.members.map((m, i) => {
           const isLeaderRow = m.id === party.leader_id;
-          const tierIdx = Math.max(0, Math.min(7, m.rank_tier ?? 0));
+          const tierIdx = Math.max(0, Math.min(8, m.rank_tier ?? 0));
           const rankColor = RANK_COLORS[tierIdx];
           const isMe = m.id === myId;
           // Highlight the row whose rank is anchoring the ranked queue
@@ -121,7 +121,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 <div className="flex items-center gap-1.5">
                   <span
                     className="font-anton uppercase text-[9px] px-1 border border-black"
-                    style={{ background: rankColor, color: tierIdx === 7 ? "#FFD700" : "#0A0A0A" }}
+                    style={{ background: rankColor, color: tierIdx === 8 ? "#FFD700" : "#0A0A0A" }}
                   >
                     {m.rank_name}{divisionRoman(m.rank_division) ? ` ${divisionRoman(m.rank_division)}` : ""}
                   </span>

@@ -31,7 +31,7 @@ export default function RankProgressBar({
   className = "",
   testid = "rank-progress",
 }) {
-  const t = Math.max(0, Math.min(7, Number.isFinite(tier) ? tier : 0));
+  const t = Math.max(0, Math.min(8, Number.isFinite(tier) ? tier : 0));
   // Goonmaster is undivided — no progression bar.
   if (t >= 7) {
     return (

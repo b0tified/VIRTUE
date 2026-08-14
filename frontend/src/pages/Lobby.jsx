@@ -1164,12 +1164,12 @@ function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
   // gold + flame icon + "ULTIMATE GOONER" label. Sub-division is
   // hidden — the Ultimate tier is undivided.
   const ultimate =
-    tier === 7 &&
+    tier === 8 &&
     Number.isFinite(Number(leaderboardRank)) &&
     Number(leaderboardRank) >= 1 &&
     Number(leaderboardRank) <= 50;
-  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(7, tier))];
-  const textColor = ultimate ? "#0A0A0A" : (tier === 7 ? "#FFD700" : "#0A0A0A");
+  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, tier))];
+  const textColor = ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A");
   const roman = { 1: "I", 2: "II", 3: "III" }[Number(division || 0)] || "";
   return (
     <div className="border-pow shadow-pow-sm flex items-center gap-0" data-testid="rank-badge">
@@ -1199,7 +1199,7 @@ function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
       </div>
       <div className="font-display px-4 py-2 text-2xl uppercase flex items-baseline gap-1.5" style={{ background: color, color: textColor }}>
         <span data-testid="rank-badge-name">{ultimate ? "ULTIMATE GOONER" : name}</span>
-        {!ultimate && roman && tier !== 7 && (
+        {!ultimate && roman && tier !== 8 && (
           <span className="font-anton text-sm tracking-widest opacity-90" data-testid="rank-badge-division">{roman}</span>
         )}
         {ultimate && (

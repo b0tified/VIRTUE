@@ -1,14 +1,16 @@
 // Shared rank-icon and rank-color metadata so every component renders the same
-// crest for a given tier (0..7 = Bronze .. Goonmaster). Each main tier (except
+// crest for a given tier (0..8 = Bronze .. Goonmaster). Emerald sits between
+// Platinum and Diamond as a stepping-stone tier. Each main tier (except
 // Goonmaster) is split into 3 sub-divisions (III → II → I, lowest → highest
 // within the tier) — see `rankDivisionForPoints`.
-import { Shield, Award, Star, Gem, Trophy, Sword, Skull, Flame } from "lucide-react";
+import { Shield, Award, Star, Gem, Trophy, Sword, Skull, Flame, Sparkles } from "lucide-react";
 
 export const RANK_COLORS = [
   "#CD7F32", // Bronze
   "#C0C0C0", // Silver
   "#FFD700", // Gold
   "#5BC0EB", // Platinum
+  "#2ECC71", // Emerald (new — bright green)
   "#9D4EDD", // Diamond
   "#E63946", // Master
   "#06D6A0", // Grandmaster
@@ -17,16 +19,19 @@ export const RANK_COLORS = [
 
 export const RANK_NAMES = [
   "BRONZE", "SILVER", "GOLD", "PLATINUM",
+  "EMERALD",
   "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER",
 ];
 
 // Thresholds must match RANK_TIERS in /app/backend/server.py so a
 // client-side fallback can compute the right division when the server
-// payload predates this field.
-const RANK_THRESHOLDS = [0, 300, 600, 900, 1200, 1500, 1800, 2100];
+// payload predates this field. Emerald slot (index 4) at 1050 RP.
+const RANK_THRESHOLDS = [0, 300, 600, 900, 1050, 1200, 1500, 1800, 2100];
 
 export const RANK_ICONS = [
-  Shield, Award, Star, Trophy, Gem, Sword, Skull, Flame,
+  Shield, Award, Star, Trophy,
+  Sparkles,           // Emerald — twinkly sparkles
+  Gem, Sword, Skull, Flame,
 ];
 
 export function rankIconFor(tier) {
@@ -39,7 +44,7 @@ export function rankColorFor(tier) {
 }
 export function rankTextColorFor(tier) {
   // Goonmaster (black background) needs gold text. All others stay dark.
-  return tier === 7 ? "#FFD700" : "#0A0A0A";
+  return tier === RANK_COLORS.length - 1 ? "#FFD700" : "#0A0A0A";
 }
 
 // Returns 1 (highest sub-tier within the rank), 2 (middle), 3 (entry),
@@ -65,11 +70,11 @@ export function divisionRoman(division) {
 }
 
 // Returns true when the player is one of the top-50 GOONMASTER globals —
-// the "ULTIMATE GOONER" tier. Tier index 7 (Goonmaster) is the required
+// the "ULTIMATE GOONER" tier. Top tier (last index) is the required
 // base rank; leaderboardRank must be a finite integer in [1, 50].
 export function isUltimateGooner(tier, leaderboardRank) {
   return (
-    tier === 7 &&
+    tier === RANK_NAMES.length - 1 &&
     Number.isFinite(leaderboardRank) &&
     leaderboardRank >= 1 &&
     leaderboardRank <= 50

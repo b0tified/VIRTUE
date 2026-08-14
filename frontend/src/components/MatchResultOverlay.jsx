@@ -7,9 +7,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Trophy, Skull, Star, Crosshair, Target, Home, Users, Handshake } from "lucide-react";
 import { rankIconFor, divisionRoman } from "@/game/rankIcons";
+import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import audioBus from "@/game/audio";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 // Team accent colors — matches the in-game team tint (red / blue).
 const TEAM_COLORS = { red: "#E62429", blue: "#0055FF" };
 const TEAM_LABELS = { red: "TEAM RED", blue: "TEAM BLUE" };
@@ -368,7 +369,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
             </div>
             <div className="max-h-[34vh] overflow-y-auto">
               {placements.map((p, i) => {
-                const c = RANK_COLORS[Math.max(0, Math.min(7, p.rank_tier ?? 0))];
+                const c = RANK_COLORS[Math.max(0, Math.min(8, p.rank_tier ?? 0))];
                 const isMe = p === mine;
                 return (
                   <div
@@ -423,9 +424,24 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                     <div className="col-span-2 text-right">
                       <span
                         className="inline-flex items-center gap-1 font-anton uppercase text-[11px] px-1.5 py-0.5"
-                        style={{ background: c, color: p.rank_tier === 7 ? "#FFD700" : "#0A0A0A" }}
+                        style={{ background: c, color: p.rank_tier === 8 ? "#FFD700" : "#0A0A0A" }}
+                        data-testid={`match-result-rank-${idx}`}
                       >
-                        {(() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={11} strokeWidth={3} />; })()}
+                        {/* Animated rank icon — every scoreboard row now
+                            shows the tier's ornament (division sparkles,
+                            halo ring, Goonmaster flame flicker) instead
+                            of a static lucide crest. Bumps disguised
+                            high-tier bots up to the same visual polish
+                            as real players. Falls back to a static icon
+                            when rank_tier is missing. */}
+                        {Number.isFinite(p.rank_tier) ? (
+                          <AnimatedRankIcon
+                            tier={p.rank_tier}
+                            division={p.rank_division ?? 3}
+                            size={12}
+                            testid={`match-result-rank-icon-${idx}`}
+                          />
+                        ) : (() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={11} strokeWidth={3} />; })()}
                         {p.rank_name}{divisionRoman(p.rank_division) ? ` ${divisionRoman(p.rank_division)}` : ""}
                       </span>
                     </div>
