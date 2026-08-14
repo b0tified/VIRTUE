@@ -30,14 +30,24 @@
    (lobby pill uses this — the "#N" sits beside it as its own pill).
 */
 import { Flame } from "lucide-react";
+import { detectIsMobile } from "@/game/useIsMobile";
 
 export default function UltimateGoonerCrest({
   size = 48,
   rank = null,
   className = "",
-  paused = false,
+  paused: pausedProp = null,
   "data-testid": testid = "ultimate-gooner-crest",
 }) {
+  // Auto-pause on mobile devices — the crest stacks a pulsing halo,
+  // continuously spinning rays, 3 counter-rotating orbit tracks, an
+  // animated flame flicker, and a diagonal sheen sweep. All five run
+  // forever, and each `filter: blur/drop-shadow` layer triggers a
+  // full composite every frame on mobile GPUs. Auto-pause keeps the
+  // visual identity (the crest still shows) but freezes the motion so
+  // it costs nothing per frame. Callers can still explicitly opt back
+  // in by passing `paused={false}` for e.g. a mobile-preview screen.
+  const paused = pausedProp === null ? detectIsMobile() : !!pausedProp;
   const showRank = Number.isFinite(rank) && rank >= 1 && rank <= 50;
   const digitCount = showRank ? String(rank).length : 1;
   const fontPx = Math.max(8, Math.round(size * (digitCount >= 2 ? 0.32 : 0.38)));

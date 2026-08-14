@@ -18,17 +18,25 @@
 */
 import { rankIconFor, rankColorFor } from "@/game/rankIcons";
 import { Sparkles, Star } from "lucide-react";
+import { detectIsMobile } from "@/game/useIsMobile";
 
 export default function AnimatedRankIcon({
   tier = 0,
   division = 0,
   size = 64,
   // When true, animations are paused — used by static contexts like
-  // PDFs or screenshots. Defaults to animated.
-  paused = false,
+  // PDFs or screenshots. Defaults to `null` which means "auto-pause on
+  // mobile": the crest ships a pulse glow, halo ring, and up to 2
+  // orbiting spark tracks + a Goonmaster flame + shimmer overlay, all
+  // running forever. On mobile GPUs the composite cost stacks per
+  // instance (rank pill, avatar, party rows, scoreboard) and drags the
+  // main thread. Setting `paused={false}` explicitly re-enables the
+  // full motion for a mobile screenshot / promo capture.
+  paused: pausedProp = null,
   className = "",
   testid = "animated-rank-icon",
 }) {
+  const paused = pausedProp === null ? detectIsMobile() : !!pausedProp;
   const t = Math.max(0, Math.min(8, Number.isFinite(tier) ? tier : 0));
   const d = t === 8 ? 0 : Math.max(1, Math.min(3, Number.isFinite(division) ? division : 3));
   const Icon = rankIconFor(t);

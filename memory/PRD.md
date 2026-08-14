@@ -1560,3 +1560,14 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Dead-on AK shot still lands with correct body_part + distance.
 - **Related suites** (23/23 pass): lag compensation, sniper weapon, sniper rework, AK fire rate — no regressions.
 
+
+### 2026-02-24 — Mobile lobby freeze/lag fix
+- **User report**: "Game freezes and lags on mobile in the lobby" (both Preview and Production). Button taps sluggish; constant stutter after login, tab switches, and idle.
+- **Root cause**: The active castle/meteor/snow lobby backdrops each stack ~30 CSS keyframe animations that use `filter: blur()` and `filter: drop-shadow()` (twinkling stars, flickering torches, castle-window flames, drifting fog blobs). Every frame triggers a full composite + repaint that saturates mobile GPUs. On top of that, every visible `AnimatedRankIcon` (rank pill, avatars) and `UltimateGoonerCrest` runs their own halo-pulse / rays-spin / orbit-track / sheen-sweep animations forever.
+- **Fix**:
+  - `/app/frontend/src/game/useIsMobile.js` (NEW): `detectIsMobile()` helper + `useIsMobile()` hook. Reports true for touch primary, coarse pointer, no-hover media, or viewport <900px.
+  - `/app/frontend/src/pages/Lobby.jsx`: `animatedBg` state initializer + `virtue-settings-changed` handler now hard-force OFF when `detectIsMobile()` is true. Mobile users get the calm castle subset (sky + moon + silhouette, no filters) regardless of their saved setting. Desktop behaviour unchanged.
+  - `/app/frontend/src/components/UltimateGoonerCrest.jsx`: `paused` default changed from `false` to `null` → auto-pauses on mobile (`data-paused="true"` freezes halo, rays, 3 orbit tracks, sheen sweep, and flame flicker).
+  - `/app/frontend/src/components/AnimatedRankIcon.jsx`: same auto-pause pattern — mobile gets a static rank crest, desktop keeps full motion.
+- **Verified live**: Mobile viewport (844×390) shows zero `.lobby-castle-star`, `.lobby-castle-torch`, `.lobby-castle-window` elements and rank icon carries `data-paused="true"`. Desktop viewport (1920×800) still renders all animated layers. Frontend compiled cleanly, no lint issues on touched files.
+
