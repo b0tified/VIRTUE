@@ -1505,3 +1505,23 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - "MAX RANK" pill gate + "next-tier is Goonmaster" transition both now check against `GOONMASTER_IDX`.
 - **Live verification**: Playwright opened SHOW TIERS modal — 10 tier rows rendered (9 tiers + header), EMERALD row correctly displays "1050 → 1199 RP" and EMERALD III/II/I sub-divisions at their correct RP bands with the emerald green background + animated Sparkles icon. Zero JS errors.
 
+
+### 2026-02-24 — Season reset: Diamond+ lands at Emerald III (seed new tier)
+- **User request**: "Emerald Season Reset Bump: On next season roll, land Diamond+ players at Emerald III (instead of Diamond III) so the new tier gets population"
+- **Old rule**: RP ≥ 2100 (Goonmaster only) → snap to Diamond III (1200 RP). Everyone else → -900 soft reset.
+- **New rule** (`/app/backend/server.py` → `maybe_reset_season`):
+  - RP ≥ 1200 (Diamond floor — includes Diamond, Master, Grandmaster, Goonmaster) → snap to EMERALD III (1050 RP).
+  - RP < 1200 → -900 soft reset (unchanged, floor 0).
+- **Constants renamed**:
+  - `GOONMASTER_FLOOR_RP` → `DIAMOND_FLOOR_RP` = `RANK_TIERS[5][0]` = 1200.
+  - `DIAMOND_III_RP` → `EMERALD_III_RP` = `RANK_TIERS[4][0]` = 1050.
+- **Coverage**: both real-player `update_many` Mongo aggregation branch AND the `_rollback_rp` helper (used for seeded bots) call the same rule so leaderboard bots roll back with players.
+- **Preserved**: `peak_rank_points` still `$max`s pre-reset RP → past-season titles and profile "Peak Rank" pill stay intact regardless of the new landing tier.
+- **Tests** (`/app/backend/tests/test_season_reset_goonmaster_diamond3.py` — rewritten, 9 cases):
+  - Diamond (1200) → Emerald III (1050). Goonmaster (2100, 2700) → 1050. Master (1500) → 1050.
+  - Emerald III (1050) → soft reset to 150 (below Diamond floor).
+  - Platinum (900) → 0. Bronze (200 / 0) → 0.
+  - Source-scan sanity: aggregation uses `DIAMOND_FLOOR_RP` + `EMERALD_III_RP`, `$max` peak-rank branch still present.
+  - `EMERALD_III_RP` constant equals `RANK_TIERS[4][0]` = 1050, and Emerald III is confirmed as division 3.
+- **Verified**: 15 tests pass in the pytest suite (this file + `test_emerald_tier.py`). Backend hot-reloaded cleanly.
+

@@ -312,24 +312,26 @@ async def maybe_reset_season() -> dict:
         # stay in `owned_skins` (append-only) so players keep cosmetics
         # they earned last season.
         # Season reset math per-tier:
-        #   - Goonmasters (RP ≥ 2100) hard-land at Diamond III (1200 RP)
-        #     per user policy: "you finished top of the ladder, but the
-        #     new season starts you at the top of the mid-ladder, not
-        #     Master-tier". Keeps GMs from crushing new-season lobbies
-        #     from day one while still respecting their end-of-season
-        #     ceiling via `peak_rank_points`.
+        #   - Diamond+ (RP ≥ 1200) hard-land at EMERALD III (1050 RP).
+        #     Rationale: seeding the new EMERALD tier with returning
+        #     high-tier veterans so it has population from day one of
+        #     the new season, instead of leaving it empty until natural
+        #     climbers reach 1050 RP. This replaces the previous
+        #     "Goonmasters land at Diamond III" rule — Diamond, Master,
+        #     Grandmaster, and Goonmaster all converge to the Emerald
+        #     floor now.
         #   - Everyone else drops SEASON_RESET_RP_DROP (900 RP = 3
         #     sub-tiers) with a floor of 0.
         SEASON_RESET_RP_DROP = 900  # 3 sub-tiers × 300 RP soft reset
-        GOONMASTER_FLOOR_RP = RANK_TIERS[-1][0]  # 2100 — dynamic in case tiers ever shift
-        DIAMOND_III_RP = RANK_TIERS[5][0]        # 1200 — start of Diamond III (Emerald sits at index 4)
+        DIAMOND_FLOOR_RP = RANK_TIERS[5][0]      # 1200 — Diamond III entry (the threshold that flags a "Diamond+" player)
+        EMERALD_III_RP = RANK_TIERS[4][0]        # 1050 — Emerald III entry (season-reset landing spot for Diamond+)
 
         # Roll-back helper — mirrors the aggregation logic in the
         # `update_many` below so seeded bots use the SAME rules as real
         # players.
         def _rollback_rp(rp: int) -> int:
-            if rp >= GOONMASTER_FLOOR_RP:
-                return DIAMOND_III_RP
+            if rp >= DIAMOND_FLOOR_RP:
+                return EMERALD_III_RP
             return max(0, rp - SEASON_RESET_RP_DROP)
         finishing_season = int(doc.get("season_number", 1))
         # Refresh the cached prev-season number so newly-created bots
@@ -381,12 +383,14 @@ async def maybe_reset_season() -> dict:
                         ]
                     },
                     "rank_points": {
-                        # $cond: if the player was Goonmaster (RP >= 2100),
-                        # snap them to Diamond III floor (1200). Otherwise
-                        # apply the standard -900 soft reset with a 0 floor.
+                        # $cond: if the player was Diamond+ (RP ≥ 1200),
+                        # snap them to Emerald III floor (1050) so the
+                        # new EMERALD tier is populated from day one.
+                        # Otherwise apply the standard -900 soft reset
+                        # with a 0 floor.
                         "$cond": [
-                            {"$gte": [{"$ifNull": ["$rank_points", 0]}, GOONMASTER_FLOOR_RP]},
-                            DIAMOND_III_RP,
+                            {"$gte": [{"$ifNull": ["$rank_points", 0]}, DIAMOND_FLOOR_RP]},
+                            EMERALD_III_RP,
                             {
                                 "$max": [
                                     0,
