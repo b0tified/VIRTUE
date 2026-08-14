@@ -232,9 +232,27 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
 
   return (
     <div className="absolute inset-0 z-30 pointer-events-none select-none" data-testid="touch-controls">
-      {/* LEFT: move stick */}
+      {/* Full-screen LOOK pad — sits BEHIND every other on-screen
+          control (z-10). Any drag that starts on empty screen area
+          rotates yaw/pitch, so the player can aim from anywhere on
+          the screen instead of only the right half. The move joystick
+          + action buttons above have explicit higher z-indices and
+          `pointer-events-auto`, so they capture their own touches
+          first. */}
       <div
-        className="pointer-events-auto absolute rounded-full bg-white/10 border-2 border-white/30"
+        className="pointer-events-auto absolute inset-0 z-10"
+        ref={lookStickRef}
+        onTouchStart={onLookStart}
+        onTouchMove={onLookMove}
+        onTouchEnd={onLookEnd}
+        onTouchCancel={onLookEnd}
+        data-testid="touch-look-pad"
+      />
+
+      {/* LEFT: move stick — z-30 keeps it above the look pad so left
+          thumb drags anchor the move joystick, not the camera. */}
+      <div
+        className="pointer-events-auto absolute rounded-full bg-white/10 border-2 border-white/30 z-30"
         style={{
           bottom: moveL.y,
           left: moveL.x,
@@ -252,17 +270,6 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         <Knob dx={stateRef.current.move.dx} dy={stateRef.current.move.dy} />
         <div className="absolute -top-6 left-0 right-0 text-center text-[10px] uppercase tracking-widest text-white/60">Move</div>
       </div>
-
-      {/* RIGHT: look stick (pad takes up most of right side) */}
-      <div
-        className="pointer-events-auto absolute right-0 top-0 bottom-0 w-1/2"
-        ref={lookStickRef}
-        onTouchStart={onLookStart}
-        onTouchMove={onLookMove}
-        onTouchEnd={onLookEnd}
-        onTouchCancel={onLookEnd}
-        data-testid="touch-look-pad"
-      />
 
       {/* RIGHT: action buttons (sit above the look pad, in pointer-events-auto bubble) */}
       <div

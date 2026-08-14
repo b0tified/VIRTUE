@@ -523,7 +523,8 @@ export default function Lobby() {
 
   return (
     <div
-      className="relative h-[100dvh] lg:h-screen overflow-hidden bg-black flex flex-col"
+      className="relative h-[100dvh] lg:h-screen bg-black flex flex-col"
+      style={{ overflowY: "auto" }}
       data-testid="lobby-page"
     >
       {showSnowBg ? (
@@ -550,11 +551,8 @@ export default function Lobby() {
         </>
       )}
 
-      <header className="relative z-20 flex items-center justify-between flex-wrap gap-y-2 px-3 sm:px-6 md:px-12 py-2 md:py-3">
-        {/* Left side intentionally empty — the large VIRTUE logo lives in
-            the main column below so the header reads as a thin utility bar. */}
-        <div />
-        <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap">
+      <header className="relative z-20 flex items-center justify-end flex-wrap gap-y-1.5 px-2 sm:px-6 md:px-12 py-1.5 md:py-3">
+        <div className="flex items-center gap-1 sm:gap-3 flex-wrap">
           {user && (
             <PlayerCard
               size="sm"
@@ -672,12 +670,15 @@ export default function Lobby() {
       </header>
 
       <main
-        className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 -mt-12 sm:-mt-20 lg:mt-2 flex-1 min-h-0 overflow-hidden"
+        className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 mt-0 lg:-mt-20 xl:mt-2 flex-1 lg:min-h-0 lg:overflow-hidden pb-6 lg:pb-0"
       >
-        <div className="lg:col-span-4 -mt-4 lg:mt-6 min-h-0 overflow-y-auto pr-1">
-          {/* Big VIRTUE logo replaces the old "READY UP, name!" header. */}
+        <div className="lg:col-span-4 lg:-mt-4 xl:mt-6 lg:min-h-0 lg:overflow-y-auto pr-1">
+          {/* Big VIRTUE logo replaces the old "READY UP, name!" header.
+              On mobile landscape (short height) the giant `text-5xl`
+              default eats too much vertical space and pushes buttons off
+              the fold — shrink to a compact 3xl unless there's room. */}
           <h1
-            className="font-display text-5xl sm:text-7xl md:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
+            className="font-display text-3xl sm:text-5xl md:text-7xl lg:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
             data-testid="lobby-hero-logo"
           >
             <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>

@@ -403,7 +403,13 @@ export class GameEngine {
     const camY = this.camera.position.y;
     const camZ = this.camera.position.z;
     const MAX_DIST = 60.0;
-    const COS_THRESHOLD = 0.999; // ~2.5° cone
+    // Cone tightens to ~2.5° on desktop (pixel-precise aim) but widens
+    // to ~14° on touch — mobile crosshair wobble makes the tight
+    // desktop gate silently drop auto-fire even when the target is
+    // clearly on screen. Aim-assist already snaps the crosshair to the
+    // target's torso when it's within the assist cone, so relaxing
+    // this gate doesn't cause runaway false-positive shots downrange.
+    const COS_THRESHOLD = this.touchActive ? 0.970 : 0.999;
     for (const [id, entry] of this.players) {
       if (id === this.youId) continue;
       const s = entry.state;
@@ -4860,12 +4866,16 @@ export class GameEngine {
     }
 
     // Aim assist: only when gamepad connected OR touch mode active (set
-    // externally by TouchControls or via setAimAssist()). Mobile gets a much
-    // stronger near-autolock; controller gets a gentle nudge.
+    // externally by TouchControls or via setAimAssist()). Mobile gets a
+    // strong console-style near-autolock; controller gets a gentle nudge.
     if (this.gamepadConnected || this.touchActive) {
       const base = this._aimAssistStrength ?? 0.0;
       if (base > 0) {
-        const strength = this.touchActive ? Math.min(2.0, base * 2.5) : base;
+        // Touch: 3.0x scaling (was 2.5x) cap at 2.5 — combined with the
+        // higher lerp rate (28) inside applyAimAssist this yields a
+        // console-style aggressive snap even when the user set the
+        // strength slider low.
+        const strength = this.touchActive ? Math.min(2.5, base * 3.0) : base;
         this.applyAimAssist(dt, strength);
       }
     }
@@ -5756,8 +5766,11 @@ export class GameEngine {
     const me = this.players?.get(this.youId);
     if (!me || !me.alive) return;
     let best = null;
-    // Wider cone on touch (autolock feel) — ~32°. Controller stays at ~20°.
-    let bestAngle = this.touchActive ? 0.56 : 0.35;
+    // Wide near-autolock cone on touch (~50° / ~0.9 rad) so mobile
+    // players don't have to precisely center the crosshair — the camera
+    // snaps to any enemy in the same general direction. Controller
+    // keeps a tighter 20° so it's a nudge, not an auto-aim.
+    let bestAngle = this.touchActive ? 0.90 : 0.35;
     const cp = Math.cos(this.pitch);
     // Match Three.js camera forward exactly (rotation.y=yaw on a camera that
     // looks at -Z by default → effective forward is (-sin(yaw)*cp, sin(pitch), -cos(yaw)*cp)).
@@ -5770,7 +5783,7 @@ export class GameEngine {
       const tgt = new THREE.Vector3(p.x, (p.y || 1.8) - 0.6, p.z);
       const to = new THREE.Vector3().subVectors(tgt, eye);
       const dist = to.length();
-      if (dist < 0.5 || dist > (this.touchActive ? 50 : 35)) return;
+      if (dist < 0.5 || dist > (this.touchActive ? 60 : 35)) return;
       to.normalize();
       const dot = Math.max(-1, Math.min(1, fwd.dot(to)));
       const ang = Math.acos(dot);
@@ -5788,8 +5801,10 @@ export class GameEngine {
     // Flip dx sign so the desired yaw matches what the camera will actually face.
     const desiredYaw = Math.atan2(-dx, -dz);
     const desiredPitch = Math.atan2(dy, horiz);
-    // Touch users get a near-autolock (rate 14); controller a soft snap (6).
-    const lerpRate = (this.touchActive ? 14 : 6) * intensity;
+    // Touch users get a console-style aggressive snap (rate 28) so the
+    // crosshair locks onto the nearest target as soon as it enters the
+    // wide cone. Controller stays at a gentle 6 for a soft nudge.
+    const lerpRate = (this.touchActive ? 28 : 6) * intensity;
     let yd = desiredYaw - this.yaw;
     while (yd >  Math.PI) yd -= Math.PI * 2;
     while (yd < -Math.PI) yd += Math.PI * 2;

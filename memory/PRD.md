@@ -1410,3 +1410,25 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Tests** (`/app/backend/tests/test_seeded_bot_climb_and_level.py` — 6 new): threshold ↔ `compute_level` sanity for L=1..29, level pin stays in [10, 25] across 0%→100% climb progression for target_level=10..22 against worst-case Goonmaster stats, source-level regression guards for the new 2.5..4.0 climb-speed and 3800 target-RP-ceiling literals.
 - **Live verification**: after backend hot-reload + one climb-loop cycle: 107 / 107 seeded bots migrated. `seed_target_rp >= 2600` for all of them, ranging up to 3765; `seed_climb_speed >= 2.5` for all (samples 2.64, 2.91, 3.50, 3.60); five sampled bots' public profile levels were 11 / 14 / 14 / 16 / 17 — every one inside the target [10, 25] band.
 
+
+### 2026-02-24 — Mobile lobby cleanup + full-screen touch look + console-style aim assist
+- **User request**: "Without affecting the PC version fix the lobby on mobile screens" + "Fix mobile controls (hard to aim from center of screen)" + "Auto fire and aim assist feel weak on mobile — feel closer to console aim assist"
+- **Mobile lobby** (`/app/frontend/src/pages/Lobby.jsx`):
+  - Outer container swapped from `overflow-hidden` to inline `style={{ overflowY: "auto" }}` (Tailwind class fell through to `hidden` on this specific compile — inline style is authoritative). Desktop still has content-fits-viewport so no scrollbar appears; mobile landscape (~390px height) now scrolls to reach LEADERBOARD / PROFILE / MODERATION buttons that used to be hidden below the fold.
+  - `<main>` re-tightened the negative-margin & `min-h-0` to `lg:` scope only so mobile flows naturally (`mt-0 lg:-mt-20 xl:mt-2`, `flex-1 lg:min-h-0 lg:overflow-hidden`, added `pb-6 lg:pb-0` for touch-friendly bottom padding).
+  - VIRTUE logo scaled: `text-3xl sm:text-5xl md:text-7xl lg:text-8xl` (was `text-5xl` on mobile — ate too much vertical space on 390px height).
+  - Header: `justify-between` (needed the empty spacer div) swapped to `justify-end` and gap tightened to `gap-1 sm:gap-3` at mobile; ratings of the PlayerCard etc. unchanged on desktop.
+- **Mobile controls — full-screen look pad** (`/app/frontend/src/components/TouchControls.jsx`):
+  - Look pad was previously `right-0 top-0 bottom-0 w-1/2` (right half only) — dragging outside that band silently did nothing which the user described as "have to aim from the center of screen".
+  - Now `absolute inset-0 z-10` covering the entire screen. Move joystick and action buttons sit at `z-30` / `z-40` respectively with `pointer-events-auto` so they still capture their own touches. Verified live: look-pad rect = full 844×390 viewport, move-stick + fire button rects unchanged from before.
+- **Aim assist boost** (`/app/frontend/src/game/engine.js`):
+  - Touch aim-assist cone widened from ~32° → ~50° (0.56 → 0.90 rad).
+  - Touch aim-assist range widened from 50m → 60m.
+  - Touch aim-assist lerp rate doubled: 14 → 28 per second (console-style aggressive snap).
+  - Touch strength cap raised: `Math.min(2.0, base * 2.5)` → `Math.min(2.5, base * 3.0)`. Default slider (0.6) now yields effective intensity 1.8 × lerp 28 = ~50/s snap rate.
+  - Controller (gamepad) settings kept UNCHANGED — cone 20°, rate 6, no scaling.
+- **Auto-fire crosshair gate** (`/app/frontend/src/game/engine.js` → `hasEnemyInCrosshair`):
+  - Desktop stayed at ~2.5° cone (`COS_THRESHOLD = 0.999`) — pixel-precise mouse aim doesn't need any slack.
+  - Touch now uses `COS_THRESHOLD = 0.970` (~14° cone). Previously the wobbly touch camera constantly slipped just outside the 2.5° gate so auto-fire silently dropped even when the enemy was clearly on screen. Aim-assist snap keeps the crosshair honest so the widened gate doesn't produce false-positive shots downrange.
+- **Live verification** (Playwright at 844×390): mobile lobby scrolls (`scrollHeight 523 > clientHeight 390`, `overflowY: auto` computed); desktop screenshot at 1920×1080 unchanged; touch controls into the practice range render with the full-screen look pad + move stick + fire button correctly layered.
+
