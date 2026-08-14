@@ -1151,6 +1151,9 @@ const RANK_TIERS = [
   { name: "SILVER", min: 300, color: "#C0C0C0" },
   { name: "GOLD", min: 600, color: "#FFD700" },
   { name: "PLATINUM", min: 900, color: "#5BC0EB" },
+  // New EMERALD tier — 150 RP band between Platinum and Diamond,
+  // 3 sub-divisions of 50 RP each (III/II/I). Bright emerald green.
+  { name: "EMERALD", min: 1050, color: "#2ECC71" },
   { name: "DIAMOND", min: 1200, color: "#9D4EDD" },
   { name: "MASTER", min: 1500, color: "#E63946" },
   { name: "GRANDMASTER", min: 1800, color: "#06D6A0" },

@@ -1494,3 +1494,14 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - Existing placement-cap test file updated: every "Master" case bumped from `cur_tier_idx=5` → `6`, GM from `6` → `7`, Goon from `7` → `8`.
 - **Live verification**: 18 pytests pass. curl `/api/auth/me` for admin returns `rank_tier: 8, rank_name: GOONMASTER, rp: 6200`. Playwright: desktop lobby + full 100-row leaderboard render with zero JS errors; top rows correctly display the Ultimate Gooner crest on gold. Emerald boundary verified via internal helper: rp=1050→EMERALD III, 1150→EMERALD I, 1200→DIAMOND III.
 
+
+### 2026-02-24 — Lobby SHOW TIERS + RankProgressBar updated for EMERALD
+- **User request**: "Update the lobby and rank tiers page to show new emerald rank"
+- **Lobby SHOW TIERS modal** (`/app/frontend/src/pages/Lobby.jsx`): The local `RANK_TIERS` const still had 8 entries (missing Emerald). Added the EMERALD entry at index 4 with color `#2ECC71` and threshold 1050. The modal now iterates 9 tiers and renders EMERALD III / II / I sub-divisions at 1050 → 1099 / 1100 → 1149 / 1150 → 1199 RP. Existing tier-splitting logic uses per-row `next.min - t.min` divided by 3, so Emerald's 150 RP span cleanly produces 50-RP divisions.
+- **RankProgressBar** (`/app/frontend/src/components/RankProgressBar.jsx`) rewritten to be tier-count agnostic:
+  - `RANK_THRESHOLDS` updated to 9 entries (`0/300/600/900/1050/1200/1500/1800/2100`).
+  - `GOONMASTER_IDX = RANK_THRESHOLDS.length - 1` (8) — no more magic 7.
+  - New `divisionWidthForTier(t)` helper — returns 100 RP for the 300-wide tiers (Bronze..Platinum, Diamond..Grandmaster) and 50 RP for Emerald's 150-wide band. The "X / Y RP to next" label + fill percentage now use this per-tier width so Emerald's progress bar reads `X / 50` instead of the wrong `X / 100`.
+  - "MAX RANK" pill gate + "next-tier is Goonmaster" transition both now check against `GOONMASTER_IDX`.
+- **Live verification**: Playwright opened SHOW TIERS modal — 10 tier rows rendered (9 tiers + header), EMERALD row correctly displays "1050 → 1199 RP" and EMERALD III/II/I sub-divisions at their correct RP bands with the emerald green background + animated Sparkles icon. Zero JS errors.
+
