@@ -1525,3 +1525,24 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `EMERALD_III_RP` constant equals `RANK_TIERS[4][0]` = 1050, and Emerald III is confirmed as division 3.
 - **Verified**: 15 tests pass in the pytest suite (this file + `test_emerald_tier.py`). Backend hot-reloaded cleanly.
 
+
+### 2026-02-24 — Uniform 100-RP sub-divisions + Master+ RP cap + Lock-out other queues
+- **User request**: "Make every rank tier be 100rp and update the rank tier button to show that" · "Make it harder to gain the full 35 points in masters and higher" · "Make it so you can't click the other queue options when already in queue"
+- **Emerald widened to 300 RP** (`/app/backend/server.py` RANK_TIERS + `/app/frontend/src/game/rankIcons.js` + `RankProgressBar.jsx` + `Lobby.jsx`):
+  - Emerald now spans 1050→1350 (3 sub-divisions of 100 RP: III 1050-1149, II 1150-1249, I 1250-1349) so every main tier is uniform 300 RP wide.
+  - Diamond, Master, Grandmaster, Goonmaster thresholds each shifted +150: 1350 / 1650 / 1950 / 2250.
+  - SHOW TIERS lobby modal now displays every tier as `1050 → 1349 RP` etc — 100 RP per sub-division across the entire ladder.
+- **Master+ ranked RP cap** (`/app/backend/server.py` ranked branch of `end_match`):
+  - Old: `delta = clamp(base + perf, −60, +35)` for every tier.
+  - New: cap scales with tier — Bronze..Diamond stays at +35, Master (tier 6) tightens to +20, Grandmaster (7) + Goonmaster (8) tighten further to +15. Loss side still floors at −60 for everyone.
+  - Rationale: makes Master+ climbing genuinely slower — a monster carry that would have earned +35 in Diamond now earns +20/+15 in the top tiers.
+- **Queue exclusivity** (`/app/frontend/src/pages/Lobby.jsx`):
+  - QUICK MATCH button: `disabled` now also fires when `!!queueState` (already in ranked queue).
+  - RANKED MATCH button: `disabled` now also fires when `casualInQueue` (already in quick queue).
+  - PRACTICE button: `disabled` when in EITHER queue with a helpful title tooltip ("Cancel Quick Match queue to play Practice" / "Cancel Ranked queue to play Practice"). Previously clicking Practice mid-queue would kick the user out of matchmaking.
+- **Tests** (all pass, 31 total across affected files):
+  - `test_emerald_tier.py` updated: Emerald 300 RP wide, divisions at 1050/1150/1250. Diamond floor now 1350.
+  - `test_season_reset_goonmaster_diamond3.py` updated: Diamond floor test uses 1350; Master test uses 1650.
+  - `test_master_plus_rp_cap.py` NEW (6 tests): Bronze..Diamond still +35 win cap, Master +20 cap, GM/Goonmaster +15 cap, loss side untouched at −60 for all tiers, modest wins below cap unaffected.
+- **Live verification**: SHOW TIERS modal screenshot confirms uniform 100-RP sub-divisions across all 9 tiers. Emerald III: 1050 → 1149, Emerald I: 1250 → 1349, Diamond III: 1350 → 1449. Every row displays correctly.
+

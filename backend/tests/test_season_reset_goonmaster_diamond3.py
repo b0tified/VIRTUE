@@ -33,8 +33,8 @@ def _simulate_reset(pts, drop=900, diamond_floor=None, emerald_iii_rp=None):
 
 
 def test_diamond_floor_lands_at_emerald_iii():
-    """RP just at the Diamond III floor (1200) snaps to Emerald III (1050)."""
-    assert _simulate_reset(1200) == 1050
+    """RP just at the Diamond III floor (1350 after Emerald was widened) snaps to Emerald III (1050)."""
+    assert _simulate_reset(1350) == 1050
 
 
 def test_goonmaster_lands_at_emerald_iii():
@@ -45,9 +45,10 @@ def test_goonmaster_lands_at_emerald_iii():
 
 
 def test_master_lands_at_emerald_iii():
-    """Master (1500) also lands at Emerald III — Diamond+ includes
-    Master and above."""
-    assert _simulate_reset(1500) == 1050
+    """Master (1650 after tier shift) also lands at Emerald III — Diamond+
+    includes Master and above."""
+    assert _simulate_reset(1650) == 1050
+    assert _simulate_reset(1500) == 1050   # mid-Diamond in the new layout
 
 
 def test_emerald_iii_lands_via_soft_reset():

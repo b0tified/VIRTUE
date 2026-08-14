@@ -729,9 +729,10 @@ export default function Lobby() {
             )}
             <button
               onClick={casualInQueue ? undefined : startQuickQueue}
-              disabled={casualInQueue || (party && party.leader_id !== user?.id)}
+              disabled={casualInQueue || !!queueState || (party && party.leader_id !== user?.id)}
               className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
+              title={queueState && !casualInQueue ? "You're already in the ranked queue" : undefined}
             >
               <span className="flex items-center gap-3">
                 {casualInQueue ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
@@ -740,12 +741,13 @@ export default function Lobby() {
             </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
-              disabled={!!queueState || rankedLocked || rankedBanned}
+              disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue}
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
               title={
                 rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
                 : rankedBanned ? `Ranked locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
+                : casualInQueue ? "You're already in the Quick Match queue"
                 : undefined
               }
             >
@@ -772,12 +774,19 @@ export default function Lobby() {
             {/* Combined PRACTICE button — opens the map/mode selector
                 which lets the user pick between RANGE (no enemies) and
                 VS AI (full bot match), plus FFA/TDM and the arena.
-                Replaces the prior two separate buttons. */}
+                Disabled while queued so clicking it doesn't kick the
+                player out of matchmaking. */}
             <button
               type="button"
               onClick={() => setPracticeSelectorMode("practice")}
-              className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3"
+              disabled={casualInQueue || !!queueState}
+              className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-practice-button"
+              title={
+                casualInQueue ? "Cancel Quick Match queue to play Practice"
+                : queueState ? "Cancel Ranked queue to play Practice"
+                : undefined
+              }
             >
               <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE</span>
             </button>
@@ -1151,13 +1160,12 @@ const RANK_TIERS = [
   { name: "SILVER", min: 300, color: "#C0C0C0" },
   { name: "GOLD", min: 600, color: "#FFD700" },
   { name: "PLATINUM", min: 900, color: "#5BC0EB" },
-  // New EMERALD tier — 150 RP band between Platinum and Diamond,
-  // 3 sub-divisions of 50 RP each (III/II/I). Bright emerald green.
+  // EMERALD — now 300 RP wide (100 per division) to match every other tier.
   { name: "EMERALD", min: 1050, color: "#2ECC71" },
-  { name: "DIAMOND", min: 1200, color: "#9D4EDD" },
-  { name: "MASTER", min: 1500, color: "#E63946" },
-  { name: "GRANDMASTER", min: 1800, color: "#06D6A0" },
-  { name: "GOONMASTER", min: 2100, color: "#000000" },
+  { name: "DIAMOND", min: 1350, color: "#9D4EDD" },
+  { name: "MASTER", min: 1650, color: "#E63946" },
+  { name: "GRANDMASTER", min: 1950, color: "#06D6A0" },
+  { name: "GOONMASTER", min: 2250, color: "#000000" },
 ];
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);

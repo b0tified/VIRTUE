@@ -26,7 +26,7 @@ export const RANK_NAMES = [
 // Thresholds must match RANK_TIERS in /app/backend/server.py so a
 // client-side fallback can compute the right division when the server
 // payload predates this field. Emerald slot (index 4) at 1050 RP.
-const RANK_THRESHOLDS = [0, 300, 600, 900, 1050, 1200, 1500, 1800, 2100];
+const RANK_THRESHOLDS = [0, 300, 600, 900, 1050, 1350, 1650, 1950, 2250];
 
 export const RANK_ICONS = [
   Shield, Award, Star, Trophy,

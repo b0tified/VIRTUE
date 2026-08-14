@@ -22,7 +22,7 @@ import { rankColorFor, RANK_NAMES, divisionRoman } from "@/game/rankIcons";
 
 // Match RANK_TIERS in /app/backend/server.py — 9 tiers with EMERALD
 // inserted at index 4 (150 RP band vs 300 RP for other main tiers).
-const RANK_THRESHOLDS = [0, 300, 600, 900, 1050, 1200, 1500, 1800, 2100];
+const RANK_THRESHOLDS = [0, 300, 600, 900, 1050, 1350, 1650, 1950, 2250];
 const GOONMASTER_IDX = RANK_THRESHOLDS.length - 1;   // 8
 
 // Return the width in RP of one sub-division for a given tier. Every

@@ -21,35 +21,38 @@ import server  # noqa: E402
 
 def test_rank_tiers_layout():
     """Emerald must sit at index 4 with the 1050 threshold; Diamond
-    shifts to index 5, Master 6, GM 7, Goonmaster 8."""
+    shifts to 1350 (was 1200 → +150 after Emerald was widened to a
+    standard 300 RP band). Master 1650, GM 1950, Goonmaster 2250."""
     tiers = server.RANK_TIERS
     assert len(tiers) == 9, f"Expected 9 tiers, got {len(tiers)}"
     assert tiers[0] == (0, "BRONZE")
     assert tiers[3] == (900, "PLATINUM")
     assert tiers[4] == (1050, "EMERALD")
-    assert tiers[5] == (1200, "DIAMOND")
-    assert tiers[6] == (1500, "MASTER")
-    assert tiers[7] == (1800, "GRANDMASTER")
-    assert tiers[8] == (2100, "GOONMASTER")
+    assert tiers[5] == (1350, "DIAMOND")
+    assert tiers[6] == (1650, "MASTER")
+    assert tiers[7] == (1950, "GRANDMASTER")
+    assert tiers[8] == (2250, "GOONMASTER")
 
 
 def test_rank_for_points_covers_emerald_band():
-    """Any RP in [1050, 1200) resolves to EMERALD (tier 4)."""
-    for rp in (1050, 1099, 1150, 1199):
+    """Any RP in [1050, 1350) resolves to EMERALD (tier 4). The band is
+    now 300 RP wide (was 150) so every tier including Emerald has 3
+    sub-divisions of 100 RP each."""
+    for rp in (1050, 1150, 1250, 1349):
         idx, name = server.rank_for_points(rp)
         assert idx == 4, f"rp={rp} → tier {idx} ({name}), expected 4 (EMERALD)"
         assert name == "EMERALD"
-    # Boundaries — 1049 stays Platinum, 1200 becomes Diamond.
+    # Boundaries — 1049 stays Platinum, 1350 becomes Diamond.
     assert server.rank_for_points(1049) == (3, "PLATINUM")
-    assert server.rank_for_points(1200) == (5, "DIAMOND")
+    assert server.rank_for_points(1350) == (5, "DIAMOND")
 
 
 def test_emerald_has_all_three_divisions():
-    """Emerald spans 150 RP → 50 RP per division. 1050 / 1100 / 1150
-    map to divisions III / II / I respectively."""
-    assert server.rank_division_for_points(1050, 4) == 3
-    assert server.rank_division_for_points(1100, 4) == 2
-    assert server.rank_division_for_points(1150, 4) == 1
+    """Emerald now spans 300 RP → 100 RP per division (matches every
+    other main tier)."""
+    assert server.rank_division_for_points(1050, 4) == 3   # entry
+    assert server.rank_division_for_points(1150, 4) == 2   # middle
+    assert server.rank_division_for_points(1250, 4) == 1   # top
 
 
 def test_shifted_tier_index_constants():

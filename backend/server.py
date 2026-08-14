@@ -542,11 +542,11 @@ RANK_TIERS = [
     (300,  "SILVER"),
     (600,  "GOLD"),
     (900,  "PLATINUM"),
-    (1050, "EMERALD"),   # New tier inserted between Platinum and Diamond.
-    (1200, "DIAMOND"),
-    (1500, "MASTER"),
-    (1800, "GRANDMASTER"),
-    (2100, "GOONMASTER"),
+    (1050, "EMERALD"),   # 300 RP band (100 per division) — matches every other tier
+    (1350, "DIAMOND"),
+    (1650, "MASTER"),
+    (1950, "GRANDMASTER"),
+    (2250, "GOONMASTER"),
 ]
 
 # ─── Ultimate Gooner cache ───────────────────────────────────────────────
@@ -5680,21 +5680,30 @@ class GameRoom:
                         #   base    = compute_rp_delta(placement, tier_idx)
                         #             (podium curve — see line ~529)
                         #   perf    = kills * 3 − deaths * 5
-                        #   delta   = clamp(base + perf, −60, +35)
+                        #   max_gain = 35 (below Master)
+                        #              20 (Master, tier 6)
+                        #              15 (Grandmaster+, tier 7+)
+                        #   delta   = clamp(base + perf, −60, max_gain)
                         #
-                        # Sanity checks (user-specified anchor cases):
-                        #   27 K / 3 D + 1st place, Silver:
-                        #     base = +30, perf = 81 − 15 = +66
-                        #     total = clamp(96, −60, +35) = +35  ✓ full max win
-                        #   3 K / 9 D + 4th place, Silver:
-                        #     base = −30, perf = 9 − 45 = −36
-                        #     total = clamp(−66, −60, +35) = −60 ✓ full max loss
-                        #   Balanced 10 K / 10 D + 2nd place:
-                        #     base = +15, perf = 30 − 50 = −20
-                        #     total = clamp(−5, −60, +35) = −5   (slight loss)
+                        # Master+ cap tightens the win side — it stays
+                        # significantly harder to hit +max than at
+                        # Emerald and below. Loss side is unchanged so
+                        # falling out of the top tiers still hurts.
+                        #
+                        # Sanity checks:
+                        #   27 K / 3 D + 1st, Silver:   base 30 + perf 66 → +35 (cap)
+                        #   27 K / 3 D + 1st, Master:   base 30 + perf 66 → +20 (Master cap)
+                        #   27 K / 3 D + 1st, GM/Goon:  base 30 + perf 66 → +15 (GM+ cap)
+                        #   3 K / 9 D + 4th, Silver:    base −30 + perf −36 → −60 (cap)
                         base_delta = compute_rp_delta(placement, cur_tier_idx)
                         perf_delta = p.kills * 3 - p.deaths * 5
-                        delta = max(-60, min(35, base_delta + perf_delta))
+                        if cur_tier_idx >= MASTERS_TIER_IDX + 1:
+                            max_gain = 15   # Grandmaster (7) + Goonmaster (8)
+                        elif cur_tier_idx >= MASTERS_TIER_IDX:
+                            max_gain = 20   # Master (6)
+                        else:
+                            max_gain = 35   # Bronze..Diamond
+                        delta = max(-60, min(max_gain, base_delta + perf_delta))
                     new_points = max(0, cur + delta)
                     tier_idx, tier_name = rank_for_points(new_points)
                     # Tier delta for the rank-up overlay: rank_change > 0
