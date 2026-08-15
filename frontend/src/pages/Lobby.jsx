@@ -1174,12 +1174,12 @@ const RANK_TIERS = [
   { name: "SILVER", min: 300, color: "#C0C0C0" },
   { name: "GOLD", min: 600, color: "#FFD700" },
   { name: "PLATINUM", min: 900, color: "#5BC0EB" },
-  // EMERALD — now 300 RP wide (100 per division) to match every other tier.
-  { name: "EMERALD", min: 1050, color: "#2ECC71" },
-  { name: "DIAMOND", min: 1350, color: "#9D4EDD" },
-  { name: "MASTER", min: 1650, color: "#E63946" },
-  { name: "GRANDMASTER", min: 1950, color: "#06D6A0" },
-  { name: "GOONMASTER", min: 2250, color: "#000000" },
+  // Every tier is 300 RP wide (100 per division: III / II / I).
+  { name: "EMERALD", min: 1200, color: "#2ECC71" },
+  { name: "DIAMOND", min: 1500, color: "#9D4EDD" },
+  { name: "MASTER", min: 1800, color: "#E63946" },
+  { name: "GRANDMASTER", min: 2100, color: "#06D6A0" },
+  { name: "GOONMASTER", min: 2400, color: "#000000" },
 ];
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);

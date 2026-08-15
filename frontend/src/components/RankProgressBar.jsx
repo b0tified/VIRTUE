@@ -21,14 +21,14 @@
 import { rankColorFor, RANK_NAMES, divisionRoman } from "@/game/rankIcons";
 
 // Match RANK_TIERS in /app/backend/server.py — 9 tiers with EMERALD
-// inserted at index 4 (150 RP band vs 300 RP for other main tiers).
-const RANK_THRESHOLDS = [0, 300, 600, 900, 1050, 1350, 1650, 1950, 2250];
+// slotted between PLATINUM and DIAMOND. Every tier is exactly 300 RP
+// wide (100 RP per division: III / II / I).
+const RANK_THRESHOLDS = [0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400];
 const GOONMASTER_IDX = RANK_THRESHOLDS.length - 1;   // 8
 
 // Return the width in RP of one sub-division for a given tier. Every
 // tier splits its span into 3 equal divisions:
-//   Bronze..Platinum, Diamond..Grandmaster → 100 RP / division
-//   Emerald                                → 50  RP / division
+//   Bronze..Grandmaster → 100 RP / division (all tiers now 300 RP wide)
 // Goonmaster is undivided (returns 0).
 function divisionWidthForTier(t) {
   if (t >= GOONMASTER_IDX) return 0;

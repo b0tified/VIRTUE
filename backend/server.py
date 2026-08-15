@@ -312,19 +312,19 @@ async def maybe_reset_season() -> dict:
         # stay in `owned_skins` (append-only) so players keep cosmetics
         # they earned last season.
         # Season reset math per-tier:
-        #   - Diamond+ (RP ≥ 1200) hard-land at EMERALD III (1050 RP).
+        #   - Diamond+ (RP ≥ 1500) hard-land at EMERALD III (1200 RP).
         #     Rationale: seeding the new EMERALD tier with returning
         #     high-tier veterans so it has population from day one of
         #     the new season, instead of leaving it empty until natural
-        #     climbers reach 1050 RP. This replaces the previous
+        #     climbers reach 1200 RP. This replaces the previous
         #     "Goonmasters land at Diamond III" rule — Diamond, Master,
         #     Grandmaster, and Goonmaster all converge to the Emerald
         #     floor now.
         #   - Everyone else drops SEASON_RESET_RP_DROP (900 RP = 3
         #     sub-tiers) with a floor of 0.
         SEASON_RESET_RP_DROP = 900  # 3 sub-tiers × 300 RP soft reset
-        DIAMOND_FLOOR_RP = RANK_TIERS[5][0]      # 1200 — Diamond III entry (the threshold that flags a "Diamond+" player)
-        EMERALD_III_RP = RANK_TIERS[4][0]        # 1050 — Emerald III entry (season-reset landing spot for Diamond+)
+        DIAMOND_FLOOR_RP = RANK_TIERS[5][0]      # 1500 — Diamond III entry (the threshold that flags a "Diamond+" player)
+        EMERALD_III_RP = RANK_TIERS[4][0]        # 1200 — Emerald III entry (season-reset landing spot for Diamond+)
 
         # Roll-back helper — mirrors the aggregation logic in the
         # `update_many` below so seeded bots use the SAME rules as real
@@ -383,8 +383,8 @@ async def maybe_reset_season() -> dict:
                         ]
                     },
                     "rank_points": {
-                        # $cond: if the player was Diamond+ (RP ≥ 1200),
-                        # snap them to Emerald III floor (1050) so the
+                        # $cond: if the player was Diamond+ (RP ≥ 1500),
+                        # snap them to Emerald III floor (1200) so the
                         # new EMERALD tier is populated from day one.
                         # Otherwise apply the standard -900 soft reset
                         # with a 0 floor.
@@ -542,11 +542,11 @@ RANK_TIERS = [
     (300,  "SILVER"),
     (600,  "GOLD"),
     (900,  "PLATINUM"),
-    (1050, "EMERALD"),   # 300 RP band (100 per division) — matches every other tier
-    (1350, "DIAMOND"),
-    (1650, "MASTER"),
-    (1950, "GRANDMASTER"),
-    (2250, "GOONMASTER"),
+    (1200, "EMERALD"),      # 300 RP band (100 per division) — matches every other tier
+    (1500, "DIAMOND"),
+    (1800, "MASTER"),
+    (2100, "GRANDMASTER"),
+    (2400, "GOONMASTER"),
 ]
 
 # ─── Ultimate Gooner cache ───────────────────────────────────────────────
@@ -6726,8 +6726,8 @@ async def seeded_climb_loop():
             # v5 migration — ALL seeded bots converge on Goonmaster by
             # end of season. v4 only promoted ~65% of non-GM seeds; v5
             # closes the loop and lifts EVERY remaining seed whose
-            # target is still below 2100 (Goonmaster floor) into the
-            # 2100..2700 range. Also widens `seed_climb_offset` to the
+            # target is still below 2400 (Goonmaster floor) into the
+            # 2400..3000 range. Also widens `seed_climb_offset` to the
             # new 0..0.20 band so the ladder looks like a full mix of
             # tiers mid-season instead of everyone bunched at the top
             # from week one. One-shot per doc via `seed_v5_all_gm:
@@ -6738,9 +6738,9 @@ async def seeded_climb_loop():
                  "seed_v5_all_gm": {"$exists": False}},
                 {"_id": 1, "seed_target_rp": 1, "seed_climb_offset": 1},
             )
-            # Goonmaster starts at 2100; anchor targets in 2100..2700
+            # Goonmaster starts at 2400; anchor targets in 2400..3000
             # (a bit above the floor so top slots don't tie exactly).
-            GOONMASTER_FLOOR = 2100
+            GOONMASTER_FLOOR = 2400
             async for u in v5_cursor:
                 rp_cur = int(u.get("seed_target_rp", 0) or 0)
                 update = {"seed_v5_all_gm": True}
@@ -6757,7 +6757,7 @@ async def seeded_climb_loop():
                 # already there. Don't touch bots already targeting
                 # GM — they're fine.
                 if rp_cur < GOONMASTER_FLOOR:
-                    rp_new = _snap_rp_to_match_grid(random.randint(2100, 2700))
+                    rp_new = _snap_rp_to_match_grid(random.randint(2400, 3000))
                     rank_idx, _ = rank_for_points(rp_new)
                     t_m, t_k, t_d, t_w = _synthesize_career(rp_new, rank_idx)
                     update.update({
@@ -8371,18 +8371,18 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
         await db.users.delete_many({"is_seeded": True})
 
     # RP buckets: (low, high, weight). All seed bots now target the
-    # Goonmaster tier (2100+) — by the end of the season every seeded
+    # Goonmaster tier (2400+) — by the end of the season every seeded
     # account is at Goonmaster. During the season, per-bot climb offsets
     # + speeds spread the current-display RP across every tier so the
     # ladder still LOOKS mixed (some bots at Bronze early, Diamond
     # mid-season, GM late) — but the target endpoint is uniformly GM.
     #
-    # Range 2100..3800 (widened from 2700) so a chunk of the top tail
+    # Range 2400..3800 (widened from 2700) so a chunk of the top tail
     # sits well above the Goonmaster floor and the top-50 ULTIMATE
     # GOONER cutoff has a real ~1200 RP spread instead of everyone
-    # bunched at 2100-2700.
+    # bunched at 2400-3000.
     buckets = [
-        (2100, 3800, 100),   # GOONMASTER only — all seeds converge here
+        (2400, 3800, 100),   # GOONMASTER only — all seeds converge here
     ]
     weights = [b[2] for b in buckets]
     # Build a shuffled deck of handle suffixes so duplicates within a
@@ -8395,15 +8395,18 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
 
     # Per-tier RP windows so the "top off" pass can pick a realistic RP
     # for a specific rank without consulting the weighted bucket list.
+    # Each window sits INSIDE its tier band (300 RP wide) with a small
+    # buffer from the exact threshold so bots don't cluster at the
+    # edges.
     TIER_RP_WINDOWS = {
-        0: (40,   95),
-        1: (110,  240),
-        2: (260,  490),
-        3: (520,  790),
-        4: (820, 1190),
-        5: (1220, 1690),
-        6: (1720, 2290),
-        7: (2300, 3200),
+        0: (40,   290),    # BRONZE   (0-299)
+        1: (310,  590),    # SILVER   (300-599)
+        2: (610,  890),    # GOLD     (600-899)
+        3: (910,  1190),   # PLATINUM (900-1199)
+        4: (1210, 1490),   # EMERALD  (1200-1499)
+        5: (1510, 1790),   # DIAMOND  (1500-1799)
+        6: (1810, 2090),   # MASTER   (1800-2099)
+        7: (2110, 2390),   # GRANDMASTER (2100-2399)
     }
 
     async def _build_and_insert(rp: int):

@@ -1571,3 +1571,14 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - `/app/frontend/src/components/AnimatedRankIcon.jsx`: same auto-pause pattern — mobile gets a static rank crest, desktop keeps full motion.
 - **Verified live**: Mobile viewport (844×390) shows zero `.lobby-castle-star`, `.lobby-castle-torch`, `.lobby-castle-window` elements and rank icon carries `data-paused="true"`. Desktop viewport (1920×800) still renders all animated layers. Frontend compiled cleanly, no lint issues on touched files.
 
+
+### 2026-02-24 — Uniform 300 RP tier bands (100 RP per division, fixes Show Tiers)
+- **User request**: "Make sure every tier in every rank is 100rp and make sure it updates on the show tiers button".
+- **Bug**: Platinum was only 150 RP wide (900→1049) — the earlier "standardize to 300 RP" pass squeezed Platinum when Emerald was inserted, giving Platinum I/II/III each only 50 RP instead of the promised 100. Every other tier was already 300 RP wide.
+- **Fix**: Shifted every tier above Platinum up by +150 RP so Platinum, Emerald, Diamond, Master, Grandmaster and Goonmaster all become exactly 300 RP bands (100 per division):
+  - Backend (`/app/backend/server.py`): `RANK_TIERS` now (0, 300, 600, 900, **1200**, **1500**, **1800**, **2100**, **2400**). `GOONMASTER_FLOOR` seed constants + the seed RP bucket (was 2100..3800) also shifted to 2400..3800. `TIER_RP_WINDOWS` (seed "top off" pass) realigned to the new bands so bots pick RP inside their intended tier band. Comments referencing 1050/1200/1350/1650/1950/2250/2100 updated to the new values.
+  - Frontend: `RankProgressBar.jsx` + `game/rankIcons.js` `RANK_THRESHOLDS` and `Lobby.jsx` `RANK_TIERS` (drives the Show Tiers modal) all updated to the same grid. Emerald-only 50 RP-per-division comment removed.
+- **Show Tiers modal** (verified live at 1400×900): every row shows a 300 RP header band + 3× 100 RP sub-division rows. Bronze 0→299 / 0-99 / 100-199 / 200-299 … all the way through Grandmaster 2100→2399 / 2100-2199 / 2200-2299 / 2300-2399, and Goonmaster at 2400+.
+- **Tests**: `/app/backend/tests/test_emerald_tier.py` updated for the new thresholds + added a "every band is exactly 300 RP" assertion. 17/17 tier + placement tests pass.
+- **NOTE on live players**: users who were sitting in Emerald III (1050-1149 old) or Diamond III (1350-1449 old) may see a small tier re-classification since their absolute RP is unchanged but the boundary moved by 150. Season resets and RP earned are unaffected; the Diamond+ season-reset landing (Emerald III) still uses `RANK_TIERS[4][0]` so the reset math scales automatically.
+

@@ -1,10 +1,10 @@
 """Emerald tier tests.
 
 A new EMERALD tier was inserted between PLATINUM and DIAMOND. Verify:
-  1. RANK_TIERS layout: 9 tiers, EMERALD at index 4 with 1050 RP threshold.
-  2. `rank_for_points` maps 1050..1199 to EMERALD.
+  1. RANK_TIERS layout: 9 tiers, EMERALD at index 4 with 1200 RP threshold.
+  2. `rank_for_points` maps 1200..1499 to EMERALD.
   3. Emerald has all 3 divisions (I / II / III) — thresholds at
-     1050 / 1100 / 1150.
+     1200 / 1300 / 1400 (each division exactly 100 RP wide).
   4. Downstream tier-index constants shifted correctly:
       • MASTERS_TIER_IDX = 6 (was 5)
       • QUEUE_LOW_TIER_MAX = 5 (was 4)
@@ -20,39 +20,42 @@ import server  # noqa: E402
 
 
 def test_rank_tiers_layout():
-    """Emerald must sit at index 4 with the 1050 threshold; Diamond
-    shifts to 1350 (was 1200 → +150 after Emerald was widened to a
-    standard 300 RP band). Master 1650, GM 1950, Goonmaster 2250."""
+    """Every tier is now exactly 300 RP wide (100 per division). Emerald
+    sits at index 4, threshold 1200; Diamond 1500; Master 1800; GM 2100;
+    Goonmaster 2400 — the fully uniform ladder the user asked for."""
     tiers = server.RANK_TIERS
     assert len(tiers) == 9, f"Expected 9 tiers, got {len(tiers)}"
     assert tiers[0] == (0, "BRONZE")
     assert tiers[3] == (900, "PLATINUM")
-    assert tiers[4] == (1050, "EMERALD")
-    assert tiers[5] == (1350, "DIAMOND")
-    assert tiers[6] == (1650, "MASTER")
-    assert tiers[7] == (1950, "GRANDMASTER")
-    assert tiers[8] == (2250, "GOONMASTER")
+    assert tiers[4] == (1200, "EMERALD")
+    assert tiers[5] == (1500, "DIAMOND")
+    assert tiers[6] == (1800, "MASTER")
+    assert tiers[7] == (2100, "GRANDMASTER")
+    assert tiers[8] == (2400, "GOONMASTER")
+    # And every band (except the open-ended Goonmaster) is 300 RP wide.
+    for i in range(len(tiers) - 1):
+        span = tiers[i + 1][0] - tiers[i][0]
+        assert span == 300, f"Tier {tiers[i][1]} band is {span} RP, expected 300"
 
 
 def test_rank_for_points_covers_emerald_band():
-    """Any RP in [1050, 1350) resolves to EMERALD (tier 4). The band is
-    now 300 RP wide (was 150) so every tier including Emerald has 3
-    sub-divisions of 100 RP each."""
-    for rp in (1050, 1150, 1250, 1349):
+    """Any RP in [1200, 1500) resolves to EMERALD (tier 4). The band is
+    now 300 RP wide → 3 sub-divisions of 100 RP each."""
+    for rp in (1200, 1300, 1400, 1499):
         idx, name = server.rank_for_points(rp)
         assert idx == 4, f"rp={rp} → tier {idx} ({name}), expected 4 (EMERALD)"
         assert name == "EMERALD"
-    # Boundaries — 1049 stays Platinum, 1350 becomes Diamond.
-    assert server.rank_for_points(1049) == (3, "PLATINUM")
-    assert server.rank_for_points(1350) == (5, "DIAMOND")
+    # Boundaries — 1199 stays Platinum, 1500 becomes Diamond.
+    assert server.rank_for_points(1199) == (3, "PLATINUM")
+    assert server.rank_for_points(1500) == (5, "DIAMOND")
 
 
 def test_emerald_has_all_three_divisions():
     """Emerald now spans 300 RP → 100 RP per division (matches every
     other main tier)."""
-    assert server.rank_division_for_points(1050, 4) == 3   # entry
-    assert server.rank_division_for_points(1150, 4) == 2   # middle
-    assert server.rank_division_for_points(1250, 4) == 1   # top
+    assert server.rank_division_for_points(1200, 4) == 3   # entry
+    assert server.rank_division_for_points(1300, 4) == 2   # middle
+    assert server.rank_division_for_points(1400, 4) == 1   # top
 
 
 def test_shifted_tier_index_constants():
