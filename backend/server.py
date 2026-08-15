@@ -1308,13 +1308,30 @@ async def on_shutdown():
 @api.post("/auth/register")
 async def register(payload: RegisterIn, response: Response):
     email = payload.email.lower()
+    # Trim whitespace so " ada " and "ada" collide on the uniqueness check.
+    new_name = (payload.username or "").strip()
+    # Format guard — mirrors `/profile/me/username` so a name that would
+    # be rejected on rename is also rejected at registration. Without
+    # this, users could sign up with e.g. "!!hi!!" then be locked into
+    # a name the rename endpoint won't let them change to anything.
+    if not USERNAME_PATTERN.match(new_name):
+        raise HTTPException(400, detail="Username must be 2-20 chars: letters, digits, _ . -")
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    # Case-insensitive username uniqueness — same rule the rename
+    # endpoint enforces. Blocks "Ada" from registering when "ada"
+    # already exists so the kill feed, friends list, and leaderboard
+    # can't have visually-identical rows.
+    dup = await db.users.find_one({
+        "username": {"$regex": f"^{re.escape(new_name)}$", "$options": "i"},
+    })
+    if dup:
+        raise HTTPException(status_code=409, detail="That username is taken.")
     doc = {
         "email": email,
         "password_hash": hash_password(payload.password),
-        "username": payload.username,
+        "username": new_name,
         "role": "user",
         "stats": {"kills": 0, "deaths": 0, "matches": 0, "wins": 0},
         "created_at": datetime.now(timezone.utc),

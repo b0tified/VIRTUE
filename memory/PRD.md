@@ -1614,3 +1614,15 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Tests** (`/app/backend/tests/test_code_redeem_rank_up_kind.py` — 9 cases, all pass): tier crossings return `kind: "tier"` for Bronze I→Silver III, Platinum I→Emerald III, Diamond I→Master III, multi-tier leaps; same-tier bumps return `kind: "division"` for Bronze III→II and Gold II→I; grants that don't cross any boundary return None; a grep guard anchors the explicit `kind` field in the endpoint so future edits can't silently regress. Combined with prior suites: 29/29 relevant pytests pass.
 - **Live smoke test**: dispatched synthetic `virtue-rankup` events from Playwright — tier overlay renders eyebrow + confetti + mega-ring; division overlay confirms none of the tier-only elements mount.
 
+
+### 2026-02-24 — Enforce case-insensitive username uniqueness at register
+- **User request**: "Make it so you can't make an account with a name already in use and can't change it to one already used by another player."
+- **Bug**: `/api/auth/register` only checked email uniqueness. Two accounts could sign up with the SAME username ("Alice" and "alice") which then rendered identically in kill feeds, friends lists, and the leaderboard. The rename endpoint (`/api/profile/me/username`) already enforced case-insensitive uniqueness — this change brings register into line.
+- **Fix** (`/app/backend/server.py::register`):
+  - Trim leading/trailing whitespace so "  alice  " collides with "alice".
+  - Validate against `USERNAME_PATTERN` (`^[A-Za-z0-9_.-]{2,20}$`) — same regex the rename endpoint uses, so a name that would be rejected on rename is also rejected at signup (no more locking users into un-renameable names).
+  - Case-insensitive Mongo lookup (`$regex ... $options: i`) — same query shape as the rename endpoint. Returns HTTP 409 "That username is taken." on collision.
+  - `AuthContext.register` already surfaces `detail` via `formatApiErrorDetail`, so the Register UI shows the exact message with no frontend changes needed.
+- **Live smoke test** (Preview): duplicate "player1" → 409; fresh "dupe_1786763943" → registered; uppercase of the just-created name → 409. All correct.
+- **Tests** (`/app/backend/tests/test_username_uniqueness.py` — 12/12 pass, uses an in-memory Mongo double via `monkeypatch`): first register succeeds, exact duplicate rejected, case-insensitive duplicate rejected (parametrized over "alice"/"ALICE"/"aLiCe"), whitespace-trimmed duplicate rejected, distinct usernames still allowed, invalid formats blocked at HTTP 400 (parametrized), and the rename endpoint's existing case-insensitive check is asserted so a future consolidation refactor can't weaken either side. Combined suites: 41/41 pytests pass.
+
