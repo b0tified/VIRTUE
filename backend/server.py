@@ -25,6 +25,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 
+# Pure-logic helpers extracted into `_lib/` during the 2026-02-24
+# maintainability refactor. Every symbol is re-exported below so
+# existing callers (`server.RANK_TIERS`, `server.hash_password`, ...)
+# and the entire pytest suite keep working unchanged.
+from _lib.ranks import (  # noqa: F401 — re-exported public API
+    RANK_TIERS,
+    MASTERS_TIER_IDX,
+    PLACEMENT_PERF_BONUS_CAP,
+    PLACEMENT_PERF_PENALTY_CAP,
+    PLACEMENT_HIGH_TIER_WIN_CAP,
+    rank_for_points,
+    rank_division_for_points,
+    rank_division_roman,
+    compute_rp_delta,
+    compute_placement_delta,
+)
+from _lib.security import (  # noqa: F401 — re-exported public API
+    JWT_ALGORITHM,
+    ACCESS_TTL_MIN,
+    REFRESH_TTL_DAYS,
+    hash_password,
+    verify_password,
+    get_jwt_secret,
+    create_access_token,
+    create_refresh_token,
+    set_auth_cookies,
+)
+
 # -------------------------------------------------------------------
 # Setup
 # -------------------------------------------------------------------
@@ -35,9 +63,8 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-JWT_ALGORITHM = "HS256"
-ACCESS_TTL_MIN = 60 * 24
-REFRESH_TTL_DAYS = 7
+# JWT_ALGORITHM / ACCESS_TTL_MIN / REFRESH_TTL_DAYS are re-exported
+# from `_lib.security` (see the top-of-file import block).
 SEASON_LENGTH_DAYS = 30
 
 app = FastAPI()
@@ -75,58 +102,11 @@ def _bg(awaitable):
 # -------------------------------------------------------------------
 # Helpers - Auth
 # -------------------------------------------------------------------
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-    except Exception:
-        return False
-
-
-def get_jwt_secret() -> str:
-    return os.environ["JWT_SECRET"]
-
-
-def create_access_token(user_id: str, email: str) -> str:
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TTL_MIN),
-        "type": "access",
-    }
-    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
-
-
-def create_refresh_token(user_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS),
-        "type": "refresh",
-    }
-    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
-
-
-def set_auth_cookies(response: Response, access: str, refresh: str, remember: bool = True):
-    # When remember=False, BOTH cookies need to be session-scoped (no
-    # max_age) — otherwise the access cookie alone keeps the user signed
-    # in for ACCESS_TTL_MIN (24h) across browser restarts, defeating the
-    # "Remember me OFF" expectation.
-    if remember:
-        response.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax",
-                            max_age=ACCESS_TTL_MIN * 60, path="/")
-        response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
-                            max_age=REFRESH_TTL_DAYS * 86400, path="/")
-    else:
-        # Session cookies (cleared when the tab/browser closes).
-        response.set_cookie("access_token", access, httponly=True, secure=False, samesite="lax",
-                            path="/")
-        response.set_cookie("refresh_token", refresh, httponly=True, secure=False, samesite="lax",
-                            path="/")
-
-
+# `hash_password`, `verify_password`, `get_jwt_secret`,
+# `create_access_token`, `create_refresh_token`, `set_auth_cookies`
+# are all re-exported from `_lib.security` (see top-of-file import).
+# The pieces that need `db` (`_user_from_token`, `get_current_user`)
+# stay below.
 def compute_level(stats: dict) -> dict:
     """XP + level from kills/wins/matches. Mirrors /app/frontend/src/game/level.js.
     `stats.bonus_xp` is added on top — granted by redeemed promo codes etc."""
@@ -537,17 +517,11 @@ def season_payload(doc: dict) -> dict:
     }
 
 
-RANK_TIERS = [
-    (0,    "BRONZE"),
-    (300,  "SILVER"),
-    (600,  "GOLD"),
-    (900,  "PLATINUM"),
-    (1200, "EMERALD"),      # 300 RP band (100 per division) — matches every other tier
-    (1500, "DIAMOND"),
-    (1800, "MASTER"),
-    (2100, "GRANDMASTER"),
-    (2400, "GOONMASTER"),
-]
+# `RANK_TIERS` is imported from `_lib.ranks` at the top of this file.
+# Keeping the source of truth in one place — any ladder shuffle now
+# touches only `_lib/ranks.py`.
+
+
 
 # ─── Ultimate Gooner cache ───────────────────────────────────────────────
 # The top-50 GOONMASTER players (globally, by rank_points) get a special
@@ -585,130 +559,13 @@ async def refresh_ultimate_gooner_cache() -> None:
     except Exception as e:
         logger.warning("ultimate-gooner refresh failed: %s", e)
 
-# RP deltas by placement at end of a ranked match. Two simple tiers:
-#  - Below Masters (tier_idx < 5): 1st = +30, 2nd = +15, 3rd = 0, last = -30.
-#  - Masters and above (tier_idx >= 5): 1st = +30, 2nd = 0, 3rd = -60,
-#    last = -60. (Per user policy — "you stay near the top or you bleed".)
-# `compute_rp_delta(placement, tier_idx)` returns the RP delta a player
-# with `tier_idx` rank earns for finishing at `placement` (1-indexed,
-# placement is relative to *all participants* including bots).
-# Masters' tier index in RANK_TIERS. Kept as a named constant so a future
-# tier-list shuffle only needs one edit.
-MASTERS_TIER_IDX = 6
-
-
-def compute_rp_delta(placement: int, tier_idx: int) -> int:
-    """RP delta for a single player finishing at `placement` while sitting
-    in `tier_idx` going into the match.
-
-    The curve is intentionally simple now:
-      - Below Masters: +30 / +15 / 0 / -30 (1st through last).
-      - Masters+:      +30 /   0 / -60 / -60 (1st through last).
-
-    "Last" means everyone outside the podium — in a 4-player FFA lobby
-    that's just 4th, in an 8-player TDM that'd be 4th-8th, etc.
-    """
-    tier_idx = max(0, min(len(RANK_TIERS) - 1, int(tier_idx)))
-    if tier_idx >= MASTERS_TIER_IDX:
-        # Masters and above — "you stay near the top or you bleed".
-        if placement == 1:
-            return 30
-        if placement == 2:
-            return 0
-        if placement == 3:
-            return -60
-        return -60
-    # Below Masters — gentler curve, podium still rewards 2nd place.
-    if placement == 1:
-        return 30
-    if placement == 2:
-        return 15
-    if placement == 3:
-        return 0
-    return -30
-
-
-def rank_for_points(points: int):
-    idx = 0
-    name = RANK_TIERS[0][1]
-    for i, (threshold, n) in enumerate(RANK_TIERS):
-        if points >= threshold:
-            idx = i
-            name = n
-    return idx, name
-
-
-# Placement-match RP math (extracted for unit testing). Placement
-# matches use a hard "win or lose 100" base + a kills/deaths performance
-# modifier; the total range is roughly [−300, +250]. When the player is
-# already past Diamond (tier >= 5 → Master / Grandmaster / Goonmaster),
-# the positive delta is capped at +150 so a returning veteran can't
-# rocket back to peak on placement wins alone — placements should
-# re-anchor, not fast-track the climb.
-PLACEMENT_PERF_BONUS_CAP = 150
-PLACEMENT_PERF_PENALTY_CAP = -200
-PLACEMENT_HIGH_TIER_WIN_CAP = 150
-
-
-def compute_placement_delta(kills: int, deaths: int, placement: int, cur_tier_idx: int) -> int:
-    """RP delta for a placement match.
-
-    Args:
-      kills / deaths: player's frag line this match.
-      placement: 1 = 1st place, anything else counts as a loss.
-      cur_tier_idx: player's tier BEFORE the match (0..7).
-
-    Returns the signed RP delta. Values are clamped by:
-      • perf modifier in `[PLACEMENT_PERF_PENALTY_CAP, PLACEMENT_PERF_BONUS_CAP]`
-      • an extra positive cap of `PLACEMENT_HIGH_TIER_WIN_CAP` when `cur_tier_idx >= 5`
-    """
-    base = 100 if placement == 1 else -100
-    perf_raw = int(kills) * 10 - int(deaths) * 8
-    if perf_raw >= 0:
-        perf = min(PLACEMENT_PERF_BONUS_CAP, perf_raw)
-    else:
-        perf = max(PLACEMENT_PERF_PENALTY_CAP, perf_raw)
-    delta = base + perf
-    if cur_tier_idx >= MASTERS_TIER_IDX and delta > PLACEMENT_HIGH_TIER_WIN_CAP:
-        delta = PLACEMENT_HIGH_TIER_WIN_CAP
-    return delta
-
-
-def rank_division_for_points(points: int, tier_idx: Optional[int] = None) -> int:
-    """Return the sub-division WITHIN a tier (1 = highest, 3 = lowest entry).
-
-    Each main tier (except Goonmaster) is split into 3 equal-width RP bands:
-      - III (3): bottom third of the tier's RP range — fresh promotion.
-      - II  (2): middle third.
-      - I   (1): top third — one band away from promotion.
-    Goonmaster has no division (returns 0). Used for display labels like
-    "SILVER II" and to drive division-aware animated rank icons on the
-    client. The integer ordering is intentional (3 → 2 → 1 → next tier).
-    """
-    if tier_idx is None:
-        tier_idx, _ = rank_for_points(points)
-    tier_idx = max(0, min(len(RANK_TIERS) - 1, int(tier_idx)))
-    # Goonmaster (and any future top-of-ladder tier) is undivided.
-    if tier_idx >= len(RANK_TIERS) - 1:
-        return 0
-    low = RANK_TIERS[tier_idx][0]
-    high = RANK_TIERS[tier_idx + 1][0]
-    span = max(1, high - low)
-    p = max(low, min(high - 1, int(points)))
-    # frac in [0, 1) within the tier.
-    frac = (p - low) / span
-    if frac < 1.0 / 3.0:
-        return 3   # III — entry to the tier
-    if frac < 2.0 / 3.0:
-        return 2   # II — middle
-    return 1       # I  — top of the tier
-
-
-def rank_division_roman(division: int) -> str:
-    """Display helper — turns the integer division into a Roman numeral.
-    Returns empty string for Goonmaster (division == 0) so callers can
-    safely concat without an "0" suffix."""
-    return {1: "I", 2: "II", 3: "III"}.get(int(division or 0), "")
+# Rank + placement math (RANK_TIERS, MASTERS_TIER_IDX, rank_for_points,
+# rank_division_for_points, rank_division_roman, compute_rp_delta,
+# compute_placement_delta, PLACEMENT_* caps) all live in
+# `_lib/ranks.py` and are re-exported at the top of this file. This
+# comment block used to hold ~100 lines of pure math — now the
+# math lives in one place and any future ladder tweak (e.g. rescaling
+# every RP band) is a single-file change.
 
 
 # -------------------------------------------------------------------
