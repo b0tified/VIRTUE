@@ -1582,3 +1582,11 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Tests**: `/app/backend/tests/test_emerald_tier.py` updated for the new thresholds + added a "every band is exactly 300 RP" assertion. 17/17 tier + placement tests pass.
 - **NOTE on live players**: users who were sitting in Emerald III (1050-1149 old) or Diamond III (1350-1449 old) may see a small tier re-classification since their absolute RP is unchanged but the boundary moved by 150. Season resets and RP earned are unaffected; the Diamond+ season-reset landing (Emerald III) still uses `RANK_TIERS[4][0]` so the reset math scales automatically.
 
+
+### 2026-02-24 — White-screen at match end (ranked + casual, both envs)
+- **User report**: "White screen instead of victory and defeat screen in ranked" — happens every match, on both Preview and Production.
+- **Root cause**: `MatchResultOverlay.jsx` referenced an **undefined variable** `idx` inside two `data-testid` template literals (lines 428 + 442) — but the scoreboard map iterates with `i`, not `idx`. Every mount threw `ReferenceError: idx is not defined`, unwound the React render, and the overlay came up blank. Introduced by the earlier Emerald + animated post-match icons commit (`ff001ae`) — `AnimatedRankIcon` was slotted in with copy-paste `idx` references that never existed in the surrounding scope.
+- **Fix**: swap `${idx}` → `${i}` in both `data-testid` templates. Frontend hot-reload confirms the fix — bundle now serves `match-result-rank-${i}` and lobby + modals raise zero JS errors under Playwright.
+- **Regression guard**: `/app/backend/tests/test_match_result_overlay_no_idx.py` (2 cases, both pass) — grep-guards the file for any `${idx}` inside a template literal AND asserts the placement `.map((p, i) => ...)` shape hasn't drifted, so a future refactor can't reintroduce the same typo.
+- **Note**: Ranked and casual matches both hit this bug (it lived in the shared scoreboard render), even though the user framed it as ranked-only.
+

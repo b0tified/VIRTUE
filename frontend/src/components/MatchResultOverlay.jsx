@@ -425,7 +425,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                       <span
                         className="inline-flex items-center gap-1 font-anton uppercase text-[11px] px-1.5 py-0.5"
                         style={{ background: c, color: p.rank_tier === 8 ? "#FFD700" : "#0A0A0A" }}
-                        data-testid={`match-result-rank-${idx}`}
+                        data-testid={`match-result-rank-${i}`}
                       >
                         {/* Animated rank icon — every scoreboard row now
                             shows the tier's ornament (division sparkles,
@@ -439,7 +439,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                             tier={p.rank_tier}
                             division={p.rank_division ?? 3}
                             size={12}
-                            testid={`match-result-rank-icon-${idx}`}
+                            testid={`match-result-rank-icon-${i}`}
                           />
                         ) : (() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={11} strokeWidth={3} />; })()}
                         {p.rank_name}{divisionRoman(p.rank_division) ? ` ${divisionRoman(p.rank_division)}` : ""}
