@@ -5777,6 +5777,12 @@ class GameRoom:
                 bot_placement = placement_of.get(p.id, total_with_bots)
                 bot_tier_idx = int(getattr(p, "rank_tier", 0) or 0)
                 bot_tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
+                # Include the disguised division so the end-match
+                # scoreboard renders "DIAMOND II" / "GOLD III" for bots
+                # instead of just "DIAMOND" / "GOLD" — matches the
+                # in-match leaderboard widget and real-player rows.
+                bot_disguise_rp = int(getattr(p, "disguise_rank_points", 0) or 0)
+                bot_tier_division = rank_division_for_points(bot_disguise_rp, bot_tier_idx)
                 bot_delta = compute_rp_delta(bot_placement, bot_tier_idx)
                 placements.append({
                     "id": p.id,
@@ -5789,8 +5795,10 @@ class GameRoom:
                     "new_points": 0,
                     "rank_tier": bot_tier_idx,
                     "rank_name": bot_tier_name,
+                    "rank_division": bot_tier_division,
                     "prev_rank_tier": bot_tier_idx,
                     "prev_rank_name": bot_tier_name,
+                    "prev_rank_division": bot_tier_division,
                     "rank_change": 0,
                     "is_placement": False,
                     "placement_match_number": None,
@@ -5810,11 +5818,14 @@ class GameRoom:
                 placement = placement_of.get(p.id, total_with_bots)
                 if p.is_bot:
                     # Bots: zero-RP rows, no DB write. Show their disguised
-                    # rank label if one was assigned (matches the in-match
-                    # leaderboard widget). Avoid leaking is_bot to the
+                    # rank label + division ("DIAMOND II") if one was
+                    # assigned (matches the in-match leaderboard widget +
+                    # ranked scoreboard). Avoid leaking is_bot to the
                     # client so they look like real opponents.
                     tier_idx = int(getattr(p, "rank_tier", 0) or 0)
                     tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
+                    disguise_rp = int(getattr(p, "disguise_rank_points", 0) or 0)
+                    tier_division = rank_division_for_points(disguise_rp, tier_idx)
                     placements.append({
                         "id": p.id,
                         "user_id": "",
@@ -5826,8 +5837,10 @@ class GameRoom:
                         "new_points": 0,
                         "rank_tier": tier_idx,
                         "rank_name": tier_name,
+                        "rank_division": tier_division,
                         "prev_rank_tier": tier_idx,
                         "prev_rank_name": tier_name,
+                        "prev_rank_division": tier_division,
                         "rank_change": 0,
                         "is_placement": False,
                         "placement_match_number": None,
@@ -5864,8 +5877,10 @@ class GameRoom:
                     "new_points": cur_points,
                     "rank_tier": tier_idx,
                     "rank_name": tier_name,
+                    "rank_division": rank_division_for_points(cur_points, tier_idx),
                     "prev_rank_tier": tier_idx,
                     "prev_rank_name": tier_name,
+                    "prev_rank_division": rank_division_for_points(cur_points, tier_idx),
                     "rank_change": 0,
                     "is_placement": False,
                     "placement_match_number": None,

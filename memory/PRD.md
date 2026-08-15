@@ -1590,3 +1590,10 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Regression guard**: `/app/backend/tests/test_match_result_overlay_no_idx.py` (2 cases, both pass) — grep-guards the file for any `${idx}` inside a template literal AND asserts the placement `.map((p, i) => ...)` shape hasn't drifted, so a future refactor can't reintroduce the same typo.
 - **Note**: Ranked and casual matches both hit this bug (it lived in the shared scoreboard render), even though the user framed it as ranked-only.
 
+
+### 2026-02-24 — Bots show full rank + division on end-match scoreboard
+- **User request**: "Make the bots on the end match screen show the rank tier they are in not just rank" — bot rows on the post-match scoreboard were displaying just the tier name (e.g. "DIAMOND") instead of tier + division ("DIAMOND II"), while real-player rows showed the full label.
+- **Root cause**: `GameRoom.end_match` (`/app/backend/server.py`) built the bot placement dicts WITHOUT a `rank_division` key in both the ranked branch (line ~5781) and the casual branch (line ~5818). The frontend fallback `divisionRoman(p.rank_division)` returned empty, so only the tier name rendered. Real-player rows already included `rank_division`, which is why the visual asymmetry only affected bots.
+- **Fix**: Both bot rows now compute `rank_division = rank_division_for_points(disguise_rank_points, rank_tier)` from the bot's disguised RP field (already assigned at spawn / disguise refresh) and include it alongside `rank_name`. Also filled in the previously-missing `prev_rank_division` for parity with real-player rows and added `rank_division` to the casual real-player row for consistency.
+- **Tests** (`/app/backend/tests/test_match_end_bot_division.py` — 7/7 pass): parametrized cases across Bronze III, Gold II, Emerald II, Diamond I/II/III verify each disguise RP → correct roman-numeral division. A grep guard also anchors both branches so a future refactor can't silently drop the division key again.
+
