@@ -27,10 +27,11 @@
      - kind: "tier" | "division"  (default "tier")
      - onClose: () => void
 */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { rankColorFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import { Sparkles, ChevronUp } from "lucide-react";
+import audioBus from "@/game/audio";
 
 export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoints, kind = "tier", onClose }) {
   // 0: enter, 1: shatter (prev crest explodes), 2: new assembled, 3: star shower
@@ -52,6 +53,15 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
     const tAssemble  = isDivision ? 950  : 1350;
     const tStars     = isDivision ? 1450 : 2000;
     const tDismiss   = isDivision ? 4500 : 6500;
+    // Play a fanfare on tier promotions so a boundary crossing FEELS
+    // like the big moment it is. Division-ups get a much lighter blip
+    // via `audioBus.matchStart` (already a short ascending chirp) so
+    // they don't compete with the tier celebration audio. Wrapped in a
+    // try because audioBus init may fail on autoplay-restricted tabs.
+    try {
+      if (isDivision) audioBus.matchStart?.();
+      else audioBus.victory?.();
+    } catch {}
     const t1 = setTimeout(() => setPhase(1), tShatter);
     const t2 = setTimeout(() => setPhase(2), tAssemble);
     const t3 = setTimeout(() => setPhase(3), tStars);
@@ -63,6 +73,24 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
       clearTimeout(auto);
     };
   }, [open, isDivision]);
+  // Confetti sprites — tier promotions only. Pre-computed once per mount
+  // so the render is deterministic across phase transitions and doesn't
+  // reshuffle mid-animation. 40 pieces × mixed colors gives a proper
+  // "big moment" feel next to the star shower. Declared BEFORE the
+  // early-return guard so the hook ordering stays stable across renders.
+  const confetti = useMemo(
+    () => (isDivision ? [] : Array.from({ length: 40 }, (_, i) => ({
+      key: `c-${i}`,
+      left: (i * 41.7) % 100,
+      delay: (i * 0.05) % 1.4,
+      dur: 2.6 + ((i * 13) % 14) / 10,
+      tilt: (i * 47) % 360,
+      color: ["#FFD700", "#FF9500", "#FFFFFF", "#0055FF", "#E62429", "#06A35F"][i % 6],
+      w: 5 + (i % 3) * 2,
+      h: 8 + (i % 4) * 3,
+    }))),
+    [isDivision],
+  );
   if (!open || !newTier || !prevTier) return null;
   const prevIdx = prevTier.idx ?? 0;
   const newIdx = newTier.idx ?? 0;
@@ -118,10 +146,12 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
       )}
 
       {/* Star shower (phase 3) — fewer stars for division-ups so it reads
-          as a smaller celebration. */}
+          as a smaller celebration. Tier promotions get 36 (vs 12 for
+          division) plus a full colored confetti rain running the entire
+          overlay duration for a "big moment" feel. */}
       {phase >= 3 && (
         <div className="absolute inset-0 pointer-events-none" data-testid="rankup-stars">
-          {[...Array(isDivision ? 12 : 24)].map((_, i) => {
+          {[...Array(isDivision ? 12 : 36)].map((_, i) => {
             const left = (i * 137.5) % 100;
             const delay = (i * 0.07) % 1.4;
             const size = 10 + ((i * 13) % 18);
@@ -144,11 +174,74 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
         </div>
       )}
 
+      {/* Confetti rain — tier promotions only. Kicks in the moment the
+          new crest assembles (phase >= 2) and runs through the star
+          shower so the two effects layer for a proper fanfare. Each
+          piece is a small colored rectangle rotating as it falls. */}
+      {!isDivision && phase >= 2 && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" data-testid="rankup-confetti">
+          {confetti.map((c) => (
+            <span
+              key={c.key}
+              className="absolute top-[-20px] block rounded-sm"
+              style={{
+                left: `${c.left}%`,
+                width: `${c.w}px`,
+                height: `${c.h}px`,
+                background: c.color,
+                transform: `rotate(${c.tilt}deg)`,
+                animation: `rankup-confetti-fall ${c.dur}s linear ${c.delay}s forwards`,
+                boxShadow: `0 0 6px ${c.color}88`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Secondary big shockwave — tier promotions ONLY. Fires slightly
+          after the primary ring and reaches ~1.6x the size so the
+          player reads it as a bigger event than a plain division bump. */}
+      {!isDivision && phase >= 1 && phase < 3 && (
+        <div
+          className="absolute inset-0 pointer-events-none flex items-center justify-center"
+          aria-hidden="true"
+        >
+          <div
+            className="rounded-full"
+            style={{
+              width: "40vmin",
+              height: "40vmin",
+              border: `4px solid ${newColor}`,
+              opacity: 0.55,
+              animation: "rankup-mega-ring 1.9s 0.15s ease-out forwards",
+              boxShadow: `0 0 32px ${newColor}66, inset 0 0 32px ${newColor}44`,
+            }}
+            data-testid="rankup-mega-ring"
+          />
+        </div>
+      )}
+
       {/* Main card */}
       <div
         className="relative z-10 flex flex-col items-center select-none px-4"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Small "TIER PROMOTION" eyebrow — tier variant only. Sells the
+            "you crossed a boundary" moment before the main banner
+            crashes in, and makes the difference between a tier-up and
+            a division-up unmistakable at a glance. */}
+        {!isDivision && (
+          <div
+            className="font-anton uppercase tracking-[0.35em] text-xs sm:text-sm text-white/80 mb-2"
+            style={{
+              textShadow: `0 0 10px ${newColor}, 0 0 4px #000`,
+              animation: "rankup-fade-in 0.5s 0.15s ease-out both",
+            }}
+            data-testid="rankup-eyebrow"
+          >
+            ★ Tier Promotion ★
+          </div>
+        )}
         {/* Banner — text + color swap by kind. */}
         <div
           className={`font-display ${isDivision ? "text-4xl sm:text-6xl" : "text-5xl sm:text-7xl"} text-pow-shadow-lg flex items-center gap-3`}

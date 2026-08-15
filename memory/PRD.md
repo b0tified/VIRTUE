@@ -1597,3 +1597,20 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Fix**: Both bot rows now compute `rank_division = rank_division_for_points(disguise_rank_points, rank_tier)` from the bot's disguised RP field (already assigned at spawn / disguise refresh) and include it alongside `rank_name`. Also filled in the previously-missing `prev_rank_division` for parity with real-player rows and added `rank_division` to the casual real-player row for consistency.
 - **Tests** (`/app/backend/tests/test_match_end_bot_division.py` — 7/7 pass): parametrized cases across Bronze III, Gold II, Emerald II, Diamond I/II/III verify each disguise RP → correct roman-numeral division. A grep guard also anchors both branches so a future refactor can't silently drop the division key again.
 
+
+### 2026-02-24 — Bigger tier-up cinematic + fires on ANY code that crosses a boundary
+- **User request**: "Post-Match Rank-Up Cinematic: Play a bigger celebration when the tier boundary is crossed, not just a division bump — and make sure it plays even when you use code."
+- **Bug 1 — code never celebrates unless the reward is `rank_up_tiers`**: `/api/codes/redeem` only built the `rank_up_payload` for the explicit `rank_up_tiers` reward type. A plain `rp` code that pushed the player across a tier boundary silently updated `rank_points` with no overlay. Fixed by refactoring the endpoint to compute total inbound RP first (`inc_rp = update_ops.$inc.rank_points`), then run a **unified** rank-up detection: any positive RP change that crosses a tier OR division boundary emits `rank_up_payload` with an explicit `kind` ("tier" | "division").
+- **Bug 2 — tier & division celebrations felt too similar**: Both variants had the same visual weight. Now the "tier" variant is meaningfully bigger:
+  - New **"★ TIER PROMOTION ★"** eyebrow above the RANK UP! banner (tier only).
+  - 40-piece **colored confetti rain** kicks in the moment the new crest assembles (tier only).
+  - Second **mega shockwave ring** (~1.6× the primary ring, slower, higher opacity) overlays the crest during the shatter → assemble beats (tier only).
+  - Star shower bumped **24 → 36 particles** (tier only; division stays at 12).
+  - **Fanfare audio**: `audioBus.victory()` plays for tier, lighter `audioBus.matchStart()` chirp plays for division.
+- **Files touched**:
+  - `/app/backend/server.py` — `redeem_code`: unified rank-up detection block that inspects the net RP grant across all reward types and stamps `kind: "tier" | "division"`.
+  - `/app/frontend/src/components/RankUpOverlay.jsx` — audio + eyebrow + confetti + mega shockwave + star count bump; `useMemo` hoisted above the early-return guard to keep hook order stable.
+  - `/app/frontend/src/index.css` — two new keyframes: `rankup-confetti-fall` and `rankup-mega-ring`.
+- **Tests** (`/app/backend/tests/test_code_redeem_rank_up_kind.py` — 9 cases, all pass): tier crossings return `kind: "tier"` for Bronze I→Silver III, Platinum I→Emerald III, Diamond I→Master III, multi-tier leaps; same-tier bumps return `kind: "division"` for Bronze III→II and Gold II→I; grants that don't cross any boundary return None; a grep guard anchors the explicit `kind` field in the endpoint so future edits can't silently regress. Combined with prior suites: 29/29 relevant pytests pass.
+- **Live smoke test**: dispatched synthetic `virtue-rankup` events from Playwright — tier overlay renders eyebrow + confetti + mega-ring; division overlay confirms none of the tier-only elements mount.
+

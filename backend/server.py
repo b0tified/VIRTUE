@@ -2521,10 +2521,9 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
     # rank_up_tiers: jump the player N tiers up by topping up RP to the
     # bottom of the target band. Hard-capped at Grandmaster (tier 6) — code
     # can never push into Goonmaster which is earned-only.
-    rank_up_payload: Optional[dict] = None
     if reward.get("rank_up_tiers"):
         cur_pts = int(user.get("rank_points", 0) or 0)
-        cur_tier_idx, cur_tier_name = rank_for_points(cur_pts)
+        cur_tier_idx, _ = rank_for_points(cur_pts)
         steps = max(1, int(reward["rank_up_tiers"]))
         # Cap target at Grandmaster (last-1). Goonmaster is earned-only
         # so a code redemption can't teleport a player straight to the
@@ -2534,17 +2533,45 @@ async def redeem_code(payload: RedeemIn, user: dict = Depends(get_current_user))
             # Land the player at the *start* of the new tier's band so they
             # have to fight to climb further within it.
             target_pts = RANK_TIERS[target_tier_idx][0]
-            rp_grant = max(0, target_pts - cur_pts)
+            # Stack on top of any RP grant already in this update — a code
+            # that grants both `rp` and `rank_up_tiers` should still hit
+            # the tier floor.
+            already_granted = int(update_ops.get("$inc", {}).get("rank_points", 0) or 0)
+            rp_grant = max(0, target_pts - cur_pts - already_granted)
             if rp_grant > 0:
                 inc = update_ops.setdefault("$inc", {})
                 inc["rank_points"] = int(inc.get("rank_points", 0)) + rp_grant
-            # Surface tier-change details so the frontend can trigger the
-            # rank-up celebration overlay on a successful redeem.
+
+    # Unified rank-up detection — fires the celebration for ANY code
+    # whose net RP change crosses a tier OR division boundary, not just
+    # the `rank_up_tiers` reward type. A raw `rp` code that pushes
+    # Bronze I → Silver III now correctly triggers the big tier
+    # celebration; a smaller RP grant that bumps Silver III → Silver II
+    # triggers the lighter division "PROMOTED" variant.
+    rank_up_payload: Optional[dict] = None
+    inc_rp = int(update_ops.get("$inc", {}).get("rank_points", 0) or 0)
+    if inc_rp > 0:
+        cur_pts = int(user.get("rank_points", 0) or 0)
+        target_pts = min(7500, cur_pts + inc_rp)
+        cur_tier_idx, cur_tier_name = rank_for_points(cur_pts)
+        target_tier_idx, target_tier_name = rank_for_points(target_pts)
+        cur_div = rank_division_for_points(cur_pts, cur_tier_idx)
+        target_div = rank_division_for_points(target_pts, target_tier_idx)
+        tier_crossed = target_tier_idx > cur_tier_idx
+        # Division numbering is inverted — lower number = higher division
+        # (III=3 is entry, I=1 is the top). A promotion means the new
+        # division is a SMALLER number than the previous one.
+        division_crossed = (not tier_crossed) and (target_div > 0 and cur_div > 0 and target_div < cur_div)
+        if tier_crossed or division_crossed:
             rank_up_payload = {
-                "prev_tier": {"idx": cur_tier_idx, "name": cur_tier_name, "division": rank_division_for_points(cur_pts, cur_tier_idx)},
-                "new_tier":  {"idx": target_tier_idx, "name": RANK_TIERS[target_tier_idx][1], "division": rank_division_for_points(target_pts, target_tier_idx)},
-                "rp_delta":  int(rp_grant),
+                "prev_tier": {"idx": cur_tier_idx, "name": cur_tier_name, "division": cur_div},
+                "new_tier":  {"idx": target_tier_idx, "name": target_tier_name, "division": target_div},
+                "rp_delta":  int(target_pts - cur_pts),
                 "new_points": int(target_pts),
+                # Explicit kind so the client uses the beefier "tier"
+                # celebration for boundary crossings and the lighter
+                # "division" one for a same-tier bump.
+                "kind": "tier" if tier_crossed else "division",
             }
     sets: Dict[str, object] = {}
     if reward.get("banner_animated"):

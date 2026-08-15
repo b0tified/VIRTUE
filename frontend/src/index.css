@@ -1594,6 +1594,23 @@ html.virtue-no-ui-blur .hud-panel {
   20%  { opacity: 1; }
   100% { opacity: 0; }
 }
+/* Confetti rain — tier-promotion only. Falls the full viewport height,
+   spinning as it drops. `translateY(120vh)` guarantees the piece exits
+   the bottom regardless of viewport size. */
+@keyframes rankup-confetti-fall {
+  0%   { transform: translateY(0)      rotate(0deg);   opacity: 0; }
+  8%   { opacity: 1; }
+  100% { transform: translateY(120vh)  rotate(720deg); opacity: 0.9; }
+}
+/* Secondary mega shockwave for tier promotions — bigger and slower
+   than the primary `rankup-ring-out`, arriving on top of it so the
+   crest reads as a "big" boundary crossing (vs a plain division bump
+   which only gets the single primary ring). */
+@keyframes rankup-mega-ring {
+  0%   { transform: scale(0.3);  opacity: 0.85; border-width: 4px; }
+  60%  { opacity: 0.5; }
+  100% { transform: scale(2.6);  opacity: 0;    border-width: 1px; }
+}
 
 /* =============================================================
    Banner title animations for Master+ past-season flexes.
