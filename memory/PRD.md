@@ -1718,3 +1718,26 @@ Two user requests shipped together.
   - `TestSmurfProbabilityHoldsAcrossManyRolls` — 2000-trial Monte Carlo confirms the ratio empirically matches the module constant within ±0.05.
 - 76/76 pass across all recent regression suites. Live `curl` confirms `/party/start` accepts both new-body and legacy no-body callers.
 
+
+### 2026-02-24 — Admin Smurf-Ratio Slider (live-tunable, no redeploy)
+- **User request**: "Admin Smurf Slider: expose CASUAL_ELITE_BOT_RATIO in the moderation dashboard so you can dial the smurf frequency without a redeploy."
+- **Backend** (`/app/backend/server.py`):
+  - Converted the previously-frozen constant into a runtime-mutable state: `_CASUAL_ELITE_BOT_STATE = {"ratio": 0.15}` + helper `_get_casual_elite_bot_ratio()`. Module attribute `CASUAL_ELITE_BOT_RATIO` kept in sync via the setter so existing pytests reading `srv.CASUAL_ELITE_BOT_RATIO` still see current value.
+  - Spawn loop switched from `< CASUAL_ELITE_BOT_RATIO` (frozen at startup) to `< _get_casual_elite_bot_ratio()` (live read).
+  - New endpoints (admin-only):
+    - `GET /api/admin/settings/smurf` — returns `{ratio, diff}`.
+    - `POST /api/admin/settings/smurf` — accepts `{ratio: 0.0-1.0}` (Pydantic `Field(ge, le)` clamps → 422 on invalid). Logs the change with the admin's username.
+  - Persistence is process-memory only (matches `PEAK_ONLINE` and `SYNTHETIC_ONLINE`). Server restart snaps back to 0.15.
+- **Frontend** (`/app/frontend/src/pages/AdminReports.jsx`):
+  - New `SmurfRatioSlider` component under the "Matches Played — Last 24h" panel: purple accented 0-100 range input + big % display + subtitle explaining what the value does.
+  - **Debounced save**: 250ms after the user stops dragging, POST fires. Prevents backend spam during a slider drag. Shows `Loader2` "saving…" pill during the request and a green "✓ saved" pill for 900ms after success.
+  - Loads current value on mount via GET so the slider always reflects live state (not a stale UI cache).
+- **Tests** (`/app/backend/tests/test_admin_smurf_slider.py` — 9/9 pass):
+  - GET requires admin (403 for non-admin), returns default 0.15.
+  - POST mutates module state visible to the spawn helper AND keeps `CASUAL_ELITE_BOT_RATIO` module attr in sync.
+  - Pydantic rejects `ratio > 1.0`, `ratio < 0.0`; allows edge cases 0.0 and 1.0.
+  - Non-admin POST rejected (403), state unchanged.
+  - Grep guard: spawn loop uses `_get_casual_elite_bot_ratio()` (not the frozen constant) so runtime edits are actually respected.
+  - 46/46 pass across all recent regression suites (smurf slider + party lobby + weapon tuning + admin live-stats).
+- **Live smoke** (Preview, 1400×900): slider loaded at 15% → dragged to 40% → display updated → API confirmed `{ratio: 0.4}` → "✓ saved" flash captured → reset to 15% cleanly. Zero JS errors.
+

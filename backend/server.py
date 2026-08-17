@@ -3067,14 +3067,28 @@ QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 # Overwatch-style weapon configs (hitscan + falloff + spread + reload)
 # -------------------------------------------------------------------
 # Casual FFA "smurf" bot ratio — the fraction of fill bots in casual
-# quick-match that get a Diamond+ disguise + elite AI. Kept as a module-
-# level constant so it can be admin-tuned later without touching the
-# spawn logic. 0.15 = ~1 in 7 bots is a smurf → typical 4-bot casual
-# lobby sees 0-1 smurfs, an 8-bot fill sees 1-2. Diff 1.7 clears the
-# 1.5 "smart" threshold so the smurf feels sharper without matching
-# the full ranked 1.9.
-CASUAL_ELITE_BOT_RATIO = 0.15
+# quick-match that get a Diamond+ disguise + elite AI. Held in a dict
+# so `/api/admin/settings/smurf` can mutate the ratio at runtime
+# without a redeploy. 0.15 = ~1 in 7 bots is a smurf → typical 4-bot
+# casual lobby sees 0-1 smurfs, an 8-bot fill sees 1-2. Diff 1.7
+# clears the 1.5 "smart" threshold so the smurf feels sharper without
+# matching the full ranked 1.9.
 CASUAL_ELITE_BOT_DIFF = 1.7
+_CASUAL_ELITE_BOT_STATE = {"ratio": 0.15}
+
+
+def _get_casual_elite_bot_ratio() -> float:
+    """Live-tunable smurf ratio. Read through this helper (not the
+    module constant) inside the spawn loop so runtime edits from
+    `/api/admin/settings/smurf` take effect immediately on the next
+    fill. Kept for backwards-compat as `CASUAL_ELITE_BOT_RATIO` below."""
+    return float(_CASUAL_ELITE_BOT_STATE.get("ratio", 0.15))
+
+
+# Module attribute — read at TEST time via `srv.CASUAL_ELITE_BOT_RATIO`
+# so existing pytest assertions still see the current value. Kept in
+# sync inside the setter endpoint.
+CASUAL_ELITE_BOT_RATIO = _get_casual_elite_bot_ratio()
 
 WEAPON_CONFIGS = {
     "ak47":  {
@@ -3853,7 +3867,7 @@ class GameRoom:
                 is_smurf = (
                     self.game_mode == "ffa"
                     and not self.is_ranked
-                    and random.random() < CASUAL_ELITE_BOT_RATIO
+                    and random.random() < _get_casual_elite_bot_ratio()
                 )
                 if is_smurf:
                     # Anchor RP inside Diamond II (1600 mid-band).
@@ -8169,6 +8183,45 @@ async def admin_close_report(report_id: str, user: dict = Depends(get_current_us
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Report not found.")
     return {"ok": True}
+
+
+@api.get("/admin/settings/smurf")
+async def admin_get_smurf_ratio(user: dict = Depends(get_current_user)):
+    """Return the current casual smurf-bot ratio (0.0-1.0). Admin-only.
+    Paired with the POST endpoint below so the Moderation dashboard's
+    slider always displays the live value."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return {
+        "ratio": _get_casual_elite_bot_ratio(),
+        "diff": CASUAL_ELITE_BOT_DIFF,
+    }
+
+
+class SmurfRatioIn(BaseModel):
+    # Ratio must be a probability. Front-end slider is 0-100 (%), we
+    # convert to a 0.0-1.0 float on submit — Pydantic clamps to the
+    # allowed range so a malformed payload returns a clean 422.
+    ratio: float = Field(..., ge=0.0, le=1.0)
+
+
+@api.post("/admin/settings/smurf")
+async def admin_set_smurf_ratio(payload: SmurfRatioIn, user: dict = Depends(get_current_user)):
+    """Mutate the casual smurf-bot ratio at runtime. Admin-only. The
+    new value takes effect on the NEXT bot fill in any casual room —
+    already-spawned bots aren't retroactively converted (that would
+    yank existing matches around mid-game). Persistence is process-
+    memory only for now; a server restart snaps back to the module
+    default (0.15). This matches the ephemeral nature of PEAK_ONLINE
+    and the SYNTHETIC_ONLINE counters, which are also in-memory.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    global CASUAL_ELITE_BOT_RATIO  # keep module attr aligned so pytest reads current value
+    _CASUAL_ELITE_BOT_STATE["ratio"] = float(payload.ratio)
+    CASUAL_ELITE_BOT_RATIO = float(payload.ratio)
+    logger.info("Admin %s set casual smurf ratio → %.3f", user.get("username"), payload.ratio)
+    return {"ratio": _get_casual_elite_bot_ratio(), "diff": CASUAL_ELITE_BOT_DIFF}
 
 
 @api.get("/admin/live-stats")

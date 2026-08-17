@@ -4,9 +4,9 @@
    - Temporary suspension (24h / 7d / 30d / custom hours)
    - Dismiss / close without action
    Non-admin users are bounced back to the lobby on mount. */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2 } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -482,6 +482,109 @@ function LivePlayerStats() {
               testid="matches-24h-tdm-casual"
             />
           </div>
+        </div>
+      )}
+
+      {/* Casual smurf-bot ratio slider — admin can dial the frequency
+          of Diamond+ disguised elite bots in casual FFA without a
+          redeploy. New value applies on the NEXT bot fill in any
+          casual room. Backed by /api/admin/settings/smurf. */}
+      <SmurfRatioSlider />
+    </div>
+  );
+}
+
+function SmurfRatioSlider() {
+  const [ratio, setRatio] = useState(null);   // null until first fetch
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [err, setErr] = useState(null);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.get("/admin/settings/smurf")
+      .then(({ data }) => {
+        if (alive) setRatio(Number(data.ratio) || 0);
+      })
+      .catch((e) => {
+        if (alive) setErr(e?.response?.data?.detail || "Failed to load smurf ratio.");
+      });
+    return () => { alive = false; };
+  }, []);
+
+  // Debounced save so dragging the slider doesn't spam the backend —
+  // the request only fires 250ms after the user stops moving. Fires
+  // an inline "Saved" pill for 900ms after each successful write so
+  // there's clear feedback the change took effect.
+  const scheduleSave = useCallback((next) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setSaving(true); setErr(null);
+      try {
+        await api.post("/admin/settings/smurf", { ratio: next });
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 900);
+      } catch (e) {
+        setErr(e?.response?.data?.detail || "Failed to save.");
+      } finally {
+        setSaving(false);
+      }
+    }, 250);
+  }, []);
+
+  if (ratio === null && !err) {
+    return (
+      <div className="bg-white p-4 border-t-2 border-black/10 opacity-60" data-testid="smurf-slider-loading">
+        <div className="font-anton uppercase tracking-widest text-xs">Loading smurf settings…</div>
+      </div>
+    );
+  }
+
+  const pct = Math.round((ratio || 0) * 100);
+  return (
+    <div className="bg-white p-4 border-t-2 border-black/10" data-testid="smurf-slider-panel">
+      <div className="font-anton uppercase tracking-widest text-xs mb-2 opacity-80 flex items-center gap-2">
+        <Sprout size={14} strokeWidth={3} className="text-[#9D4EDD]" />
+        <span>Casual Smurf-Bot Frequency</span>
+        {saving && (
+          <span className="ml-auto flex items-center gap-1 text-neutral-500">
+            <Loader2 size={12} strokeWidth={3} className="animate-spin" /> saving…
+          </span>
+        )}
+        {!saving && savedFlash && (
+          <span className="ml-auto text-[#06A35F]" data-testid="smurf-slider-saved">✓ saved</span>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={pct}
+          onChange={(e) => {
+            const next = Number(e.target.value) / 100;
+            setRatio(next);
+            scheduleSave(next);
+          }}
+          className="flex-1 accent-[#9D4EDD]"
+          data-testid="smurf-slider-input"
+          aria-label="Casual smurf-bot ratio"
+        />
+        <div
+          className="font-display text-2xl text-pow-shadow leading-none tabular-nums w-16 text-right"
+          data-testid="smurf-slider-value"
+        >
+          {pct}%
+        </div>
+      </div>
+      <div className="mt-1 font-anton uppercase tracking-widest text-[9px] text-neutral-500">
+        Share of casual fill bots that spawn as Diamond II with elite AI. Applies on the next bot fill.
+      </div>
+      {err && (
+        <div className="mt-2 px-2 py-1 text-[10px] font-anton uppercase tracking-widest bg-[#FFE4E4] text-[#7a1115] border border-[#E62429]" data-testid="smurf-slider-error">
+          {err}
         </div>
       )}
     </div>
