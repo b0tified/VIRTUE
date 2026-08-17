@@ -1696,3 +1696,25 @@ Five user-requested changes shipped together (all backend-side + one admin UI pa
 
 **Live verification** (Preview 1400×900): Admin Moderation dashboard renders new panel with 0-count tiles (fresh data), Peak Online + Real Online in-match/in-lobby split all present, zero JS errors. Backend startup logs confirm casual bots spawn at `diff=0.90`.
 
+
+### 2026-02-24 — Custom party lobby with bot toggle + casual smurf-bot injection
+Two user requests shipped together.
+
+**1. Party Custom Lobby with bot toggle**
+- `/api/party/start` now accepts an optional JSON body: `{"bots_enabled": bool, "tdm": bool}`. Legacy callers (no body) still work — defaults are `bots_enabled=True`, `tdm=False`. Flags persist on the in-memory party dict.
+- `/api/party/me` payload gains `bots_enabled` + `tdm` fields so member clients can see the leader's chosen settings while polling.
+- `get_or_create_party_room` reads `party["bots_enabled"]` and `party["tdm"]`. When bots are disabled, `bot_count = 0` (human-only lobby). Passes `game_mode="tdm"` when the TDM flag is on so the private room spawns as team-based.
+- **Frontend `PartyPanel.jsx`**: New "CUSTOM LOBBY" purple button + adjacent "BOTS ON/OFF" toggle (green/white). Toggle sits right next to the button per user request. Leader-only. Both disabled while any queue is active. Clicking Custom Lobby POSTs `/party/start` with the current toggle state, then navigates the leader immediately to `/game?mode=party&party_id=<id>`. Party members auto-navigate via a new `useEffect` that watches `party.match_starting` (5s poll cadence, member skips their own leader nav so no double-nav).
+
+**2. Higher-ranked bots into casual sometimes ("smurf" bots)**
+- New module-level constants: `CASUAL_ELITE_BOT_RATIO = 0.15` (~1 in 7 casual fill bots), `CASUAL_ELITE_BOT_DIFF = 1.7` (clears the 1.5 smart-AI threshold, below full ranked 1.9).
+- The casual FFA auto-balance path (`_maintain_population`) now rolls a `random.random() < CASUAL_ELITE_BOT_RATIO` check per fill. On hit: spawns the bot with `disguise_tier_idx=5` (DIAMOND) + a Diamond II mid-band RP (1550-1690) + `difficulty=CASUAL_ELITE_BOT_DIFF`. Gate is explicit — ranked and TDM rooms skip smurfs (they already have proper tier-calibrated bots).
+- Constants exposed for future admin tuning without touching the spawn logic (per user's "expose it in admin settings later" ask).
+
+**Verification**
+- **Tests** (`/app/backend/tests/test_party_lobby_and_smurf_bots.py` — 10/10 pass):
+  - `TestPartyCustomLobbySettings` — default bots-enabled, `/party/me` exposes both flags, room-spawn helper skips bot-fill when disabled + honours TDM.
+  - `TestCasualSmurfBotsInjection` — constants present + within sane bounds, smurf gated on casual FFA (grep both `game_mode == "ffa"` and `is_smurf = (` context), uses Diamond tier disguise + elite diff constant, ratio default in the "reasonable" 0.05-0.35 band.
+  - `TestSmurfProbabilityHoldsAcrossManyRolls` — 2000-trial Monte Carlo confirms the ratio empirically matches the module constant within ±0.05.
+- 76/76 pass across all recent regression suites. Live `curl` confirms `/party/start` accepts both new-body and legacy no-body callers.
+

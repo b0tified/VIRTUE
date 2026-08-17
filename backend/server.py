@@ -3066,6 +3066,16 @@ QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 # -------------------------------------------------------------------
 # Overwatch-style weapon configs (hitscan + falloff + spread + reload)
 # -------------------------------------------------------------------
+# Casual FFA "smurf" bot ratio — the fraction of fill bots in casual
+# quick-match that get a Diamond+ disguise + elite AI. Kept as a module-
+# level constant so it can be admin-tuned later without touching the
+# spawn logic. 0.15 = ~1 in 7 bots is a smurf → typical 4-bot casual
+# lobby sees 0-1 smurfs, an 8-bot fill sees 1-2. Diff 1.7 clears the
+# 1.5 "smart" threshold so the smurf feels sharper without matching
+# the full ranked 1.9.
+CASUAL_ELITE_BOT_RATIO = 0.15
+CASUAL_ELITE_BOT_DIFF = 1.7
+
 WEAPON_CONFIGS = {
     "ak47":  {
         "damage": SHOT_DAMAGE,
@@ -3832,11 +3842,38 @@ class GameRoom:
                 diff = 0.9
             for i in range(deficit):
                 name = pool[i] if i < len(pool) else f"shadow_{random.randint(100, 999)}"
-                self.spawn_bot(name, disguised=True, difficulty=diff)
-                logger.info(
-                    "Auto-balance (%s): spawned bot %s total=%d→%d",
-                    self.game_mode, name, n, n + 1,
+                # "Smurf" spawn: in casual FFA, ~15% of fill bots are
+                # disguised as DIAMOND II (tier=5, points inside the
+                # Diamond band) with elite AI (diff=1.7). This gives
+                # casual players an occasional "high-rank stranger"
+                # opponent — matches the user's request for higher-
+                # ranked bots to appear in casual sometimes. Ranked
+                # and TDM rooms opt out (they already have tier-
+                # calibrated disguises).
+                is_smurf = (
+                    self.game_mode == "ffa"
+                    and not self.is_ranked
+                    and random.random() < CASUAL_ELITE_BOT_RATIO
                 )
+                if is_smurf:
+                    # Anchor RP inside Diamond II (1600 mid-band).
+                    self.spawn_bot(
+                        name,
+                        disguised=True,
+                        difficulty=CASUAL_ELITE_BOT_DIFF,
+                        disguise_tier_idx=5,
+                        disguise_rank_points=random.randint(1550, 1690),
+                    )
+                    logger.info(
+                        "Auto-balance (%s): spawned SMURF bot %s (Diamond+ disguise, diff=%.2f) total=%d→%d",
+                        self.game_mode, name, CASUAL_ELITE_BOT_DIFF, n, n + 1,
+                    )
+                else:
+                    self.spawn_bot(name, disguised=True, difficulty=diff)
+                    logger.info(
+                        "Auto-balance (%s): spawned bot %s total=%d→%d",
+                        self.game_mode, name, n, n + 1,
+                    )
                 n += 1
 
     # Backwards-compatible alias. Older tests reference the TDM-only name.
@@ -7402,6 +7439,11 @@ async def _party_payload(party_id: str) -> dict:
         "leader_id": p["leader_id"],
         "members": members,
         "match_starting": bool(p.get("match_starting", False)),
+        # Custom Lobby settings so members see what the leader picked
+        # before they auto-navigate. Defaults preserve legacy behaviour
+        # (bots on, FFA).
+        "bots_enabled": bool(p.get("bots_enabled", True)),
+        "tdm": bool(p.get("tdm", False)),
         "max_size": MAX_PARTY_SIZE,
         "ranked_tier": best_tier_idx,
         "ranked_tier_name": best_tier_name,
@@ -8630,12 +8672,17 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     room = PARTY_ROOMS.get(party_id)
     if room is not None:
         return room
-    # 5-minute private FFA. Bot-fill to MAX_PARTY_SIZE so a duo gets 2 bots,
-    # a solo party-leader gets 3 bots, a full 4-party gets 0 bots.
-    party = PARTIES.get(party_id)
-    member_count = len(party["members"]) if party else 1
-    bot_count = max(0, MAX_PARTY_SIZE - member_count)
-    room = GameRoom(is_ranked=False, match_duration=300.0)
+    # 5-minute private FFA (or TDM if leader picked it). Bot-fill to
+    # MAX_PARTY_SIZE — but only when the leader ENABLED bots via the
+    # Custom Lobby toggle. A party that opts out of bots gets a
+    # pure human-only room (great for 1v1s, 2v2s within friends).
+    party = PARTIES.get(party_id) or {}
+    member_count = len(party.get("members") or []) if party else 1
+    bots_enabled = bool(party.get("bots_enabled", True))   # legacy default: fill with bots
+    is_tdm = bool(party.get("tdm", False))
+    room_mode = "tdm" if is_tdm else "ffa"
+    bot_count = max(0, MAX_PARTY_SIZE - member_count) if bots_enabled else 0
+    room = GameRoom(is_ranked=False, match_duration=300.0, game_mode=room_mode)
     room.is_party = True
     room.party_id = party_id
     if bot_count > 0:
@@ -8646,7 +8693,8 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
             room.spawn_bot(name, disguised=True, difficulty=0.9)
     PARTY_ROOMS[party_id] = room
     PARTY_ROOM_TASKS[party_id] = asyncio.create_task(room.run())
-    logger.info("Party room spawned id=%s members=%d bots=%d", party_id, member_count, bot_count)
+    logger.info("Party room spawned id=%s members=%d bots=%d mode=%s",
+                party_id, member_count, bot_count, room_mode)
     return room
 
 
@@ -9125,8 +9173,15 @@ async def party_me(user: dict = Depends(get_current_user)):
 
 
 @api.post("/party/start")
-async def party_start(user: dict = Depends(get_current_user)):
-    """Leader flags the party as match_starting; all members poll & auto-nav."""
+async def party_start(payload: dict = None, user: dict = Depends(get_current_user)):
+    """Leader flags the party as match_starting; all members poll & auto-nav.
+
+    Optional body: `{"bots_enabled": bool, "tdm": bool}` — the "Custom
+    Lobby" flow from PartyPanel passes both so the party's private room
+    is created with the leader's chosen settings. Legacy callers who
+    POST with no body still work — `bots_enabled` defaults to True
+    (matches the old auto-fill behavior) and `tdm` to False.
+    """
     me_id = str(user["_id"])
     party_id = PARTY_MEMBER_INDEX.get(me_id)
     if not party_id or party_id not in PARTIES:
@@ -9134,8 +9189,16 @@ async def party_start(user: dict = Depends(get_current_user)):
     party = PARTIES[party_id]
     if party["leader_id"] != me_id:
         raise HTTPException(status_code=403, detail="Only the leader can start")
+    body = payload or {}
+    # Persist the two lobby-config flags so both the room-spawn helper
+    # AND the /party/me poll can read them. Defaults preserve old
+    # behaviour for any external caller.
     party["match_starting"] = True
-    return {"party_id": party_id}
+    party["bots_enabled"] = bool(body.get("bots_enabled", True))
+    party["tdm"] = bool(body.get("tdm", False))
+    logger.info("Party %s starting custom lobby: bots=%s tdm=%s",
+                party_id, party["bots_enabled"], party["tdm"])
+    return {"party_id": party_id, "bots_enabled": party["bots_enabled"], "tdm": party["tdm"]}
 
 
 @api.get("/spectate/{username}/info")

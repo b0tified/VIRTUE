@@ -9,8 +9,9 @@
    All members auto-navigate to the shared match room when either queue
    resolves (handled by QueueContext's casual/ranked pollers).
 */
-import { useCallback, useState } from "react";
-import { Users, Crown, Play, LogOut, Shield, Loader2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Users, Crown, Play, LogOut, Shield, Loader2, X, Bot, Users2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
 import { divisionRoman } from "@/game/rankIcons";
@@ -19,12 +20,31 @@ import { useQueue } from "@/context/QueueContext";
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
 export default function PartyPanel({ party, myId, refresh, className = "" }) {
+  const navigate = useNavigate();
   const {
     queueState, waitSec, joinRanked, cancelRanked,
     casualQueueState, casualWaitSec, joinCasual, cancelCasual,
   } = useQueue();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  // Custom Lobby settings — persisted only on the leader's client
+  // until they hit Start. Members receive the leader's final choice
+  // via the /party/me poll and use it purely to display the pending
+  // state (they don't have their own toggle). Default: bots on so
+  // solo party-leaders still get a filled lobby.
+  const [customBots, setCustomBots] = useState(true);
+
+  // Members: when the leader flips `match_starting`, auto-navigate
+  // into the private party room. The leader triggers the same nav
+  // manually in `startCustomLobby` so all seats land on the same
+  // Game.jsx URL within a single 5s poll window.
+  useEffect(() => {
+    if (!party?.party_id) return;
+    if (!party.match_starting) return;
+    // Skip if we're the leader (they navigated eagerly already).
+    if (party.leader_id === myId) return;
+    navigate(`/game?mode=party&party_id=${party.party_id}${party.tdm ? "&tdm=1" : ""}`);
+  }, [party?.match_starting, party?.party_id, party?.leader_id, party?.tdm, myId, navigate]);
 
   const leave = useCallback(async () => {
     try { await api.post("/party/leave"); } catch {}
@@ -56,6 +76,25 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
     setBusy(false);
     if (r?.error) setErr(r.error);
   }, [joinRanked]);
+
+  // "Custom Lobby" flow — leader-only. Kicks the party into a private
+  // party room (no matchmaking with strangers). The `customBots`
+  // toggle lets the leader pick whether the room is filled with bots
+  // or is human-only, per user request. All party members auto-
+  // navigate via the useEffect above; the leader navigates here
+  // immediately so no one gets left behind if their poll is slow.
+  const startCustomLobby = useCallback(async () => {
+    if (!party?.party_id) return;
+    setBusy(true); setErr(null);
+    try {
+      await api.post("/party/start", { bots_enabled: customBots, tdm: false });
+      navigate(`/game?mode=party&party_id=${party.party_id}`);
+    } catch (e) {
+      setErr(e.response?.data?.detail || "Couldn't start custom lobby.");
+    } finally {
+      setBusy(false);
+    }
+  }, [party?.party_id, customBots, navigate]);
 
   if (!party || !party.party_id) return null;
   const isLeader = party.leader_id === myId;
@@ -197,6 +236,38 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 </span>
               </button>
             )}
+            {/* CUSTOM LOBBY — the leader spins up a private party room
+                (no matchmaking with strangers). The bot toggle sits
+                RIGHT next to the button per user request so it reads
+                as one control. Disabled while any queue is active
+                so we don't fight the matchmaker. */}
+            <div className="flex items-stretch gap-1.5">
+              <button
+                onClick={startCustomLobby}
+                disabled={busy || inRankedQueue || inCasualQueue}
+                className="btn-pow bg-[#9D4EDD] text-white flex-1 [&]:py-1.5 [&]:text-sm"
+                data-testid="party-custom-lobby-button"
+                title="Start a private lobby with just your party (and optionally bots)"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <Users2 size={14} strokeWidth={3} /> CUSTOM LOBBY
+                </span>
+              </button>
+              <button
+                onClick={() => setCustomBots((v) => !v)}
+                disabled={busy}
+                aria-pressed={customBots}
+                className={
+                  "btn-pow [&]:px-2 [&]:py-1.5 [&]:text-sm border-2 border-black flex items-center gap-1 " +
+                  (customBots ? "bg-[#06A35F] text-white" : "bg-white text-black")
+                }
+                data-testid="party-custom-lobby-bots-toggle"
+                title={customBots ? "Bots ON — private lobby will fill with AI opponents" : "Bots OFF — party members only"}
+              >
+                <Bot size={12} strokeWidth={3} />
+                {customBots ? "BOTS ON" : "BOTS OFF"}
+              </button>
+            </div>
           </>
         ) : (
           // Non-leader view — show queue state if active, else "Waiting…"
