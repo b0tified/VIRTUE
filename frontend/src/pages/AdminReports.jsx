@@ -348,9 +348,43 @@ function LivePlayerStats() {
       {/* Top headline row: displayed count / real online / in-match / parties */}
       <div className="bg-white grid grid-cols-2 md:grid-cols-4 divide-x-2 divide-black/10 border-b-2 border-black/10">
         <HeadlineTile label="Displayed Online" value={stats.displayed_online} color="#0055FF" testid="live-headline-displayed" />
-        <HeadlineTile label="Real Online" value={stats.real_online} color="#06A35F" testid="live-headline-real" />
+        {/* Real Online = union of in-match WS users + lobby-heartbeat
+            users. Split shown below so admins can see the mix at a
+            glance (e.g. "40 online / 8 in-match / 32 in lobby"). */}
+        <HeadlineTile
+          label="Real Online"
+          value={stats.real_online}
+          sub={
+            Number.isFinite(stats.real_online_in_match) &&
+            Number.isFinite(stats.real_online_in_lobby)
+              ? `${stats.real_online_in_match} in-match · ${stats.real_online_in_lobby} in lobby`
+              : null
+          }
+          color="#06A35F"
+          testid="live-headline-real"
+        />
         <HeadlineTile label="In-Match" value={pop.in_match_total || 0} color="#E62429" testid="live-headline-in-match" />
-        <HeadlineTile label="Parties" value={stats.parties || 0} color="#9B59B6" testid="live-headline-parties" />
+        <HeadlineTile
+          label="Peak Online"
+          value={stats.peak_online || 0}
+          sub={
+            stats.peak_online_at
+              ? new Date(stats.peak_online_at).toLocaleString(undefined, {
+                  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                })
+              : null
+          }
+          color="#FFD700"
+          testid="live-headline-peak"
+        />
+      </div>
+      {/* Second-row secondary tile — parties count moved here so the
+          headline row has space for Peak Online without shrinking any
+          of the primary numbers. */}
+      <div className="bg-white px-4 py-2 border-b-2 border-black/10 flex items-center gap-4">
+        <div className="font-anton uppercase tracking-widest text-xs opacity-70">
+          Parties active <span className="ml-1 font-display text-lg text-[#9B59B6]" data-testid="live-headline-parties">{stats.parties || 0}</span>
+        </div>
       </div>
 
       {/* Mode popularity + queues side-by-side */}
@@ -418,7 +452,7 @@ function LivePlayerStats() {
   );
 }
 
-function HeadlineTile({ label, value, color, testid }) {
+function HeadlineTile({ label, value, color, testid, sub = null }) {
   return (
     <div className="px-4 py-3" data-testid={testid}>
       <div className="font-anton uppercase tracking-widest text-[10px] flex items-center gap-1.5" style={{ color }}>
@@ -428,6 +462,14 @@ function HeadlineTile({ label, value, color, testid }) {
       <div className="font-display text-3xl text-pow-shadow leading-none tabular-nums">
         {value}
       </div>
+      {sub && (
+        <div
+          className="font-anton uppercase tracking-widest text-[9px] mt-1 text-neutral-500 leading-tight"
+          data-testid={`${testid}-sub`}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

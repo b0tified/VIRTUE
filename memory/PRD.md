@@ -1644,3 +1644,19 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
   - **engine.js refactor** — needs a fresh session with a testing agent smoke-test after each extraction, since there's no unit-test safety net on the client engine.
 - **How to continue in a future session**: The `_lib/` package pattern established here is the template — add a new file, move a self-contained block, re-export from `server.py`, run the regression suite, done. Recommend one extraction per session (~200-400 lines each) so a broken import always shows up quickly.
 
+
+### 2026-02-24 — Admin moderation: lobby users counted + peak player tile
+- **User request**: (1) "Make real online player stat in moderation show people also just in lobby." (2) "Add peak playercount to moderation." (3) "Make it so new accounts can't use already existing name." — #3 already shipped last session (`/api/auth/register` case-insensitive uniqueness); verified still in place.
+- **Bug 1 — lobby users invisible**: `real_online` in `/api/admin/live-stats` was `len(ONLINE_USERS)` (WS-only), so anyone browsing challenges / friends / shop from the lobby didn't count. `is_online()` (used by friend cards) already unioned WS + heartbeat correctly — the admin endpoint just wasn't using the same logic.
+- **Fix — `count_real_online()` helper + peak tracking** (`/app/backend/server.py`):
+  - New module-level `PEAK_ONLINE = {"value": 0, "at": None}` stores the all-time high-water mark. Kept in memory only; server restart resets it (fine for a live-monitoring signal).
+  - New `count_real_online()` unions `ONLINE_USERS` keys (in-match) with fresh `PRESENCE_HEARTBEAT` keys (lobby, <= `HEARTBEAT_TTL` seconds old) — de-duplicates a user who has both (tab reload edge case) — GCs stale heartbeats opportunistically — and bumps `PEAK_ONLINE` when the count climbs.
+  - `/api/admin/live-stats` now returns 4 new fields alongside the existing `real_online`: `real_online_in_match`, `real_online_in_lobby`, `peak_online`, `peak_online_at` (ISO timestamp).
+- **Fix — Admin Moderation dashboard** (`/app/frontend/src/pages/AdminReports.jsx`):
+  - Replaced the "Parties" tile in the headline row with a new **PEAK ONLINE** tile (yellow) showing the peak count + human-readable "Aug 17, 08:27 PM" timestamp.
+  - **REAL ONLINE** tile now shows a sub-label `"N in-match · M in lobby"` so admins can see the mix at a glance.
+  - Parties moved to a compact secondary row below so nothing important got dropped.
+  - Added `sub` prop to the shared `HeadlineTile` component for reuse.
+- **Live verification** (Preview): Admin login → heartbeat ping → `/api/admin/live-stats` returns `real_online: 1, real_online_in_match: 0, real_online_in_lobby: 1, peak_online: 1, peak_online_at: "2026-08-17T20:27:40Z"`. Screenshot confirms all three tile changes render clean, zero JS errors.
+- **Tests** (`/app/backend/tests/test_admin_real_online_peak.py` — 8/8 pass): WS users count, lobby heartbeat users count, union without double-count, stale heartbeats dropped + GC'd, peak climbs on growth, peak persists across dips, peak timestamp parses as ISO 8601, grep-guards on `count_real_online()` + `peak_online` + `real_online_in_lobby` in the endpoint source. Combined with prior suites: 51/51 relevant pytests pass.
+

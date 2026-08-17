@@ -7349,6 +7349,44 @@ HEARTBEAT_TTL = 45.0
 # Value example: {"kind": "casual"} | {"kind": "party", "party_id": "..."}
 PLAYER_LOCATION: Dict[str, dict] = {}
 
+# ─── Peak online tracking ────────────────────────────────────────────
+# Admin moderation dashboard exposes the all-time peak concurrent real
+# online count (in-match WS + lobby heartbeat) so admins can see the
+# high-water mark at a glance. Stamped every time `count_real_online`
+# is called from the live-stats endpoint. `at` is an ISO timestamp of
+# when the peak was hit — helpful for correlating with news posts or
+# tournament windows. Kept in memory; a server restart resets it, but
+# that's fine for a live-monitoring signal (persistent history is
+# already captured via the seed-migration audit logs).
+PEAK_ONLINE: Dict[str, Any] = {"value": 0, "at": None}
+
+
+def count_real_online() -> int:
+    """Total unique users currently online — WS-connected (in-match)
+    OR lobby-heartbeated within the last `HEARTBEAT_TTL` seconds.
+    Also side-effects the `PEAK_ONLINE` high-water mark so the admin
+    dashboard's peak-players tile stays accurate. Kept as a single
+    helper so admin `/api/admin/live-stats`, friend-card `is_online`
+    lookups, and any future public "players online" widget all read
+    the same numbers.
+    """
+    now = time.time()
+    # Union of the two sources — a user in-match doesn't need a
+    # heartbeat, and a lobby user doesn't have a WS connection.
+    unique: set = set(ONLINE_USERS.keys())
+    for uid, ts in list(PRESENCE_HEARTBEAT.items()):
+        if (now - ts) <= HEARTBEAT_TTL:
+            unique.add(uid)
+        else:
+            # Opportunistic GC of stale heartbeats. Cheap and keeps
+            # the dict from growing unbounded across a long uptime.
+            PRESENCE_HEARTBEAT.pop(uid, None)
+    total = len(unique)
+    if total > int(PEAK_ONLINE.get("value") or 0):
+        PEAK_ONLINE["value"] = total
+        PEAK_ONLINE["at"] = datetime.now(timezone.utc).isoformat()
+    return total
+
 
 def is_online(user_id: str) -> bool:
     if ONLINE_USERS.get(user_id, 0) > 0:
@@ -8112,7 +8150,18 @@ async def admin_live_stats(user: dict = Depends(get_current_user)):
 
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
-        "real_online": len(ONLINE_USERS),
+        # `real_online` now unions WS (in-match) + lobby heartbeat so a
+        # player sitting on the lobby screen (queue/challenges/friends)
+        # counts too — before this it was WS-only, which understated
+        # traffic because casual browsers never showed up.
+        "real_online": count_real_online(),
+        "real_online_in_match": len(ONLINE_USERS),
+        "real_online_in_lobby": sum(
+            1 for uid, ts in PRESENCE_HEARTBEAT.items()
+            if (time.time() - ts) <= HEARTBEAT_TTL and uid not in ONLINE_USERS
+        ),
+        "peak_online": int(PEAK_ONLINE.get("value") or 0),
+        "peak_online_at": PEAK_ONLINE.get("at"),
         "displayed_online": SYNTHETIC_ONLINE["value"],
         "rooms": {
             "quick_match_ffa": {"humans": qm_ffa_humans, "mode": "ffa"},
