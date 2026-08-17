@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -447,6 +447,59 @@ function LivePlayerStats() {
           <RoomTile name="Party · FFA"     room={rooms.party_ffa}       testid="room-party-ffa" />
           <RoomTile name="Party · TDM"     room={rooms.party_tdm}       testid="room-party-tdm" />
         </div>
+      </div>
+
+      {/* Matches played per mode — last 24 hours. Added per user
+          request: gives moderation a longer-window signal than the
+          instantaneous "in-match" counters above. Counts are
+          DISTINCT-match aggregates (a 4-player match = 1, not 4). */}
+      {stats.matches_last_24h && (
+        <div className="bg-white p-4 border-t-2 border-black/10" data-testid="matches-24h-panel">
+          <div className="font-anton uppercase tracking-widest text-xs mb-2 opacity-80 flex items-center gap-2">
+            <Activity size={14} strokeWidth={3} className="text-neutral-700" />
+            <span>Matches Played — Last 24h</span>
+            <span className="ml-auto font-display text-lg text-pow-shadow tabular-nums" data-testid="matches-24h-total">
+              {stats.matches_last_24h.total || 0}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <ModeCountTile
+              label="FFA Casual"
+              value={stats.matches_last_24h.ffa_casual || 0}
+              color="#0055FF"
+              testid="matches-24h-ffa-casual"
+            />
+            <ModeCountTile
+              label="FFA Ranked"
+              value={stats.matches_last_24h.ffa_ranked || 0}
+              color="#E62429"
+              testid="matches-24h-ffa-ranked"
+            />
+            <ModeCountTile
+              label="TDM Casual"
+              value={stats.matches_last_24h.tdm_casual || 0}
+              color="#06A35F"
+              testid="matches-24h-tdm-casual"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModeCountTile({ label, value, color, testid }) {
+  return (
+    <div className="border-2 border-black/10 rounded-sm px-3 py-2" data-testid={testid}>
+      <div
+        className="font-anton uppercase tracking-widest text-[10px] flex items-center gap-1.5"
+        style={{ color }}
+      >
+        <span className="inline-block w-2 h-2 rounded-full" style={{ background: color }} />
+        {label}
+      </div>
+      <div className="font-display text-2xl text-pow-shadow leading-none tabular-nums">
+        {value}
       </div>
     </div>
   );

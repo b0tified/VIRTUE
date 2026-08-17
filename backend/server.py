@@ -967,11 +967,12 @@ async def on_startup():
 
     # Casual / quick-match bots wear human-looking names and disguise as real
     # players (no BOT badge, no -bot platform). Pick a stable random set.
-    # difficulty=1.15 — buffed from 0.9 (user feedback: still too easy).
-    # They now hit harder + react quicker, but stay under the 1.5 smart-AI
-    # threshold so ranked bots remain a step above.
+    # difficulty=0.9 — nerfed from 1.15 per user request. Sub-Platinum
+    # players are the ones meeting casual bots (the ranked matchmaker
+    # pulls Plat+ players away), so keep this forgiving. Ranked bots
+    # (below) stay at 1.9 for the real challenge.
     for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
-        game_room.spawn_bot(name, disguised=True, difficulty=1.15)
+        game_room.spawn_bot(name, disguised=True, difficulty=0.9)
     # Shared ranked room: 4 disguised bots so the lobby always feels full
     # (was 1 — players reported "empty match"). difficulty=1.9 matches the
     # bronze ranked-bot baseline; per-bot rank disguise is rerolled to the
@@ -3068,7 +3069,11 @@ QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 WEAPON_CONFIGS = {
     "ak47":  {
         "damage": SHOT_DAMAGE,
-        "cooldown_ms": SHOT_COOLDOWN_MS,
+        # Small fire-rate buff per user request: 320ms → 285ms
+        # (~12% faster cadence, ~3.5 shots/s → ~3.9 shots/s). Kept as
+        # a local override rather than moving SHOT_COOLDOWN_MS so the
+        # sniper/laser cooldowns don't drift with future AK tweaks.
+        "cooldown_ms": 285,
         "mag_size": 25,
         "reload_ms": 1500,
         "headshot_mult": 2.0,
@@ -3081,11 +3086,12 @@ WEAPON_CONFIGS = {
         "spread_max": 0.16,
         "spread_decay": 4.0,    # per second
         "ads_spread_mult": 0.25,
-        # Per-user request: AK bullets are "bigger" for easier hits.
-        # Inflates every player hitbox sphere by this many metres when the
-        # AK is the active weapon — effectively turns the pinpoint ray
-        # into a fat cylinder without touching sniper/laser precision.
-        "projectile_thickness": 0.45,
+        # AK "fat bullets" — inflates every player hitbox sphere by
+        # this many metres when the AK is the active weapon. Bumped
+        # 0.45 → 0.55 per user request for a second buff pass —
+        # noticeable near-miss forgiveness without turning the ray
+        # into an aim-bot. Sniper/laser stay pinpoint (default 0.0).
+        "projectile_thickness": 0.55,
     },
     "sniper": {
         # Bolt-action-style precision rifle. Two-shot mag with a
@@ -3819,7 +3825,11 @@ class GameRoom:
             elif self.is_ranked:
                 diff = 1.9
             else:
-                diff = 1.15
+                # Casual FFA — nerfed 1.15 → 0.9 per user request:
+                # players below Platinum should meet forgiving bots so
+                # the on-boarding curve feels good. `spawn_bot` clamps
+                # to a min of 0.5 so we still get some target practice.
+                diff = 0.9
             for i in range(deficit):
                 name = pool[i] if i < len(pool) else f"shadow_{random.randint(100, 999)}"
                 self.spawn_bot(name, disguised=True, difficulty=diff)
@@ -5020,6 +5030,17 @@ class GameRoom:
                 continue
             difficulty = float(getattr(bot, "difficulty", 1.0))
             smart = difficulty >= 1.5  # ranked-only AI enhancements
+            # High-tier smart bots (disguised as DIAMOND or above,
+            # tier index >= 5) get extra behavioural intelligence
+            # WITHOUT any damage / HP buff — per user request:
+            #   - faster target-lock refresh (0.8s vs 1.5s)
+            #   - cover-seek kicks in earlier (HP < 65 vs < 45)
+            #   - longer lead prediction against strafers
+            #   - tighter mid-range preference
+            # `bot.rank_tier` is set by the disguise pass in
+            # `spawn_bot`; for undisguised ranked bots it defaults to
+            # 0 so this whole block is a no-op there.
+            elite = smart and int(getattr(bot, "rank_tier", 0) or 0) >= 5
 
             # --- Target selection ---------------------------------------------------
             # Smart bots lock onto a target for 1.5s before re-evaluating,
@@ -5070,7 +5091,12 @@ class GameRoom:
                         target = p
                 if target is not None:
                     bot.bot_target_id = target.id
-                    bot.bot_target_locked_until = now_s + (1.5 if smart else 0.5)
+                    # Elite (Diamond+) bots refresh their target more
+                    # often so they can switch focus to a wounded new
+                    # threat instead of tunnel-visioning. 0.8s lock
+                    # vs 1.5s standard smart lock.
+                    lock_dur = 0.8 if elite else (1.5 if smart else 0.5)
+                    bot.bot_target_locked_until = now_s + lock_dur
                     bot.bot_target_prev_pos = None  # reset velocity cache
                     bot.bot_target_prev_ts = 0.0
                 else:
@@ -5088,10 +5114,28 @@ class GameRoom:
                 else:
                     wx = math.cos(bot.bot_strafe_t * 0.4) * 2 * dt
                     wz = math.sin(bot.bot_strafe_t * 0.4) * 2 * dt
-                if not self.collides_obstacle(bot.x + wx, bot.z):
+                x_ok = not self.collides_obstacle(bot.x + wx, bot.z)
+                z_ok = not self.collides_obstacle(bot.x, bot.z + wz)
+                if x_ok:
                     bot.x += wx
-                if not self.collides_obstacle(bot.x, bot.z + wz):
+                if z_ok:
                     bot.z += wz
+                # Same anti-stuck fallback as the pursuit branch —
+                # if the wander vector is pinned against a corner,
+                # try a perpendicular slide so the bot doesn't
+                # freeze in front of a box waiting for a target.
+                if not x_ok and not z_ok:
+                    mag = math.hypot(wx, wz) or 1.0
+                    perp_x, perp_z = -wz / mag, wx / mag
+                    step = 1.5 * dt
+                    for sign in (1.0, -1.0):
+                        sx = bot.x + perp_x * sign * step
+                        sz = bot.z + perp_z * sign * step
+                        if not self.collides_obstacle(sx, sz):
+                            bot.x, bot.z = sx, sz
+                            break
+                    else:
+                        bot.bot_strafe_t += 1.5   # rotate the wander phase
                 continue
 
             # --- Aim (with optional lead) -------------------------------------------
@@ -5106,7 +5150,11 @@ class GameRoom:
                 ddt = max(0.05, now_s - bot.bot_target_prev_ts)
                 vx_t = (target.x - bot.bot_target_prev_pos[0]) / ddt
                 vz_t = (target.z - bot.bot_target_prev_pos[2]) / ddt
-                lead_t = 0.18 * min(2.0, (difficulty - 1.4))
+                # Elite (Diamond+) bots lead ~50% further, punishing
+                # sustained strafing much harder without giving them
+                # extra damage or hitscan tightness.
+                lead_scale = 0.27 if elite else 0.18
+                lead_t = lead_scale * min(2.0, (difficulty - 1.4))
                 tx = target.x + vx_t * lead_t
                 tz = target.z + vz_t * lead_t
             bot.bot_target_prev_pos = (target.x, target.y, target.z)
@@ -5130,7 +5178,11 @@ class GameRoom:
             # to shoot, then duck back. Falls back to the normal range
             # control when no cover is found.
             seeking_cover = False
-            if smart and (bot.hp < 45 or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
+            # Elite (Diamond+) bots start looking for cover at a
+            # higher HP threshold (65 vs 45) — they preserve HP more
+            # strategically instead of trading shots to the death.
+            cover_hp = 65 if elite else 45
+            if smart and (bot.hp < cover_hp or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
                 best_cov = None
                 best_cov_d = 1e9
                 for ob in self.arena["obstacles"]:
@@ -5201,13 +5253,39 @@ class GameRoom:
                 mz_ /= L
                 nx = bot.x + mx_ * move_speed
                 nz = bot.z + mz_ * move_speed
-                if not self.collides_obstacle(nx, bot.z):
+                x_ok = not self.collides_obstacle(nx, bot.z)
+                z_ok = not self.collides_obstacle(bot.x, nz)
+                if x_ok:
                     bot.x = nx
-                else:
-                    bot.bot_strafe_t += 0.5  # flip strafe direction sooner
-                if not self.collides_obstacle(bot.x, nz):
+                if z_ok:
                     bot.z = nz
-                else:
+                # Anti-stuck: if BOTH axes were blocked the bot is
+                # pinned against a corner or wedged into an obstacle
+                # and would freeze without a slide. Try both
+                # perpendicular slide directions (right-hand and
+                # left-hand along the movement vector) — whichever
+                # opens up first wins. Also flip strafe phase so the
+                # subsequent frames pull the bot along the wall
+                # instead of back into it. Fixes the "bots freeze
+                # against boxes / walls" complaint.
+                elif not x_ok and not z_ok:
+                    # Perpendicular unit vector to the blocked movement.
+                    perp_x, perp_z = -mz_, mx_
+                    slid = False
+                    for sign in (1.0, -1.0):
+                        sx = bot.x + perp_x * sign * move_speed
+                        sz = bot.z + perp_z * sign * move_speed
+                        if not self.collides_obstacle(sx, sz):
+                            bot.x, bot.z = sx, sz
+                            slid = True
+                            break
+                    if not slid:
+                        # Fully cornered — nudge yaw so the next frame
+                        # picks a different heading. Cheap, robust.
+                        bot.bot_strafe_t += 1.2
+                elif not x_ok:
+                    bot.bot_strafe_t += 0.5  # flip strafe direction sooner
+                elif not z_ok:
                     bot.bot_strafe_t += 0.5
                 # Ranked bots forfeit spawn immunity the moment they start
                 # moving — players were complaining that fresh ranked
@@ -8148,6 +8226,45 @@ async def admin_live_stats(user: dict = Depends(get_current_user)):
     # signal from casual FFA.
     ranked_all = ranked_humans + ranked_bot_humans
 
+    # ── Matches played per mode, last 24 hours ──────────────────────
+    # Aggregated from `db.match_history`. Each real player in a match
+    # gets one row (bots don't have `user_id` → not in this collection),
+    # so counting DISTINCT `match_id` per mode gives the true match
+    # count. Grouping by `game_mode` (ffa/tdm) THEN `mode` (casual/
+    # ranked) so admins can see e.g. "72 casual FFA matches, 18 ranked
+    # FFA, 41 casual TDM" in the last day.
+    matches_last_24h = {"ffa_casual": 0, "ffa_ranked": 0, "tdm_casual": 0, "total": 0}
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        pipeline = [
+            {"$match": {"ended_at": {"$gte": cutoff}}},
+            # First collapse to one row per (match_id, game_mode, mode)
+            # so multi-player matches don't get counted N times.
+            {"$group": {
+                "_id": {"match_id": "$match_id", "game_mode": "$game_mode", "mode": "$mode"},
+            }},
+            {"$group": {
+                "_id": {"game_mode": "$_id.game_mode", "mode": "$_id.mode"},
+                "count": {"$sum": 1},
+            }},
+        ]
+        async for row in db.match_history.aggregate(pipeline):
+            gm = (row["_id"].get("game_mode") or "ffa").lower()
+            md = (row["_id"].get("mode") or "casual").lower()
+            n = int(row.get("count") or 0)
+            matches_last_24h["total"] += n
+            key = f"{gm}_{md}"
+            if key in matches_last_24h:
+                matches_last_24h[key] += n
+            elif gm == "ffa":
+                # Any FFA row that's neither casual nor ranked
+                # (defensive default). Route to ffa_casual.
+                matches_last_24h["ffa_casual"] += n
+            else:
+                matches_last_24h["tdm_casual"] += n
+    except Exception as e:
+        logger.warning("matches_last_24h aggregation failed: %s", e)
+
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         # `real_online` now unions WS (in-match) + lobby heartbeat so a
@@ -8189,6 +8306,9 @@ async def admin_live_stats(user: dict = Depends(get_current_user)):
             # mode) — sanity number that should be <= real_online.
             "in_match_total": ffa_in_match + tdm_in_match + ranked_all,
         },
+        # 24h match-count breakdown, per user request. Keys mirror the
+        # `mode_popularity` shape so the admin UI can pair them 1:1.
+        "matches_last_24h": matches_last_24h,
     }
 
 
@@ -8520,7 +8640,10 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     room.party_id = party_id
     if bot_count > 0:
         for name in random.sample(DISGUISED_BOT_NAMES, bot_count):
-            room.spawn_bot(name, disguised=True, difficulty=1.15)
+            # Party rooms are casual — match the nerfed casual bot
+            # difficulty (0.9) so a small party doesn't get slammed
+            # by fill bots harder than the actual quick-match ones.
+            room.spawn_bot(name, disguised=True, difficulty=0.9)
     PARTY_ROOMS[party_id] = room
     PARTY_ROOM_TASKS[party_id] = asyncio.create_task(room.run())
     logger.info("Party room spawned id=%s members=%d bots=%d", party_id, member_count, bot_count)

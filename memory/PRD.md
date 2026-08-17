@@ -1660,3 +1660,39 @@ FFA payloads remain unchanged — they set `game_mode: "ffa"` and omit `team_sco
 - **Live verification** (Preview): Admin login → heartbeat ping → `/api/admin/live-stats` returns `real_online: 1, real_online_in_match: 0, real_online_in_lobby: 1, peak_online: 1, peak_online_at: "2026-08-17T20:27:40Z"`. Screenshot confirms all three tile changes render clean, zero JS errors.
 - **Tests** (`/app/backend/tests/test_admin_real_online_peak.py` — 8/8 pass): WS users count, lobby heartbeat users count, union without double-count, stale heartbeats dropped + GC'd, peak climbs on growth, peak persists across dips, peak timestamp parses as ISO 8601, grep-guards on `count_real_online()` + `peak_online` + `real_online_in_lobby` in the endpoint source. Combined with prior suites: 51/51 relevant pytests pass.
 
+
+### 2026-02-24 — Bot/weapon tuning pass + Moderation matches-last-24h
+Five user-requested changes shipped together (all backend-side + one admin UI panel).
+
+**1. Matches Played — Last 24h (Moderation dashboard)**
+- New Mongo aggregation in `/api/admin/live-stats` collapses `db.match_history` by `(match_id, game_mode, mode)` FIRST (so a 4-player match counts as 1, not 4), then groups by mode. Emits `matches_last_24h: {ffa_casual, ffa_ranked, tdm_casual, total}`.
+- Admin UI adds a dedicated "Matches Played — Last 24h" panel with a total tally in the header + three color-coded mode tiles (`ModeCountTile`). Reuses `Activity` icon from lucide.
+
+**2. Nerf sub-Platinum bots (casual + party FFA)**
+- Casual room seed spawn (`server.py` line ~975) and refill (~3830) both drop 1.15 → **0.9** difficulty. Party room fill bots also drop to 0.9 so a 2-person party doesn't get slammed by fill bots harder than quick-match. Ranked bots stay at **1.9**, TDM at **1.45** — nerf targets sub-Plat only.
+
+**3. AK small buffs**
+- `projectile_thickness` 0.45 → **0.55** (near-miss hitbox forgiveness bumped once more per user).
+- `cooldown_ms` 320 → **285** (~12% faster fire rate, ~3.5 → ~3.9 shots/s). Local override so sniper/laser cooldowns don't drift.
+
+**4. Smarter Diamond+ bots WITHOUT stat buffs**
+- New `elite` behavioural flag in `_tick_bots`: `smart and bot.rank_tier >= 5`. Damage / HP / cooldowns untouched. Only behaviour:
+  - Target lock refresh **0.8s** (vs 1.5s smart / 0.5s casual) — elites switch focus to wounded threats faster.
+  - Cover-seek activates at **HP < 65** (vs < 45) — elites protect HP earlier.
+  - Lead prediction scale **0.27** (vs 0.18) — punishes sustained strafers.
+- Regression guard test asserts NO stat scaling anywhere is keyed on `elite` (grep for `bot.max_hp *=`, `damage *=`, etc. within 60 chars of `elite`).
+
+**5. Anti-stuck bot movement**
+- Pursuit + wander branches now share the same slide-fallback: when BOTH X and Z axes are blocked, try a perpendicular slide (both `+/-` directions). If both fail, nudge `bot_strafe_t` to rotate the heading for the next frame. Fixes the "bots freeze against boxes / walls" complaint.
+- Wander branch (target-less) had the same freeze bug — same fix applied there.
+
+**Tests** (`/app/backend/tests/test_bot_and_weapon_tuning_2026_02.py` — 19/19 pass):
+- `TestAKBuffs` — thickness == 0.55, cooldown == 285, cooldown in safe [250, 320] window, sniper/laser stay pinpoint.
+- `TestCasualBotsNerfed` — casual startup + refill + party rooms all at 0.9; ranked stays at 1.9.
+- `TestElitesSmarterWithoutStatBuffs` — `elite` gated on tier >= 5; grep-guards on lock_dur / cover_hp / lead_scale; forbid-list check that no `elite`-keyed stat scaling was smuggled in.
+- `TestBotAntiStuck` — pursuit + wander perpendicular slide code both present, slide tries both directions.
+- `TestMatchesLast24hAggregation` — endpoint computes the dict, dedupes by `match_id`, includes the key in the response.
+- 74/74 pass across all recent regression suites.
+
+**Live verification** (Preview 1400×900): Admin Moderation dashboard renders new panel with 0-count tiles (fresh data), Peak Online + Real Online in-match/in-lobby split all present, zero JS errors. Backend startup logs confirm casual bots spawn at `diff=0.90`.
+
