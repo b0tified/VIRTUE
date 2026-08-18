@@ -1821,3 +1821,23 @@ Two quality-of-life changes shipped together.
 
 **Tests** (`/app/backend/tests/test_profile_weapon_top_and_mobile_autofire.py` — 8/8 pass): grep-guards that assert weapon-section renders before rank-section in Profile.jsx, and the engine still has the touch auto-fire block with all four required properties (touch-active gate, cooldown check, `hasEnemyInCrosshair()` call, `_lastTouchAutoFireMs` initialised). Combined suites: no regressions.
 
+
+### 2026-02-24 — Elite Diff Slider added to Moderation dashboard
+- **User request**: "Elite Diff Slider Too: expose CASUAL_ELITE_BOT_DIFF in the Moderation dashboard so you can tune how sharp the smurfs feel, not just how often they show up."
+- **Backend**:
+  - `_CASUAL_ELITE_BOT_STATE` now holds both `ratio` AND `diff`. Two live-tunable helpers: `_get_casual_elite_bot_ratio()` and new `_get_casual_elite_bot_diff()`.
+  - Smurf spawn call switched from the frozen `CASUAL_ELITE_BOT_DIFF` constant to `_get_casual_elite_bot_diff()` so slider changes take effect on the next fill.
+  - `SmurfRatioIn` Pydantic model made partial-update friendly: both `ratio` and `diff` are now `Optional`. `diff` clamped to `[1.5, 2.5]` — below 1.5 kills the smart-AI upgrade, above 2.5 out-guns full ranked (1.9).
+  - `POST /api/admin/settings/smurf` accepts any subset; only the fields present are applied. GET always returns both.
+- **Frontend** (`AdminReports.jsx`): `SmurfRatioSlider` panel restructured to hold TWO sliders in one card:
+  - **Frequency** (purple, 0-100%) — unchanged behaviour.
+  - **Sharpness** (red, step 0.05 across 1.50-2.50) — displays actual multiplier with 2-decimal precision.
+  - Shared debounced save (250ms) coalesces rapid drags on either slider into a single POST. Both sliders share the same "saving…" / "✓ saved" flash pill.
+- **Tests** (`test_admin_smurf_slider.py` + `test_party_lobby_and_smurf_bots.py`, 77/77 pass):
+  - `test_admin_can_write_diff_only` — partial update leaves ratio untouched.
+  - `test_admin_can_write_both` — both fields together.
+  - `test_diff_below_1_5_rejected_by_pydantic` + `test_diff_above_2_5_rejected_by_pydantic` — clamping.
+  - `test_diff_boundary_values_allowed` — 1.5 and 2.5 both valid.
+  - Updated grep-guard on the smurf spawn source to require `_get_casual_elite_bot_diff()` (not the frozen constant).
+- **Live verification** (Preview, 1400×900): dual-slider panel rendered — Frequency 15% purple, Sharpness 1.70 red → dragged Sharpness to 2.20 → API confirmed `{ratio: 0.15, diff: 2.2}` → reset cleanly. Zero JS errors. 4 curl paths (partial ratio, partial diff, both, invalid) all responded correctly (200/200/200/422).
+

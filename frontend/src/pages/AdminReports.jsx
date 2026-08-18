@@ -495,7 +495,11 @@ function LivePlayerStats() {
 }
 
 function SmurfRatioSlider() {
-  const [ratio, setRatio] = useState(null);   // null until first fetch
+  // Two-slider panel: casual smurf frequency (%) AND smurf sharpness (diff).
+  // Both share the same GET / POST endpoint — POST accepts partial
+  // updates so each slider saves independently on debounce.
+  const [ratio, setRatio] = useState(null);
+  const [diff, setDiff] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [err, setErr] = useState(null);
@@ -505,24 +509,25 @@ function SmurfRatioSlider() {
     let alive = true;
     api.get("/admin/settings/smurf")
       .then(({ data }) => {
-        if (alive) setRatio(Number(data.ratio) || 0);
+        if (!alive) return;
+        setRatio(Number(data.ratio) || 0);
+        setDiff(Number(data.diff) || 1.7);
       })
       .catch((e) => {
-        if (alive) setErr(e?.response?.data?.detail || "Failed to load smurf ratio.");
+        if (alive) setErr(e?.response?.data?.detail || "Failed to load smurf settings.");
       });
     return () => { alive = false; };
   }, []);
 
-  // Debounced save so dragging the slider doesn't spam the backend —
-  // the request only fires 250ms after the user stops moving. Fires
-  // an inline "Saved" pill for 900ms after each successful write so
-  // there's clear feedback the change took effect.
-  const scheduleSave = useCallback((next) => {
+  // Shared debounced save so BOTH sliders coalesce into one request
+  // when the admin drags them in quick succession. Passing only the
+  // key(s) that changed matches the endpoint's partial-update shape.
+  const scheduleSave = useCallback((patch) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setSaving(true); setErr(null);
       try {
-        await api.post("/admin/settings/smurf", { ratio: next });
+        await api.post("/admin/settings/smurf", patch);
         setSavedFlash(true);
         setTimeout(() => setSavedFlash(false), 900);
       } catch (e) {
@@ -542,11 +547,18 @@ function SmurfRatioSlider() {
   }
 
   const pct = Math.round((ratio || 0) * 100);
+  // Difficulty slider granularity: step 0.05 across the [1.5, 2.5]
+  // window (below 1.5 kills the elite AI behaviour, above 2.5 out-
+  // guns full ranked at 1.9). Slider surfaces integer 30-50; display
+  // shows the actual 1.50-2.50 value so the admin knows the exact
+  // multiplier the spawn loop will use.
+  const diffPct = Math.round(((diff || 1.7) - 1.5) * 100);   // 0..100 → 1.5..2.5
+
   return (
     <div className="bg-white p-4 border-t-2 border-black/10" data-testid="smurf-slider-panel">
       <div className="font-anton uppercase tracking-widest text-xs mb-2 opacity-80 flex items-center gap-2">
         <Sprout size={14} strokeWidth={3} className="text-[#9D4EDD]" />
-        <span>Casual Smurf-Bot Frequency</span>
+        <span>Casual Smurf Bots</span>
         {saving && (
           <span className="ml-auto flex items-center gap-1 text-neutral-500">
             <Loader2 size={12} strokeWidth={3} className="animate-spin" /> saving…
@@ -556,32 +568,73 @@ function SmurfRatioSlider() {
           <span className="ml-auto text-[#06A35F]" data-testid="smurf-slider-saved">✓ saved</span>
         )}
       </div>
-      <div className="flex items-center gap-3">
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          value={pct}
-          onChange={(e) => {
-            const next = Number(e.target.value) / 100;
-            setRatio(next);
-            scheduleSave(next);
-          }}
-          className="flex-1 accent-[#9D4EDD]"
-          data-testid="smurf-slider-input"
-          aria-label="Casual smurf-bot ratio"
-        />
-        <div
-          className="font-display text-2xl text-pow-shadow leading-none tabular-nums w-16 text-right"
-          data-testid="smurf-slider-value"
-        >
-          {pct}%
+
+      {/* Frequency slider — how OFTEN casual fill bots become smurfs. */}
+      <div className="mb-3">
+        <div className="font-anton uppercase tracking-widest text-[10px] mb-1 text-neutral-600">Frequency</div>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={pct}
+            onChange={(e) => {
+              const next = Number(e.target.value) / 100;
+              setRatio(next);
+              scheduleSave({ ratio: next });
+            }}
+            className="flex-1 accent-[#9D4EDD]"
+            data-testid="smurf-slider-input"
+            aria-label="Casual smurf-bot frequency"
+          />
+          <div
+            className="font-display text-2xl text-pow-shadow leading-none tabular-nums w-16 text-right"
+            data-testid="smurf-slider-value"
+          >
+            {pct}%
+          </div>
+        </div>
+        <div className="mt-1 font-anton uppercase tracking-widest text-[9px] text-neutral-500">
+          Share of casual fill bots that spawn as Diamond II with elite AI.
         </div>
       </div>
-      <div className="mt-1 font-anton uppercase tracking-widest text-[9px] text-neutral-500">
-        Share of casual fill bots that spawn as Diamond II with elite AI. Applies on the next bot fill.
+
+      {/* Sharpness slider — how HARD the smurf plays. */}
+      <div>
+        <div className="font-anton uppercase tracking-widest text-[10px] mb-1 text-neutral-600">Sharpness</div>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            value={diffPct}
+            onChange={(e) => {
+              const next = 1.5 + Number(e.target.value) / 100;   // 1.5..2.5
+              setDiff(next);
+              scheduleSave({ diff: next });
+            }}
+            className="flex-1 accent-[#E62429]"
+            data-testid="smurf-diff-slider-input"
+            aria-label="Casual smurf-bot difficulty"
+          />
+          <div
+            className="font-display text-2xl text-pow-shadow leading-none tabular-nums w-16 text-right"
+            data-testid="smurf-diff-slider-value"
+          >
+            {(diff || 1.7).toFixed(2)}
+          </div>
+        </div>
+        <div className="mt-1 font-anton uppercase tracking-widest text-[9px] text-neutral-500">
+          AI difficulty multiplier — 1.50 baseline smart, 1.70 default, 1.90 matches ranked, 2.50 max.
+        </div>
       </div>
+
+      <div className="mt-2 font-anton uppercase tracking-widest text-[9px] text-neutral-400">
+        Both settings apply on the next bot fill in any casual room.
+      </div>
+
       {err && (
         <div className="mt-2 px-2 py-1 text-[10px] font-anton uppercase tracking-widest bg-[#FFE4E4] text-[#7a1115] border border-[#E62429]" data-testid="smurf-slider-error">
           {err}

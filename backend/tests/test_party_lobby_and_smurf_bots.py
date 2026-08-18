@@ -83,8 +83,11 @@ class TestCasualSmurfBotsInjection:
         assert "disguise_tier_idx=5" in src
 
     def test_smurf_uses_elite_diff_constant(self):
+        """Smurf spawn must call `_get_casual_elite_bot_diff()` so
+        runtime slider changes take effect on the next fill.
+        Previously used the frozen `CASUAL_ELITE_BOT_DIFF` constant."""
         src = pathlib.Path("/app/backend/server.py").read_text(encoding="utf-8")
-        assert "difficulty=CASUAL_ELITE_BOT_DIFF" in src
+        assert "difficulty=_get_casual_elite_bot_diff()" in src
 
     def test_smurf_ratio_reasonable_default(self):
         """0.15 default = ~1 in 7 casual fill bots is a smurf, which

@@ -32,13 +32,17 @@ import server as srv  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _reset_ratio():
-    """Every test starts + ends at the default 0.15 so ordering
-    doesn't matter and one test's mutation can't poison another."""
+    """Every test starts + ends at the defaults so ordering doesn't
+    matter and one test's mutation can't poison another."""
     srv._CASUAL_ELITE_BOT_STATE["ratio"] = 0.15
+    srv._CASUAL_ELITE_BOT_STATE["diff"] = 1.7
     srv.CASUAL_ELITE_BOT_RATIO = 0.15
+    srv.CASUAL_ELITE_BOT_DIFF = 1.7
     yield
     srv._CASUAL_ELITE_BOT_STATE["ratio"] = 0.15
+    srv._CASUAL_ELITE_BOT_STATE["diff"] = 1.7
     srv.CASUAL_ELITE_BOT_RATIO = 0.15
+    srv.CASUAL_ELITE_BOT_DIFF = 1.7
 
 
 ADMIN = {"_id": "admin_id", "role": "admin", "username": "admin"}
@@ -67,6 +71,23 @@ class TestSetSmurfRatio:
         # see the current value.
         assert srv.CASUAL_ELITE_BOT_RATIO == 0.45
 
+    async def test_admin_can_write_diff_only(self):
+        """Endpoint accepts partial updates — the diff slider can save
+        without also sending the ratio, and vice versa."""
+        payload = srv.SmurfRatioIn(diff=2.1)
+        out = await srv.admin_set_smurf_ratio(payload, ADMIN)
+        assert out["diff"] == 2.1
+        assert srv._get_casual_elite_bot_diff() == 2.1
+        assert srv.CASUAL_ELITE_BOT_DIFF == 2.1
+        # Ratio must NOT have been touched — partial update leaves the
+        # other field alone.
+        assert srv._get_casual_elite_bot_ratio() == 0.15
+
+    async def test_admin_can_write_both(self):
+        payload = srv.SmurfRatioIn(ratio=0.4, diff=1.9)
+        out = await srv.admin_set_smurf_ratio(payload, ADMIN)
+        assert out == {"ratio": 0.4, "diff": 1.9}
+
     async def test_non_admin_rejected(self):
         payload = srv.SmurfRatioIn(ratio=0.5)
         with pytest.raises(HTTPException) as exc:
@@ -77,18 +98,33 @@ class TestSetSmurfRatio:
 
     def test_ratio_above_one_rejected_by_pydantic(self):
         with pytest.raises(Exception):
-            # `Field(ge=0.0, le=1.0)` on SmurfRatioIn → ValidationError.
             srv.SmurfRatioIn(ratio=1.5)
 
     def test_negative_ratio_rejected_by_pydantic(self):
         with pytest.raises(Exception):
             srv.SmurfRatioIn(ratio=-0.01)
 
+    def test_diff_below_1_5_rejected_by_pydantic(self):
+        """Below 1.5 the smurf loses its smart-AI behaviour — clamp
+        stops admins from accidentally reducing them to dumb bots."""
+        with pytest.raises(Exception):
+            srv.SmurfRatioIn(diff=1.4)
+
+    def test_diff_above_2_5_rejected_by_pydantic(self):
+        """Above 2.5 the smurf out-guns ranked (1.9) — clamp keeps
+        casual distinct from ranked."""
+        with pytest.raises(Exception):
+            srv.SmurfRatioIn(diff=2.51)
+
     def test_zero_and_one_allowed(self):
-        """Both endpoints of the range are valid — 0 = never spawn a
-        smurf, 1 = every casual fill bot is a smurf."""
         srv.SmurfRatioIn(ratio=0.0)
         srv.SmurfRatioIn(ratio=1.0)
+
+    def test_diff_boundary_values_allowed(self):
+        """Both endpoints of the diff range are valid: 1.5 = baseline
+        smart, 2.5 = razor-sharp cap."""
+        srv.SmurfRatioIn(diff=1.5)
+        srv.SmurfRatioIn(diff=2.5)
 
 
 class TestLiveRatioAffectsSpawnLoop:

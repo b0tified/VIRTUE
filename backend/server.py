@@ -3066,15 +3066,14 @@ QUEUE_HIGH_TIER_MIN = 5  # tier index 5 = MASTER
 # -------------------------------------------------------------------
 # Overwatch-style weapon configs (hitscan + falloff + spread + reload)
 # -------------------------------------------------------------------
-# Casual FFA "smurf" bot ratio — the fraction of fill bots in casual
-# quick-match that get a Diamond+ disguise + elite AI. Held in a dict
-# so `/api/admin/settings/smurf` can mutate the ratio at runtime
-# without a redeploy. 0.15 = ~1 in 7 bots is a smurf → typical 4-bot
-# casual lobby sees 0-1 smurfs, an 8-bot fill sees 1-2. Diff 1.7
-# clears the 1.5 "smart" threshold so the smurf feels sharper without
-# matching the full ranked 1.9.
-CASUAL_ELITE_BOT_DIFF = 1.7
-_CASUAL_ELITE_BOT_STATE = {"ratio": 0.15}
+# Casual FFA "smurf" bot ratio + difficulty — the fraction of fill
+# bots in casual quick-match that get a Diamond+ disguise, and how
+# sharp their AI feels. Both held in the state dict so
+# `/api/admin/settings/smurf` can mutate them at runtime without a
+# redeploy. Defaults: 0.15 ratio (~1 in 7 bots), diff 1.7 (clears the
+# 1.5 "smart" threshold so the smurf feels sharper without matching
+# full ranked 1.9).
+_CASUAL_ELITE_BOT_STATE = {"ratio": 0.15, "diff": 1.7}
 
 
 def _get_casual_elite_bot_ratio() -> float:
@@ -3085,10 +3084,18 @@ def _get_casual_elite_bot_ratio() -> float:
     return float(_CASUAL_ELITE_BOT_STATE.get("ratio", 0.15))
 
 
-# Module attribute — read at TEST time via `srv.CASUAL_ELITE_BOT_RATIO`
-# so existing pytest assertions still see the current value. Kept in
-# sync inside the setter endpoint.
+def _get_casual_elite_bot_diff() -> float:
+    """Live-tunable smurf difficulty. Same design as the ratio helper —
+    the spawn loop reads through this so slider changes are visible
+    on the next fill."""
+    return float(_CASUAL_ELITE_BOT_STATE.get("diff", 1.7))
+
+
+# Module attributes — read at TEST time via `srv.CASUAL_ELITE_BOT_RATIO`
+# / `srv.CASUAL_ELITE_BOT_DIFF` so existing pytest assertions still
+# see the current values. Kept in sync inside the setter endpoint.
 CASUAL_ELITE_BOT_RATIO = _get_casual_elite_bot_ratio()
+CASUAL_ELITE_BOT_DIFF = _get_casual_elite_bot_diff()
 
 WEAPON_CONFIGS = {
     "ak47":  {
@@ -3874,13 +3881,13 @@ class GameRoom:
                     self.spawn_bot(
                         name,
                         disguised=True,
-                        difficulty=CASUAL_ELITE_BOT_DIFF,
+                        difficulty=_get_casual_elite_bot_diff(),
                         disguise_tier_idx=5,
                         disguise_rank_points=random.randint(1550, 1690),
                     )
                     logger.info(
                         "Auto-balance (%s): spawned SMURF bot %s (Diamond+ disguise, diff=%.2f) total=%d→%d",
-                        self.game_mode, name, CASUAL_ELITE_BOT_DIFF, n, n + 1,
+                        self.game_mode, name, _get_casual_elite_bot_diff(), n, n + 1,
                     )
                 else:
                     self.spawn_bot(name, disguised=True, difficulty=diff)
@@ -8196,41 +8203,56 @@ async def admin_close_report(report_id: str, user: dict = Depends(get_current_us
 
 @api.get("/admin/settings/smurf")
 async def admin_get_smurf_ratio(user: dict = Depends(get_current_user)):
-    """Return the current casual smurf-bot ratio (0.0-1.0). Admin-only.
-    Paired with the POST endpoint below so the Moderation dashboard's
-    slider always displays the live value."""
+    """Return the current casual smurf-bot ratio + difficulty.
+    Admin-only. Paired with the POST endpoint below so the Moderation
+    dashboard's two sliders always display the live values."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     return {
         "ratio": _get_casual_elite_bot_ratio(),
-        "diff": CASUAL_ELITE_BOT_DIFF,
+        "diff": _get_casual_elite_bot_diff(),
     }
 
 
 class SmurfRatioIn(BaseModel):
-    # Ratio must be a probability. Front-end slider is 0-100 (%), we
-    # convert to a 0.0-1.0 float on submit — Pydantic clamps to the
-    # allowed range so a malformed payload returns a clean 422.
-    ratio: float = Field(..., ge=0.0, le=1.0)
+    # Both fields are optional so the endpoint can be called with just
+    # one slider's value (partial update). Backend caller sends the
+    # slider that changed; the other stays put. Ratio 0-1, diff clamped
+    # to the "smart AI" band [1.5, 2.5] — below 1.5 the smurf loses
+    # its "smart" behavioural upgrades (see `_tick_bots`), above 2.5
+    # it out-guns full-ranked bots (1.9) which defeats the point of
+    # keeping ranked distinct from casual.
+    ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    diff: float | None = Field(default=None, ge=1.5, le=2.5)
 
 
 @api.post("/admin/settings/smurf")
 async def admin_set_smurf_ratio(payload: SmurfRatioIn, user: dict = Depends(get_current_user)):
-    """Mutate the casual smurf-bot ratio at runtime. Admin-only. The
-    new value takes effect on the NEXT bot fill in any casual room —
-    already-spawned bots aren't retroactively converted (that would
-    yank existing matches around mid-game). Persistence is process-
-    memory only for now; a server restart snaps back to the module
-    default (0.15). This matches the ephemeral nature of PEAK_ONLINE
-    and the SYNTHETIC_ONLINE counters, which are also in-memory.
+    """Mutate the casual smurf ratio and/or difficulty at runtime.
+    Admin-only. The new value takes effect on the NEXT bot fill in
+    any casual room — already-spawned bots aren't retroactively
+    converted (that would yank matches mid-game). Both fields are
+    optional; the endpoint applies whichever ones are present, so the
+    two frontend sliders can save independently. Persistence is
+    process-memory only (matches PEAK_ONLINE / SYNTHETIC_ONLINE).
     """
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
-    global CASUAL_ELITE_BOT_RATIO  # keep module attr aligned so pytest reads current value
-    _CASUAL_ELITE_BOT_STATE["ratio"] = float(payload.ratio)
-    CASUAL_ELITE_BOT_RATIO = float(payload.ratio)
-    logger.info("Admin %s set casual smurf ratio → %.3f", user.get("username"), payload.ratio)
-    return {"ratio": _get_casual_elite_bot_ratio(), "diff": CASUAL_ELITE_BOT_DIFF}
+    global CASUAL_ELITE_BOT_RATIO, CASUAL_ELITE_BOT_DIFF
+    if payload.ratio is not None:
+        _CASUAL_ELITE_BOT_STATE["ratio"] = float(payload.ratio)
+        CASUAL_ELITE_BOT_RATIO = float(payload.ratio)
+    if payload.diff is not None:
+        _CASUAL_ELITE_BOT_STATE["diff"] = float(payload.diff)
+        CASUAL_ELITE_BOT_DIFF = float(payload.diff)
+    logger.info(
+        "Admin %s updated smurf settings — ratio=%.3f diff=%.2f",
+        user.get("username"), _get_casual_elite_bot_ratio(), _get_casual_elite_bot_diff(),
+    )
+    return {
+        "ratio": _get_casual_elite_bot_ratio(),
+        "diff": _get_casual_elite_bot_diff(),
+    }
 
 
 @api.get("/admin/live-stats")
