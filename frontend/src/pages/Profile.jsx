@@ -276,6 +276,16 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* Weapon loadout picker — moved to the TOP of profile per
+            user request (2026-02-24) so it's the first customization
+            they see. Loadout persists via /profile/me/weapon; the
+            server reads it at WS connect. */}
+        <SectionHeader title="Weapon Loadout" testid="profile-section-weapon" />
+        <WeaponLoadoutPicker
+          user={user}
+          onChange={() => refreshMe?.()}
+        />
+
         {/* Rank cards moved to the top — most important visual, gets
             prime real estate right under the hero. Current + peak side
             by side with the new RankProgressBar inside current. */}
@@ -311,16 +321,6 @@ export default function Profile() {
 
         {/* Customization block — banner + avatar grouped together. */}
         <SectionHeader title="Customize" testid="profile-section-customize" />
-
-        {/* Weapon loadout picker — moved from lobby to here so the
-            match-start UI stays uncluttered and loadout is a
-            deliberate customisation choice (like banner / avatar).
-            Persists via /profile/me/weapon; the server reads it at
-            WS connect. */}
-        <WeaponLoadoutPicker
-          user={user}
-          onChange={() => refreshMe?.()}
-        />
 
         <BannerCustomizer
           iconIdx={bannerIcon}

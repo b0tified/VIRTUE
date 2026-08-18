@@ -165,6 +165,10 @@ export class GameEngine {
     this._akFireHeld = false;
     this._lastAkFireMs = 0;
     this._akFireCooldownMs = 300;
+    // Rate-limit for the mobile "auto-fire when crosshair over enemy"
+    // path in _update(). Initialised to 0 so the first-frame gate
+    // works correctly (see the touch auto-fire block).
+    this._lastTouchAutoFireMs = 0;
     this._remoteBeams = new Map(); // shooterId -> {ts, x,y,z,yaw,pitch,hitDist}
     // Jump / vertical physics
     this.vy = 0;
@@ -4833,18 +4837,58 @@ export class GameEngine {
     // Drive virtual inputs from a connected gamepad (Xbox / PS-style).
     this._pollGamepad(dt);
 
+    // Mobile "auto-fire on target" — per user request (2026-02-24):
+    // instead of the AK-hold-to-fire mechanic, TOUCH devices fire
+    // automatically the instant the crosshair passes over an enemy.
+    // We reuse the existing `hasEnemyInCrosshair()` gate (already
+    // widened to a 14° cone in touch mode + aim-assist snap), so no
+    // extra targeting math is needed. The per-shot cooldown is
+    // enforced by `_akFireCooldownMs` below and by the server, so a
+    // slow drag across a target still only produces one shot per
+    // cooldown window. Applies to ALL weapons (AK / sniper / laser)
+    // — mobile players don't have a fire button anymore, aiming IS
+    // the trigger.
+    if (this.touchActive && this.alive && !this.localReloading &&
+        this._matchStarted !== false) {
+      // Weapon-specific cooldown: AK uses its full-auto tick cadence
+      // (already respected by _lastAkFireMs), sniper/laser fall back
+      // to the server rate-limit + client `_tryShoot` gate.
+      const now = performance.now();
+      // Rate-limit ALL touch auto-fires to the AK cadence so sniper
+      // spam doesn't drain the mag on a single hip-swipe past a
+      // target. Server also rate-limits, this is just for feel.
+      const cd = this._akFireCooldownMs || 285;
+      if (now - (this._lastTouchAutoFireMs || 0) >= cd) {
+        if (this.hasEnemyInCrosshair()) {
+          this._lastTouchAutoFireMs = now;
+          if (this.currentWeapon === "primary" && this.primaryWeaponId === "ak47") {
+            // Keep the existing AK-hold state coherent so the tick
+            // below doesn't fire again this frame.
+            this._lastAkFireMs = now;
+          }
+          this._tryShoot(this.yaw, this.pitch);
+        }
+      }
+    }
+
     // AK full-auto hold-to-fire tick. Only applies to the AK primary —
     // sniper is single-shot per click (each click fires one bullet, and
     // the 2-round mag reloads automatically after the second shot),
     // so we don't want the hold-to-fire tick spamming shoot messages
     // during a reload.
+    //
+    // On touch, we ALSO gate on `hasEnemyInCrosshair()` so the AK only
+    // rips when there's something to shoot at — matches the "aim IS
+    // the trigger" behaviour of the block above and keeps the mag
+    // from draining on sky/wall drags.
     if (
       this._akFireHeld &&
       this.currentWeapon === "primary" &&
       this.primaryWeaponId === "ak47" &&
       this.alive &&
       (this.locked || this.touchActive) &&
-      !this.localReloading
+      !this.localReloading &&
+      (!this.touchActive || this.hasEnemyInCrosshair())
     ) {
       const now = performance.now();
       if (now - this._lastAkFireMs >= this._akFireCooldownMs) {

@@ -1798,3 +1798,26 @@ Two user requests shipped together.
   - `test_ranks_compute_rp_delta_2nd_place_master_plus_is_25` — direct assertion on the base value in the source of truth.
 - **File touched only in `_lib/ranks.py`** — the pure-math extraction from the earlier refactor paid off: this was a one-line change in the extracted module, no server.py churn. 80/80 pass across all recent regression suites.
 
+
+### 2026-02-24 — Weapon picker to top of Profile + Mobile crosshair auto-fire
+Two quality-of-life changes shipped together.
+
+**1. Weapon Loadout moved to top of Profile page**
+- Previously the `WeaponLoadoutPicker` lived inside the "Customize" section (below Rank / Level / Level Rewards). Users had to scroll past ~5 sections to swap primaries.
+- Now: new **"Weapon Loadout"** section header sits **immediately below the hero banner**, above "Your Rank". Verified via bounding-box in the live smoke test: weapon-section y=499 vs rank-section y=696 → weapon-above-rank confirmed.
+- `onChange` still calls `refreshMe?.()` so the lobby loadout badge doesn't go stale after a swap.
+
+**2. Mobile auto-fire triggers when crosshair passes over enemy**
+- Previously mobile auto-fire only ran while the LOOK PAD was being held — you had to be actively aiming (finger down) for shots to fire.
+- Now: a new block in `Engine._update()` fires the current weapon automatically the instant `hasEnemyInCrosshair()` returns true — even when the look pad isn't being touched. The player just needs their crosshair to sweep across an enemy.
+- Rate-limited to the AK cadence (`_akFireCooldownMs` ≈ 285ms) via new `_lastTouchAutoFireMs` timestamp so a slow drag past a target only fires once per cooldown (not per frame).
+- Only runs when `touchActive`, alive, not reloading, and match started — never activates on desktop.
+- Applies to ALL weapons (AK, sniper, laser). Server rate-limiting is the final backstop.
+- Also tightened the existing AK hold-to-fire tick: now also gates on `hasEnemyInCrosshair()` in touch mode so mag doesn't drain on empty sky drags.
+
+**Files touched**:
+- `/app/frontend/src/pages/Profile.jsx` — reordered JSX blocks.
+- `/app/frontend/src/game/engine.js` — new touch auto-fire block in `_update()`, `_lastTouchAutoFireMs` init, AK-tick crosshair guard for touch mode.
+
+**Tests** (`/app/backend/tests/test_profile_weapon_top_and_mobile_autofire.py` — 8/8 pass): grep-guards that assert weapon-section renders before rank-section in Profile.jsx, and the engine still has the touch auto-fire block with all four required properties (touch-active gate, cooldown check, `hasEnemyInCrosshair()` call, `_lastTouchAutoFireMs` initialised). Combined suites: no regressions.
+
