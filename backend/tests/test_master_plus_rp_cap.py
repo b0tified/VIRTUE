@@ -97,11 +97,38 @@ def test_master_perf_tax_penalizes_deaths_harder():
     assert d == 10
 
 
-def test_master_2nd_place_middling_kd_stays_negative():
-    """8 K / 5 D + 2nd at Master: base 0 + int((24-25)*0.55)-15 =
-    0 + int(-0.55) - 15 = 0 + 0 - 15 = -15."""
+def test_master_2nd_place_middling_kd_now_small_positive():
+    """User asked (2026-02-24) to make 2nd place gain a small amount at
+    Master+. 8 K / 5 D + 2nd at Master: base +25 + int((24−25)*0.55) − 15 =
+    25 + int(−0.55) − 15 = 25 + 0 − 15 = +10.
+    Previously (base 0): 0 + 0 − 15 = −15 (a loss for a decent 2nd)."""
     d = _simulate_ranked_delta(kills=8, deaths=5, placement=2, tier_idx=6)
-    assert d == -15
+    assert d == 10
+
+
+def test_master_2nd_place_bad_kd_still_loses():
+    """The 2nd-place bonus is not a free ride — a hard-throw 2nd still
+    loses points. 3 K / 9 D + 2nd at Master:
+    25 + int((9−45)*0.55) − 15 = 25 + int(−19.8) − 15 =
+    25 + (−19) − 15 = −9   (Python int() truncates toward zero)."""
+    d = _simulate_ranked_delta(kills=3, deaths=9, placement=2, tier_idx=6)
+    assert d == -9
+
+
+def test_gm_2nd_place_average_kd_still_small_positive():
+    """GM+ perf tax is stiffer. 5 K / 5 D + 2nd at GM+:
+    25 + int((15−25)*0.4) − 20 = 25 − 4 − 20 = +1 — barely positive
+    but the intent is preserved: a decent 2nd doesn't cost points."""
+    d = _simulate_ranked_delta(kills=5, deaths=5, placement=2, tier_idx=7)
+    assert d == 1
+
+
+def test_ranks_compute_rp_delta_2nd_place_master_plus_is_25():
+    """Base delta for 2nd at Master+ must be +25 (not the old 0).
+    Directly asserts the source of truth in `_lib/ranks.py`."""
+    assert server.compute_rp_delta(placement=2, tier_idx=6) == 25
+    assert server.compute_rp_delta(placement=2, tier_idx=7) == 25
+    assert server.compute_rp_delta(placement=2, tier_idx=8) == 25
 
 
 def test_uniform_cap_at_35_across_all_tiers():

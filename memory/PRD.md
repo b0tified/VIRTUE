@@ -1779,3 +1779,22 @@ Two user requests shipped together.
 - **File changed**: `/app/backend/server.py::end_match` ranked delta branch. Comment header rewritten with the new formula + expanded worked examples.
 - **Tests**: Rewrote `test_master_plus_rp_cap.py` (11/11 pass). Deleted old cap-tighten assertions; added new cases for the perf-tax formula + a grep guard on the endpoint source. 89/89 across all recent regression suites still green.
 
+
+### 2026-02-24 — 2nd place at Master+ now gains a small amount of RP
+- **User request**: "Make it so you can gain a small amount of points for 2nd place in ranked."
+- **Bug**: previously `compute_rp_delta` returned `+0` base for 2nd place at Master+. Combined with the perf tax (Master `-15` flat, GM+ `-20` flat), even a decent 2nd-place finish would land NEGATIVE — a player with 8K/5D finishing 2nd at Master lost 15 RP, which felt awful.
+- **Fix** in `/app/backend/_lib/ranks.py::compute_rp_delta`:
+  - Master+ 2nd place base delta: **0 → +25**. Combined with the perf tax, a decent 2nd (K/D ≈ 1.0) now nets a small positive delta while a hard-throw 2nd still bleeds.
+  - 1st place, 3rd+, and sub-Master curves unchanged.
+- **Sanity examples** (all covered by pytests):
+  - Master 8K/5D + 2nd → **+10** RP (was −15).
+  - Master 3K/9D + 2nd → **−9** RP (still a loss — no free ride).
+  - GM+ 5K/5D + 2nd → **+1** RP (razor-thin small positive).
+  - GM+ 10K/5D + 2nd → **+7** RP.
+- **Tests** (`test_master_plus_rp_cap.py` — 15/15 pass, added 4 new cases):
+  - `test_master_2nd_place_middling_kd_now_small_positive` — the specific +10 case above.
+  - `test_master_2nd_place_bad_kd_still_loses` — asserts the bonus doesn't shield hard throws.
+  - `test_gm_2nd_place_average_kd_still_small_positive` — verifies GM+ still gets a positive floor from a decent game.
+  - `test_ranks_compute_rp_delta_2nd_place_master_plus_is_25` — direct assertion on the base value in the source of truth.
+- **File touched only in `_lib/ranks.py`** — the pure-math extraction from the earlier refactor paid off: this was a one-line change in the extracted module, no server.py churn. 80/80 pass across all recent regression suites.
+

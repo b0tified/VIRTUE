@@ -89,8 +89,16 @@ def compute_rp_delta(placement: int, tier_idx: int) -> int:
     """RP delta for a single ranked player finishing at `placement`.
 
     Curve:
-      - Below Masters:  +30 / +15 / 0 / -30  (1st through last).
-      - Masters and up: +30 /   0 / -60 / -60.
+      - Below Masters:  +30 / +15 /   0 / -30  (1st through last).
+      - Masters and up: +30 / +25 / -60 / -60.
+
+    Per user request (2026-02-24): "Make it so you can gain a small
+    amount of points for 2nd place in ranked." Previously Master+ 2nd
+    place hard-zeroed the base — combined with the Master/GM+ perf
+    tax in `end_match`, that meant even a decent 2nd could go
+    NEGATIVE. Base +25 now guarantees a decent 2nd nets a small
+    positive delta after the tax (e.g. Master 5K/5D 2nd = 25 + −20 =
+    +5) while a hard-throw 2nd still loses.
 
     "Last" means anyone outside the podium — matches with more than 4
     slots all lose the same amount.
@@ -100,7 +108,7 @@ def compute_rp_delta(placement: int, tier_idx: int) -> int:
         if placement == 1:
             return 30
         if placement == 2:
-            return 0
+            return 25
         return -60
     if placement == 1:
         return 30
