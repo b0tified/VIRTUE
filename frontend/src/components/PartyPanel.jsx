@@ -38,12 +38,19 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
   // into the private party room. The leader triggers the same nav
   // manually in `startCustomLobby` so all seats land on the same
   // Game.jsx URL within a single 5s poll window.
+  //
+  // Route is `/play` (not `/game`) — MUST also stamp
+  // `state.fromLobby: true` so the MatchEntryGuard doesn't bounce us
+  // back to /lobby with a white flash. This was the "click custom
+  // game and screen flashes white" bug the user reported.
   useEffect(() => {
     if (!party?.party_id) return;
     if (!party.match_starting) return;
-    // Skip if we're the leader (they navigated eagerly already).
-    if (party.leader_id === myId) return;
-    navigate(`/game?mode=party&party_id=${party.party_id}${party.tdm ? "&tdm=1" : ""}`);
+    if (party.leader_id === myId) return;   // leader nav'd themselves
+    navigate(
+      `/play?mode=party&party_id=${party.party_id}${party.tdm ? "&tdm=1" : ""}`,
+      { replace: true, state: { fromLobby: true } },
+    );
   }, [party?.match_starting, party?.party_id, party?.leader_id, party?.tdm, myId, navigate]);
 
   const leave = useCallback(async () => {
@@ -88,7 +95,14 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
     setBusy(true); setErr(null);
     try {
       await api.post("/party/start", { bots_enabled: customBots, tdm: false });
-      navigate(`/game?mode=party&party_id=${party.party_id}`);
+      // MUST be `/play` (not `/game`) + state.fromLobby so the
+      // MatchEntryGuard around the route lets us in. Without either
+      // piece the router either has no match (white flash) or the
+      // guard redirects back to /lobby (also visible as a flash).
+      navigate(
+        `/play?mode=party&party_id=${party.party_id}`,
+        { replace: true, state: { fromLobby: true } },
+      );
     } catch (e) {
       setErr(e.response?.data?.detail || "Couldn't start custom lobby.");
     } finally {

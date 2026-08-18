@@ -1741,3 +1741,21 @@ Two user requests shipped together.
   - 46/46 pass across all recent regression suites (smurf slider + party lobby + weapon tuning + admin live-stats).
 - **Live smoke** (Preview, 1400×900): slider loaded at 15% → dragged to 40% → display updated → API confirmed `{ratio: 0.4}` → "✓ saved" flash captured → reset to 15% cleanly. Zero JS errors.
 
+
+### 2026-02-24 — Fix white-flash when clicking Custom Lobby in a party
+- **User report**: "When in party and click custom game. Screen flashes white and nothing happens." (Both Preview and Production.)
+- **Two-part root cause** in `PartyPanel.jsx` (my own regression from the Custom Lobby feature shipped earlier this session):
+  1. **Wrong path** — I navigated to `/game?mode=party&party_id=X` but the React Router route in `App.js` is `/play`. Hitting `/game` matched no route → empty render → white flash.
+  2. **Missing `state.fromLobby`** — even the correct `/play` path is wrapped by `MatchEntryGuard`, which redirects back to `/lobby` unless `location.state.fromLobby === true`. So a `/play` nav with no state would also flash white (bounce → /lobby).
+- **Fix**: Both navigate call sites (leader `startCustomLobby` and member auto-nav `useEffect`) now use:
+  ```js
+  navigate(`/play?mode=party&party_id=...`, { replace: true, state: { fromLobby: true } });
+  ```
+  This mirrors the exact pattern QueueContext already uses when the matchmaker fires (`nav("/play?mode=casual", { replace: true, state: { fromLobby: true } })`).
+- **Tests** (`/app/backend/tests/test_custom_lobby_navigation.py` — 4/4 pass):
+  - Grep guard: leader `startCustomLobby` uses `/play` (not `/game`).
+  - Grep guard: leader nav stamps `state: { fromLobby: true }`.
+  - Grep guard: member `useEffect` uses `/play` + stamps state.
+  - "Belt and suspenders" — no stray `/game?mode=party` references anywhere in PartyPanel, so a future refactor can't silently reintroduce either half of the bug.
+  - Combined with prior suites: 23/23 pass across Custom Lobby + smurf slider + party settings.
+
