@@ -1759,3 +1759,23 @@ Two user requests shipped together.
   - "Belt and suspenders" — no stray `/game?mode=party` references anywhere in PartyPanel, so a future refactor can't silently reintroduce either half of the bug.
   - Combined with prior suites: 23/23 pass across Custom Lobby + smurf slider + party settings.
 
+
+### 2026-02-24 — Master+ ranked RP cap unified to +35 (harder to reach)
+- **User request**: "In Masters and up games make it so you can still gain 35 points, it's just harder."
+- **Previous behavior** (from an earlier session): the cap TIGHTENED at high tiers — Master +20, Grandmaster/Goonmaster +15. Players complained they couldn't ever get the full climb reward.
+- **New behavior**: cap is uniformly **+35 across every tier**. Instead of tightening the ceiling, we tighten the *perf formula* so hitting +35 at Master+ requires a dominant carry:
+  - `raw_perf = kills * 3 − deaths * 5` (unchanged).
+  - **Master** (tier 6): `perf = int(raw_perf * 0.55) − 15` — the "Master tax". A 27/3 game barely nudges past the cap (perf ≈ 21), so mid-pack plays land well short of +35.
+  - **GM+** (tier 7-8): `perf = int(raw_perf * 0.4) − 20` — the "GM+ tax". Same 27/3 game only just clears (perf ≈ 6, +35 is a razor's-edge ceiling).
+  - Below Master: unchanged.
+- **Sanity numbers** (all verified in `test_master_plus_rp_cap.py`):
+  - Silver 27/3 → +35 (trivial).
+  - Master 27/3 → +35 (tight — dominant only).
+  - Master 15/5 → +26 (used to be +35 → visibly *harder*).
+  - Master 5/5 win → +10 (used to be ~+20).
+  - GM+ 27/3 → +35 (razor-thin).
+  - GM+ 15/5 → +18.
+  - Loss floor still −60 at every tier.
+- **File changed**: `/app/backend/server.py::end_match` ranked delta branch. Comment header rewritten with the new formula + expanded worked examples.
+- **Tests**: Rewrote `test_master_plus_rp_cap.py` (11/11 pass). Deleted old cap-tighten assertions; added new cases for the perf-tax formula + a grep guard on the endpoint source. 89/89 across all recent regression suites still green.
+

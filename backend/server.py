@@ -5718,31 +5718,40 @@ class GameRoom:
                         #
                         # Formula:
                         #   base    = compute_rp_delta(placement, tier_idx)
-                        #             (podium curve — see line ~529)
+                        #             (podium curve — see _lib/ranks.py)
                         #   perf    = kills * 3 − deaths * 5
-                        #   max_gain = 35 (below Master)
-                        #              20 (Master, tier 6)
-                        #              15 (Grandmaster+, tier 7+)
-                        #   delta   = clamp(base + perf, −60, max_gain)
+                        #   Master (tier 6):  perf → perf * 0.55 − 15   ("Master tax")
+                        #   GM+   (tier 7+):  perf → perf * 0.4  − 20   ("GM+ tax")
+                        #   max_gain = 35 uniformly across all tiers
+                        #   delta    = clamp(base + perf, −60, 35)
                         #
-                        # Master+ cap tightens the win side — it stays
-                        # significantly harder to hit +max than at
-                        # Emerald and below. Loss side is unchanged so
-                        # falling out of the top tiers still hurts.
+                        # Master+ tiers CAN still hit +35 per user request
+                        # — just significantly harder. A middle-of-pack
+                        # game at Master no longer lands at +35 the way
+                        # it would at Silver; only a dominant carry hits
+                        # the cap. Loss side unchanged so falling out of
+                        # the top tiers still hurts. GM+ is the toughest
+                        # to milk: even a 20/5 game only nets a modest
+                        # positive delta unless the player wins outright.
                         #
                         # Sanity checks:
-                        #   27 K / 3 D + 1st, Silver:   base 30 + perf 66 → +35 (cap)
-                        #   27 K / 3 D + 1st, Master:   base 30 + perf 66 → +20 (Master cap)
-                        #   27 K / 3 D + 1st, GM/Goon:  base 30 + perf 66 → +15 (GM+ cap)
-                        #   3 K / 9 D + 4th, Silver:    base −30 + perf −36 → −60 (cap)
+                        #   27 K / 3 D + 1st, Silver:   base 30 + perf 66              → +35 (cap)
+                        #   27 K / 3 D + 1st, Master:   base 30 + (66*0.55 − 15 = 21)   → +35 (cap, tight)
+                        #   15 K / 5 D + 1st, Master:   base 30 + (20*0.55 − 15 = −4)   → +26
+                        #   27 K / 3 D + 1st, GM+:      base 30 + (66*0.4  − 20 = 6)    → +35 (cap, VERY tight)
+                        #   15 K / 5 D + 1st, GM+:      base 30 + (20*0.4  − 20 = −12)  → +18
+                        #   3 K / 9 D + 4th, Silver:    base −30 + perf −36            → −60 (cap)
                         base_delta = compute_rp_delta(placement, cur_tier_idx)
-                        perf_delta = p.kills * 3 - p.deaths * 5
+                        raw_perf = p.kills * 3 - p.deaths * 5
                         if cur_tier_idx >= MASTERS_TIER_IDX + 1:
-                            max_gain = 15   # Grandmaster (7) + Goonmaster (8)
+                            # GM+ tax — perf scaled 0.4 then a −20 flat.
+                            perf_delta = int(raw_perf * 0.4) - 20
                         elif cur_tier_idx >= MASTERS_TIER_IDX:
-                            max_gain = 20   # Master (6)
+                            # Master tax — perf scaled 0.55 then a −15 flat.
+                            perf_delta = int(raw_perf * 0.55) - 15
                         else:
-                            max_gain = 35   # Bronze..Diamond
+                            perf_delta = raw_perf
+                        max_gain = 35   # Uniform cap; the Master+ tax gates the ceiling.
                         delta = max(-60, min(max_gain, base_delta + perf_delta))
                     new_points = max(0, cur + delta)
                     tier_idx, tier_name = rank_for_points(new_points)
