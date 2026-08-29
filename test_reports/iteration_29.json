@@ -1,0 +1,44 @@
+{
+  "summary": "Backend-only verification of the party 'BOTS OFF' custom-lobby fix. Wrote new e2e suite /app/backend/tests/test_party_bots_off_e2e_ws.py (7 tests, all PASS) covering /party/start flag persistence (false/true/no-body default), 403 for non-leader, and the real runtime path over the public wss:// ingress. Confirmed a BOTS OFF party room stays human-only across ~25s of state broadcasts (0 bots, roster size 1), and with BOTH party members connected (roster = exactly partyleader+partyfollower, 0 bots). Regression confirmed: BOTS ON party room fills to 4 (1 human + 2-3 disguised bots) and casual quick-match still auto-fills bots. Also ran 8 related existing test files: 53 passed, 4 failed (all pre-existing/unrelated, see below). One real edge-case defect found: cached party room ignores a changed bots_enabled flag.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/party/start + get_or_create_party_room",
+        "issue": "Stale cached room ignores a changed toggle. Reproduced: leader starts custom lobby with bots_enabled=true, follower connects (keeps PARTY_ROOMS entry alive), leader then POSTs /party/start with bots_enabled=false and joins the same party_id -> get_or_create_party_room returns the cached room early (line ~8767) without updating room.bots_enabled or pruning existing bots. Observed roster: ['FlareStorm','VoltKid','partyfollower','partyleader'] (2 bots) despite BOTS OFF. Suggested fix: on the cache-hit path, re-read party['bots_enabled'], set room.bots_enabled, and despawn existing bots when it flips to False."
+      },
+      {
+        "endpoint": "WS /api/ws/game?mode=party",
+        "issue": "No `state`/`state_delta` broadcasts are emitted until a client sends {\"type\":\"loaded\"} (pre-match freeze in GameRoom.tick, 30s safety fallback). Not a product bug, but it silently breaks WS test harnesses: tests/test_iteration6_spectate_party.py::test_spectate_party_match_welcome_and_state and ::test_party_ws_spawns_3_bots both fail purely because they never send `loaded` (pre-existing, unrelated to this fix)."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_party_bots_off_e2e_ws.py",
+    "/app/backend/tests/test_party_bots_off_no_autofill.py",
+    "/app/tests/dbg_party_stale_room.py",
+    "/app/tests/dbg_party_ws.py"
+  ],
+  "action_items": [
+    "Optional (edge case): propagate/refresh room.bots_enabled (and prune bots) on the PARTY_ROOMS cache-hit path in get_or_create_party_room so a re-started custom lobby honours a newly toggled BOTS OFF.",
+    "Optional test hygiene: update test_iteration6_spectate_party.py WS helpers to send {\"type\":\"loaded\"} after `welcome` (they currently time out waiting for state); test_bot_fill_bands.py::test_low_tier_band_constants_match_user_spec and test_party_casual_queue.py::test_solo_casual_queue_still_works (event loop closed during teardown) are also pre-existing failures unrelated to this fix."
+  ],
+  "critical_code_review_comments": [
+    "The core fix is correct and minimal: GameRoom.bots_enabled default True (line 3676), early-return in _maintain_population before the fill branch (line 3858), propagation in get_or_create_party_room (line 8787). Verified end-to-end over the public ingress.",
+    "get_or_create_party_room's early cache return is the only remaining hole for this feature (see minor issue #1).",
+    "server.py is ~9.8k lines — well past the 700-line guideline; party/room/WS concerns should be split into modules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_party_bots_off_e2e_ws.py",
+    "/app/tests/dbg_party_ws.py",
+    "/app/tests/dbg_party_stale_room.py"
+  ],
+  "success_rate": {"backend": "100% (7/7 new e2e tests + 5/5 existing regression tests for this fix)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Reused existing partyleader@test.com / partyfollower@test.com (pw123456); re-asserted friendship + party membership per test. No new users created.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "partyleader@test.com / pw123456, partyfollower@test.com / pw123456 (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Party WS testing requires sending {\"type\":\"loaded\"} immediately after connect, otherwise the room stays in pre-match freeze and emits zero state broadcasts for 30s. Party fill bots are `disguised` so to_state() reports is_bot=False — classify bots by username not being a known human account. Reusable helpers are in /app/backend/tests/test_party_bots_off_e2e_ws.py.",
+  "rca_of_the_issue": "Original bug: _maintain_population auto-filled every casual FFA room to FFA_LOBBY_SIZE each tick, backfilling the 0-bot BOTS-OFF party seed. Fix (bots_enabled flag + early return + propagation) verified working at runtime. Residual gap: PARTY_ROOMS cache-hit path never refreshes bots_enabled, so a re-start with a different toggle on a still-alive room keeps the old bots."
+}

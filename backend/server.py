@@ -3668,6 +3668,12 @@ class GameRoom:
         self._last_keyframe_at: float = 0.0
         self._keyframe_interval: float = 1.0
         self._last_sent_top: Dict[str, object] = {}
+        # When False, `_maintain_population` skips auto-filling with bots
+        # entirely — used exclusively by private "Custom Lobby" party
+        # rooms where the leader picked BOTS OFF. Every other room type
+        # (casual, ranked, TDM, practice, offline) keeps the default
+        # True so match-flow bot-fill behaviour is unchanged.
+        self.bots_enabled: bool = True
 
     def _build_healthpacks(self) -> List[dict]:
         """(Re)build healthpack state from the current arena. Used on init
@@ -3845,6 +3851,11 @@ class GameRoom:
             # we don't want to top off automatically. TDM uses the
             # disguised pool; FFA quick-match uses the same.
             if self.game_mode != "tdm" and getattr(self, "is_practice", False):
+                return
+            # Private "Custom Lobby" party rooms that opted OUT of bots
+            # (leader clicked BOTS OFF in the PartyPanel) must stay
+            # human-only for 1v1 / 2v2 duels. Skip the fill entirely.
+            if not self.bots_enabled:
                 return
             deficit = target_total - n
             in_use = {p.username for p in self.players.values()}
@@ -8755,6 +8766,27 @@ class PartyInviteIn(BaseModel):
 async def get_or_create_party_room(party_id: str) -> "GameRoom":
     room = PARTY_ROOMS.get(party_id)
     if room is not None:
+        # Cache-hit refresh. The leader may have re-clicked CUSTOM LOBBY
+        # with a different BOTS toggle while the room was still alive
+        # (e.g. one member is still connected keeping the cache warm).
+        # Sync the room's `bots_enabled` from the party record and
+        # prune any live fill-bots when the flag has flipped to False,
+        # otherwise stale bots persist until the room dies naturally.
+        party = PARTIES.get(party_id) or {}
+        new_flag = bool(party.get("bots_enabled", True))
+        if room.bots_enabled != new_flag:
+            room.bots_enabled = new_flag
+            if not new_flag:
+                # Despawn every bot so the room reverts to human-only.
+                # Real players stay untouched. Done outside the room
+                # lock — the tick loop's next `_maintain_population`
+                # will refuse to refill (early-return).
+                for pid in [pid for pid, p in room.players.items() if p.is_bot]:
+                    room.players.pop(pid, None)
+                logger.info(
+                    "Party room %s toggled to BOTS OFF — pruned live bots.",
+                    party_id,
+                )
         return room
     # 5-minute private FFA (or TDM if leader picked it). Bot-fill to
     # MAX_PARTY_SIZE — but only when the leader ENABLED bots via the
@@ -8769,6 +8801,11 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     room = GameRoom(is_ranked=False, match_duration=300.0, game_mode=room_mode)
     room.is_party = True
     room.party_id = party_id
+    # Propagate the party's BOTS-OFF opt-out into the room so the tick
+    # loop's `_maintain_population` doesn't backfill bots after the
+    # 0-bot seed below. Without this the room would silently fill to
+    # FFA_LOBBY_SIZE within a few ticks even though bot_count=0 here.
+    room.bots_enabled = bots_enabled
     if bot_count > 0:
         for name in random.sample(DISGUISED_BOT_NAMES, bot_count):
             # Party rooms are casual — match the nerfed casual bot

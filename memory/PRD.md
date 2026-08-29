@@ -1841,3 +1841,25 @@ Two quality-of-life changes shipped together.
   - Updated grep-guard on the smurf spawn source to require `_get_casual_elite_bot_diff()` (not the frozen constant).
 - **Live verification** (Preview, 1400×900): dual-slider panel rendered — Frequency 15% purple, Sharpness 1.70 red → dragged Sharpness to 2.20 → API confirmed `{ratio: 0.15, diff: 2.2}` → reset cleanly. Zero JS errors. 4 curl paths (partial ratio, partial diff, both, invalid) all responded correctly (200/200/200/422).
 
+
+### 2026-02-25 — Custom Party Lobby "BOTS OFF" toggle actually disables bots
+- **User bug**: "The option to disable bots for custom games in parties does not work."
+- **Root cause**: `get_or_create_party_room` correctly seeded the room with 0 bots when the leader picked BOTS OFF, but `GameRoom._maintain_population` (invoked every tick + on every `add`/`end_match`) auto-filled every casual FFA room up to `FFA_LOBBY_SIZE=4`, silently reintroducing bots within seconds.
+- **Fix** (`/app/backend/server.py`):
+  - `GameRoom.__init__` now initialises `self.bots_enabled = True` (default preserves legacy auto-fill everywhere else).
+  - `_maintain_population` early-returns when `self.bots_enabled is False` — before the fill branch, after the despawn-excess branch, so human-only rooms stay human-only.
+  - `get_or_create_party_room` propagates `party["bots_enabled"]` → `room.bots_enabled` on room creation.
+  - Cache-hit refresh: if the leader re-clicks CUSTOM LOBBY with a new toggle while the room is still alive, `get_or_create_party_room` now re-reads the flag and despawns existing bots when it flips to False (edge case flagged by testing agent).
+- **Tests** (`/app/backend/tests/test_party_bots_off_no_autofill.py`, 6/6 pass):
+  - `GameRoom.bots_enabled` defaults to True.
+  - `_maintain_population` early-returns on `bots_enabled=False`.
+  - `get_or_create_party_room` propagates the flag.
+  - Runtime: bots-off room stays at 1 player after `_maintain_population`.
+  - Runtime: casual FFA room still fills to `FFA_LOBBY_SIZE` (regression guard).
+  - Cache-hit refresh despawns bots when the toggle flips.
+- **E2E verification** (testing_agent iteration_29, 7/7 new WS suite pass):
+  - `/party/start` persists `bots_enabled` for false/true/no-body-default.
+  - `/party/start` returns 403 for non-leaders.
+  - Live WS at wss://…/api/ws/game?mode=party — BOTS OFF room stays human-only across ~25s of broadcasts (0 bots, roster size = human members). BOTS ON room still fills to 4 with disguised fill bots.
+  - Casual quick-match auto-fill unaffected.
+
