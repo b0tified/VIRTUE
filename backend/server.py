@@ -8819,21 +8819,84 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     return room
 
 
+# How long an emptied party room stays alive before actual cleanup.
+# Covers three legitimate cases the old zero-delay cleanup broke:
+#  1. React StrictMode double-mount: the leader's Game.jsx mounts,
+#     the WS connects+adds, StrictMode immediately unmounts → remove
+#     fires → room drops to 0 humans. The re-mount opens a NEW WS
+#     within ~100ms.
+#  2. Custom Lobby launch: leader clicks Start → navigates → WS
+#     connects. The follower's /party/me poll can be 0-5s behind so
+#     the room briefly holds only the leader. If the leader's tab
+#     hiccups (network blip, tab focus loss, mobile bg pause) the
+#     room used to die AND flip `match_starting=False`, which then
+#     stopped the follower from ever navigating — the "custom game
+#     only brings host into the game" bug the user reported for
+#     BOTS OFF (with bots seeded the same race exists but occurs
+#     less often since the room lives longer through the reconnect).
+#  3. Match-end → lobby transition: both members briefly disconnect
+#     during the intermission→lobby route change. Grace lets them
+#     rejoin the SAME room instead of racing to create fresh ones.
+PARTY_ROOM_CLEANUP_GRACE_SEC = 15.0
+
+# Cleanup timers keyed by party_id so a re-add can cancel the pending
+# destruction. Cleared on cleanup or on manual party disband.
+_PARTY_ROOM_CLEANUP_TASKS: Dict[str, asyncio.Task] = {}
+
+
 async def cleanup_party_room_if_empty(party_id: str):
+    """Schedule a delayed room-teardown when the last real player
+    leaves. The delay is critical: `remove()` fires on every WS
+    disconnect, including StrictMode double-mounts and brief
+    reconnects during the /lobby → /play navigation. Immediate
+    teardown races the follower's /party/me poll → resets
+    `match_starting=False` before the follower ever navigates → only
+    the host enters the custom game.
+
+    Idempotent: repeated calls while a cleanup is pending are a
+    no-op. If a real player rejoins during the grace window the
+    scheduled task detects the non-empty room and bails without
+    destroying it.
+    """
     room = PARTY_ROOMS.get(party_id)
     if room is None:
         return
     if any(not p.is_bot for p in room.players.values()):
         return
-    task = PARTY_ROOM_TASKS.pop(party_id, None)
-    if task and not task.done():
-        task.cancel()
-    PARTY_ROOMS.pop(party_id, None)
-    # Clear match_starting flag when the room dies so the lobby panel re-resets.
-    party = PARTIES.get(party_id)
-    if party:
-        party["match_starting"] = False
-    logger.info("Party room destroyed id=%s", party_id)
+    if party_id in _PARTY_ROOM_CLEANUP_TASKS and not _PARTY_ROOM_CLEANUP_TASKS[party_id].done():
+        return  # cleanup already scheduled — let it run
+
+    async def _delayed_cleanup():
+        try:
+            await asyncio.sleep(PARTY_ROOM_CLEANUP_GRACE_SEC)
+        except asyncio.CancelledError:
+            _PARTY_ROOM_CLEANUP_TASKS.pop(party_id, None)
+            return
+        try:
+            # Re-check on wake-up. A player may have (re)joined during
+            # the grace window — bail without destroying.
+            current = PARTY_ROOMS.get(party_id)
+            if current is None:
+                return
+            if any(not p.is_bot for p in current.players.values()):
+                logger.info(
+                    "Party room %s grace-window rescue — a real player is back, skipping cleanup.",
+                    party_id,
+                )
+                return
+            task = PARTY_ROOM_TASKS.pop(party_id, None)
+            if task and not task.done():
+                task.cancel()
+            PARTY_ROOMS.pop(party_id, None)
+            # Clear match_starting flag when the room dies so the lobby panel re-resets.
+            party = PARTIES.get(party_id)
+            if party:
+                party["match_starting"] = False
+            logger.info("Party room destroyed id=%s (after %.0fs grace)", party_id, PARTY_ROOM_CLEANUP_GRACE_SEC)
+        finally:
+            _PARTY_ROOM_CLEANUP_TASKS.pop(party_id, None)
+
+    _PARTY_ROOM_CLEANUP_TASKS[party_id] = asyncio.create_task(_delayed_cleanup())
 
 
 async def _leave_party_internal(user_id: str):

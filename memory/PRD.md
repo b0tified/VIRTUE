@@ -1863,3 +1863,19 @@ Two quality-of-life changes shipped together.
   - Live WS at wss://…/api/ws/game?mode=party — BOTS OFF room stays human-only across ~25s of broadcasts (0 bots, roster size = human members). BOTS ON room still fills to 4 with disguised fill bots.
   - Casual quick-match auto-fill unaffected.
 
+
+### 2026-02-25 (later) — Custom Lobby: follower now actually joins alongside host
+- **User bug**: "Custom game only brings host into the game when bots are disabled." Follow-up to the earlier BOTS OFF toggle fix — now the toggle works but the *follower* still didn't make it into the party room.
+- **Root cause**: `cleanup_party_room_if_empty` fired synchronously on every WS disconnect. When the leader's Game.jsx mounted, React StrictMode (dev) + any brief network hiccup produced a rapid WS close on the initial mount. That dropped the room to 0 humans and immediately (a) destroyed the room AND (b) reset `party["match_starting"]=False`. The follower's next `/party/me` poll (0-5s later) then saw `match_starting=False` and never navigated.
+- **Why BOTS ON felt fine to the user**: with bots seeded the room lives just long enough through the reconnect for the follower's poll to catch the tail of a `match_starting=True` snapshot; with BOTS OFF the room hits 0 players instantly.
+- **Fix** (`/app/backend/server.py`):
+  - New module constant `PARTY_ROOM_CLEANUP_GRACE_SEC = 15.0` and tracker `_PARTY_ROOM_CLEANUP_TASKS`.
+  - `cleanup_party_room_if_empty` now schedules a delayed task instead of tearing the room down inline. The task re-checks emptiness on wake-up and bails if a real player rejoined during the grace window ("grace-window rescue" log). Idempotent — a repeat call while a cleanup is pending is a no-op.
+- **Tests** (`/app/backend/tests/test_party_cleanup_grace.py`, 5/5 pass):
+  - Grace constant present and in sane 10-60s window.
+  - `cleanup_party_room_if_empty` uses `asyncio.sleep(PARTY_ROOM_CLEANUP_GRACE_SEC)` (grep guard).
+  - Sync teardown deferred — room + `match_starting` untouched immediately after the call.
+  - Rejoin during grace saves the room + keeps `match_starting=True`.
+  - Truly abandoned room is destroyed after the grace window (and `_PARTY_ROOM_CLEANUP_TASKS` self-cleans).
+- **Live verification** (2-client e2e sim, leader "flaps" then follower polls): both users land in the same party room; `partyleader` + `partyfollower` present on the follower's WS state. Bug fixed.
+
