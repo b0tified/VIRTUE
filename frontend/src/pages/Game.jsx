@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
+import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 import { GameEngine } from "@/game/engine";
 import { GameSocket } from "@/game/network";
@@ -715,8 +716,19 @@ export default function Game() {
     // fired (~5-10s later on slow networks).
     try { queueCtx?.cancelRanked?.(); } catch { /* no-op */ }
     try { queueCtx?.cancelCasual?.(); } catch { /* no-op */ }
+    // Party Custom Lobby: mark the user as opted-out of the CURRENT
+    // start-session so the /party/me poller on /lobby stops seeing
+    // `match_starting=true` for us. Without this, PartyPanel's
+    // useEffect immediately re-navigates non-leader members back to
+    // /play — the "leave match just brings you back into game if
+    // you are not the host" bug. Fire-and-forget: if this 200ms
+    // request loses to the /lobby poll we still have the client-side
+    // cancel guards below to bridge one poll cycle.
+    if (mode === "party") {
+      try { api.post("/party/leave-match").catch(() => {}); } catch { /* no-op */ }
+    }
     nav("/lobby");
-  }, [nav, queueCtx]);
+  }, [nav, queueCtx, mode]);
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">

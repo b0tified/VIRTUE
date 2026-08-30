@@ -1879,3 +1879,29 @@ Two quality-of-life changes shipped together.
   - Truly abandoned room is destroyed after the grace window (and `_PARTY_ROOM_CLEANUP_TASKS` self-cleans).
 - **Live verification** (2-client e2e sim, leader "flaps" then follower polls): both users land in the same party room; `partyleader` + `partyfollower` present on the follower's WS state. Bug fixed.
 
+
+### 2026-02-25 (later²) — Follower can now actually LEAVE a Custom Lobby
+- **User bug**: "The leave match just brings you back into game if you are not the host of the party in custom game."
+- **Root cause**: `/party/me` returned the same `match_starting=true` to every party member as long as ANY member was still in the room. Follower clicks EXIT → nav("/lobby") → next 5s poll → PartyPanel useEffect fires on `match_starting=true` → re-navigates back to `/play`. Infinite bounce.
+- **Fix**:
+  - **Backend** (`/app/backend/server.py`):
+    - `PARTIES[pid]["match_optout"]` — set of user_ids opted out of the current Custom Lobby session.
+    - `_party_payload(party_id, *, for_user_id=None)` — masks `match_starting` to `False` when the caller is in the opt-out set. Legacy no-arg callers get the raw flag.
+    - `POST /api/party/leave-match` — adds caller to `match_optout`.
+    - `/party/start` clears `match_optout` on each new session so the leader can pull the previously-opted-out member back in.
+    - `/party/me` now passes `for_user_id=me_id` to the payload.
+  - **Frontend** (`/app/frontend/src/pages/Game.jsx`):
+    - `handleExit` now fire-and-forget POSTs `/api/party/leave-match` when `mode === "party"` before the nav back to `/lobby`.
+    - Ungated for other modes so casual/ranked/practice exits are untouched.
+- **Tests** (`/app/backend/tests/test_party_leave_match_optout.py`, 7/7 pass):
+  - Endpoint + payload signature + `party_start` optout reset (grep guards).
+  - Game.jsx handleExit contains the party-gated POST (grep guard).
+  - Runtime: opt-out masks match_starting for the follower only, leader unaffected.
+  - Runtime: legacy no-arg `_party_payload` returns the raw flag.
+  - Runtime: `party_start`'s reset re-arms match_starting=True for the previously opted-out follower.
+- **Live 2-client verification** (partyleader + partyfollower):
+  - Both connect to same party room via WS.
+  - Follower POSTs `/party/leave-match` → `/party/me` returns `match_starting=false` for follower, `true` for leader.
+  - Leader POSTs a new `/party/start` → follower's `/party/me` returns `match_starting=true` again.
+  - All 28 party-related pytests (bots-off + cleanup grace + leave-match + lobby + smurf) pass.
+

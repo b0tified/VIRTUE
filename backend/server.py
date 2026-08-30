@@ -7460,7 +7460,7 @@ async def _party_card(user_id: str) -> dict:
     return _friend_card(u)
 
 
-async def _party_payload(party_id: str) -> dict:
+async def _party_payload(party_id: str, *, for_user_id: Optional[str] = None) -> dict:
     p = PARTIES[party_id]
     members = [await _party_card(uid) for uid in p["members"]]
     # Surface the tier the party would queue ranked at (max across members)
@@ -7475,11 +7475,23 @@ async def _party_payload(party_id: str) -> dict:
             best_tier_idx = int(m.get("rank_tier", 0) or 0)
             best_user = m.get("username", "")
     _, best_tier_name = rank_for_points(best_pts)
+    # Per-user match_starting mask. A member who exited the current
+    # Custom Lobby via /api/party/leave-match is added to `match_optout`
+    # so the poll reports match_starting=False FOR THAT USER ONLY —
+    # otherwise PartyPanel's useEffect immediately re-navigates them
+    # back into /play, producing the "leave match just brings you back
+    # into game" bug. The rest of the party (still in the match) sees
+    # match_starting unchanged. Cleared on the next /party/start so a
+    # future custom lobby CAN pull the opted-out member back in.
+    match_starting = bool(p.get("match_starting", False))
+    optout = p.get("match_optout") or set()
+    if for_user_id and for_user_id in optout:
+        match_starting = False
     return {
         "party_id": party_id,
         "leader_id": p["leader_id"],
         "members": members,
-        "match_starting": bool(p.get("match_starting", False)),
+        "match_starting": match_starting,
         # Custom Lobby settings so members see what the leader picked
         # before they auto-navigate. Defaults preserve legacy behaviour
         # (bots on, FFA).
@@ -9353,7 +9365,33 @@ async def party_me(user: dict = Depends(get_current_user)):
     party_id = PARTY_MEMBER_INDEX.get(me_id)
     if not party_id or party_id not in PARTIES:
         return {"party_id": None}
-    return await _party_payload(party_id)
+    return await _party_payload(party_id, for_user_id=me_id)
+
+
+@api.post("/party/leave-match")
+async def party_leave_match(user: dict = Depends(get_current_user)):
+    """Opt the caller out of the CURRENT Custom Lobby session without
+    leaving the party itself. Fixes the "leave match just brings you
+    back into the game if you are not the host" bug — after the client
+    calls this the next `/party/me` poll returns `match_starting=False`
+    for THIS user only, so PartyPanel's auto-nav useEffect doesn't
+    yank them back into /play. Other members (still in the match)
+    see the flag unchanged.
+
+    The opt-out is scoped to the current start-session: on the next
+    `/party/start` the set is cleared, so if the leader kicks off a
+    new Custom Lobby the previously-opted-out member CAN be pulled
+    back in.
+    """
+    me_id = str(user["_id"])
+    party_id = PARTY_MEMBER_INDEX.get(me_id)
+    if not party_id or party_id not in PARTIES:
+        return {"ok": True}
+    party = PARTIES[party_id]
+    optout = party.setdefault("match_optout", set())
+    optout.add(me_id)
+    logger.info("Party %s: user %s opted out of current custom lobby.", party_id, me_id)
+    return {"ok": True}
 
 
 @api.post("/party/start")
@@ -9380,6 +9418,10 @@ async def party_start(payload: dict = None, user: dict = Depends(get_current_use
     party["match_starting"] = True
     party["bots_enabled"] = bool(body.get("bots_enabled", True))
     party["tdm"] = bool(body.get("tdm", False))
+    # A brand-new Custom Lobby session — clear any per-member opt-outs
+    # from the PREVIOUS lobby so followers who exited last round can
+    # be pulled back in this time.
+    party["match_optout"] = set()
     logger.info("Party %s starting custom lobby: bots=%s tdm=%s",
                 party_id, party["bots_enabled"], party["tdm"])
     return {"party_id": party_id, "bots_enabled": party["bots_enabled"], "tdm": party["tdm"]}
