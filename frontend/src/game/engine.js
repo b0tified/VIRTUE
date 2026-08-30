@@ -36,7 +36,7 @@ export class GameEngine {
     // readable. Per-map overrides in _rebuildArenaFromServer still apply.
     this.scene.fog = new THREE.Fog(0xbfe2ff, 90, 190);
 
-    this.camera = new THREE.PerspectiveCamera(78, canvas.clientWidth / canvas.clientHeight, 0.05, 500);
+    this.camera = new THREE.PerspectiveCamera(78, canvas.clientWidth / canvas.clientHeight, 0.15, 500);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,

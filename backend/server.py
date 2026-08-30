@@ -2936,22 +2936,32 @@ MAP_F = {
         {"x":   0, "z":  20, "w": 26, "h": 0.8, "d": 3, "y_base": 8},
         {"x":   0, "z": -20, "w": 26, "h": 0.8, "d": 3, "y_base": 8},
         # Mezzanine railing — short vertical walls sitting ON the ring.
-        {"x":  18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.8},
-        {"x": -18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.8},
-        {"x":  0, "z":  18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.8},
-        {"x":  0, "z": -18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.8},
+        # NOTE: `y_base` is 8.85 (not 8.8) — the walkway ring above has
+        # its TOP face at exactly y=8.8, so anchoring the railings at
+        # 8.8 puts their bottom face coplanar with the walkway top and
+        # z-fights every time the camera moves. 0.05m lift is invisible
+        # in-game but breaks the coplanar tie. Fixes the "random boxes
+        # appearing + walls flickering" report on ROYAL GUARD.
+        {"x":  18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.85},
+        {"x": -18.5, "z":  0,  "w": 0.4, "h": 1.6, "d": 26, "y_base": 8.85},
+        {"x":  0, "z":  18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.85},
+        {"x":  0, "z": -18.5, "w": 26, "h": 1.6, "d": 0.4, "y_base": 8.85},
         # Ceiling coffer — extended to cover the FULL 100x100 arena
         # (matches the floor size) so no matter where a player looks up
         # they see ceiling, not sky. Non-collidable (y_base > 0).
         {"x": 0, "z": 0, "w": 100, "h": 0.6, "d": 100, "y_base": 14},
         # Second-story doorway lintels — three "hotel room door" facades
         # along the west + east mezzanine walls.
-        {"x": -17, "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x": -17, "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x": -17, "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x":  17, "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x":  17, "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
-        {"x":  17, "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.8},
+        # `y_base` 8.85 (not 8.8) — matches the railing lift above so the
+        # lintel bottom face isn't coplanar with the mezzanine walkway top
+        # (both used to sit at exactly y=8.8, producing z-fight flicker
+        # any time the camera crossed that plane).
+        {"x": -17, "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.85},
+        {"x": -17, "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.85},
+        {"x": -17, "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.85},
+        {"x":  17, "z":  10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.85},
+        {"x":  17, "z":   0, "w": 2, "h": 3, "d": 0.4, "y_base": 8.85},
+        {"x":  17, "z": -10, "w": 2, "h": 3, "d": 0.4, "y_base": 8.85},
     ],
     "spawn_points": [
         (35, 35), (-35, 35), (35, -35), (-35, -35),

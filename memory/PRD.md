@@ -1905,3 +1905,18 @@ Two quality-of-life changes shipped together.
   - Leader POSTs a new `/party/start` → follower's `/party/me` returns `match_starting=true` again.
   - All 28 party-related pytests (bots-off + cleanup grace + leave-match + lobby + smurf) pass.
 
+
+### 2026-02-25 (later³) — ROYAL GUARD (castle guard) map: fixed random boxes + wall flicker
+- **User bug**: "Sometimes on the castle guard map random boxes will appear on screen and walls flicker when moving."
+- **Two stacked root causes**:
+  1. **Depth-buffer starvation** — the camera was `PerspectiveCamera(78, aspect, 0.05, 500)`. A 10,000:1 far/near ratio pushes the 24-bit depth buffer past its precision limit, so the comic-outline shells (BackSide, 1.05x scale) and the 0.011 m face-decal offsets z-fought against their parent walls as the player moved. This is normally invisible outdoors but ROYAL GUARD is the only map with stacked floating geometry (mezzanine + railings + lintels + ceiling) — the artifacts pile up in one view.
+  2. **Coplanar geometry** — the mezzanine walkway ring's top face sits at exactly y=8.8 (y_base 8 + h 0.8). Both the 4 railings AND the 6 doorway lintels used `y_base=8.8`, putting their bottom face coplanar with the walkway top. Any camera angle crossing that plane z-fought regardless of buffer precision.
+- **Fix**:
+  - `/app/frontend/src/game/engine.js`: camera near bumped `0.05 → 0.15` (3x depth precision, still far enough that a sprinting player never clips through a wall).
+  - `/app/backend/server.py` MAP_F: 4 mezzanine railings and 6 doorway lintels moved `y_base 8.8 → 8.85` (5 cm lift, invisible in-game, breaks the coplanar tie).
+- **Tests** (`/app/backend/tests/test_hotel_map_zfight.py`, 4/4 pass):
+  - No floating obstacle sits at `y_base == 8.8` (regression guard).
+  - Railings + lintels are all at `y_base == 8.85` (specific fix guard).
+  - Camera `near >= 0.1` AND `far/near <= 5000` (frontend depth-precision guard).
+- **Related suites clean**: 14/14 across the new hotel z-fight tests, existing hotel-map layout tests, and party leave-match tests.
+
