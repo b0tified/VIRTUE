@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -28,6 +28,23 @@ import { useQueue } from "@/context/QueueContext";
 import useIsMobile, { detectIsMobile } from "@/game/useIsMobile";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
+
+/** Compact remaining-time formatter for the header's XP Boost pill:
+ *  1d 3h · 42m · 27s. Falls back to seconds under a minute so the last
+ *  moments of the boost still feel alive on-screen. Duplicated in
+ *  ShopModal.jsx (formatBoostRemaining) — both live at ~10 lines so
+ *  a shared util isn't worth the extra file yet. */
+function formatLobbyBoostRemaining(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (s < 60) return `${s}s`;
+  const days = Math.floor(s / 86400);
+  const hrs = Math.floor((s % 86400) / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  if (days > 0) return `${days}d ${hrs}h`;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
+}
+
 
 export default function Lobby() {
   // logout still available via Settings modal — it pulls its own useAuth().
@@ -102,6 +119,32 @@ export default function Lobby() {
   const rankedBanLabel = rankedBanned
     ? `${Math.floor(rankedBanLeft / 60)}:${String(rankedBanLeft % 60).padStart(2, "0")}`
     : "";
+
+  // Live XP-boost countdown. `user.xp_boost_until` is an absolute
+  // epoch (float seconds) from the server; we tick a state var every
+  // 1s so the header pill counts down without re-fetching /auth/me.
+  // Falls back to `xp_boost_seconds_remaining` at first render so the
+  // pill shows a value even on a stale user object.
+  const [xpBoostLeft, setXpBoostLeft] = useState(0);
+  useEffect(() => {
+    const until = Number(user?.xp_boost_until || 0);
+    const fromServer = Number(user?.xp_boost_seconds_remaining || 0);
+    if (!until && !fromServer) { setXpBoostLeft(0); return; }
+    const compute = () => Math.max(0, Math.floor(until - Date.now() / 1000));
+    setXpBoostLeft(until ? compute() : fromServer);
+    if (!until) return;
+    const id = setInterval(() => {
+      setXpBoostLeft((prev) => {
+        const next = compute();
+        // Re-fetch /me once when the boost lapses so any dependent UI
+        // (challenge chips, ranked lock, etc.) picks up the new state.
+        if (prev > 0 && next === 0) { try { refreshMe?.(); } catch {} }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [user?.xp_boost_until, user?.xp_boost_seconds_remaining, refreshMe]);
+
 
   const joinRankedQueue = async () => {
     if (rankedLocked) {
@@ -605,6 +648,28 @@ export default function Lobby() {
             <span className="font-anton uppercase text-[10px] tracking-widest opacity-80 hidden sm:inline">Coins</span>
             <span className="font-display text-xl sm:text-2xl leading-none">{user?.coins ?? 0}</span>
           </button>
+          {/* Active XP Boost pill — surfaces the current 2x timer so the
+              user is reminded to jump into a match while their boost is
+              still running. Clickable → opens the Shop's Boosts tab
+              (shared modal via `setShowShop`). Hidden when no boost is
+              active. */}
+          {xpBoostLeft > 0 && (
+            <button
+              onClick={() => setShowShop(true)}
+              className="border-pow shadow-pow-sm px-3 py-2 flex items-center gap-1.5 hover:translate-y-[-1px] transition-transform"
+              style={{ background: "#06A35F", color: "#fff" }}
+              data-testid="lobby-xp-boost-badge"
+              title={`${user?.xp_boost_multiplier || 2}x XP active — ${formatLobbyBoostRemaining(xpBoostLeft)} left`}
+            >
+              <Zap size={14} strokeWidth={3} />
+              <span className="font-anton uppercase text-[10px] tracking-widest opacity-90 hidden sm:inline">
+                {(user?.xp_boost_multiplier || 2)}X XP
+              </span>
+              <span className="font-display text-lg sm:text-xl leading-none">
+                {formatLobbyBoostRemaining(xpBoostLeft)}
+              </span>
+            </button>
+          )}
           {/* Combined PASS + SHOP button — opens ProgressionModal which
               has both the season-pass tab and a new "SHOP" tab. The
               coin pill above is still a quick-open into the standalone

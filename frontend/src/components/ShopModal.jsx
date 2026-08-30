@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/api";
 import { SKINS, RARITY_COLOR } from "@/game/skins";
 import { useAuth } from "@/context/AuthContext";
-import { Coins, Check, X, Lock, Eye } from "lucide-react";
+import { Coins, Check, X, Lock, Eye, Zap, Clock } from "lucide-react";
 import SkinPreview3D from "@/components/SkinPreview3D";
 
 export default function ShopModal({ open, onClose }) {
@@ -20,6 +20,14 @@ export default function ShopModal({ open, onClose }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Tab state — "skins" (default) vs "boosts". Boosts live in a
+  // sibling tab so users looking for cosmetics don't get a wall of
+  // consumables in their way, and vice versa.
+  const [tab, setTab] = useState("skins");
+  // Boosts payload (catalog + coins + active-boost countdown). Fetched
+  // lazily when the user first switches to the boosts tab so the
+  // initial skin fetch stays fast for the common path.
+  const [boostsData, setBoostsData] = useState(null);
   // 3D preview modal — opens when the user hits "PREVIEW IN 3D" on any
   // card. Holds the full skin object so the modal can mount its own
   // Three.js scene with the live humanoid mesh.
@@ -34,13 +42,26 @@ export default function ShopModal({ open, onClose }) {
     }
   };
 
+  const reloadBoosts = async () => {
+    try {
+      const { data } = await api.get("/shop/boosts");
+      setBoostsData(data);
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message || "Failed to load boosts.");
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     setError(null);
     reload();
+    // Warm the boost countdown too — cheap request, keeps the badge
+    // fresh so a user who bought a boost outside the modal still
+    // sees the "ACTIVE · Xm LEFT" chip when they open it.
+    reloadBoosts();
   }, [open]);
 
-  const coins = data?.coins ?? user?.coins ?? 0;
+  const coins = boostsData?.coins ?? data?.coins ?? user?.coins ?? 0;
   const selected = data?.selected_skin ?? user?.selected_skin ?? "default";
   const items = data?.items || SKINS.map((s) => ({ ...s, owned: s.id === "default", equipped: s.id === selected }));
 
@@ -69,6 +90,22 @@ export default function ShopModal({ open, onClose }) {
       await reload();
     } catch (e) {
       setError(e.response?.data?.detail || "Could not equip skin.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const buyBoost = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/shop/boost/purchase", { boost_id: id });
+      await refreshMe?.();
+      await reloadBoosts();
+      await reload();  // wallet is shared → refresh the skin tab's coin count too
+    } catch (e) {
+      setError(e.response?.data?.detail || "Could not buy boost.");
     } finally {
       setBusy(false);
     }
@@ -109,6 +146,42 @@ export default function ShopModal({ open, onClose }) {
             </button>
           </div>
         </div>
+        {/* Tab strip — Skins vs Boosts. Kept simple + comic-flat so the
+            header stays visually anchored to the black bar above. */}
+        <div className="bg-neutral-900 text-white px-3 py-1.5 flex items-center gap-1 flex-shrink-0 border-t-2 border-black">
+          {[
+            { id: "skins",  label: "SKINS",  icon: <Eye size={12} strokeWidth={3} /> },
+            { id: "boosts", label: "XP BOOSTS", icon: <Zap size={12} strokeWidth={3} /> },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={
+                "font-anton uppercase text-[11px] tracking-widest px-3 py-1.5 border-2 border-black flex items-center gap-1.5 transition-colors " +
+                (tab === t.id
+                  ? "bg-[#FFD700] text-black"
+                  : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700")
+              }
+              data-testid={`shop-tab-${t.id}`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+          {/* Active-boost countdown chip — surfaces the current 2x
+              timer prominently on both tabs so a repeat purchase can
+              see "still 40m of my last one" before spending. */}
+          {(boostsData?.active_seconds_remaining ?? 0) > 0 && (
+            <div
+              className="ml-auto font-anton uppercase text-[10px] tracking-widest bg-[#06A35F] text-white border-2 border-black px-2 py-1 flex items-center gap-1"
+              data-testid="shop-active-boost-chip"
+              title="Active XP Boost time remaining"
+            >
+              <Clock size={10} strokeWidth={3} />
+              2X · {formatBoostRemaining(boostsData.active_seconds_remaining)}
+            </div>
+          )}
+        </div>
         {/* Grid */}
         <div className="bg-white p-4 overflow-y-auto" data-testid="shop-grid">
           {error && (
@@ -119,23 +192,47 @@ export default function ShopModal({ open, onClose }) {
               {error}
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {items.map((s) => (
-              <SkinCard
-                key={s.id}
-                skin={s}
-                coins={coins}
-                busy={busy}
-                onBuy={() => buy(s.id)}
-                onEquip={() => equip(s.id)}
-                onPreview={() => setPreviewSkin(s)}
-              />
-            ))}
-          </div>
-          <p className="text-[10px] text-neutral-500 mt-4 text-center">
-            Earn coins by leveling up (+100/level) or redeeming promo codes. Skins are
-            permanent once bought.
-          </p>
+          {tab === "skins" && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {items.map((s) => (
+                  <SkinCard
+                    key={s.id}
+                    skin={s}
+                    coins={coins}
+                    busy={busy}
+                    onBuy={() => buy(s.id)}
+                    onEquip={() => equip(s.id)}
+                    onPreview={() => setPreviewSkin(s)}
+                  />
+                ))}
+              </div>
+              <p className="text-[10px] text-neutral-500 mt-4 text-center">
+                Earn coins by leveling up (+100/level) or redeeming promo codes. Skins are
+                permanent once bought.
+              </p>
+            </>
+          )}
+          {tab === "boosts" && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="shop-boosts-grid">
+                {(boostsData?.boosts || []).map((b) => (
+                  <BoostCard
+                    key={b.id}
+                    boost={b}
+                    coins={coins}
+                    busy={busy}
+                    onBuy={() => buyBoost(b.id)}
+                  />
+                ))}
+              </div>
+              <p className="text-[10px] text-neutral-500 mt-4 text-center">
+                XP Boosts apply to every match — casual and ranked. Stacks by
+                extending the timer if you buy again while active. Only
+                affects your XP / level, never rank RP.
+              </p>
+            </>
+          )}
         </div>
       </div>
 
@@ -429,4 +526,100 @@ function auraCss(skin) {
     animation: "shop-aura-flicker 0.9s steps(2, end) infinite",
     filter: "blur(3px)",
   };
+}
+
+
+// ─── XP Boost store — tab card + helpers ──────────────────────────────
+// Renders one boost SKU as a card matching the SkinCard visual weight
+// but with a "2X XP" hero + duration pill instead of a humanoid preview.
+
+/** Compact "1h 42m", "2d 3h", "45m", "23s" formatting for the countdown
+ *  chip. Falls back to seconds when < 1 minute so the last minute of a
+ *  boost feels alive. */
+function formatBoostRemaining(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (s < 60) return `${s}s`;
+  const days = Math.floor(s / 86400);
+  const hrs = Math.floor((s % 86400) / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  if (days > 0) return `${days}d ${hrs}h`;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
+}
+
+/** Human-readable duration shown on the card face ("60 minutes",
+ *  "24 hours", "7 days"). Deterministic per SKU. */
+function formatBoostDuration(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (s % 86400 === 0) {
+    const d = s / 86400;
+    return d === 1 ? "1 day" : `${d} days`;
+  }
+  if (s % 3600 === 0) {
+    const h = s / 3600;
+    return h === 1 ? "1 hour" : `${h} hours`;
+  }
+  const m = Math.round(s / 60);
+  return `${m} min`;
+}
+
+export function BoostCard({ boost, coins, busy, onBuy }) {
+  const canAfford = coins >= boost.price;
+  const rarityColor = RARITY_COLOR[boost.rarity] || "#a3a3a3";
+  return (
+    <div
+      className="card-pow bg-white flex flex-col overflow-hidden"
+      data-testid={`shop-boost-card-${boost.id}`}
+    >
+      {/* Header — rarity strip + name */}
+      <div
+        className="px-3 py-1.5 flex items-center justify-between text-white"
+        style={{ background: rarityColor }}
+      >
+        <div className="font-anton uppercase text-[11px] tracking-widest text-black">
+          {boost.rarity}
+        </div>
+        <div className="font-anton uppercase text-[10px] tracking-widest text-black/70">
+          XP BOOST
+        </div>
+      </div>
+      {/* Hero: giant "2X" + duration copy */}
+      <div className="flex flex-col items-center justify-center py-6 bg-gradient-to-br from-[#fff8dd] to-[#ffe08a]">
+        <div className="flex items-baseline gap-1 text-black">
+          <span className="font-display text-6xl leading-none text-pow-shadow">
+            {Number(boost.multiplier || 2)}X
+          </span>
+          <Zap size={26} strokeWidth={4} className="text-[#a36a00] mb-1" />
+        </div>
+        <div className="mt-1 font-anton uppercase text-[11px] tracking-widest text-neutral-700">
+          {formatBoostDuration(boost.duration_sec)}
+        </div>
+      </div>
+      {/* Body: name + tagline */}
+      <div className="px-3 py-2 flex-1 flex flex-col">
+        <div className="font-anton uppercase text-sm text-black">{boost.name}</div>
+        <div className="text-[10px] text-neutral-500 mt-0.5">{boost.tagline}</div>
+      </div>
+      {/* Footer: price + Buy */}
+      <div className="border-t-2 border-black px-3 py-2 flex items-center justify-between bg-neutral-50">
+        <div className="flex items-center gap-1 font-anton text-sm text-[#a36a00]">
+          <Coins size={12} strokeWidth={3} /> {boost.price}
+        </div>
+        <button
+          onClick={onBuy}
+          disabled={!canAfford || busy}
+          className={
+            "btn-pow [&]:py-1 [&]:px-3 [&]:text-xs " +
+            (canAfford
+              ? "bg-[#06A35F] text-white"
+              : "bg-neutral-300 text-neutral-500 cursor-not-allowed")
+          }
+          data-testid={`shop-boost-buy-${boost.id}`}
+          title={canAfford ? "Activate this boost" : "Not enough coins"}
+        >
+          {canAfford ? "BUY" : (<span className="flex items-center gap-1"><Lock size={11} strokeWidth={3} /> LOCKED</span>)}
+        </button>
+      </div>
+    </div>
+  );
 }

@@ -207,6 +207,12 @@ def public_user(user: dict) -> dict:
         "placement_matches_total": PLACEMENT_MATCHES,
         "in_placements": placement_played < PLACEMENT_MATCHES,
         "coins": int(user.get("coins", 0) or 0),
+        "xp_boost_seconds_remaining": xp_boost_remaining_seconds(user),
+        "xp_boost_multiplier": xp_boost_active_multiplier(user),
+        # Absolute epoch seconds for the boost expiry so the client
+        # can tick a live countdown (Date.now()) without re-fetching
+        # /auth/me every second. Zero when no boost is active.
+        "xp_boost_until": float(user.get("xp_boost_until", 0) or 0),
         "owned_skins": owned,
         "selected_skin": selected,
         # Primary-weapon loadout choice. Persisted via /profile/me/weapon.
@@ -575,6 +581,86 @@ async def refresh_ultimate_gooner_cache() -> None:
 # No in-match earning — kills/wins don't grant coins (kept that way so
 # the economy can be tuned later via promo events).
 COINS_PER_LEVEL = 100  # awarded once per level the player reaches.
+
+# XP Boost store items — coin-only consumables that grant a 2x XP
+# multiplier for a set duration. Applied at end_match: bonus_xp is
+# credited equal to the natural stats-derived XP earned that match,
+# so a player with a 2x boost effectively earns double. Stacking
+# purchases EXTEND the timer (max(now, prev_until) + duration) so
+# players never "waste" the tail of an old boost.
+BOOSTS_CATALOG: List[dict] = [
+    {
+        "id": "boost_1h",
+        "name": "1-Hour XP Boost",
+        "duration_sec": 60 * 60,
+        "multiplier": 2.0,
+        "price": 300,
+        "rarity": "common",
+        "tagline": "2x XP for 60 minutes",
+    },
+    {
+        "id": "boost_24h",
+        "name": "1-Day XP Boost",
+        "duration_sec": 24 * 60 * 60,
+        "multiplier": 2.0,
+        "price": 800,
+        "rarity": "rare",
+        "tagline": "2x XP for a full day",
+    },
+    {
+        "id": "boost_7d",
+        "name": "1-Week XP Boost",
+        "duration_sec": 7 * 24 * 60 * 60,
+        "multiplier": 2.0,
+        "price": 3000,
+        "rarity": "epic",
+        "tagline": "2x XP for seven days — best value",
+    },
+]
+BOOSTS_BY_ID: Dict[str, dict] = {b["id"]: b for b in BOOSTS_CATALOG}
+
+
+def xp_boost_bonus_for_match(user: dict, kills: int, placement: int) -> int:
+    """Bonus XP to credit at match end, on top of the natural stats-
+    derived XP, when the caller has an active XP boost.
+
+    Natural XP contributions for a single match are:
+      - 25 XP per match played
+      - 50 XP per win (placement == 1)
+      - 10 XP per kill
+    We mirror those numbers here and multiply by (mult - 1) so a 2x
+    boost effectively DOUBLES the earned XP without touching the
+    stats-derived path (compute_level stays a pure function of stats).
+    """
+    if xp_boost_remaining_seconds(user) <= 0:
+        return 0
+    mult = xp_boost_active_multiplier(user)
+    if mult <= 1.0:
+        return 0
+    natural = 25 + (50 if placement == 1 else 0) + max(0, int(kills)) * 10
+    return int(round(natural * (mult - 1.0)))
+
+
+
+def xp_boost_remaining_seconds(user: dict) -> int:
+    """Seconds of 2x XP left on this user's active boost. Zero when no
+    boost is active or the timer has elapsed. Read on public_user +
+    end_match; the frontend uses it to render the countdown pill."""
+    until = float(user.get("xp_boost_until", 0) or 0)
+    now = time.time()
+    if until <= now:
+        return 0
+    return int(until - now)
+
+
+def xp_boost_active_multiplier(user: dict) -> float:
+    """Effective XP multiplier right now (1.0 when no active boost).
+    Kept as a float so a future 1.5x / 3x product can be added by
+    tweaking BOOSTS_CATALOG alone."""
+    if xp_boost_remaining_seconds(user) <= 0:
+        return 1.0
+    return float(user.get("xp_boost_multiplier", 2.0) or 2.0)
+
 
 # Catalog of player skins. The "default" skin is free + auto-owned by every
 # user. All paid skins recolor the humanoid (head/torso/limbs/accent) and
@@ -1643,6 +1729,78 @@ async def shop_buy(payload: SkinBuyIn, user: dict = Depends(get_current_user)):
     user["owned_skins"] = new_owned
     user["selected_skin"] = skin["id"]
     return {"ok": True, "skin": skin, "user": public_user(user)}
+
+
+# ---------------------------------------------------------------------
+# XP Boost store — consumable items that grant 2x XP for a duration.
+# Uses the same coin wallet as skins. Stacks by extending the timer.
+# ---------------------------------------------------------------------
+class BoostBuyIn(BaseModel):
+    boost_id: str = Field(min_length=1, max_length=32)
+
+
+@api.get("/shop/boosts")
+async def shop_boosts(user: dict = Depends(get_current_user)):
+    """Storefront payload for the XP Boost tab. Returns the catalog +
+    the caller's coin balance + the current active-boost countdown so
+    the client can render "ACTIVE · 42m LEFT" pills without a second
+    round-trip."""
+    await credit_level_coins(user)
+    return {
+        "coins": int(user.get("coins", 0) or 0),
+        "boosts": BOOSTS_CATALOG,
+        "active_seconds_remaining": xp_boost_remaining_seconds(user),
+        "active_multiplier": xp_boost_active_multiplier(user),
+    }
+
+
+@api.post("/shop/boost/purchase")
+async def shop_boost_purchase(payload: BoostBuyIn, user: dict = Depends(get_current_user)):
+    """Deduct coins and (re)arm the XP-boost timer.
+
+    Stacking rule: buying while a boost is already active EXTENDS the
+    timer instead of resetting it — the new duration is added to the
+    remaining time so the player never loses coins to a shorter
+    overlap. Multiplier follows the newly-bought SKU (all current
+    boosts are 2x so this is a no-op today, but keeps the schema
+    forward-compatible with future 1.5x / 3x SKUs).
+    """
+    await credit_level_coins(user)
+    boost = BOOSTS_BY_ID.get(payload.boost_id)
+    if not boost:
+        raise HTTPException(status_code=404, detail="Boost not found.")
+    price = int(boost.get("price", 0))
+    coins = int(user.get("coins", 0) or 0)
+    if coins < price:
+        raise HTTPException(status_code=402, detail=f"Not enough coins — needs {price}.")
+    now = time.time()
+    prev_until = float(user.get("xp_boost_until", 0) or 0)
+    # Extend from whichever is later — a stale timer that already
+    # elapsed shouldn't add to the new one.
+    base = prev_until if prev_until > now else now
+    new_until = base + float(boost["duration_sec"])
+    new_coins = coins - price
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "coins": new_coins,
+            "xp_boost_until": new_until,
+            "xp_boost_multiplier": float(boost["multiplier"]),
+        }},
+    )
+    user["coins"] = new_coins
+    user["xp_boost_until"] = new_until
+    user["xp_boost_multiplier"] = float(boost["multiplier"])
+    logger.info(
+        "Boost purchased user=%s sku=%s +%ds -> until=%.0f (%ds remaining)",
+        user.get("_id"), boost["id"], int(boost["duration_sec"]),
+        new_until, xp_boost_remaining_seconds(user),
+    )
+    return {
+        "ok": True,
+        "boost": boost,
+        "user": public_user(user),
+    }
 
 
 @api.post("/profile/me/skin")
@@ -5800,6 +5958,13 @@ class GameRoom:
                     inc_doc = {"stats.matches": 1, "placement_matches_played": 1}
                     if placement == 1:
                         inc_doc["stats.wins"] = 1
+                    # XP Boost: if the player has an active 2x boost, credit
+                    # the same amount of `bonus_xp` that this match would
+                    # naturally earn, effectively doubling their XP for the
+                    # match. Read the fresh udoc (it holds `xp_boost_until`).
+                    boost_bonus = xp_boost_bonus_for_match(udoc or {}, p.kills, placement)
+                    if boost_bonus > 0:
+                        inc_doc["stats.bonus_xp"] = boost_bonus
                     await db.users.update_one(
                         {"_id": ObjectId(p.user_id)},
                         {"$set": update_set, "$inc": inc_doc},
@@ -5927,6 +6092,10 @@ class GameRoom:
                     inc_doc = {"stats.matches": 1}
                     if placement == 1:
                         inc_doc["stats.wins"] = 1
+                    # XP Boost: credit bonus_xp same as ranked branch.
+                    boost_bonus = xp_boost_bonus_for_match(udoc or {}, p.kills, placement)
+                    if boost_bonus > 0:
+                        inc_doc["stats.bonus_xp"] = boost_bonus
                     await db.users.update_one(
                         {"_id": ObjectId(p.user_id)},
                         {"$inc": inc_doc},

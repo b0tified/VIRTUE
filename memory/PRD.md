@@ -1920,3 +1920,30 @@ Two quality-of-life changes shipped together.
   - Camera `near >= 0.1` AND `far/near <= 5000` (frontend depth-precision guard).
 - **Related suites clean**: 14/14 across the new hotel z-fight tests, existing hotel-map layout tests, and party leave-match tests.
 
+
+### 2026-02-25 (later⁴) — XP Boosts added to the Shop
+- **User request**: "XP Boosts in store."
+- **Backend** (`/app/backend/server.py`):
+  - `BOOSTS_CATALOG` — 3 SKUs (1h/300 coins, 24h/800 coins, 7d/3000 coins), all 2x XP; helper `BOOSTS_BY_ID` for O(1) lookup.
+  - Helpers: `xp_boost_remaining_seconds`, `xp_boost_active_multiplier`, `xp_boost_bonus_for_match(kills, placement)` — the last mirrors `compute_level`'s XP formula (25 per match + 50 per win + 10 per kill) and applies `(mult - 1)` to derive the bonus.
+  - `GET /api/shop/boosts` — catalog + wallet + active-boost countdown.
+  - `POST /api/shop/boost/purchase` — deducts coins, extends timer via `max(now, prev_until) + duration` so a repeat purchase never loses paid-for seconds.
+  - `end_match`: both ranked + casual branches credit `stats.bonus_xp += xp_boost_bonus_for_match(...)` on real players. Never touches RP.
+  - `public_user` exposes `xp_boost_seconds_remaining`, `xp_boost_multiplier`, and `xp_boost_until` (absolute epoch — lets the client tick locally).
+- **Frontend**:
+  - `ShopModal.jsx`: new tab strip (SKINS / XP BOOSTS). Boosts tab renders a 3-col grid of `BoostCard`s (giant "2X" hero, duration copy, rarity strip, Buy CTA). Active-boost countdown chip in the header ("2X · 1h 42m").
+  - `Lobby.jsx`: green XP-boost pill next to the coin badge (`lobby-xp-boost-badge`). Uses `xp_boost_until` + local 1s setInterval so the timer ticks without polling `/auth/me`.
+- **Tests** (`/app/backend/tests/test_xp_boost_store.py`, 14/14 pass):
+  - Catalog shape + BOOSTS_BY_ID index + progressive coin/hour rate.
+  - Helper math (no-boost, expired-boost, active-boost, 3x future-proof).
+  - `xp_boost_bonus_for_match` doubling with/without win, kills scaling.
+  - Static grep guards: end_match wires bonus_xp on both branches, public_user exposes all 3 boost fields, `/shop/boost/purchase` stacking rule uses `prev_until if prev_until > now else now`.
+  - Frontend guards: ShopModal has boosts tab config + grid, calls `/shop/boost/purchase`, exports `BoostCard`; Lobby renders `lobby-xp-boost-badge` and ticks `xpBoostLeft` via setInterval.
+- **Live verification** (admin@shooter.com):
+  - GET `/api/shop/boosts` returns 3 SKUs + wallet.
+  - Purchase 1h → coins deducted (15025 → 14725), `xp_boost_seconds_remaining` = 3599.
+  - Stack another 1h → seconds = 7199 (~2h). No double-charge, no reset.
+  - Invalid boost_id → 404 "Boost not found."
+  - Broke test user → 402 "Not enough coins — needs 3000."
+  - Preview screenshots show both tabs rendering + green boost pill in lobby.
+
