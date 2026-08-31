@@ -437,7 +437,7 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
                 <AnimatedRankIcon
                   tier={tier}
                   division={r.rank_division ?? 0}
-                  size={28}
+                  size={32}
                   testid={`archive-row-${i}-icon`}
                 />
                 <span className="truncate">{r.username}</span>
@@ -453,7 +453,12 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
                         style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A") }}
                         data-testid={`archive-rank-${i}`}
                       >
-                        {ultimate ? "ULTIMATE GOONER" : (r.rank_name || "BRONZE")}
+                        {/* Match the CURRENT-tab format exactly — full
+                            tier + division label (e.g. "GOONMASTER III")
+                            not just the base rank name. Users asked
+                            for past-season chips to look like the live
+                            leaderboard chips. */}
+                        {ultimate ? "ULTIMATE GOONER" : rankLabelFor(tier, r.rank_division ?? 0, r.rank_name)}
                       </span>
                       {ultimate && (
                         <UltimateGoonerBadge
