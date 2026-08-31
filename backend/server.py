@@ -333,6 +333,24 @@ async def maybe_reset_season() -> dict:
         # (rank thresholds live in Python), so this is a discrete cursor
         # pass. Rank tier is computed from the pre-reset RP.
         try:
+            # Pull the just-archived top-50 into a user_id → rank map so
+            # the past_seasons entry can carry the player's leaderboard
+            # position ("#7 GOONMASTER") — surfaces on the title picker
+            # in Profile and on the banner in-game. Kept in-memory for
+            # the rollover pass so we don't re-query per user.
+            rank_by_uid: Dict[str, int] = {}
+            try:
+                arc = await db.season_archive.find_one(
+                    {"season_number": finishing_season},
+                    {"top_100": 1, "_id": 0},
+                )
+                for row in (arc or {}).get("top_100", []):
+                    uid = str(row.get("user_id") or "")
+                    pos = int(row.get("rank", 0) or 0)
+                    if uid and 1 <= pos <= 50:
+                        rank_by_uid[uid] = pos
+            except Exception as e:
+                logger.warning("past_seasons rank lookup failed S%d: %s", finishing_season, e)
             cursor = db.users.find(
                 {"rank_points": {"$gt": 0}},
                 {"_id": 1, "rank_points": 1, "past_seasons": 1},
@@ -345,12 +363,19 @@ async def maybe_reset_season() -> dict:
                 # season number (shouldn't happen, but safe), skip.
                 if any(int(e.get("season", -1)) == finishing_season for e in past):
                     continue
-                past.append({
+                entry = {
                     "season": finishing_season,
                     "tier": int(t_idx),
                     "tier_name": t_name,
                     "rp": pts,
-                })
+                }
+                # Attach the top-50 placement so the title picker can
+                # render "#7 GOONMASTER" — the Ultimate Gooner call-out
+                # the user asked for.
+                pos = rank_by_uid.get(str(u["_id"]))
+                if pos:
+                    entry["leaderboard_rank"] = int(pos)
+                past.append(entry)
                 await db.users.update_one(
                     {"_id": u["_id"]},
                     {"$set": {"past_seasons": past}},
@@ -1103,6 +1128,7 @@ async def on_startup():
     asyncio.create_task(seeded_climb_loop())
     asyncio.create_task(synthetic_online_loop())
     asyncio.create_task(_backfill_past_seasons_once())
+    asyncio.create_task(_backfill_past_seasons_leaderboard_rank_once())
     asyncio.create_task(_ultimate_gooner_refresh_loop())
 
 
@@ -1239,6 +1265,69 @@ async def _backfill_past_seasons_once():
             logger.info("past_seasons backfill (bots): stamped %d seeded bots with S%d title", bot_touched, prev_season)
     except Exception as e:
         logger.warning("past_seasons backfill failed: %s", e)
+
+
+async def _backfill_past_seasons_leaderboard_rank_once():
+    """One-shot backfill so past_seasons entries that already exist
+    on user documents get their `leaderboard_rank` populated from the
+    season_archive top-100 snapshots.
+
+    Why this exists: the rollover code was recently updated to stamp
+    `leaderboard_rank` on new past_seasons entries (so the title
+    picker can render "#7 GOONMASTER"), but every user who went
+    through a rollover BEFORE that deploy has entries without the
+    field. This scan reads each archived season's `top_100` array,
+    builds `user_id → rank`, and pushes `leaderboard_rank` into
+    matching past_seasons entries where it's missing.
+
+    Idempotent — the second run finds no matches (all entries
+    already carry the field). Users who finished outside top-50 in
+    a given season are left untouched (the field stays absent, which
+    the frontend reads as "not an Ultimate Gooner that season").
+    """
+    try:
+        await asyncio.sleep(2.0)  # let the primary backfill run first
+        touched = 0
+        # Iterate every archived season → build rank map → push field.
+        async for arc in db.season_archive.find({}, {"season_number": 1, "top_100": 1, "_id": 0}):
+            season = int(arc.get("season_number", 0) or 0)
+            top = arc.get("top_100") or []
+            if not season or not top:
+                continue
+            # Only top-50 finishers become Ultimate Gooner call-outs.
+            rank_by_uid: Dict[str, int] = {}
+            for row in top:
+                uid = str(row.get("user_id") or "")
+                pos = int(row.get("rank", 0) or 0)
+                if uid and 1 <= pos <= 50:
+                    rank_by_uid[uid] = pos
+            if not rank_by_uid:
+                continue
+            # For each qualifying user, patch their matching entry.
+            for uid, pos in rank_by_uid.items():
+                try:
+                    _oid = ObjectId(uid)
+                except Exception:
+                    continue
+                u = await db.users.find_one({"_id": _oid}, {"past_seasons": 1})
+                if not u:
+                    continue
+                past = list(u.get("past_seasons") or [])
+                dirty = False
+                for entry in past:
+                    if int(entry.get("season", -1)) == season and not entry.get("leaderboard_rank"):
+                        entry["leaderboard_rank"] = int(pos)
+                        dirty = True
+                if dirty:
+                    await db.users.update_one(
+                        {"_id": _oid},
+                        {"$set": {"past_seasons": past}},
+                    )
+                    touched += 1
+        if touched:
+            logger.info("past_seasons leaderboard_rank backfill: patched %d users", touched)
+    except Exception as e:
+        logger.warning("past_seasons leaderboard_rank backfill failed: %s", e)
 
 
 @app.on_event("shutdown")

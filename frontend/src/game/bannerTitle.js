@@ -8,10 +8,26 @@
    "ULTIMATE GOONER" instead — the flex title for top-50 Goonmasters. */
 export function formatBannerTitle(user) {
   if (!user) return null;
-  if (_isUltimateEquipped(user)) return "ULTIMATE GOONER";
+  if (_isUltimateEquipped(user)) {
+    // Live season Ultimate Gooner — stamp the current placement so a
+    // top-50 player's banner reads "ULTIMATE GOONER · #7". The value
+    // updates every leaderboard refresh.
+    const rank = Number(user.leaderboard_rank);
+    return Number.isFinite(rank) && rank >= 1 && rank <= 50
+      ? `ULTIMATE GOONER · #${rank}`
+      : "ULTIMATE GOONER";
+  }
   const entry = _resolveEquippedEntry(user);
   if (!entry) return null;
   const tierName = (entry.tier_name || "").toString().toUpperCase();
+  // Past-season Ultimate Gooner call-out — when the archived entry
+  // carries a top-50 `leaderboard_rank`, weave the number into the
+  // title so the banner reads "S3 · #7 GOONMASTER". Preserved
+  // forever, unlike the live ULTIMATE title which lapses at rollover.
+  const lb = Number(entry.leaderboard_rank);
+  if (Number.isFinite(lb) && lb >= 1 && lb <= 50) {
+    return `S${entry.season} · #${lb} ${tierName}`;
+  }
   return `S${entry.season} · ${tierName}`;
 }
 

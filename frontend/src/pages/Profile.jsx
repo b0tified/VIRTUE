@@ -1363,6 +1363,11 @@ function TitlePicker({
           const active = !ultimateEquipped && Number(equippedSeason) === s;
           const label = `S${s}`;
           const sub = String(entry?.tier_name || "").toUpperCase() || "UNRANKED";
+          // Ultimate Gooners get a per-season leaderboard position
+          // stamped at rollover. When present, we surface it as a
+          // "#N" pill on the tile so equipping this season's title
+          // in-game reads "S3 · #7 GOONMASTER".
+          const lbRank = Number(entry?.leaderboard_rank || 0);
           return (
             <TitleTile
               key={s}
@@ -1371,6 +1376,7 @@ function TitlePicker({
               onClick={() => onPick(s)}
               label={label}
               sublabel={sub}
+              leaderboardRank={lbRank > 0 ? lbRank : null}
               testid={`profile-title-tile-s${s}`}
             />
           );
@@ -1380,7 +1386,7 @@ function TitlePicker({
   );
 }
 
-function TitleTile({ selected, disabled, onClick, label, sublabel, testid, variant = "default" }) {
+function TitleTile({ selected, disabled, onClick, label, sublabel, leaderboardRank = null, testid, variant = "default" }) {
   const isUltimate = variant === "ultimate";
   return (
     <button
@@ -1405,6 +1411,19 @@ function TitleTile({ selected, disabled, onClick, label, sublabel, testid, varia
           className="absolute top-2 right-2"
           data-testid={`${testid}-flame`}
         />
+      )}
+      {/* Season-end leaderboard placement pill — only shown on past-
+          season title tiles when the player finished top-50 that
+          season. Reads "#7" in bold gold so it visually communicates
+          "you were an Ultimate Gooner". */}
+      {!isUltimate && leaderboardRank != null && (
+        <span
+          className="absolute top-1.5 right-1.5 bg-[#FFD700] text-black font-anton text-[10px] tracking-wider px-1.5 py-0.5 border-2 border-black"
+          data-testid={`${testid}-rank`}
+          title={`Season-end leaderboard placement: #${leaderboardRank}`}
+        >
+          #{leaderboardRank}
+        </span>
       )}
       <div className="font-display text-2xl leading-none">{label}</div>
       <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 mt-1">
