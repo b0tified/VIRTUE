@@ -147,14 +147,19 @@ export default function BootLoadingScreen({ onDone }) {
         <div
           className="font-display text-[12vw] sm:text-[9rem] leading-none tracking-tight"
           style={{
-            color: "#FFD700",
             WebkitTextStroke: "3px #0A0A0A",
-            textShadow: "6px 6px 0 #E62429, 10px 10px 0 #0A0A0A",
+            textShadow: "6px 6px 0 rgba(0,0,0,0.75), 10px 10px 0 #0A0A0A",
             animation: "boot-logo-pop 0.9s cubic-bezier(0.3, 1.6, 0.6, 1) both",
           }}
           data-testid="boot-logo"
         >
-          VIRTUE
+          {/* Split the wordmark to match the Lobby palette exactly —
+              VIR in gold (#FFD700), TUE in comic red (#E62429). The
+              parent gets no color; each span owns its own so the
+              text-shadow above still renders as a black offset behind
+              both halves. */}
+          <span style={{ color: "#FFD700" }}>VIR</span>
+          <span style={{ color: "#E62429" }}>TUE</span>
         </div>
         <div
           className="font-anton uppercase tracking-[0.4em] text-white/80 text-xs sm:text-sm"
