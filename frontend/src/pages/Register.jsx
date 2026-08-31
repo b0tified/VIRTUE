@@ -22,69 +22,84 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F4F4F5] halftone-light p-6" data-testid="register-page">
-      <form onSubmit={onSubmit} className="card-pow p-8 w-full max-w-md rotate-1" data-testid="register-form">
-        <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-4">
-          <span className="font-anton uppercase tracking-widest">New Recruit</span>
+    <div
+      className="min-h-[100dvh] flex items-center justify-center bg-neutral-950 p-4 sm:p-6"
+      data-testid="register-page"
+    >
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-lg p-5 sm:p-6 space-y-3 sm:space-y-4"
+        data-testid="register-form"
+      >
+        <div className="text-center mb-2">
+          <div className="font-display text-4xl tracking-tight">
+            <span className="text-[#E62429]">VIR</span><span className="text-[#0055FF]">TUE</span>
+          </div>
+          <p className="text-neutral-500 text-xs uppercase tracking-widest mt-1">Create your account</p>
         </div>
-        <h1 className="font-display text-5xl uppercase text-[#0055FF] text-pow-shadow">SIGN UP</h1>
 
-        <div className="mt-6 space-y-4">
-          <div>
-            <label className="font-anton uppercase tracking-[0.2em] text-sm">Username</label>
-            <input
-              className="input-pow mt-1"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              minLength={2}
-              maxLength={20}
-              required
-              data-testid="register-username-input"
-            />
-          </div>
-          <div>
-            <label className="font-anton uppercase tracking-[0.2em] text-sm">Email</label>
-            <input
-              type="email"
-              className="input-pow mt-1"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              data-testid="register-email-input"
-            />
-          </div>
-          <div>
-            <label className="font-anton uppercase tracking-[0.2em] text-sm">Password</label>
-            <input
-              type="password"
-              className="input-pow mt-1"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={6}
-              required
-              data-testid="register-password-input"
-            />
-          </div>
+        <div>
+          <label className="text-neutral-400 text-xs uppercase tracking-widest" htmlFor="register-username">Username</label>
+          <input
+            id="register-username"
+            className="w-full mt-1 bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white focus:outline-none focus:border-[#0055FF]"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            minLength={2}
+            maxLength={20}
+            required
+            data-testid="register-username-input"
+          />
+        </div>
+        <div>
+          <label className="text-neutral-400 text-xs uppercase tracking-widest" htmlFor="register-email">Email</label>
+          <input
+            id="register-email"
+            type="email"
+            autoComplete="email"
+            className="w-full mt-1 bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white focus:outline-none focus:border-[#0055FF]"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            data-testid="register-email-input"
+          />
+        </div>
+        <div>
+          <label className="text-neutral-400 text-xs uppercase tracking-widest" htmlFor="register-password">Password</label>
+          <input
+            id="register-password"
+            type="password"
+            autoComplete="new-password"
+            className="w-full mt-1 bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-white focus:outline-none focus:border-[#0055FF]"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={6}
+            required
+            data-testid="register-password-input"
+          />
+        </div>
 
-          {error && (
-            <div className="border-pow-thin bg-[#E62429] text-white p-3 font-anton uppercase tracking-wide text-sm" data-testid="register-error">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-pow bg-[#0055FF] text-white w-full"
-            data-testid="register-submit-button"
+        {error && (
+          <div
+            className="bg-[#E62429]/10 border border-[#E62429]/40 text-[#FF6B6B] text-sm rounded px-3 py-2"
+            data-testid="register-error"
           >
-            <span>{loading ? "LOADING..." : "CREATE ACCOUNT"}</span>
-          </button>
-        </div>
+            {error}
+          </div>
+        )}
 
-        <div className="mt-6 font-body text-sm">
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-[#0055FF] hover:bg-[#0044cc] disabled:opacity-60 text-white font-anton uppercase tracking-widest py-2.5 rounded transition-colors"
+          data-testid="register-submit-button"
+        >
+          {loading ? "Loading..." : "Create Account"}
+        </button>
+
+        <div className="text-center text-sm text-neutral-500">
           Already have an account?{" "}
-          <Link to="/login" className="font-anton uppercase underline" data-testid="register-login-link">
+          <Link to="/login" className="text-[#0055FF] hover:text-[#3377FF] uppercase tracking-wider" data-testid="register-login-link">
             Log in
           </Link>
         </div>
