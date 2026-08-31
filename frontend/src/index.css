@@ -105,6 +105,14 @@ a, img, svg {
   background-image: radial-gradient(circle, rgba(10,10,10,0.18) 1.2px, transparent 1.2px);
   background-size: 10px 10px;
 }
+/* Dark-background variant of the halftone texture — used on the
+   Leaderboard + Profile pages which now sit on solid black. Light
+   dots at ~10% opacity give the same "comic-page grain" feel as
+   halftone-light without disappearing into the black background. */
+.halftone-dark {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.10) 1.2px, transparent 1.2px);
+  background-size: 10px 10px;
+}
 
 /* Comic burst pseudo */
 .burst-yellow {
