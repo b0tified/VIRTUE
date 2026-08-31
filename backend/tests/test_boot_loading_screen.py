@@ -21,13 +21,26 @@ def test_boot_loading_screen_component_exists():
     p = pathlib.Path(BOOT_PATH)
     assert p.exists(), "BootLoadingScreen.jsx must exist."
     src = p.read_text(encoding="utf-8")
-    # Enforced 8-second minimum per the user's spec — the constant
-    # must be exactly 8000 (ms) so any refactor towards seconds/mins
-    # trips this guard.
+    # Enforced 8-13 second window per the user's spec — the constants
+    # must be exactly MIN 8000ms and MAX 13000ms so any refactor
+    # towards seconds/mins trips this guard. A random duration is
+    # picked once per mount so a fresh page load feels varied.
     assert "MIN_DURATION_MS = 8000" in src, (
         "BootLoadingScreen must enforce an 8-second minimum via "
-        "`MIN_DURATION_MS = 8000` — the user requested at least 8s "
-        "before the lobby paints."
+        "`MIN_DURATION_MS = 8000` — the user requested at least 8s."
+    )
+    assert "MAX_DURATION_MS = 13000" in src, (
+        "BootLoadingScreen must cap the splash at 13s via "
+        "`MAX_DURATION_MS = 13000` — the user requested a 8-13s window."
+    )
+    assert "pickBootDuration" in src, (
+        "BootLoadingScreen must define a `pickBootDuration()` helper "
+        "that picks the roll inside [MIN, MAX] once per mount."
+    )
+    assert "durationRef" in src, (
+        "The rolled duration must be stored in a useRef (not useState) "
+        "so a re-render doesn't reshuffle the value mid-splash and "
+        "cause the progress bar to jump."
     )
     # Testids required for e2e / testing agent.
     for tid in ('"boot-loading-screen"', '"boot-progress-fill"', '"boot-tip"', '"boot-subtitle"'):

@@ -27,6 +27,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import api from "@/api";
 
 const MIN_DURATION_MS = 8000;
+const MAX_DURATION_MS = 13000;
+
+/** Pick a random splash duration inside [MIN, MAX] ms — called once
+ *  per component mount so the same session doesn't shift under the
+ *  progress bar. User asked for "8-13 seconds", so we roll uniformly
+ *  in that window on every fresh page load. */
+function pickBootDuration() {
+  const span = MAX_DURATION_MS - MIN_DURATION_MS;
+  return MIN_DURATION_MS + Math.floor(Math.random() * (span + 1));
+}
 
 export default function BootLoadingScreen({ onDone }) {
   // Always start visible on mount. A page refresh unmounts the whole
@@ -35,6 +45,9 @@ export default function BootLoadingScreen({ onDone }) {
   // its one-time transition.
   const [visible, setVisible] = useState(true);
   const [progress, setProgress] = useState(0);   // 0..100 driven by the timer
+  // Random splash duration for THIS mount — locked once via useRef so
+  // the progress calc doesn't drift if the component re-renders.
+  const durationRef = useRef(pickBootDuration());
   // Current season number — fetched from GET /api/season on mount so
   // the subtitle stays truthful the day the season rolls (never
   // hard-code the year). Falls back to a blank string until the
@@ -68,9 +81,9 @@ export default function BootLoadingScreen({ onDone }) {
     let raf = 0;
     const tick = () => {
       const elapsed = performance.now() - startedAtRef.current;
-      const pct = Math.min(100, (elapsed / MIN_DURATION_MS) * 100);
+      const pct = Math.min(100, (elapsed / durationRef.current) * 100);
       setProgress(pct);
-      if (elapsed >= MIN_DURATION_MS) {
+      if (elapsed >= durationRef.current) {
         if (!doneFiredRef.current) {
           doneFiredRef.current = true;
           // Short fade-out grace so the "READY UP" pulse can settle
