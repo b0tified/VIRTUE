@@ -120,7 +120,7 @@ export default function Leaderboard() {
   return (
     <div className="min-h-screen bg-black halftone-dark text-white p-6 md:p-12" data-testid="leaderboard-page">
       <div className="flex items-center justify-between mb-8">
-        <Link to="/lobby" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-white text-black select-none" data-testid="leaderboard-back-button">
+        <Link to="/lobby" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-neutral-900 text-white select-none" data-testid="leaderboard-back-button">
           <span className="flex items-center gap-2"><ArrowLeft size={18} strokeWidth={3} /> BACK</span>
         </Link>
         <div className="inline-block bg-[#FFD700] border-pow shadow-pow-sm px-3 py-1 rotate-2">
@@ -156,7 +156,7 @@ export default function Leaderboard() {
                 <div className="bg-[#E62429] text-white font-display text-xl px-4 py-2 flex items-center gap-2">
                   <Crown size={18} strokeWidth={3} className="text-[#FFD700]" /> YOU
                 </div>
-                <div className="bg-white px-4 py-2 flex-1 flex items-center justify-between gap-3 font-anton uppercase tracking-widest text-sm">
+                <div className="bg-neutral-900 text-white px-4 py-2 flex-1 flex items-center justify-between gap-3 font-anton uppercase tracking-widest text-sm border-2 border-black">
                   <span>
                     <span className="font-display text-2xl text-[#E62429] mr-1">#{myIdx + 1}</span>
                     of {rows.length}
@@ -184,7 +184,7 @@ export default function Leaderboard() {
             onClick={() => setTab("current")}
             data-testid="leaderboard-tab-current"
             className={`btn-pow flex items-center gap-2 [&]:py-2 [&]:px-4 [&]:text-sm ${
-              tab === "current" ? "bg-[#E62429] text-white" : "bg-white text-black"
+              tab === "current" ? "bg-[#E62429] text-white" : "bg-neutral-900 text-white"
             }`}
           >
             <Trophy size={14} strokeWidth={3} /> CURRENT SEASON
@@ -194,7 +194,7 @@ export default function Leaderboard() {
             onClick={() => setTab("archive")}
             data-testid="leaderboard-tab-archive"
             className={`btn-pow flex items-center gap-2 [&]:py-2 [&]:px-4 [&]:text-sm ${
-              tab === "archive" ? "bg-[#E62429] text-white" : "bg-white text-black"
+              tab === "archive" ? "bg-[#E62429] text-white" : "bg-neutral-900 text-white"
             }`}
           >
             <Archive size={14} strokeWidth={3} /> PAST SEASONS
@@ -213,7 +213,7 @@ export default function Leaderboard() {
               </div>
               <RotateCcw size={16} strokeWidth={3} className="text-[#FFD700]" />
             </div>
-            <div className="bg-white px-5 py-4 flex flex-wrap items-end gap-3">
+            <div className="bg-neutral-900 text-white px-5 py-4 flex flex-wrap items-end gap-3">
               <div className="font-anton uppercase tracking-widest text-xs text-neutral-500">Resets in</div>
               <div className="flex items-end gap-2" data-testid="season-countdown">
                 <TimeBlock value={d} unit="days" />
@@ -254,7 +254,7 @@ export default function Leaderboard() {
                     onClick={() => setOpenProfile(r.username)}
                     className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center text-left w-full transition-transform hover:translate-y-[-1px] ${
                       isYou ? "bg-[#FFFCE6] ring-4 ring-inset ring-[#E62429]" :
-                      i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white hover:bg-neutral-50"
+                      i === 0 ? "bg-[#FFD700] text-black" : i === 1 ? "bg-[#FFE680] text-black" : i === 2 ? "bg-[#FFF0AC] text-black" : "bg-neutral-900 text-white hover:bg-neutral-800"
                     }`}
                     data-testid={`leaderboard-row-${i}`}
                     data-you={isYou ? "true" : "false"}
@@ -398,7 +398,7 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
               onClick={() => onSelect(meta.season_number)}
               data-testid={`archive-pick-${meta.season_number}`}
               className={`px-3 py-1 font-anton uppercase tracking-widest text-xs border-pow-thin transition-transform ${
-                isSel ? "bg-[#E62429] text-white" : "bg-white text-black hover:translate-y-[-1px]"
+                isSel ? "bg-[#E62429] text-white" : "bg-neutral-900 text-white hover:translate-y-[-1px]"
               }`}
             >
               SEASON {meta.season_number}
@@ -422,7 +422,7 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
             <div
               key={(r.user_id || r.username) + i}
               className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center ${
-                i === 0 ? "bg-[#FFD700]" : i === 1 ? "bg-[#FFE680]" : i === 2 ? "bg-[#FFF0AC]" : "bg-white"
+                i === 0 ? "bg-[#FFD700] text-black" : i === 1 ? "bg-[#FFE680] text-black" : i === 2 ? "bg-[#FFF0AC] text-black" : "bg-neutral-900 text-white"
               }`}
               data-testid={`archive-row-${i}`}
             >

@@ -258,15 +258,15 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen bg-black halftone-dark text-white p-6 md:p-12" data-testid="profile-page">
-      <Link to="/lobby" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-white text-black select-none" data-testid="profile-back-button">
+      <Link to="/lobby" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-neutral-900 text-white select-none" data-testid="profile-back-button">
         <span className="flex items-center gap-2"><ArrowLeft size={18} strokeWidth={3} /> BACK</span>
       </Link>
 
       <div className="max-w-4xl mx-auto mt-8">
-        <div className="card-pow p-0 -rotate-1 overflow-hidden">
+        <div className="card-pow p-0 -rotate-1 overflow-hidden text-white" style={{ background: "#171717" }}>
           {/* User banner (icon + color) */}
           <ProfileBanner iconIdx={bannerIcon} colorIdx={bannerColor} animated={bannerAnimated} title={formatBannerTitle(user)} titleClass={bannerTitleAnimClass(user)} />
-          <div className="p-8">
+          <div className="p-8 bg-neutral-900">
             <div className="inline-block bg-[#0055FF] text-white border-pow shadow-pow-sm px-3 py-1 -rotate-2 mb-3">
               <span className="font-anton uppercase tracking-widest">Profile</span>
             </div>
@@ -434,7 +434,7 @@ export default function Profile() {
               return (
                 <div
                   key={s.season_number}
-                  className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"}`}
+                  className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"}`}
                   data-testid={`profile-season-row-${s.season_number}`}
                 >
                   <div className="col-span-2 font-display text-2xl">S{s.season_number}</div>
@@ -529,7 +529,7 @@ function MatchScoreboardModal({ match, onClose, onPickPlayer }) {
           </button>
         </div>
         {dateStr && (
-          <div className="px-5 py-2 text-xs font-anton uppercase tracking-widest text-neutral-500 bg-white border-t-2 border-black">
+          <div className="px-5 py-2 text-xs font-anton uppercase tracking-widest text-neutral-400 bg-neutral-900 border-t-2 border-black">
             {dateStr}
           </div>
         )}
@@ -563,7 +563,7 @@ function MatchScoreboardModal({ match, onClose, onPickPlayer }) {
               <div className="col-span-2 text-right">D</div>
             </div>
             {g.rows.length === 0 ? (
-              <div className="p-3 font-anton text-center uppercase text-sm bg-white border-t-2 border-black">
+              <div className="p-3 font-anton text-center uppercase text-sm bg-neutral-900 text-white border-t-2 border-black">
                 No players
               </div>
             ) : g.rows.map((p, i) => {
@@ -574,7 +574,7 @@ function MatchScoreboardModal({ match, onClose, onPickPlayer }) {
               return (
                 <div
                   key={`${g.key}-${i}`}
-                  className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
+                  className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] hover:text-black active:bg-[#FFD700] transition-colors" : ""}`}
                   onClick={clickable ? () => onPickPlayer?.(p.username, !!p.is_bot) : undefined}
                   role={clickable ? "button" : undefined}
                   title={clickable ? `View ${p.username}'s profile` : undefined}
@@ -625,7 +625,7 @@ function HistoryRow({ idx, m, onOpen }) {
   return (
     <>
       <div
-        className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-white" : "bg-[#F4F4F5]"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] active:bg-[#FFD700] transition-colors" : ""}`}
+        className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] hover:text-black active:bg-[#FFD700] transition-colors" : ""}`}
         onClick={clickable ? () => onOpen?.(m) : undefined}
         role={clickable ? "button" : undefined}
         title={clickable ? "Click to view match scoreboard" : undefined}
@@ -739,7 +739,7 @@ function KillReplayPanel({ idx, killEvents, arenaSize }) {
   const events = [...killEvents].sort((a, b) => (a.t_ms || 0) - (b.t_ms || 0));
   return (
     <div
-      className="col-span-12 border-t-2 border-black bg-white px-4 py-3"
+      className="col-span-12 border-t-2 border-black bg-neutral-900 text-white px-4 py-3"
       data-testid={`history-replay-panel-${idx}`}
     >
       <div className="font-anton uppercase tracking-widest text-xs text-neutral-500 mb-2">
@@ -789,7 +789,7 @@ function KillReplayCard({ k, arenaSize, idx, eventIdx }) {
 
   return (
     <div
-      className="border-pow-thin bg-[#F4F4F5] p-2 flex gap-3 items-stretch"
+      className="border-pow-thin bg-neutral-800 text-white p-2 flex gap-3 items-stretch"
       data-testid={`history-replay-card-${idx}-${eventIdx}`}
     >
       <svg viewBox="0 0 120 120" width="96" height="96" className="border-2 border-black bg-[#E8E8EA] shrink-0">
@@ -862,7 +862,7 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
   const textColor = ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A");
   const roman = divisionRoman(division);
   return (
-    <div className="card-pow p-0 overflow-hidden" data-testid={testid}>
+    <div className="card-pow p-0 overflow-hidden" style={{ background: "#171717" }} data-testid={testid}>
       <div className="bg-black text-white px-5 py-2 flex items-center gap-2">
         {crown && <Crown size={16} strokeWidth={3} className="text-[#FFD700]" />}
         <span className="font-anton uppercase tracking-widest text-sm">{label}</span>
@@ -893,7 +893,7 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
             )}
           </div>
         </div>
-        <div className="bg-white px-5 py-5 font-display text-4xl border-l-2 border-black tabular-nums">
+        <div className="bg-neutral-900 text-white px-5 py-5 font-display text-4xl border-l-2 border-black tabular-nums">
           {points}
           <span className="font-anton uppercase tracking-widest text-xs ml-1 opacity-60">RP</span>
         </div>
@@ -902,7 +902,7 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
           Hidden for the Peak Rank card — peak is a static snapshot of the
           high-water mark, not something the player is actively climbing. */}
       {!crown && (
-        <div className="px-5 py-3 bg-neutral-50 border-t-2 border-black" data-testid={`${testid}-progress-wrap`}>
+        <div className="px-5 py-3 bg-neutral-800 border-t-2 border-black" data-testid={`${testid}-progress-wrap`}>
           <RankProgressBar
             tier={tier}
             division={division}
@@ -936,7 +936,7 @@ function AvatarPicker({ avatarIdx, peakTier, peakDivision = 0, playerLevel, savi
           </span>
         )}
       </div>
-      <div className="p-5 bg-white">
+      <div className="p-5 bg-neutral-900 text-white">
         <div className="flex flex-wrap gap-3">
           {Array.from({ length: AVATAR_COUNT }).map((_, i) => {
             const active = i === avatarIdx;
@@ -1064,7 +1064,7 @@ function LevelCard({ level, xpInto, xpForNext, totalXp }) {
           {totalXp} XP TOTAL
         </span>
       </div>
-      <div className="p-5 bg-white">
+      <div className="p-5 bg-neutral-900 text-white">
         <div className="flex items-end gap-4 mb-3">
           <div
             className="font-display text-6xl text-[#0055FF] leading-none tabular-nums"
@@ -1111,7 +1111,7 @@ function LevelRewardsCard({ currentLevel }) {
           LV {currentLevel} / 10
         </span>
       </div>
-      <div className="p-4 bg-white space-y-2">
+      <div className="p-4 bg-neutral-900 text-white space-y-2">
         {LEVEL_REWARDS.map((r) => {
           const earned = currentLevel >= r.level;
           const isNext = !earned && currentLevel + 1 === r.level;
@@ -1119,7 +1119,7 @@ function LevelRewardsCard({ currentLevel }) {
           return (
             <div
               key={r.level}
-              className={`relative flex items-stretch border-2 border-black transition-transform ${earned ? "bg-white" : "bg-neutral-100"} ${isNext ? "ring-4 ring-[#FFD700] -translate-y-0.5" : ""}`}
+              className={`relative flex items-stretch border-2 border-black transition-transform ${earned ? "bg-neutral-800" : "bg-neutral-950"} ${isNext ? "ring-4 ring-[#FFD700] -translate-y-0.5" : ""}`}
               data-testid={`reward-row-${r.level}`}
               data-earned={earned || undefined}
             >
@@ -1142,7 +1142,7 @@ function LevelRewardsCard({ currentLevel }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
-                      className={`font-anton uppercase tracking-widest text-sm ${earned ? "text-black" : "text-neutral-500"} truncate`}
+                      className={`font-anton uppercase tracking-widest text-sm ${earned ? "text-white" : "text-neutral-500"} truncate`}
                     >
                       {r.title}
                     </span>
@@ -1152,11 +1152,11 @@ function LevelRewardsCard({ currentLevel }) {
                       </span>
                     )}
                   </div>
-                  <p className={`font-body text-xs leading-snug mt-0.5 ${earned ? "text-neutral-700" : "text-neutral-500"}`}>
+                  <p className={`font-body text-xs leading-snug mt-0.5 ${earned ? "text-neutral-300" : "text-neutral-500"}`}>
                     {r.desc}
                   </p>
                   {r.secondary && (
-                    <p className={`font-body text-[11px] mt-0.5 italic ${earned ? "text-neutral-600" : "text-neutral-400"}`}>
+                    <p className={`font-body text-[11px] mt-0.5 italic ${earned ? "text-neutral-400" : "text-neutral-500"}`}>
                       {r.secondary}
                     </p>
                   )}
@@ -1205,7 +1205,7 @@ function BannerCustomizer({ iconIdx, colorIdx, animated, animatedUnlocked, savin
           </span>
         )}
       </div>
-      <div className="p-5 bg-white">
+      <div className="p-5 bg-neutral-900 text-white">
         <div className="font-anton uppercase tracking-widest text-sm text-neutral-700 mb-2">Icon</div>
         <div className="flex flex-wrap gap-2 mb-5" data-testid="banner-icon-grid">
           {BANNER_ICONS.map((b, i) => {

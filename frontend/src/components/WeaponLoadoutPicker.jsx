@@ -53,7 +53,7 @@ export default function WeaponLoadoutPicker({ user, onChange, disabled }) {
         <span className="font-anton uppercase tracking-widest text-sm">Loadout</span>
         <span className="opacity-60 text-[10px] ml-auto">Primary weapon</span>
       </div>
-      <div className="grid grid-cols-2 bg-white">
+      <div className="grid grid-cols-2 bg-neutral-900">
         {WEAPONS.map((w) => {
           const selected = w.id === current;
           const Icon = w.Icon;
@@ -65,8 +65,8 @@ export default function WeaponLoadoutPicker({ user, onChange, disabled }) {
               disabled={busy || disabled}
               className="relative flex items-center gap-2 px-3 py-2 border-r-2 border-black last:border-r-0 transition-transform hover:translate-y-[-1px] disabled:opacity-60 disabled:cursor-not-allowed"
               style={{
-                background: selected ? w.accent : "#F5F5F5",
-                color: selected ? "#0A0A0A" : "#0A0A0A",
+                background: selected ? w.accent : "#1c1c1c",
+                color: selected ? "#0A0A0A" : "#FFFFFF",
                 boxShadow: selected ? "inset 0 0 0 3px #0A0A0A" : "none",
               }}
               data-testid={`weapon-choice-${w.id}`}
