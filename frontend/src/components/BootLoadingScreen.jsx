@@ -21,23 +21,10 @@
  * player should feel like they booted a game once, not every hop.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import api from "@/api";
 
 const BOOT_KEY = "virtue_boot_played_v1";
 const MIN_DURATION_MS = 8000;
-
-// Comic-tone loading tips that rotate every ~1.6s. Kept short so a
-// slow reader still gets the whole flavour by the end of the splash.
-const TIPS = [
-  "COMIC-BOOK CARNAGE. LOADING PANELS…",
-  "LOCKING IN CROSSHAIRS…",
-  "BREWING ELITE BOTS…",
-  "SYNCING PARTY LOBBIES…",
-  "TIP: HOLD SHIFT TO SPRINT",
-  "TIP: RIGHT-CLICK TO AIM DOWN SIGHTS",
-  "TIP: PARTY-UP FOR CUSTOM 1V1 DUELS",
-  "TIP: WIN A MATCH FOR +50 XP",
-  "READY UP…",
-];
 
 export default function BootLoadingScreen({ onDone }) {
   // `visible` gates the entire overlay so a `return null` fully
@@ -48,17 +35,29 @@ export default function BootLoadingScreen({ onDone }) {
     catch { return true; }
   });
   const [progress, setProgress] = useState(0);   // 0..100 driven by the timer
-  const [tipIdx, setTipIdx] = useState(0);
+  // Current season number — fetched from GET /api/season on mount so
+  // the subtitle stays truthful the day the season rolls (never
+  // hard-code the year). Falls back to a blank string until the
+  // request lands; the layout keeps the height reserved so there's
+  // no shift when the number pops in.
+  const [seasonNum, setSeasonNum] = useState(null);
   const startedAtRef = useRef(0);
   const doneFiredRef = useRef(false);
 
-  // Rotate the tip roughly 5 times over the 8-second splash.
+  // One-shot season probe — cheap, unauthenticated, safe to run every
+  // boot. If it fails the subtitle just falls back to "CURRENT SEASON".
   useEffect(() => {
     if (!visible) return;
-    const rot = setInterval(() => {
-      setTipIdx((i) => (i + 1) % TIPS.length);
-    }, 1600);
-    return () => clearInterval(rot);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/season");
+        if (!cancelled && data && typeof data.season_number === "number") {
+          setSeasonNum(data.season_number);
+        }
+      } catch { /* subtitle just falls back — no user-visible error */ }
+    })();
+    return () => { cancelled = true; };
   }, [visible]);
 
   // Progress + minimum-duration gate. RAF (not setInterval) so the
@@ -160,9 +159,10 @@ export default function BootLoadingScreen({ onDone }) {
         </div>
         <div
           className="font-anton uppercase tracking-[0.4em] text-white/80 text-xs sm:text-sm"
+          data-testid="boot-subtitle"
           style={{ animation: "boot-fadein 0.9s ease-out 0.3s both" }}
         >
-          Comic-Book Combat · 2026 Season
+          {seasonNum != null ? `Season ${seasonNum}` : "Current Season"}
         </div>
       </div>
 
@@ -203,7 +203,7 @@ export default function BootLoadingScreen({ onDone }) {
             className="font-anton uppercase tracking-widest text-[11px] text-white/80 min-h-[1.1em]"
             data-testid="boot-tip"
           >
-            {TIPS[tipIdx]}
+            Loading
           </div>
           <div className="font-display text-lg text-[#FFD700] tabular-nums">
             {Math.floor(progress)}%

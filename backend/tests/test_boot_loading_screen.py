@@ -30,8 +30,29 @@ def test_boot_loading_screen_component_exists():
         "before the lobby paints."
     )
     # Testids required for e2e / testing agent.
-    for tid in ('"boot-loading-screen"', '"boot-progress-fill"', '"boot-tip"'):
+    for tid in ('"boot-loading-screen"', '"boot-progress-fill"', '"boot-tip"', '"boot-subtitle"'):
         assert tid in src, f"Missing test id {tid} on the boot splash."
+    # Copy the user asked for: remove "Comic-Book Combat", make the
+    # subtitle track the live season number from /api/season, and
+    # replace the rotating tips with a plain "Loading" string.
+    assert "Comic-Book Combat" not in src, (
+        "User asked for the 'Comic-Book Combat' text to be removed "
+        "from the boot splash subtitle."
+    )
+    assert "2026 Season" not in src, (
+        "Hard-coded season string leaked back into the splash — must "
+        "read the current season from GET /api/season instead."
+    )
+    assert 'api.get("/season")' in src, (
+        "Splash must probe /api/season on mount so the subtitle "
+        "reflects the CURRENT season, not a hard-coded year."
+    )
+    # The tip strip is now a static "Loading" label, not a rotating
+    # tip carousel. Confirm the carousel state + array are gone.
+    assert "TIPS[" not in src and "const TIPS" not in src, (
+        "Rotating TIPS array must be removed — user asked for the "
+        "small text below the bar to just say 'loading'."
+    )
 
 
 def test_app_gates_routes_behind_boot_splash():
