@@ -1947,3 +1947,22 @@ Two quality-of-life changes shipped together.
   - Broke test user → 402 "Not enough coins — needs 3000."
   - Preview screenshots show both tabs rendering + green boost pill in lobby.
 
+
+### 2026-02-25 (later⁵) — Boot Loading Screen (8-second branded splash)
+- **User request**: "Add a loading screen before the game fully load to lobby and make it take at least 8 seconds to load lobby."
+- **Component** `/app/frontend/src/components/BootLoadingScreen.jsx`:
+  - Full-screen comic-styled splash: dark red radial background, animated halftone dot pattern, red/gold speed lines streaking horizontally, "VIRTUE" logo with pop-in animation + red offset shadow, subtitle "COMIC-BOOK COMBAT · 2026 SEASON".
+  - Progress bar (red→orange→gold gradient with animated shimmer glint) driven by requestAnimationFrame over `MIN_DURATION_MS = 8000` ms.
+  - Rotating tip strip below the bar (~9 tips: "COMIC-BOOK CARNAGE. LOADING PANELS…", "BREWING ELITE BOTS…", "TIP: RIGHT-CLICK TO AIM DOWN SIGHTS", etc.) — refreshes every 1.6s.
+  - `sessionStorage("virtue_boot_played_v1")` guard so route changes and reloads in the same tab don't repeat the splash. Fresh tab = fresh splash.
+  - 400ms fade-out grace after 8s so the "READY UP" pulse settles before the lobby paints.
+- **App.js**: routes are gated behind `showRoutes` (initialised from the same sessionStorage key so its state can't diverge from the splash's visibility). While the splash is up the router isn't mounted, preventing an ugly login/lobby flash behind the splash.
+- **Tests** (`/app/backend/tests/test_boot_loading_screen.py`, 3/3 pass):
+  - Component exists + enforces `MIN_DURATION_MS = 8000` + exposes `boot-loading-screen`, `boot-progress-fill`, `boot-tip` testids.
+  - App.js imports the splash + gates `<Routes>` on `showRoutes`.
+  - sessionStorage key mirrored between App.js and the component.
+- **Live verification** (fresh preview session, 3 screenshots):
+  - t≈1.2s: splash shows VIRTUE logo + 14% bar + "COMIC-BOOK CARNAGE. LOADING PANELS…" tip.
+  - t≈4.2s: bar at 53%, tip cycled to "BREWING ELITE BOTS…".
+  - t≈9.2s: splash unmounted, login page painted.
+
