@@ -1391,7 +1391,7 @@ function TitleTile({ selected, disabled, onClick, label, sublabel, testid, varia
       className={`border-pow-thin p-3 text-left transition-all relative ${
         isUltimate
           ? "bg-gradient-to-br from-[#FFD700] via-[#FFE9A6] to-[#FFD700] text-black"
-          : "bg-white"
+          : "bg-neutral-900 text-white"
       } ${
         selected ? "ring-4 ring-[#E62429] translate-y-[-2px]" : "hover:translate-y-[-1px]"
       } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
