@@ -780,7 +780,7 @@ function KillReplayCard({ k, arenaSize, idx, eventIdx }) {
   const timeLbl = `${mm}:${ss}`;
   const weaponLbl = k.weapon === "sniper" ? "SNIPER"
     : k.weapon === "laser" ? "LASER"
-    : k.weapon === "katana" ? "KATANA"
+    : k.weapon === "katana" ? "MELEE"
     : "AK-47";
   const weaponColor = k.weapon === "sniper" ? "#9B59B6"
     : k.weapon === "laser" ? "#0055FF"

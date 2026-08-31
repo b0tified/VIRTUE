@@ -17,7 +17,7 @@ const KEYBIND_ACTIONS = [
   { id: "melee",      label: "Melee" },
   { id: "adsToggle",  label: "ADS Toggle" },
   { id: "weapon1",    label: "Weapon 1 (AK)" },
-  { id: "weapon2",    label: "Weapon 2 (Katana)" },
+  { id: "weapon2",    label: "Weapon 2 (Melee)" },
   { id: "weapon3",    label: "Weapon 3 (Laser)" },
   { id: "scoreboard", label: "Scoreboard" },
 ];

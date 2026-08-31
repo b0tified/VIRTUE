@@ -11,7 +11,7 @@ const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D
 const WEAPON_META = {
   ak47:   { Icon: Crosshair, color: "#FFD700", label: "AK-47" },
   laser:  { Icon: Zap,       color: "#00CFFF", label: "LASER" },
-  katana: { Icon: Swords,    color: "#9B59B6", label: "KATANA" },
+  katana: { Icon: Swords,    color: "#9B59B6", label: "MELEE" },
 };
 
 function WeaponIcon({ weapon }) {
@@ -318,7 +318,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           </div>
         </div>
 
-        {/* Ammo + reload (AK) — or heat bar (laser). Hidden for katana. */}
+        {/* Ammo + reload (AK) — or heat bar (laser). Hidden for melee. */}
         {hud.weapon === "tertiary" ? (
           <div
             className="hud-panel"
@@ -394,7 +394,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
         )}
 
         <div className="hud-panel" style={{ background: hud.weapon === "secondary" ? "rgba(155,89,182,0.92)" : hud.weapon === "tertiary" ? "rgba(0,207,255,0.92)" : (hud.primaryWeaponId === "sniper" ? "rgba(241,196,15,0.92)" : "rgba(255,215,0,0.92)"), color: "#0A0A0A" }} data-testid="hud-weapon">
-          <div className="text-xs">{hud.weapon === "secondary" ? "KATANA" : hud.weapon === "tertiary" ? "LASER" : (hud.primaryWeaponId === "sniper" ? "SNIPER" : "AK-47")}</div>
+          <div className="text-xs">{hud.weapon === "secondary" ? "MELEE" : hud.weapon === "tertiary" ? "LASER" : (hud.primaryWeaponId === "sniper" ? "SNIPER" : "AK-47")}</div>
         </div>
       </div>
 

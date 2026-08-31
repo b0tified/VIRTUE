@@ -334,7 +334,12 @@ export default function Game() {
     engine.onShoot = () => {
       // Route the SFX by the currently-held weapon. Sniper now has its
       // own dedicated `_sniperShot` in the audio bus (loud + booming).
-      const w = engine.currentWeapon === "tertiary" ? "laser" : (engine.primaryWeaponId || "ak47");
+      // Secondary = melee — user renamed the katana to "MELEE" and it
+      // plays a punch/thud SFX so local swings feel snappy.
+      let w;
+      if (engine.currentWeapon === "tertiary") w = "laser";
+      else if (engine.currentWeapon === "secondary") w = "melee";
+      else w = engine.primaryWeaponId || "ak47";
       audioBus.gunshot(engine.youId, 0, w);
     };
     engine.start();

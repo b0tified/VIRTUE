@@ -537,9 +537,52 @@ class AudioBus {
       this._laserShot(vol, out);
     } else if (weapon === "sniper") {
       this._sniperShot(shooterId, vol, out);
+    } else if (weapon === "melee" || weapon === "katana") {
+      // Melee ("KATANA" legacy id) — short punchy thud rather than a
+      // sword swing. Plays for local swings AND remote ones so nearby
+      // players hear the smack even without a hit registered.
+      this._punchSwing(shooterId, vol, out);
     } else {
       this._akShot(shooterId, vol, out);
     }
+  }
+
+  /* Punch/thud — used for the MELEE weapon (renamed from "Katana").
+   * A quick low whoosh plus a mid-band thump — reads as "fist meets
+   * chest" without needing a sample. Kept short (0.12s) so a spam-
+   * click stacks into a rapid-fire punch pattern instead of muddling. */
+  _punchSwing(shooterId, vol, out) {
+    const ctx = this.ctx;
+    out = out || this.sfxGain;
+    const t0 = ctx.currentTime;
+    const dur = 0.12;
+    // 1) Low body — sine 140 Hz → 60 Hz (chest thump).
+    const body = ctx.createOscillator();
+    body.type = "sine";
+    body.frequency.setValueAtTime(140, t0);
+    body.frequency.exponentialRampToValueAtTime(60, t0 + dur);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0, t0);
+    bg.gain.linearRampToValueAtTime(0.85 * vol, t0 + 0.006);
+    bg.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    body.connect(bg); bg.connect(out);
+    body.start(t0); body.stop(t0 + dur + 0.02);
+    // 2) Mid-band noise burst — the flesh-slap crack.
+    const noiseBuf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseData.length; i++) noiseData[i] = (Math.random() * 2 - 1);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuf;
+    const nf = ctx.createBiquadFilter();
+    nf.type = "bandpass";
+    nf.frequency.value = 700;
+    nf.Q.value = 1.2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0, t0);
+    ng.gain.linearRampToValueAtTime(0.5 * vol, t0 + 0.004);
+    ng.gain.exponentialRampToValueAtTime(0.001, t0 + dur * 0.8);
+    noise.connect(nf); nf.connect(ng); ng.connect(out);
+    noise.start(t0); noise.stop(t0 + dur + 0.02);
   }
 
   _akShot(shooterId, vol, out) {

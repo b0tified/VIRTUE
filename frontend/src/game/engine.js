@@ -441,6 +441,11 @@ export class GameEngine {
       // melee path
       this.pendingMelee = true;
       this.pendingMeleeAim = { yaw: aimYaw, pitch: aimPitch };
+      // Play the local punch SFX immediately so the swing feels snappy
+      // (server round-trip would delay this ~50-150ms otherwise). The
+      // remote broadcast is handled in the `melee` event handler
+      // below so nearby players also hear the punch.
+      try { this.onShoot?.(); } catch {}
       return;
     }
     if (this.currentWeapon === "tertiary") {
@@ -4567,6 +4572,14 @@ export class GameEngine {
               yaw: ev.yaw, pitch: ev.pitch,
               hitDist: ev.hit_dist ?? 80,
             });
+            // Trigger a laser-shot SFX for the remote firing so nearby
+            // players hear the zap. Was silent before this — user
+            // reported "laser doesn't make sound to other players".
+            // Beam events fire ~4/sec so the ~0.18s zap tail overlaps
+            // into a continuous fire read. Volume falls off with
+            // distance via the shared `_distVolume` in audioBus.gunshot.
+            const dist = Math.hypot(ev.x - this.position.x, ev.z - this.position.z);
+            this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist, weapon: "laser", pos: { x: ev.x, y: ev.y, z: ev.z } });
           }
         } else if (ev.type === "overheat") {
           if (ev.shooter_id === this.youId) {
@@ -4595,6 +4608,14 @@ export class GameEngine {
           }
         } else if (ev.type === "melee") {
           this._spawnMeleeArc(ev);
+          // Play the punch SFX for nearby players (not the local
+          // swinger — they already heard their own in the fire()
+          // path). Distance-attenuated + spatially panned like all
+          // other remote gunshots.
+          if (ev.shooter_id !== this.youId) {
+            const dist = Math.hypot((ev.x ?? 0) - this.position.x, (ev.z ?? 0) - this.position.z);
+            this.onLocalUpdate({ type: "remote-shot", shooterId: ev.shooter_id, distance: dist, weapon: "melee", pos: { x: ev.x, y: ev.y, z: ev.z } });
+          }
         } else if (ev.type === "hit") {
           if (ev.victim_id === this.youId) {
             // Damage-direction indicator — bubble up the shooter's last known
