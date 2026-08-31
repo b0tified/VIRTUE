@@ -74,21 +74,35 @@ def test_app_gates_routes_behind_boot_splash():
     )
 
 
-def test_boot_splash_only_plays_once_per_session():
-    src = pathlib.Path(BOOT_PATH).read_text(encoding="utf-8")
-    # sessionStorage guard on both entry (initial state) and exit
-    # (setItem on completion).
-    assert "sessionStorage" in src
-    assert "BOOT_KEY" in src, (
-        "BootLoadingScreen must use a named sessionStorage key so a "
-        "refresh in the same tab doesn't replay the 8s splash."
+def test_boot_splash_plays_on_every_refresh():
+    """User requirement: 'make the loading screen play every time you
+    refresh'. That means NO sessionStorage / localStorage persistence
+    across refreshes. On mount the splash must always start visible
+    and App.js's `showRoutes` must always start false, so a browser
+    refresh (which remounts the tree) triggers a fresh 8-second
+    splash every time. Route changes within a session don't remount
+    App, so `showRoutes` correctly stays true once resolved."""
+    boot_src = pathlib.Path(BOOT_PATH).read_text(encoding="utf-8")
+    assert "sessionStorage" not in boot_src, (
+        "BootLoadingScreen must NOT persist a 'played' flag — the "
+        "user asked for the splash to play on every refresh."
     )
-    # App.js also reads the same key for its own `showRoutes` seed,
-    # otherwise there'd be a flash between App-decides-to-show and
-    # BootLoadingScreen-decides-to-hide.
+    assert "localStorage" not in boot_src, (
+        "Same reason as sessionStorage — no persistent 'skip me' flag."
+    )
+    # The initial visible state must be an unconditional `useState(true)`
+    # so a refresh always shows the splash.
+    assert "useState(true)" in boot_src, (
+        "The splash's `visible` state must default to `true` on mount "
+        "so a refresh always triggers a fresh splash."
+    )
+
     app_src = pathlib.Path(APP_PATH).read_text(encoding="utf-8")
-    assert "virtue_boot_played_v1" in app_src, (
-        "App.js must mirror BootLoadingScreen's sessionStorage key "
-        "so its initial `showRoutes` state doesn't diverge from the "
-        "splash's visibility."
+    assert "virtue_boot_played_v1" not in app_src, (
+        "App.js must not read a persisted 'boot played' flag — the "
+        "splash plays on every refresh."
+    )
+    assert "useState(false)" in app_src.split("const [showRoutes", 1)[1][:200], (
+        "App.js `showRoutes` must start `false` on every mount so a "
+        "refresh always defers the router until the splash resolves."
     )

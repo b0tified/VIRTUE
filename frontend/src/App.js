@@ -53,16 +53,11 @@ export default function App() {
   // and respects the SFX toggle). Mounted once at the App level so
   // every page inherits the feedback for free.
   useButtonSounds();
-  // First-tab boot splash. Once the user has seen it in this session
-  // it stays dismissed (sessionStorage guard inside the component)
-  // so route changes and reloads-in-the-same-tab don't repeat it.
-  // `showRoutes` is what actually decides whether the router paints
-  // — we hold it back until the splash resolves so a fresh page
-  // load never flashes the login/lobby screen behind the splash.
-  const [showRoutes, setShowRoutes] = useState(() => {
-    try { return typeof window !== "undefined" && !!sessionStorage.getItem("virtue_boot_played_v1"); }
-    catch { return true; }
-  });
+  // First-tab boot splash. Plays on every page refresh (initial
+  // `showRoutes = false`) but NOT on route changes within the same
+  // session — App stays mounted across route changes so `showRoutes`
+  // sticks at true once the splash has resolved.
+  const [showRoutes, setShowRoutes] = useState(false);
   // Global right-click blocker. The FPS uses RMB to aim down sights; if
   // the browser context menu were allowed to open it would steal focus
   // away from the canvas mid-fight. We swallow `contextmenu` on the
@@ -107,12 +102,10 @@ export default function App() {
               the Lobby → /play route change and can stay open until the
               server's welcome arrives (revealing the actual selected map). */}
           <MatchLoadingScreen />
-          {/* Boot splash — gates the router for at least 8s on a fresh
-              tab load so every player sees the branded intro before
-              landing on /login or /lobby. Only rendered when it hasn't
-              played yet this session (the component's own storage
-              guard mirrors ours so `showRoutes` is safe to bypass on
-              return visits). */}
+          {/* Boot splash — gates the router for at least 8s on every
+              page refresh. Once resolved, `showRoutes` flips true for
+              the rest of the tab session so route changes don't
+              replay the splash. */}
           {!showRoutes && (
             <BootLoadingScreen onDone={() => setShowRoutes(true)} />
           )}

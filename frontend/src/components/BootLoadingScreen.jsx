@@ -16,24 +16,24 @@
  *     they finish. `onDone` fires once both the timer and the auth
  *     probe have resolved.
  *
- * Only shown once per browser tab (sessionStorage guard). Route
- * changes and lobby ↔ /play transitions never re-trigger it — the
- * player should feel like they booted a game once, not every hop.
+ * Plays on EVERY page load / refresh: React state defaults to
+ * `visible: true` on mount, and we do NOT persist "already played"
+ * across refreshes. Route changes within a session (lobby → profile
+ * → lobby) keep the App component mounted so the splash's `visible`
+ * stays `false` and doesn't replay — only a real refresh remounts
+ * the tree and resets the splash.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import api from "@/api";
 
-const BOOT_KEY = "virtue_boot_played_v1";
 const MIN_DURATION_MS = 8000;
 
 export default function BootLoadingScreen({ onDone }) {
-  // `visible` gates the entire overlay so a `return null` fully
-  // unmounts the DOM once we're done (no lingering listeners /
-  // portal state hanging out over the lobby).
-  const [visible, setVisible] = useState(() => {
-    try { return typeof window !== "undefined" && !sessionStorage.getItem(BOOT_KEY); }
-    catch { return true; }
-  });
+  // Always start visible on mount. A page refresh unmounts the whole
+  // React tree so this always fires; a route change within the tab
+  // does not remount App, so `visible` correctly stays `false` after
+  // its one-time transition.
+  const [visible, setVisible] = useState(true);
   const [progress, setProgress] = useState(0);   // 0..100 driven by the timer
   // Current season number — fetched from GET /api/season on mount so
   // the subtitle stays truthful the day the season rolls (never
@@ -73,7 +73,6 @@ export default function BootLoadingScreen({ onDone }) {
       if (elapsed >= MIN_DURATION_MS) {
         if (!doneFiredRef.current) {
           doneFiredRef.current = true;
-          try { sessionStorage.setItem(BOOT_KEY, "1"); } catch {}
           // Short fade-out grace so the "READY UP" pulse can settle
           // before the lobby paints — feels less abrupt than a hard cut.
           setTimeout(() => {
