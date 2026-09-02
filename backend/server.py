@@ -9955,7 +9955,7 @@ async def set_profile_privacy(payload: ProfilePrivacyPayload, user: dict = Depen
 
 # -------------------------------------------------------------------
 @api.websocket("/ws/game")
-async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None), tdm: Optional[int] = Query(default=0), force_map: Optional[str] = Query(default=None)):
+async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None), tdm: Optional[int] = Query(default=0), force_map: Optional[str] = Query(default=None), map: Optional[str] = Query(default=None)):
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -10005,48 +10005,56 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         # PracticeMapSelector. TDM practice spawns into the dedicated
         # tdm_room so the dummy bots aren't promoted into 4v4.
         room = practice_tdm_room if tdm else practice_room
-        # Admin-only `?force_map=<map_id>` — hot-swap the practice room's
-        # arena for testing / preview screenshots. Shared room, so all
-        # admins in practice see the same forced map (that's fine — this
-        # is a dev/screenshot hook, not a matchmaking feature).
-        if force_map and (user.get("role") == "admin" or user.get("is_admin")):
-            forced = get_map_by_id(force_map)
-            if forced:
-                room.arena = forced
-                if hasattr(room, "_build_healthpacks"):
-                    room.healthpacks = room._build_healthpacks()
+        # Any player can pick their practice-range arena via `?map=<id>`.
+        # (Practice rooms are shared instances so this "hot-swaps" for
+        # everyone in that room — that's acceptable for a training range.)
+        # Admin-only `?force_map=<id>` retained as backwards-compat.
+        chosen_map = None
+        m = get_map_by_id(map) if map else None
+        if m:
+            chosen_map = m
+        elif force_map and (user.get("role") == "admin" or user.get("is_admin")):
+            fm = get_map_by_id(force_map)
+            if fm:
+                chosen_map = fm
+        if chosen_map:
+            room.arena = chosen_map
+            if hasattr(room, "_build_healthpacks"):
+                room.healthpacks = room._build_healthpacks()
+            logger.info("Practice map override applied: %s (user=%s)", chosen_map.get("map_id"), str(user["_id"]))
     elif mode == "offline":
         # Offline-vs-AI also honours the TDM flag — the user picks FFA or
         # TDM at the same selector and we route to a per-user TDM room.
-        # Admin-only `?force_map=<map_id>` — nuke any cached offline room
-        # BEFORE creating so we get a fresh instance with the forced arena.
-        # Without this, a stale room from a prior connect would keep the
-        # random map it originally rolled and the swap would silently
-        # no-op (arena is captured in the welcome message).
-        if force_map and (user.get("role") == "admin" or user.get("is_admin")):
+        # Any player (not just admins) can pick which map they train on:
+        # `?map=<map_id>` from the PracticeMapSelector overrides the
+        # random roll. Admin-only `?force_map=<map_id>` is retained as
+        # an equivalent (kept for backwards-compat with the QA/preview
+        # tooling). Either param clears the cached user room first so
+        # the swap always applies — otherwise the stale room's arena
+        # sticks and the pick silently no-ops.
+        chosen_map = None
+        m = get_map_by_id(map) if map else None
+        if m:
+            chosen_map = m
+        elif force_map and (user.get("role") == "admin" or user.get("is_admin")):
+            fm = get_map_by_id(force_map)
+            if fm:
+                chosen_map = fm
+        if chosen_map:
             uid = str(user["_id"])
-            if tdm:
-                # No public helper to clear the TDM offline room; fall through
-                # to below so the swap at least applies (may still be stale
-                # on repeat runs).
-                pass
-            else:
+            if not tdm:
+                # Tear down any stale offline room so a fresh instance is
+                # created with the picked arena baked in from the start.
                 await cleanup_offline_room_if_empty(uid)
         if tdm:
             room = await get_or_create_offline_tdm_room(str(user["_id"]))
         else:
             room = await get_or_create_offline_room(str(user["_id"]))
-        # Admin-only `?force_map=<map_id>` — hot-swap the offline room's
-        # arena to a specific map for testing / preview screenshots. Only
-        # allowed for admin accounts so regular players can't cheese the
-        # map roll to farm a favourite arena.
-        if force_map and (user.get("role") == "admin" or user.get("is_admin")):
-            forced = get_map_by_id(force_map)
-            if forced:
-                room.arena = forced
-                if hasattr(room, "_build_healthpacks"):
-                    room.healthpacks = room._build_healthpacks()
-                logger.info("Force map applied to offline room: %s → %s (user=%s)", force_map, forced.get("map_id"), str(user["_id"]))
+        if chosen_map:
+            room.arena = chosen_map
+            if hasattr(room, "_build_healthpacks"):
+                room.healthpacks = room._build_healthpacks()
+            logger.info("Offline map override applied: %s (user=%s)", chosen_map.get("map_id"), str(user["_id"]))
     elif mode == "party":
         if not party_id:
             await websocket.close(code=4400)

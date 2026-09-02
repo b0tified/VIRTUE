@@ -1122,6 +1122,16 @@ export class GameEngine {
     // visual mass, not "buildings" — a rooftop cap on a floating ceiling
     // looks wrong.
     if (!ob.crate && ob.h >= 2.5 && yBase === 0) {
+      // Skip window/wallpaper decoration entirely for SWAMP — the tall
+      // obstacles there are stone ruins, dead trees, and moss-covered
+      // columns. Windows on any of them would look wrong (a treetop
+      // with lit apartment windows breaks the whole atmosphere).
+      const isSwamp = this._currentMapId === "swamp";
+      if (isSwamp) {
+        // No face decoration; the outlined box body is enough for the
+        // stony/wooden silhouette. Fall through past the decoration
+        // block by using an early "continue" via a wrapping condition.
+      } else {
       // For HOTEL, tall obstacles are interior walls / structural
       // columns — swap the exterior window-facade texture for a
       // subtle damask wallpaper so they read as "inside a building"
@@ -1163,6 +1173,7 @@ export class GameEngine {
         roof.position.y = ob.h / 2 + 0.15;
         g.add(roof);
       }
+      } // end !isSwamp branch
     }
 
     this._buildingsGroup.add(g);
@@ -2307,18 +2318,20 @@ export class GameEngine {
     // stormy overcast). Uses the shared rain + lightning weather that's
     // already been activated above via `_stormActive`.
     if (theme === "swamp") {
-      // Rebuild sky with a bruised slate → mossy green gradient. Reads
-      // as heavy storm clouds smothering the horizon.
+      // Rebuild sky with a bruised slate → mossy green gradient. Kept
+      // uniformly dim so the inner sky-sphere doesn't visibly punch
+      // through the outer scene.background as a bright "moon disc"
+      // (which happens when the mid-band is much lighter than the
+      // scene.background color).
       const sc4 = document.createElement("canvas");
       sc4.width = 8; sc4.height = 512;
       const ctx4 = sc4.getContext("2d");
       const grd4 = ctx4.createLinearGradient(0, 0, 0, 512);
-      grd4.addColorStop(0.00, "#141a1c");   // near-black overhead
-      grd4.addColorStop(0.25, "#20272a");
-      grd4.addColorStop(0.50, "#2e363a");   // bruised slate mid-band
-      grd4.addColorStop(0.72, "#3a4842");   // sickly green-grey
-      grd4.addColorStop(0.88, "#2b3730");
-      grd4.addColorStop(1.00, "#141a15");   // dark bog horizon
+      grd4.addColorStop(0.00, "#242c2f");   // storm cloud overhead
+      grd4.addColorStop(0.35, "#2a3336");
+      grd4.addColorStop(0.60, "#2f3a37");   // sickly bruise band (dim)
+      grd4.addColorStop(0.82, "#1e2823");
+      grd4.addColorStop(1.00, "#0f1512");   // dark bog horizon
       ctx4.fillStyle = grd4; ctx4.fillRect(0, 0, 8, 512);
       const skyTex4 = new THREE.CanvasTexture(sc4);
       skyTex4.colorSpace = THREE.SRGBColorSpace;
@@ -2329,22 +2342,24 @@ export class GameEngine {
         this._sky.material.needsUpdate = true;
         old?.dispose?.();
       }
-      this.scene.background = this._buildSkyGradient(0x141a1c, 0x1a221c);
-      // Dense green-tinted fog — pulled in close so distant trees dissolve
-      // into mist, giving the level real spatial mystery.
-      this.scene.fog = new THREE.Fog(0x2a3630, 30, 110);
+      // Match scene.background to the sky-sphere's midtone so the two
+      // layers blend seamlessly instead of forming a visible disc.
+      this.scene.background = this._buildSkyGradient(0x2a3336, 0x1a2118);
+      // Green-tinted fog — kept softer than my first pass so the arena
+      // stays legible enough to fight in (was 30-110, now 45-140).
+      this.scene.fog = new THREE.Fog(0x2a3630, 45, 140);
       if (this._sun) {
-        this._sun.intensity = 0.85;         // dim overcast — barely any direct sun
-        this._sun.color.set(0x9caea0);      // cool desaturated green-grey
+        this._sun.intensity = 1.05;         // overcast day (dim but readable)
+        this._sun.color.set(0xb8c4b6);      // desaturated silvery-green
       }
       if (this._hemi) {
-        this._hemi.intensity = 0.9;
-        this._hemi.color.set(0x6b7e70);
-        this._hemi.groundColor.set(0x18201a); // dark mossy ground bounce
+        this._hemi.intensity = 1.05;
+        this._hemi.color.set(0x8b9d90);
+        this._hemi.groundColor.set(0x1e2a20);
       }
       if (this._ambientFill) {
-        this._ambientFill.intensity = 0.38;
-        this._ambientFill.color.set(0x8fa392);
+        this._ambientFill.intensity = 0.55;
+        this._ambientFill.color.set(0xa5b7a8);
       }
       // Hide the bright sun disc + halos — it's a storm.
       const sunMeshes4 = [this._sunDisc, this._sunHaloInner, this._sunHaloOuter, this._sunGlow];
@@ -2520,9 +2535,9 @@ export class GameEngine {
       // theme-specific: swamp keeps a dim overcast, downtown/night uses
       // the standard moonlit values.
       if (this._currentTheme === "swamp") {
-        this._sun.intensity = 0.85;
-        this._hemi.intensity = 0.9;
-        if (this._ambientFill) this._ambientFill.intensity = 0.38;
+        this._sun.intensity = 1.05;
+        this._hemi.intensity = 1.05;
+        if (this._ambientFill) this._ambientFill.intensity = 0.55;
       } else {
         this._sun.intensity = 1.0;
         this._hemi.intensity = 1.0;

@@ -512,10 +512,14 @@ export default function Game() {
       // into the team-mode room (practice/offline) — and for casual
       // quick-match, forces TDM rather than letting the 50% roll decide.
       // (Reuses `wantsTdm` computed above.)
-      // `?force_map=<id>` is an admin-only debug hook that pins the
-      // offline room's arena to a specific map (see server.py). Passed
-      // through here so screenshots + preview flows can target one map.
+      // `?map=<id>` is forwarded to the server for offline/practice
+      // solo modes so the map the player picked in the selector
+      // actually gets used instead of the room's stale random roll.
+      // `?force_map=<id>` is an admin-only equivalent used by QA /
+      // preview screenshot tooling.
       const forceMap = searchParams.get("force_map") || null;
+      const pickedMap = searchParams.get("map") || null;
+      const soloMap = (mode === "offline" || mode === "practice") && pickedMap ? { map: pickedMap } : {};
       const extra =
         mode === "party" && partyId
           ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}), ...(forceMap ? { force_map: forceMap } : {}) }
@@ -524,6 +528,7 @@ export default function Game() {
           : {
               ...(wantsTdm ? { tdm: 1 } : {}),
               ...(forceMap ? { force_map: forceMap } : {}),
+              ...soloMap,
             };
       sock.connect(accessToken, mode, Object.keys(extra || {}).length ? extra : null);
     }

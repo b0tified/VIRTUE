@@ -355,7 +355,72 @@ const MAP_F = {
   ],
 };
 
-const MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F];
+const MAP_G = {
+  // MOORLANDS — foggy stormy swamp + woods. Same obstacle layout as
+  // server.py's MAP_G so gameplay feels identical between the offline
+  // client sim and the real server rooms.
+  map_id: "swamp",
+  name: "MOORLANDS",
+  size: 50,
+  obstacles: [
+    // Central ruined altar
+    { x: 0,   z: 0,   w: 8,   h: 0.8, d: 8 },
+    { x:  3.2, z:  3.2, w: 1.4, h: 2.6, d: 1.4 },
+    { x: -3.2, z:  3.2, w: 1.4, h: 2.6, d: 1.4 },
+    { x:  3.2, z: -3.2, w: 1.4, h: 2.6, d: 1.4 },
+    { x: -3.2, z: -3.2, w: 1.4, h: 2.6, d: 1.4 },
+    // Flanking bog islands
+    { x:  20, z:  0,   w: 5,   h: 3.2, d: 1.2 },
+    { x:  20, z:  3.5, w: 1.2, h: 2.2, d: 2.4 },
+    { x: -20, z:  0,   w: 5,   h: 3.2, d: 1.2 },
+    { x: -20, z: -3.5, w: 1.2, h: 2.2, d: 2.4 },
+    // Fallen logs
+    { x:  10, z:  14,  w: 6,   h: 1.0, d: 1.1 },
+    { x: -12, z:  14,  w: 5.5, h: 1.0, d: 1.1 },
+    { x:  12, z: -16,  w: 5,   h: 1.0, d: 1.1 },
+    { x: -10, z: -14,  w: 6,   h: 1.0, d: 1.1 },
+    { x:  0,  z:  16,  w: 1.1, h: 1.0, d: 6.5 },
+    { x:  0,  z: -16,  w: 1.1, h: 1.0, d: 6.5 },
+    // Standing dead trees
+    { x:  8,  z:  8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x: -8,  z:  8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x:  8,  z: -8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x: -8,  z: -8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x:  14, z:  6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x: -14, z:  6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x:  14, z: -6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x: -14, z: -6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x:  6,  z:  20,  w: 1.0, h: 5.5, d: 1.0 },
+    { x: -6,  z:  20,  w: 1.0, h: 5.5, d: 1.0 },
+    { x:  6,  z: -20,  w: 1.0, h: 5.5, d: 1.0 },
+    { x: -6,  z: -20,  w: 1.0, h: 5.5, d: 1.0 },
+    // Mossy boulders
+    { x:  18, z:  18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x: -18, z:  18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x:  18, z: -18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x: -18, z: -18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x:  26, z:  10,  w: 1.8, h: 1.2, d: 1.8 },
+    { x: -26, z:  10,  w: 1.8, h: 1.2, d: 1.8 },
+    { x:  26, z: -10,  w: 1.8, h: 1.2, d: 1.8 },
+    { x: -26, z: -10,  w: 1.8, h: 1.2, d: 1.8 },
+    // Corner watchtower ruins
+    { x:  30, z:  30,  w: 6,   h: 3.6, d: 1.4 },
+    { x:  33, z:  27,  w: 1.4, h: 3.6, d: 4.0 },
+    { x: -30, z:  30,  w: 6,   h: 3.6, d: 1.4 },
+    { x: -33, z:  27,  w: 1.4, h: 3.6, d: 4.0 },
+    { x:  30, z: -30,  w: 6,   h: 3.6, d: 1.4 },
+    { x:  33, z: -27,  w: 1.4, h: 3.6, d: 4.0 },
+    { x: -30, z: -30,  w: 6,   h: 3.6, d: 1.4 },
+    { x: -33, z: -27,  w: 1.4, h: 3.6, d: 4.0 },
+  ],
+  spawn_points: [
+    [28, 28], [-28, 28], [28, -28], [-28, -28],
+    [32, 0], [-32, 0], [0, 32], [0, -32],
+    [18, 12], [-18, 12], [18, -12], [-18, -12],
+  ],
+};
+
+const MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F, MAP_G];
 
 // Active arena for this LocalSim run — re-rolled on each instance below.
 let ARENA = MAP_A;

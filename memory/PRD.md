@@ -2017,3 +2017,15 @@ Two quality-of-life changes shipped together.
   - Practice map selector shows MOORLANDS card after the change (screenshot flow launched a match with `?map=swamp`).
 - **How to play**: Lobby → PRACTICE → toggle "OFFLINE VS AI" → pick "MOORLANDS" → START. The map also auto-rolls in random casual + party matches now that it's in `MAPS`.
 
+
+### 2026-02-27 (later³) — MOORLANDS: map pick actually respected + no more building windows
+- **User bug**: "when selecting map in offline it is random" — picking MOORLANDS still gave a random arena (usually downtown/crashsite).
+- **Root cause**: Offline vs AI uses `LocalSim` on the client (not the real server WS), and `LocalSim.MAPS` only knew about MAP_A..MAP_F. `_pickMap("swamp")` fell through to random. On top of that, the engine's `_makeBuildingFaceTexture` was slapping lit apartment-window textures on the ruins/dead-trees because it triggers on any `h >= 2.5` obstacle.
+- **Fixes**:
+  - `/app/frontend/src/game/localSim.js`: Added `MAP_G` with the full swamp obstacle set (same 55 rects as server.py) + spawn points, then included it in the `MAPS` array. `_pickMap("swamp")` now returns it directly.
+  - `/app/frontend/src/game/engine.js`: `_buildObstacle` now short-circuits the window/wallpaper decoration + roof cap for `map_id === "swamp"`. Dead trees / ruined watchtowers stay silhouettes instead of lit apartment blocks.
+  - `/app/frontend/src/pages/Game.jsx`: `?map=<id>` is now forwarded in the WS `extra` params for offline + practice modes (was previously only used by LocalSim). Solves the equivalent issue on the real-server path.
+  - `/app/backend/server.py`: WS accepts `map=` query param. For offline/practice modes any player (not just admins) can pick their arena. Offline branch tears down cached room first so the swap actually takes effect.
+  - Tuned swamp lighting: sun/hemi bumped from 0.85/0.9 → 1.05/1.05, ambient 0.38 → 0.55 so the arena is readable during the storm. Sky gradient midtones darkened + scene.background midtone-matched so the inner sky sphere no longer punches a bright "moon disc" through the outer background.
+- **Verified**: Preview screenshots show dead trees on the horizon, bog water floor, falling rain, scattered fireflies, dark stormy sky, and ruins WITHOUT windows. Offline vs AI + MOORLANDS pick reliably lands on the swamp arena.
+
