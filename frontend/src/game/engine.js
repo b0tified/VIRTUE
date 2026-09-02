@@ -1128,9 +1128,31 @@ export class GameEngine {
       // with lit apartment windows breaks the whole atmosphere).
       const isSwamp = this._currentMapId === "swamp";
       if (isSwamp) {
-        // No face decoration; the outlined box body is enough for the
-        // stony/wooden silhouette. Fall through past the decoration
-        // block by using an early "continue" via a wrapping condition.
+        // SILENT TOWN: overlay a "decayed stone" canvas texture on all 4
+        // side faces so the ruins look weather-beaten (moss streaks,
+        // cracks, dark water stains) instead of the flat cel-shaded
+        // block underneath. No roof cap — these are broken ruins, not
+        // finished buildings. Trees with h>=5 skip the overlay so they
+        // stay as slender silhouettes.
+        if (ob.h < 5) {
+          const decayTex = this._makeDecayTexture(ob);
+          const decayMat = new THREE.MeshBasicMaterial({
+            map: decayTex,
+            transparent: true,
+            depthWrite: false,
+          });
+          const addDecay = (w, h, x, y, z, rotY) => {
+            const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), decayMat);
+            m.position.set(x, y, z);
+            m.rotation.y = rotY;
+            g.add(m);
+          };
+          const e = 0.011;
+          addDecay(ob.w * 0.98, ob.h * 0.98, 0, 0,  ob.d / 2 + e, 0);
+          addDecay(ob.w * 0.98, ob.h * 0.98, 0, 0, -ob.d / 2 - e, Math.PI);
+          addDecay(ob.d * 0.98, ob.h * 0.98,  ob.w / 2 + e, 0, 0,  Math.PI / 2);
+          addDecay(ob.d * 0.98, ob.h * 0.98, -ob.w / 2 - e, 0, 0, -Math.PI / 2);
+        }
       } else {
       // For HOTEL, tall obstacles are interior walls / structural
       // columns — swap the exterior window-facade texture for a
@@ -1868,19 +1890,83 @@ export class GameEngine {
       const mistTex = new THREE.CanvasTexture(mfc);
       mistTex.colorSpace = THREE.SRGBColorSpace;
       const mistSpots = [
+        // Interior scatter — dense sprinkling of mid-size mist patches
+        // covering the fight area so the ground feels genuinely steaming.
         [-18, -8, 12], [16, 6, 14], [0, 18, 10],
         [-6, -22, 11], [24, -18, 12], [-24, 20, 12],
+        [10, -6, 10],  [-14, 14, 11], [22, 22, 12],
+        [-22, -22, 12], [0, -10, 9], [8, 22, 10],
+        [-16, 2, 10], [16, -4, 9], [-10, 24, 11],
+        // Outer ring — larger softer patches that read as a wall of fog
+        // rolling in from the tree line. Placed BEYOND the play area so
+        // they occlude distant obstacles without cluttering combat.
+        [0,  38, 22], [0, -38, 22], [38, 0, 22], [-38, 0, 22],
+        [28, 28, 20], [-28, 28, 20], [28, -28, 20], [-28, -28, 20],
       ];
-      mistSpots.forEach(([x, z, r]) => {
+      mistSpots.forEach(([x, z, r], i) => {
         const m = new THREE.Mesh(
           new THREE.PlaneGeometry(r, r),
-          new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.5, depthWrite: false }),
+          new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.55, depthWrite: false }),
         );
         m.rotation.x = -Math.PI / 2;
         m.rotation.z = Math.random() * Math.PI;
-        m.position.set(x, 0.15, z);
+        m.position.set(x, 0.15 + (i % 3) * 0.05, z);
+        m.userData.driftPhase = Math.random() * Math.PI * 2;
+        m.userData.driftHome = [x, z];
         this._swampExtras.add(m);
       });
+      this._swampMistPatches = this._swampExtras.children.filter(
+        (c) => c.userData && c.userData.driftHome
+      );
+
+      // Volumetric mist "sheets" — three big vertical planes always
+      // facing the camera at increasing radii, additive-alpha so they
+      // stack softly to form a wall-of-fog band around the arena.
+      // Cheaper than a particle system and reads as thick weather at
+      // any camera angle.
+      const sheetCanvas = document.createElement("canvas");
+      sheetCanvas.width = 512; sheetCanvas.height = 256;
+      const sctx = sheetCanvas.getContext("2d");
+      const sgrd = sctx.createLinearGradient(0, 0, 0, 256);
+      sgrd.addColorStop(0.00, "rgba(180, 198, 190, 0.0)");
+      sgrd.addColorStop(0.40, "rgba(180, 198, 190, 0.55)");
+      sgrd.addColorStop(0.80, "rgba(150, 168, 158, 0.55)");
+      sgrd.addColorStop(1.00, "rgba(120, 138, 128, 0.0)");
+      sctx.fillStyle = sgrd; sctx.fillRect(0, 0, 512, 256);
+      // Wispy overlay — random soft ellipses so it doesn't look like a
+      // clean gradient wall.
+      for (let i = 0; i < 40; i++) {
+        const cx = Math.random() * 512, cy = 40 + Math.random() * 180;
+        const rx = 30 + Math.random() * 90, ry = 12 + Math.random() * 30;
+        sctx.fillStyle = `rgba(210, 226, 218, ${0.10 + Math.random() * 0.20})`;
+        sctx.beginPath();
+        sctx.ellipse(cx, cy, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+        sctx.fill();
+      }
+      const sheetTex = new THREE.CanvasTexture(sheetCanvas);
+      sheetTex.colorSpace = THREE.SRGBColorSpace;
+      const sheetMat = new THREE.MeshBasicMaterial({
+        map: sheetTex,
+        transparent: true,
+        opacity: 0.60,
+        depthWrite: false,
+        blending: THREE.NormalBlending,
+        side: THREE.DoubleSide,
+      });
+      // Three concentric mist rings — 8-sided cylinders (no caps) so the
+      // player sees a fog wall at every angle without needing per-frame
+      // billboard math.
+      const buildRing = (radius, height, opacity) => {
+        const geo = new THREE.CylinderGeometry(radius, radius, height, 24, 1, true);
+        const mat = sheetMat.clone();
+        mat.opacity = opacity;
+        const m = new THREE.Mesh(geo, mat);
+        m.position.y = height / 2;
+        return m;
+      };
+      this._swampExtras.add(buildRing(46, 14, 0.35));   // near — thinner
+      this._swampExtras.add(buildRing(58, 16, 0.55));   // mid — thicker
+      this._swampExtras.add(buildRing(70, 18, 0.45));   // far — softer
     }
     if (Array.isArray(this._grassBlades)) {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
@@ -2144,10 +2230,12 @@ export class GameEngine {
       // Looping rain-on-wet-streets hiss
       try { audioBus.rainAmbient(true); } catch {}
 
-      // Reset lightning scheduling. We schedule a "thunder cue" first
-      // (4-10s away). When the cue fires, we play the audio rumble AND
-      // arm the visual flash to peak ~0.8s later — matching the audio.
-      this._thunderCueAt = performance.now() / 1000 + 4 + Math.random() * 6;
+      // Reset lightning scheduling. We schedule a "thunder cue" first.
+      // SILENT TOWN swamp uses a much shorter first cue + tighter loop
+      // (heavy-storm theme); other stormy maps stay on the calm 4-10s
+      // opener so bootups don't feel spammy.
+      const initialFast = mapId === "swamp";
+      this._thunderCueAt = performance.now() / 1000 + (initialFast ? 1.5 + Math.random() * 2 : 4 + Math.random() * 6);
       this._lightningStart = 0;
       this._lightningActiveUntil = 0;
     } else {
@@ -2345,9 +2433,11 @@ export class GameEngine {
       // Match scene.background to the sky-sphere's midtone so the two
       // layers blend seamlessly instead of forming a visible disc.
       this.scene.background = this._buildSkyGradient(0x2a3336, 0x1a2118);
-      // Green-tinted fog — kept softer than my first pass so the arena
-      // stays legible enough to fight in (was 30-110, now 45-140).
-      this.scene.fog = new THREE.Fog(0x2a3630, 45, 140);
+      // Dense green-tinted fog — pulled tight so distant trees dissolve
+      // completely into mist and the arena feels genuinely enclosed.
+      // Range trimmed vs the initial pass (was 45-140) for the "more
+      // fog" the user asked for.
+      this.scene.fog = new THREE.Fog(0x2a3630, 22, 95);
       if (this._sun) {
         this._sun.intensity = 1.05;         // overcast day (dim but readable)
         this._sun.color.set(0xb8c4b6);      // desaturated silvery-green
@@ -2423,6 +2513,24 @@ export class GameEngine {
       // Twinkle by pulsing the material opacity subtly.
       const mat = this._swampFireflies.material;
       if (mat) mat.opacity = 0.75 + Math.sin(tt * 2.3) * 0.15;
+
+      // Drift the ground mist patches around their home position so the
+      // fog visibly breathes across the map (each patch has its own
+      // phase offset so the drift reads as organic weather, not a
+      // synchronised slide).
+      if (this._swampMistPatches) {
+        for (const patch of this._swampMistPatches) {
+          const [hx, hz] = patch.userData.driftHome;
+          const ph = patch.userData.driftPhase;
+          patch.position.x = hx + Math.sin(tt * 0.25 + ph) * 3.5;
+          patch.position.z = hz + Math.cos(tt * 0.20 + ph) * 3.5;
+          // Slight rotation so wispy patches don't look pasted-on.
+          patch.rotation.z += 0.0012;
+          if (patch.material) {
+            patch.material.opacity = 0.42 + Math.sin(tt * 0.6 + ph) * 0.18;
+          }
+        }
+      }
     }
 
     if (!this._stormActive) return;
@@ -2506,8 +2614,13 @@ export class GameEngine {
       this._lightningStart = now;
       this._lightningBursts = pattern.bursts;
       this._lightningActiveUntil = now + lastBurstAt + pattern.endPad;
-      // Next thunder cue: 6-18s out
-      this._thunderCueAt = now + 6 + Math.random() * 12;
+      // Next thunder cue — much more frequent on the SILENT TOWN swamp
+      // ("heavy storm" theme) than on the vanilla downtown night. Swamp
+      // fires roughly every 2-6s so the atmosphere reads as constant
+      // rolling thunder, while other stormy maps stay at the calmer
+      // 6-18s cadence.
+      const stormFast = this._currentTheme === "swamp";
+      this._thunderCueAt = now + (stormFast ? 2 + Math.random() * 4 : 6 + Math.random() * 12);
     }
     if (this._lightningStart > 0 && now < this._lightningActiveUntil) {
       const t = now - this._lightningStart;
@@ -2625,6 +2738,133 @@ export class GameEngine {
     return tex;
   }
 
+  /* SILENT TOWN "decayed stone" facade — a canvas texture that gives
+     ruins a weather-beaten look: dark stone base, jagged cracks, moss
+     streaks, water stains, and a few crumbled edges. Seeded per obstacle
+     so every ruin has its own unique wear pattern but stays consistent
+     between clients. Used ONLY on the swamp map. */
+  _makeDecayTexture(ob) {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 256;
+    const ctx = c.getContext("2d");
+    // Deterministic per-obstacle seed so all clients see identical wear.
+    const seed0 = Math.abs(((ob.x * 1000) | 0) ^ ((ob.z * 1000) | 0) ^ ((ob.h * 1000) | 0)) >>> 0;
+    let s = seed0 || 1;
+    const rnd = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return (s & 0xffff) / 0x10000;
+    };
+    // Dark mossy stone base — slightly darker than the raw obstacle color
+    // so the decay overlay reads as an actual layer instead of a wash.
+    ctx.fillStyle = "#232a24";
+    ctx.fillRect(0, 0, 256, 256);
+    // Mottled base — small varying rectangles simulate stone blocks.
+    for (let i = 0; i < 24; i++) {
+      const x = rnd() * 256, y = rnd() * 256;
+      const w = 40 + rnd() * 80, h = 30 + rnd() * 60;
+      const g = 30 + Math.floor(rnd() * 30);
+      ctx.fillStyle = `rgb(${g - 4}, ${g + 6}, ${g - 2})`;
+      ctx.globalAlpha = 0.35 + rnd() * 0.35;
+      ctx.fillRect(x - w / 2, y - h / 2, w, h);
+    }
+    ctx.globalAlpha = 1;
+    // Grouted stone-block seams — horizontal + vertical grid, jittered.
+    ctx.strokeStyle = "rgba(10,12,10,0.75)";
+    ctx.lineWidth = 2;
+    for (let y = 32; y < 256; y += 40 + Math.floor(rnd() * 16)) {
+      ctx.beginPath();
+      let cx = 0;
+      ctx.moveTo(0, y);
+      while (cx < 256) {
+        cx += 20 + rnd() * 30;
+        ctx.lineTo(Math.min(cx, 256), y + (rnd() - 0.5) * 4);
+      }
+      ctx.stroke();
+      // Random vertical seams inside each row so it doesn't look striped.
+      for (let vx = 20; vx < 256; vx += 45 + Math.floor(rnd() * 30)) {
+        ctx.beginPath();
+        ctx.moveTo(vx + (rnd() - 0.5) * 3, y);
+        ctx.lineTo(vx + (rnd() - 0.5) * 3, Math.min(256, y + 40));
+        ctx.stroke();
+      }
+    }
+    // Dark cracks — jagged lightning-fork-style polylines drawn thick then
+    // thin so they look like split stone.
+    for (let i = 0; i < 4 + Math.floor(rnd() * 4); i++) {
+      const sx = rnd() * 256, sy = rnd() * 256;
+      let cx = sx, cy = sy;
+      ctx.strokeStyle = "rgba(6,8,6,0.85)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      const segments = 4 + Math.floor(rnd() * 4);
+      for (let j = 0; j < segments; j++) {
+        cx += (rnd() - 0.5) * 60;
+        cy += 15 + rnd() * 30;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+    }
+    // Moss streaks — organic green trickles running down from the top,
+    // painted with soft radial-gradient brushes so they feel damp.
+    const mossPatches = 5 + Math.floor(rnd() * 5);
+    for (let i = 0; i < mossPatches; i++) {
+      const mx = rnd() * 256;
+      const my = rnd() * 60;                // starts near the top
+      const len = 60 + rnd() * 140;
+      const grd = ctx.createLinearGradient(mx, my, mx + (rnd() - 0.5) * 30, my + len);
+      grd.addColorStop(0.0, "rgba(90, 138, 74, 0.55)");
+      grd.addColorStop(0.5, "rgba(70, 118, 58, 0.35)");
+      grd.addColorStop(1.0, "rgba(50, 92, 40, 0.0)");
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.ellipse(mx, my + len / 2, 12 + rnd() * 18, len / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Dark water stains — big soft ellipses in the mid/bottom section.
+    for (let i = 0; i < 3 + Math.floor(rnd() * 3); i++) {
+      const wx = rnd() * 256;
+      const wy = 120 + rnd() * 100;
+      const rx = 30 + rnd() * 45;
+      const ry = 20 + rnd() * 30;
+      const grd = ctx.createRadialGradient(wx, wy, 4, wx, wy, Math.max(rx, ry));
+      grd.addColorStop(0.0, "rgba(8, 10, 8, 0.55)");
+      grd.addColorStop(1.0, "rgba(8, 10, 8, 0.0)");
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.ellipse(wx, wy, rx, ry, rnd() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Crumbled top edge — chipping alpha off the top row of pixels so the
+    // ruin's silhouette looks broken rather than knife-straight.
+    ctx.globalCompositeOperation = "destination-out";
+    for (let x = 0; x < 256; x += 6 + Math.floor(rnd() * 6)) {
+      const chipH = 3 + Math.floor(rnd() * 10);
+      const chipW = 5 + Math.floor(rnd() * 10);
+      ctx.fillStyle = "rgba(0,0,0,1)";
+      ctx.fillRect(x, 0, chipW, chipH);
+    }
+    // Chipping on side edges too — smaller.
+    for (let y = 0; y < 256; y += 12 + Math.floor(rnd() * 12)) {
+      if (rnd() > 0.5) ctx.fillRect(0, y, 3 + Math.floor(rnd() * 5), 3 + Math.floor(rnd() * 5));
+      if (rnd() > 0.5) ctx.fillRect(253 - Math.floor(rnd() * 5), y, 3 + Math.floor(rnd() * 5), 3 + Math.floor(rnd() * 5));
+    }
+    ctx.globalCompositeOperation = "source-over";
+    // Comic-outline border on the un-chipped part so the ruin still reads
+    // as cel-shaded, matching the rest of the game.
+    ctx.strokeStyle = "rgba(6, 8, 6, 0.9)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(2, 12, 252, 240);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    // Repeat the pattern once per ~4 world units so a 6-unit-wide watchtower
+    // gets a natural stone-block scale instead of a stretched mural.
+    const repeatX = Math.max(1, Math.round(Math.max(ob.w, ob.d) / 4));
+    tex.repeat.set(repeatX, 1);
+    return tex;
+  }
 
   _makeBuildingFaceTexture(ob, night = false) {
     const c = document.createElement("canvas");

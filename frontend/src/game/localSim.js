@@ -356,11 +356,11 @@ const MAP_F = {
 };
 
 const MAP_G = {
-  // MOORLANDS — foggy stormy swamp + woods. Same obstacle layout as
+  // SILENT TOWN — foggy stormy swamp + woods. Same obstacle layout as
   // server.py's MAP_G so gameplay feels identical between the offline
   // client sim and the real server rooms.
   map_id: "swamp",
-  name: "MOORLANDS",
+  name: "SILENT TOWN",
   size: 50,
   obstacles: [
     // Central ruined altar

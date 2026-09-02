@@ -277,7 +277,7 @@ export const MAP_TUNDRA = {
 
 export const MAP_SWAMP = {
   map_id: "swamp",
-  name: "MOORLANDS",
+  name: "SILENT TOWN",
   size: 50,
   tagline: "Foggy woodland · murky bog · stormy overcast + lightning.",
   palette: {

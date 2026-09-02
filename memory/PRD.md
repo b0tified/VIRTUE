@@ -2029,3 +2029,24 @@ Two quality-of-life changes shipped together.
   - Tuned swamp lighting: sun/hemi bumped from 0.85/0.9 → 1.05/1.05, ambient 0.38 → 0.55 so the arena is readable during the storm. Sky gradient midtones darkened + scene.background midtone-matched so the inner sky sphere no longer punches a bright "moon disc" through the outer background.
 - **Verified**: Preview screenshots show dead trees on the horizon, bog water floor, falling rain, scattered fireflies, dark stormy sky, and ruins WITHOUT windows. Offline vs AI + MOORLANDS pick reliably lands on the swamp arena.
 
+
+### 2026-02-27 (later⁴) — MOORLANDS → SILENT TOWN: decayed ruins + heavier storm + denser fog
+- **User requests**:
+  1. Rename the map from MOORLANDS to **SILENT TOWN**
+  2. Remove lit apartment-style windows from buildings + make them look decayed/ruined
+  3. More lightning strikes to feel stormier
+  4. More fog effects across the map
+- **Rename** (sed swap across `/app/backend/server.py`, `/app/frontend/src/game/mapsMeta.js`, `/app/frontend/src/game/localSim.js`): "MOORLANDS" → "SILENT TOWN" (plus lowercase variant). Map card in the practice selector now reads SILENT TOWN and the confirmation navigates to the swamp arena.
+- **Decayed buildings** (`/app/frontend/src/game/engine.js`):
+  - New `_makeDecayTexture(ob)` builds a per-obstacle 256×256 canvas with a mottled dark-stone base, a jittered stone-block seam grid, jagged black cracks (drawn as fork-style polylines), organic moss streaks (linear gradients running from the top down), soft water stains (radial gradients), and a crumbled top edge (chipped alpha via `destination-out`) so the silhouette isn't knife-straight. Deterministic seed per obstacle → all clients see the same wear.
+  - `_buildObstacle` now maps this texture onto the 4 side faces of every swamp obstacle with `h < 5` (walls, watchtower ruins, altar columns, boulders). Trees (`h >= 5`) stay as slender silhouettes. Roof caps disabled on swamp so the ruins keep broken tops.
+- **Heavier lightning** (`/app/frontend/src/game/engine.js`):
+  - Storm scheduler on the swamp map now fires ~every 2-6s (was 6-18s) — the map reads as constant rolling thunder.
+  - First strike lands 1.5-3.5s after entering the arena (was 4-10s) so combat kicks off already inside the storm.
+  - Existing 5-pattern lightning system (single / double / triple / rolling / flicker) reused so each strike still varies naturally.
+- **Denser fog** (`/app/frontend/src/game/engine.js`):
+  - Fog near/far tightened to 22-95 (was 45-140) so distant obstacles genuinely dissolve into mist.
+  - Ground mist patch count more than doubled (6 → 23). Interior patches drift 3-4 units around their home in a per-patch sine wobble, with pulsing opacity + slow rotation for organic "breathing" fog.
+  - Three concentric mist "rings" — cylindrical fog sheets at radii 46/58/70 that occlude anything past the arena from every angle without needing per-frame billboard math.
+- **Verified**: Screenshots show decayed weathered stone ruins in the centre, dense fog wall around the arena, no windows anywhere, drifting mist patches, heavy rain, dark stormy palette. Confirmed practice selector shows "SILENT TOWN" card that lands on the swamp arena reliably.
+

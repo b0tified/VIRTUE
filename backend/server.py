@@ -3225,7 +3225,7 @@ MAP_F = {
 
 MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F]
 
-# Map G — "MOORLANDS" — foggy, stormy swamp + woods. Dense outer ring of
+# Map G — "SILENT TOWN" — foggy, stormy swamp + woods. Dense outer ring of
 # tall dead trees to break long sightlines, three raised islands with
 # stone-ruin cover in the middle of murky bog "water", scattered fallen
 # logs for chest-height cover, and small mossy boulders as crouch cover.
@@ -3235,7 +3235,7 @@ MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F]
 # and a couple of long "corridors" between the water pools.
 MAP_G = {
     "map_id": "swamp",
-    "name": "MOORLANDS",
+    "name": "SILENT TOWN",
     "size": 50,
     "obstacles": [
         # ---- Central raised stone platform (ruined altar/dock) ---------------
