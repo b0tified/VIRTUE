@@ -2,61 +2,40 @@
  * AdminFogLobby — Full-screen misty-forest background + seamless
  * music loop rendered ONLY on the admin account's /lobby route.
  *
- * Photo-realistic-leaning stack (all CSS/SVG, no bitmap assets):
+ * Visual stack (all CSS/SVG, no bitmap assets):
  *   1. Vertical gradient sky→ground evoking the reference image's
  *      pale-blue/grey haze fading into damp earth-brown.
- *   2. Two SVG tree layers (near-dark + far-pale) with dozens of
- *      hand-plotted conifer trunks. Trees SWAY in the wind via a
- *      transform-origin at their base — no horizontal scrolling
- *      per the user's request.
+ *   2. Two inline-SVG tree layers (near-dark + far-pale) with hand-
+ *      plotted TALL conifers. Each tree is a `<g>` containing a
+ *      static trunk `<rect>` + a `<g class="crown">` holding the
+ *      branch polygons. Only the crowns sway — via a CSS keyframe
+ *      that skews/rotates them around `transform-origin: 50% 100%`
+ *      (base of the crown, i.e. top of the trunk). Trunks stay
+ *      anchored. Each crown gets a staggered animation-delay so the
+ *      wind reads as a wave rolling through the forest instead of
+ *      every branch swaying in lockstep.
  *   3. Three drifting fog cloud gradients at different depths +
  *      speeds, sitting ABOVE the far trees but BELOW the near ones
  *      so distance reads correctly (fog occludes distant trees more
  *      than nearby ones).
  *   4. Subtle grain + vignette so the foreground UI stays readable.
  *
- * All costs stay tiny: three transform keyframes + one background-
- * position tween. Fine for mobile.
- *
- * The MP3 is streamed from the uploaded artifact and looped
- * seamlessly via HTMLAudio `loop`. On unmount we pause+rewind so
- * the audio is strictly scoped to /lobby.
+ * Audio: The MP3 is streamed through the global `audioBus` so its
+ * volume follows the master + music sliders (and the mute toggles).
+ * On unmount we call `audioBus.stopFogAmbient()` which pauses AND
+ * disconnects the node, so the track cannot leak into a match.
  */
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import audioBus from "@/game/audio";
 
 const MUSIC_URL =
   "https://customer-assets-wrfwihn1.emergentagent.net/job_blast-arena-servers/artifacts/4l14mia5_Avith%20Ortega%20-%20Recurring%20Tourism-%5BAudioTrimmer.com%5D.mp3";
 
 export default function AdminFogLobby({ enabled }) {
-  const audioRef = useRef(null);
-
   useEffect(() => {
     if (!enabled) return;
-    const a = new Audio(MUSIC_URL);
-    a.loop = true;
-    a.volume = 0.35;
-    a.preload = "auto";
-    audioRef.current = a;
-    let awaitingGesture = false;
-    const kick = () => {
-      awaitingGesture = false;
-      a.play().catch(() => {});
-      window.removeEventListener("pointerdown", kick);
-      window.removeEventListener("keydown", kick);
-    };
-    a.play().catch(() => {
-      awaitingGesture = true;
-      window.addEventListener("pointerdown", kick, { once: true });
-      window.addEventListener("keydown", kick, { once: true });
-    });
-    return () => {
-      try { a.pause(); a.currentTime = 0; } catch {}
-      audioRef.current = null;
-      if (awaitingGesture) {
-        window.removeEventListener("pointerdown", kick);
-        window.removeEventListener("keydown", kick);
-      }
-    };
+    audioBus.startFogAmbient(MUSIC_URL);
+    return () => { audioBus.stopFogAmbient(); };
   }, [enabled]);
 
   if (!enabled) return null;
@@ -84,28 +63,23 @@ export default function AdminFogLobby({ enabled }) {
         }}
       />
 
-      {/* Far tree layer — pale, more numerous, sits BEHIND fog A/B/C
-          so distance reads correctly. Base transform-origin so the
-          sway pivots from the ground. */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-[70%]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml;utf8,${encodeURIComponent(FAR_TREES_SVG)}")`,
-          backgroundRepeat: "repeat-x",
-          backgroundSize: "auto 100%",
-          backgroundPosition: "0 100%",
-          opacity: 0.55,
-          filter: "blur(1.5px)",
-          transformOrigin: "50% 100%",
-          animation: "admin-fog-sway-far 7s ease-in-out infinite",
-          willChange: "transform",
-        }}
-      />
+      {/* Far tree layer — pale, more numerous, blurred. Sits BEHIND
+          the mid + ground fog so distance reads correctly. */}
+      <svg
+        className="absolute inset-x-0 bottom-0 w-full pointer-events-none"
+        style={{ height: "78%", opacity: 0.55, filter: "blur(1.6px)" }}
+        viewBox="0 0 1600 780"
+        preserveAspectRatio="xMidYMax slice"
+      >
+        {FAR_TREES.map((t, i) => (
+          <TreeGlyph key={`f${i}`} tree={t} className="admin-fog-crown-far" />
+        ))}
+      </svg>
 
       {/* Mid fog band — high thin haze weaving between the two tree
           layers. Slow horizontal drift for a lived-in breath. */}
       <div
-        className="absolute -inset-x-1/2 top-[18%] h-[35%]"
+        className="absolute -inset-x-1/2 top-[16%] h-[36%]"
         style={{
           background:
             "radial-gradient(ellipse 55% 60% at 40% 50%, rgba(220,225,228,0.55) 0%, rgba(220,225,228,0) 60%)",
@@ -127,22 +101,20 @@ export default function AdminFogLobby({ enabled }) {
         }}
       />
 
-      {/* Near tree layer — darker, taller, sparser. Sits ABOVE the
-          fog so nearby trees remain sharp. Sway phase intentionally
-          offset from the far layer for depth. */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-[92%]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml;utf8,${encodeURIComponent(NEAR_TREES_SVG)}")`,
-          backgroundRepeat: "repeat-x",
-          backgroundSize: "auto 100%",
-          backgroundPosition: "0 100%",
-          opacity: 0.95,
-          transformOrigin: "50% 100%",
-          animation: "admin-fog-sway-near 5s ease-in-out infinite",
-          willChange: "transform",
-        }}
-      />
+      {/* Near tree layer — darker, TALL, sparser. Sits ABOVE the fog
+          so nearby trees remain sharp against the mist. Crowns sway
+          independently from their trunks; each tree has its own
+          phase offset so the wind reads as a rolling wave. */}
+      <svg
+        className="absolute inset-x-0 bottom-0 w-full pointer-events-none"
+        style={{ height: "98%", opacity: 0.96 }}
+        viewBox="0 0 1600 980"
+        preserveAspectRatio="xMidYMax slice"
+      >
+        {NEAR_TREES.map((t, i) => (
+          <TreeGlyph key={`n${i}`} tree={t} className="admin-fog-crown-near" />
+        ))}
+      </svg>
 
       {/* Faint horizontal haze at eye level — completes the wall-of-
           mist effect from the reference. Sits above trees so distant
@@ -179,18 +151,35 @@ export default function AdminFogLobby({ enabled }) {
       />
 
       <style>{`
-        /* Trees rock a tiny amount from their base — the amplitudes
-           (0.6deg / 0.9deg) are small enough to look like real wind
-           on a still day but large enough to be visible. */
+        /* Only the CROWNS sway. transform-box: fill-box lets SVG groups
+           use CSS transform-origin relative to their own bounding box,
+           so the crown pivots at its base (top of the trunk). */
+        .admin-fog-crown-near, .admin-fog-crown-far {
+          transform-box: fill-box;
+          transform-origin: 50% 100%;
+          will-change: transform;
+        }
+        .admin-fog-crown-near {
+          animation: admin-fog-sway-near 5.4s ease-in-out infinite;
+        }
+        .admin-fog-crown-far {
+          animation: admin-fog-sway-far 7.2s ease-in-out infinite;
+        }
+        /* Amplitude tuned to look like a light wind: 2.0deg / 1.4deg
+           tilt + a matching horizontal skew so the branch tips travel
+           further than the base of the crown (which is what real trees
+           do). Trunks below are on the parent <g> and don't animate. */
         @keyframes admin-fog-sway-near {
-          0%   { transform: rotate(-0.6deg) skewX(-0.3deg); }
-          50%  { transform: rotate( 0.9deg) skewX( 0.4deg); }
-          100% { transform: rotate(-0.6deg) skewX(-0.3deg); }
+          0%   { transform: rotate(-2.0deg) skewX(-1.2deg); }
+          25%  { transform: rotate( 0.8deg) skewX( 0.5deg); }
+          50%  { transform: rotate( 2.4deg) skewX( 1.5deg); }
+          75%  { transform: rotate( 0.6deg) skewX( 0.4deg); }
+          100% { transform: rotate(-2.0deg) skewX(-1.2deg); }
         }
         @keyframes admin-fog-sway-far {
-          0%   { transform: rotate( 0.5deg) skewX( 0.25deg); }
-          50%  { transform: rotate(-0.7deg) skewX(-0.35deg); }
-          100% { transform: rotate( 0.5deg) skewX( 0.25deg); }
+          0%   { transform: rotate( 1.4deg) skewX( 0.8deg); }
+          50%  { transform: rotate(-1.8deg) skewX(-1.0deg); }
+          100% { transform: rotate( 1.4deg) skewX( 0.8deg); }
         }
         @keyframes admin-fog-drift-mid {
           0%   { transform: translate(0, 0);           opacity: 0.85; }
@@ -212,12 +201,93 @@ export default function AdminFogLobby({ enabled }) {
   );
 }
 
-// -- Tree SVGs -------------------------------------------------------
-// Each SVG is 1600 wide × 600 tall. Trees stacked triangles for a
-// conifer silhouette. Deterministic random-looking placement via a
-// small pseudo-random walk so the layout doesn't look tiled.
+// -- Tree rendering -------------------------------------------------
 
-function _mulberry(seed) {
+/* A single tree = static trunk `<rect>` + swaying crown `<g>`. The
+   parent `<g>` positions it in the SVG viewBox; the crown group is
+   what CSS animates. Each crown gets its own animation-delay + phase
+   flip so a wall of trees doesn't sway in lockstep. */
+function TreeGlyph({ tree, className }) {
+  const { x, baseY, height, trunkW, color, trunkColor, delay, flip } = tree;
+  // Crown occupies the top ~88% of the tree — trunk pokes through the
+  // bottom for anchoring. baseY is the ground line in the viewBox.
+  const trunkTop = baseY - height * 0.14;   // where trunk ends & crown starts
+  const crownTop = baseY - height;          // tallest point of the tree
+  return (
+    <g>
+      {/* Trunk — dead-simple rectangle, stays perfectly still. */}
+      <rect
+        x={x - trunkW / 2}
+        y={trunkTop}
+        width={trunkW}
+        height={baseY - trunkTop}
+        fill={trunkColor}
+      />
+      {/* Crown group — CSS animates this. transform-origin is set via
+          the shared class so the pivot sits at 50% of the crown's own
+          bounding box's bottom = right at the top of the trunk. */}
+      <g
+        className={className}
+        style={{
+          animationDelay: `${delay}s`,
+          transform: flip ? "scaleX(-1)" : undefined,
+        }}
+      >
+        {buildBranches(x, trunkTop, crownTop, height, color)}
+      </g>
+    </g>
+  );
+}
+
+/* Build a stack of triangular branch layers for a conifer silhouette.
+   Wider at the base, narrower at the tip. Each layer's Y range dips
+   slightly BELOW the next-higher layer for the classic drooping-pine
+   look (branches overlap so the tree reads as a continuous shape, not
+   a stack of separate triangles). */
+function buildBranches(x, trunkTop, crownTop, height, color) {
+  const crownH = trunkTop - crownTop;
+  // Number of branch layers scales with tree height for perceived
+  // detail on the larger foreground trees.
+  const layers = height > 380 ? 8 : height > 260 ? 7 : 6;
+  const els = [];
+  for (let i = 0; i < layers; i++) {
+    // 0 = base (widest), layers-1 = tip (narrowest)
+    const t = i / (layers - 1);
+    const layerY = trunkTop - crownH * (i / layers);
+    // Width tapers linearly, base a bit wider than a right-triangle would give.
+    const halfW = height * (0.24 * (1 - t) + 0.045);
+    // Each layer drops slightly below the next-higher layer's tip so
+    // the pine reads as a continuous droopy silhouette.
+    const droop = crownH * 0.16;
+    const tipY = layerY - crownH * (1 / layers) - droop * (1 - t) * 0.4;
+    const leftX = x - halfW;
+    const rightX = x + halfW;
+    els.push(
+      <polygon
+        key={i}
+        points={`${leftX},${layerY} ${rightX},${layerY} ${x},${tipY}`}
+        fill={color}
+      />
+    );
+    // Subtle inner shading layer on the larger trees adds depth without
+    // costing another animation.
+    if (layers >= 7) {
+      els.push(
+        <polygon
+          key={`${i}-s`}
+          points={`${x - halfW * 0.55},${layerY} ${x + halfW * 0.55},${layerY} ${x},${tipY + crownH * 0.03}`}
+          fill={color}
+          opacity={0.55}
+        />
+      );
+    }
+  }
+  return els;
+}
+
+// Seeded RNG so the exact same forest renders on every load (no visual
+// jitter between navigations).
+function mulberry(seed) {
   let s = seed >>> 0;
   return () => {
     s |= 0; s = (s + 0x6D2B79F5) | 0;
@@ -228,47 +298,67 @@ function _mulberry(seed) {
   };
 }
 
-function _tree(x, canopyBase, height, trunkW, color) {
-  return `
-    <rect x="${x - trunkW / 2}" y="${canopyBase + height * 0.15}" width="${trunkW}" height="${height * 0.85}" fill="${color}"/>
-    <polygon points="${x - height * 0.14},${canopyBase + height * 0.22} ${x + height * 0.14},${canopyBase + height * 0.22} ${x},${canopyBase - height * 0.05}" fill="${color}"/>
-    <polygon points="${x - height * 0.11},${canopyBase + height * 0.10} ${x + height * 0.11},${canopyBase + height * 0.10} ${x},${canopyBase - height * 0.12}" fill="${color}"/>
-    <polygon points="${x - height * 0.085},${canopyBase - height * 0.02} ${x + height * 0.085},${canopyBase - height * 0.02} ${x},${canopyBase - height * 0.18}" fill="${color}"/>
-  `;
-}
-
-// Near layer — darker, taller, more variety. 22 trees, hand-jittered
-// with a seeded RNG so the same pattern renders on every load.
-const NEAR_TREES_SVG = (() => {
-  const rand = _mulberry(1337);
-  const parts = [];
-  let x = 20;
-  for (let i = 0; i < 22; i++) {
-    const height = 300 + rand() * 260;
-    const trunkW = 5 + rand() * 4;
-    const yBase = 600;                       // bottom of frame
-    parts.push(_tree(x, yBase, height, trunkW, "#0b0f11"));
-    // Occasional lighter tree in the middle distance for depth.
+// Near layer: 18 dark, TALL foreground trees + occasional midground
+// filler tree. Trees are much taller than before (up to ~820px in a
+// 980-tall viewBox) so they truly dominate the frame like real forest.
+const NEAR_TREES = (() => {
+  const rand = mulberry(1337);
+  const out = [];
+  let x = 40;
+  let i = 0;
+  while (x < 1600) {
+    const height = 560 + rand() * 260;         // 560..820 (tall!)
+    const trunkW = 7 + rand() * 5;
+    out.push({
+      x,
+      baseY: 980,
+      height,
+      trunkW,
+      color: "#0b0f11",
+      trunkColor: "#080b0d",
+      delay: rand() * 4,                       // stagger 0..4s
+      flip: rand() > 0.5,
+    });
+    // Occasional slightly-shorter darker sibling tree offset ~40px
     if (i % 3 === 0) {
-      const h2 = 220 + rand() * 140;
-      parts.push(_tree(x + 30 + rand() * 22, yBase, h2, 3 + rand() * 2, "#1a2124"));
+      const h2 = 400 + rand() * 180;
+      out.push({
+        x: x + 34 + rand() * 24,
+        baseY: 980,
+        height: h2,
+        trunkW: 4 + rand() * 2,
+        color: "#141b1e",
+        trunkColor: "#0d1214",
+        delay: rand() * 4,
+        flip: rand() > 0.5,
+      });
     }
-    x += 55 + rand() * 40;
+    x += 78 + rand() * 42;
+    i++;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600" preserveAspectRatio="none">${parts.join("")}</svg>`;
+  return out;
 })();
 
-// Far layer — pale, thinner, denser to sell forest depth. 42 trees.
-const FAR_TREES_SVG = (() => {
-  const rand = _mulberry(4242);
-  const parts = [];
-  let x = 10;
-  for (let i = 0; i < 42; i++) {
-    const height = 180 + rand() * 200;
-    const trunkW = 2 + rand() * 2;
-    const yBase = 600;
-    parts.push(_tree(x, yBase, height, trunkW, "#4a5559"));
-    x += 30 + rand() * 20;
+// Far layer: 36 pale midground trees for depth. Shorter + thinner than
+// near trees; sway is slower + smaller amplitude via the far-crown class.
+const FAR_TREES = (() => {
+  const rand = mulberry(4242);
+  const out = [];
+  let x = 20;
+  while (x < 1600) {
+    const height = 240 + rand() * 200;
+    const trunkW = 3 + rand() * 2;
+    out.push({
+      x,
+      baseY: 780,
+      height,
+      trunkW,
+      color: "#4a5559",
+      trunkColor: "#3d4649",
+      delay: rand() * 5,
+      flip: rand() > 0.5,
+    });
+    x += 40 + rand() * 26;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600" preserveAspectRatio="none">${parts.join("")}</svg>`;
+  return out;
 })();

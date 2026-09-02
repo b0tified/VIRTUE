@@ -1799,7 +1799,86 @@ class AudioBus {
 
   /* Generic alias — pages don't care which track was playing, they just
      want to stop whatever music the previous page started. */
-  stopMusic() { this.stopLobbyMusic(); }
+  stopMusic() { this.stopLobbyMusic(); this.stopFogAmbient(); }
+
+  /* -------- Fog-Lobby ambient (streamed MP3) --------
+     Routes an HTMLAudioElement through the Web Audio graph so the master
+     and music sliders / mute toggles control it exactly like the synth
+     lobby loops. Idempotent: calling start when already running is a
+     no-op; stop pauses + disconnects so the track cannot leak into the
+     next route (e.g. a match). */
+  startFogAmbient(url) {
+    if (!this._ensure()) return;
+    // Already streaming this exact url → do nothing.
+    if (this._fogAmbient && this._fogAmbient.el && this._fogAmbient.url === url) {
+      // If it was paused (e.g. we stopped then re-mounted quickly), resume.
+      if (this._fogAmbient.el.paused) {
+        this._fogAmbient.el.play().catch(() => {
+          this._fogArmGesture();
+        });
+      }
+      return;
+    }
+    // Different url or first start → tear down any prior element cleanly.
+    if (this._fogAmbient) this.stopFogAmbient();
+
+    const el = new Audio(url);
+    el.loop = true;
+    el.crossOrigin = "anonymous";
+    el.preload = "auto";
+    // Element volume stays at 1 — the musicGain node handles user volume.
+    el.volume = 1.0;
+
+    let node;
+    try {
+      node = this.ctx.createMediaElementSource(el);
+      node.connect(this.musicGain);
+    } catch {
+      // Some browsers throw if the same element was already piped once.
+      // Fall back to setting element.volume directly against the mix.
+      el.volume = this.musicMuted ? 0 : this._musicVol * (this.muted ? 0 : this._masterVol);
+      node = null;
+    }
+
+    this._fogAmbient = { el, node, url, armed: false, kick: null };
+
+    // Attempt immediate play; if the browser blocks (no user gesture yet)
+    // arm one-shot listeners on the window that will retry on the first
+    // click / key / touch.
+    el.play().catch(() => this._fogArmGesture());
+  }
+
+  _fogArmGesture() {
+    if (!this._fogAmbient || this._fogAmbient.armed) return;
+    this._fogAmbient.armed = true;
+    const kick = () => {
+      if (!this._fogAmbient) return;
+      this._fogAmbient.armed = false;
+      this._fogAmbient.el.play().catch(() => {});
+      window.removeEventListener("pointerdown", kick);
+      window.removeEventListener("keydown", kick);
+      window.removeEventListener("touchstart", kick);
+    };
+    this._fogAmbient.kick = kick;
+    window.addEventListener("pointerdown", kick, { once: true });
+    window.addEventListener("keydown", kick, { once: true });
+    window.addEventListener("touchstart", kick, { once: true });
+  }
+
+  stopFogAmbient() {
+    if (!this._fogAmbient) return;
+    const { el, node, armed, kick } = this._fogAmbient;
+    this._fogAmbient = null;
+    try { el.pause(); } catch {}
+    try { el.currentTime = 0; } catch {}
+    try { el.src = ""; el.load(); } catch {}
+    try { if (node) node.disconnect(); } catch {}
+    if (armed && kick) {
+      window.removeEventListener("pointerdown", kick);
+      window.removeEventListener("keydown", kick);
+      window.removeEventListener("touchstart", kick);
+    }
+  }
 
   /* Leaderboard music — triumphant uptempo 8-bit synth-pop in C major.
      Brighter than the lobby loop: square-wave lead, faster bass, sparkle

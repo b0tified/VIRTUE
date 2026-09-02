@@ -1966,3 +1966,19 @@ Two quality-of-life changes shipped together.
   - t≈4.2s: bar at 53%, tip cycled to "BREWING ELITE BOTS…".
   - t≈9.2s: splash unmounted, login page painted.
 
+
+
+### 2026-02-27 — Admin Fog Lobby: volume-aware audio + realistic swaying trees
+- **User bugs**: (1) The new fog-lobby MP3 kept playing during matches and ignored volume/mute sliders. (2) Trees looked stiff & cartoonish — user wants taller, more realistic conifers with branches (not whole trees) waving in the wind.
+- **Audio fix** (`/app/frontend/src/game/audio.js`):
+  - New `startFogAmbient(url)` on `audioBus`: creates an HTMLAudioElement, pipes it through `ctx.createMediaElementSource(el) → musicGain → master`. Element `.volume` stays at 1.0; user volume comes from the shared `musicGain` node so master/music sliders + mute toggles apply automatically. Idempotent (same url → resume-if-paused, no dupes). Autoplay-blocked case arms a one-shot pointerdown/keydown/touchstart listener to kick playback on the next gesture.
+  - New `stopFogAmbient()`: pauses, resets currentTime, clears src, disconnects the node, and removes any armed gesture listeners. Also folded into the generic `stopMusic()` alias so leaderboard/profile → route changes never leave the fog stream running.
+- **Component fix** (`/app/frontend/src/components/AdminFogLobby.jsx`):
+  - Dropped the raw `new Audio()` + manual playback; now just `useEffect(() => { audioBus.startFogAmbient(URL); return () => audioBus.stopFogAmbient(); }, [enabled])`. Cleanup guarantees the music can't bleed into `Game.jsx`.
+  - Replaced the two `backgroundImage: svg` tree layers with **inline SVG** so each tree can be a `<g>` with a static trunk `<rect>` + an animated `<g class="crown">`. `transform-box: fill-box; transform-origin: 50% 100%;` makes the crown pivot from the top of the trunk while the trunk stays anchored — real "branches wave, trunk stays" behaviour.
+  - `TreeGlyph` + `buildBranches(...)` render 6–8 layered polygon branches per tree, tapering base→tip with a `droop` term so pines look continuous (not stacked triangles). Larger foreground trees get an extra inner shading polygon for depth.
+  - Near layer: 18–24 TALL dark pines (heights 560–820 in a 980-tall viewBox = trees actually dominate the frame). Far layer: 36 pale shorter siblings for parallax depth.
+  - Sway keyframes tuned to a light-wind feel: near `±2.0deg rotate + ±1.2deg skewX @ 5.4s`, far `±1.8deg @ 7.2s`. Each crown gets its own seeded `animation-delay` (0..4s) and a random horizontal flip so the wind reads as a **rolling wave through the forest** instead of every branch swaying in lockstep.
+- **Verified**:
+  - Preview screenshot at `/tmp/admin_fog_lobby.png` shows the redesigned taller conifer forest with visibly-tilted crowns (mid-cycle sway captured).
+  - Static wiring: `startFogAmbient` connects to `this.musicGain` → `setMusicVolume`/`setMasterVolume`/`setMusicMuted` propagate; `stopFogAmbient` invoked from AdminFogLobby cleanup + `stopMusic()`.
