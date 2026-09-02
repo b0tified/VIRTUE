@@ -2098,3 +2098,13 @@ Two quality-of-life changes shipped together.
 - **Fix 2 — audit result**: Searched the engine + audio bus for `is_admin` / `role.*admin` gates — zero hits. Every visual for SILENT TOWN (storm sky, dense fog, rain particles, lightning scheduler, `_swampExtras` group with bog water + dead trees + fireflies + mist rings, `swampAmbient` audio) is triggered exclusively off `arena.map_id === "swamp"` in the server welcome. Once the current deployment goes live, every player queued into a swamp match sees the identical storm — no per-account roll-out needed. No code change required.
 - **Verified**: Frontend compiles clean. Leaderboard top-3 row now shows the "YOU" name in black-on-cream instead of white-on-cream (invisible).
 
+
+### 2026-02-27 (later⁸) — Fog Lobby rolled out to every player
+- **User request**: "Make the new lobby available for everyone."
+- **Change** (`/app/frontend/src/pages/Lobby.jsx`):
+  - Removed the `isAdmin ?` branch that gated the fog-forest backdrop. The default lobby background is now `AdminFogLobby` for every user. Snow + meteor seasonal variants still take precedence when active (Season override chain: snow > meteor > fog).
+  - Retired the castle backdrop render + the "false && <LobbyBackground …>" dead branch that lived next to it. `LobbyBackgroundCastle` import kept in place in case we want to bring it back as a season variant later.
+  - Music `useEffect` dependency swapped from `[isAdmin]` to `[showSnowBg, showMeteorBg]`. Default synth loop is now skipped for everyone when the fog backdrop is active (which is unconditionally, minus snow/meteor). Same guard shape — just widened from "admin only" to "everyone on the fog backdrop".
+  - Test hook renamed `lobby-bg-admin-fog` → `lobby-bg-fog` since the backdrop is no longer admin-exclusive.
+- **Verified**: Preview screenshot on the admin account shows the new stormy fog forest with tall dark pines, heavy rain, and dark palette behind the entire lobby UI. Playwright confirms `lobby-bg-fog` marker is present + `lobby-bg-castle` marker is gone. Every logged-in user will see the same on their next visit once the current deploy ships.
+

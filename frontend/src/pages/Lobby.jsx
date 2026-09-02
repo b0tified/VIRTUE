@@ -373,9 +373,12 @@ export default function Lobby() {
   // If autoplay is still blocked (e.g. direct-nav / SSR-style first visit),
   // fall back to the first interaction listener.
   useEffect(() => {
-    // Admins get the fog-lobby ambient track from AdminFogLobby.jsx —
-    // skip the default synth music entirely to prevent overlap.
-    if (isAdmin) {
+    // The fog-lobby backdrop (rendered below for every user) starts its
+    // own MP3 ambient via `audioBus.startFogAmbient` in its own effect.
+    // Skip the default synth lobby loop for everyone so the two tracks
+    // don't overlap. Snow / meteor seasonal variants below don't play
+    // their own music, so those still fall through to the synth loop.
+    if (!showSnowBg && !showMeteorBg) {
       try { audioBus.stopLobbyMusic(); } catch {}
       return;
     }
@@ -413,7 +416,7 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
-  }, [isAdmin]);
+  }, [showSnowBg, showMeteorBg]);
 
   // Refresh the user payload whenever the Lobby mounts. After completing
   // a ranked match (where rank_points / rank_tier / level / coins can all
@@ -602,24 +605,16 @@ export default function Lobby() {
           <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
           <LobbyBackgroundMeteor animated={animatedBg} />
         </>
-      ) : isAdmin ? (
-        <>
-          {/* Admin-only fog-forest lobby background + looped ambient
-              music. Only ever mounts when `isAdmin` is true. */}
-          <span className="hidden" data-testid="lobby-bg-admin-fog" data-active="true" />
-          <AdminFogLobby enabled={true} />
-        </>
       ) : (
         <>
-          {/* Castle / Royal Guard themed lobby backdrop. Replaces the
-              previous "default" meteor-city painting so the lobby vibe
-              matches the current Royal Guard map identity. */}
-          <span className="hidden" data-testid="lobby-bg-castle" data-active="true" />
-          <LobbyBackgroundCastle animated={animatedBg} />
-          {/* Retain LobbyBackground import path for future use — the
-              painted default background is available if we ever want to
-              restore it (see git history for original render path). */}
-          {false && <LobbyBackground imageUrl={LOBBY_BG} />}
+          {/* Foggy stormy woodland lobby — the "new lobby" the user asked
+              to roll out to all players. Handles its own custom MP3
+              ambient (via audioBus.startFogAmbient in the component's
+              useEffect) so we skip the default synth loop below for
+              everyone, not just admins. Still fenced behind the snow /
+              meteor season variants above, so seasonal events still win. */}
+          <span className="hidden" data-testid="lobby-bg-fog" data-active="true" />
+          <AdminFogLobby enabled={true} />
         </>
       )}
 
