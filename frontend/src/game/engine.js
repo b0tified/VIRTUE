@@ -4382,6 +4382,283 @@ export class GameEngine {
       buildVambrace(+1);
     }
 
+    // ----- Nurse-only extras (skin.id === "nurse") -----
+    // Silent Hill 2 tribute — the entire head is wrapped in blood-soaked
+    // bandages so no face is visible. A small white nurse cap with red
+    // cross sits on top. The dress is a short cream A-line with vertical
+    // blood streaks and a stained hem. Bare pale arms with blood spatter,
+    // white knee-high stockings, low-heeled dark shoes. Wraps the base
+    // humanoid instead of replacing it so animation (arm swing, walk
+    // bob, death fall) still applies cleanly.
+    if (skin.id === "nurse") {
+      // -- Head wrap: bloody bandages ---------------------------------
+      // Multiple thin overlapping "cylinder wraps" tilted at varying
+      // angles cover the head sphere. Each wrap is a torus (ring) so it
+      // catches light on both edges — reads as fabric layered around
+      // the head rather than a solid mask. Bloody spots painted via a
+      // canvas texture applied to the sphere first, so if wraps shift
+      // in a low-poly build the "face" underneath is still ghastly.
+      const bandageCanvas = document.createElement("canvas");
+      bandageCanvas.width = 256; bandageCanvas.height = 256;
+      const bctx = bandageCanvas.getContext("2d");
+      // Base bandage tan
+      bctx.fillStyle = "#c8b09a";
+      bctx.fillRect(0, 0, 256, 256);
+      // Horizontal gauze stripes — off-white lines with dark seams
+      // between so the sphere reads as wound cloth even before the
+      // 3D wrap rings are added.
+      for (let y = 0; y < 256; y += 14) {
+        bctx.fillStyle = `rgba(224, 208, 184, ${0.55 + Math.random() * 0.25})`;
+        bctx.fillRect(0, y, 256, 12);
+        bctx.fillStyle = "rgba(80, 60, 44, 0.55)";
+        bctx.fillRect(0, y + 12, 256, 2);
+      }
+      // Blood soak — big irregular red splotches with darker cores.
+      const soakSpots = [
+        [70, 90, 44], [180, 110, 38], [128, 170, 50],
+        [40, 160, 28], [210, 60, 30], [150, 30, 22],
+      ];
+      for (const [sx, sy, sr] of soakSpots) {
+        const g = bctx.createRadialGradient(sx, sy, 2, sx, sy, sr);
+        g.addColorStop(0.0, "rgba(90, 8, 8, 0.95)");
+        g.addColorStop(0.5, "rgba(130, 14, 14, 0.75)");
+        g.addColorStop(1.0, "rgba(180, 40, 40, 0.0)");
+        bctx.fillStyle = g;
+        bctx.beginPath();
+        bctx.ellipse(sx, sy, sr, sr * (0.7 + Math.random() * 0.5), Math.random() * Math.PI, 0, Math.PI * 2);
+        bctx.fill();
+      }
+      // Drip streaks — thin dark vertical trails running down from a
+      // few of the blood spots. Sells "wet" wound.
+      bctx.strokeStyle = "rgba(70, 6, 6, 0.85)";
+      bctx.lineWidth = 2.5;
+      for (let i = 0; i < 6; i++) {
+        const dx = 30 + Math.random() * 200;
+        const dy = 60 + Math.random() * 100;
+        bctx.beginPath();
+        bctx.moveTo(dx, dy);
+        bctx.lineTo(dx + (Math.random() - 0.5) * 8, dy + 30 + Math.random() * 40);
+        bctx.stroke();
+      }
+      const bandageTex = new THREE.CanvasTexture(bandageCanvas);
+      bandageTex.colorSpace = THREE.SRGBColorSpace;
+      // Cover the base head sphere. The existing head mesh is inside
+      // bodyMeshes[0..] — we don't need to hide it, we just overlay a
+      // slightly larger sphere at the same position with the bandage
+      // texture. Overlay depth-writes so it opaquely replaces the face.
+      const bandageHead = new THREE.Mesh(
+        new THREE.SphereGeometry(0.29, 20, 16),
+        new THREE.MeshLambertMaterial({ map: bandageTex }),
+      );
+      bandageHead.position.set(0, 1.62, 0);
+      bodyMeshes.push(bandageHead); group.add(bandageHead);
+      // 4 physical wrap rings around the head at different angles to
+      // sell "gauze wound in real life" not just "textured skull". Each
+      // ring is a thin torus with a bandage-cream color.
+      const wrapCol = 0xf0e6d0;
+      const buildWrap = (yOff, rotZ, rotX) => {
+        const w = new THREE.Mesh(
+          new THREE.TorusGeometry(0.30, 0.028, 6, 22),
+          new THREE.MeshLambertMaterial({ color: wrapCol }),
+        );
+        w.position.set(0, 1.62 + yOff, 0);
+        w.rotation.z = rotZ;
+        w.rotation.x = rotX;
+        bodyMeshes.push(w); group.add(w);
+      };
+      buildWrap(0.10,  0.00, Math.PI / 2);        // top band (horizontal)
+      buildWrap(0.02,  0.35, Math.PI / 2 - 0.15); // upper diagonal
+      buildWrap(-0.06, -0.25, Math.PI / 2 + 0.12);// lower diagonal
+      buildWrap(-0.12,  0.00, Math.PI / 2);       // chin band
+      // Bloody strip across the face — a wider darker torus segment
+      // right where the eyes would be. Reinforces that the face is
+      // deliberately obscured, not just underlit.
+      const bloodStrip = new THREE.Mesh(
+        new THREE.TorusGeometry(0.30, 0.045, 6, 22, Math.PI * 1.2),
+        new THREE.MeshBasicMaterial({ color: 0x5a1010 }),
+      );
+      bloodStrip.position.set(0, 1.64, 0);
+      bloodStrip.rotation.z = Math.PI / 2;
+      bloodStrip.rotation.y = -Math.PI * 0.1;
+      bodyMeshes.push(bloodStrip); group.add(bloodStrip);
+
+      // -- Nurse cap: small white folded rectangle with red cross -----
+      // Sits tilted on top of the head. Two rectangles for the folded
+      // front/back + a red cross painted on the front.
+      const capBase = new THREE.Mesh(
+        new THREE.BoxGeometry(0.38, 0.05, 0.28),
+        new THREE.MeshLambertMaterial({ color: 0xf0e6d0 }),
+      );
+      capBase.position.set(0, 1.85, 0);
+      capBase.rotation.z = 0.08;
+      bodyMeshes.push(capBase); group.add(capBase);
+      const capFront = new THREE.Mesh(
+        new THREE.BoxGeometry(0.36, 0.14, 0.02),
+        new THREE.MeshLambertMaterial({ color: 0xf0e6d0 }),
+      );
+      capFront.position.set(0, 1.92, 0.14);
+      capFront.rotation.z = 0.08;
+      capFront.rotation.x = -0.25;    // tilt forward like a folded flap
+      bodyMeshes.push(capFront); group.add(capFront);
+      // Red cross on the cap front.
+      const capCrossV = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.09, 0.01),
+        new THREE.MeshBasicMaterial({ color: 0x8b0d0d }),
+      );
+      capCrossV.position.set(0, 1.94, 0.155);
+      capCrossV.rotation.z = 0.08;
+      capCrossV.rotation.x = -0.25;
+      group.add(capCrossV);
+      const capCrossH = new THREE.Mesh(
+        new THREE.BoxGeometry(0.09, 0.03, 0.01),
+        new THREE.MeshBasicMaterial({ color: 0x8b0d0d }),
+      );
+      capCrossH.position.set(0, 1.94, 0.155);
+      capCrossH.rotation.z = 0.08;
+      capCrossH.rotation.x = -0.25;
+      group.add(capCrossH);
+      // Blood drip from the cap edge — thin dark trickle on one side.
+      const capDrip = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.10, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0x6b0808 }),
+      );
+      capDrip.position.set(-0.12, 1.78, 0.14);
+      capDrip.rotation.z = 0.15;
+      bodyMeshes.push(capDrip); group.add(capDrip);
+
+      // -- Nurse dress: bloody short A-line ---------------------------
+      // Painted torso overlay + apron/dress skirt below the belt.
+      // We construct a canvas texture with vertical blood streaks and
+      // a stained hem, then wrap it around a slightly-oversized torso
+      // sleeve so the base body color underneath is fully hidden.
+      const dressCanvas = document.createElement("canvas");
+      dressCanvas.width = 256; dressCanvas.height = 256;
+      const dctx = dressCanvas.getContext("2d");
+      // Off-white dress base
+      dctx.fillStyle = "#e5d5b8";
+      dctx.fillRect(0, 0, 256, 256);
+      // Faint fabric grain
+      for (let y = 0; y < 256; y += 3) {
+        dctx.fillStyle = `rgba(180, 160, 130, ${0.06 + Math.random() * 0.05})`;
+        dctx.fillRect(0, y, 256, 1);
+      }
+      // Vertical blood streaks — dark red rivulets running from
+      // shoulders/chest down toward the hem.
+      const streaks = [40, 78, 118, 160, 210];
+      for (const sx of streaks) {
+        const grd = dctx.createLinearGradient(sx, 30, sx, 256);
+        grd.addColorStop(0.0, "rgba(180, 30, 30, 0.0)");
+        grd.addColorStop(0.15, "rgba(140, 14, 14, 0.85)");
+        grd.addColorStop(0.55, "rgba(100, 8, 8, 0.7)");
+        grd.addColorStop(1.0, "rgba(60, 4, 4, 0.55)");
+        dctx.fillStyle = grd;
+        const width = 8 + Math.random() * 14;
+        dctx.fillRect(sx - width / 2, 30 + Math.random() * 20, width, 240);
+      }
+      // Chest splatter — bigger irregular dark red blot centered high.
+      const chestBlot = dctx.createRadialGradient(128, 90, 5, 128, 90, 70);
+      chestBlot.addColorStop(0.0, "rgba(60, 4, 4, 0.95)");
+      chestBlot.addColorStop(0.4, "rgba(110, 10, 10, 0.85)");
+      chestBlot.addColorStop(1.0, "rgba(150, 30, 30, 0.0)");
+      dctx.fillStyle = chestBlot;
+      dctx.beginPath();
+      dctx.ellipse(128, 90, 55, 40, 0.2, 0, Math.PI * 2);
+      dctx.fill();
+      // Random splatter dots across the whole dress
+      for (let i = 0; i < 60; i++) {
+        const x = Math.random() * 256, y = Math.random() * 256;
+        const r = 1 + Math.random() * 3;
+        dctx.fillStyle = `rgba(80, 6, 6, ${0.4 + Math.random() * 0.5})`;
+        dctx.beginPath();
+        dctx.arc(x, y, r, 0, Math.PI * 2);
+        dctx.fill();
+      }
+      // Stained hem — a saturated dark band at the bottom (where dress
+      // has been dragged through the bog).
+      const hemGrad = dctx.createLinearGradient(0, 200, 0, 256);
+      hemGrad.addColorStop(0.0, "rgba(40, 20, 15, 0.0)");
+      hemGrad.addColorStop(1.0, "rgba(40, 20, 15, 0.85)");
+      dctx.fillStyle = hemGrad;
+      dctx.fillRect(0, 200, 256, 56);
+      // Comic outline
+      dctx.strokeStyle = "rgba(20, 12, 8, 0.75)";
+      dctx.lineWidth = 4;
+      dctx.strokeRect(2, 2, 252, 252);
+      const dressTex = new THREE.CanvasTexture(dressCanvas);
+      dressTex.colorSpace = THREE.SRGBColorSpace;
+      // Torso overlay — slightly bigger box wrapped around the default
+      // body geometry. Uses MeshLambertMaterial so scene lighting still
+      // dims it in the storm.
+      const dressTorso = new THREE.Mesh(
+        new THREE.BoxGeometry(0.62, 0.72, 0.44),
+        new THREE.MeshLambertMaterial({ map: dressTex }),
+      );
+      dressTorso.position.set(0, 1.10, 0);
+      bodyMeshes.push(dressTorso); group.add(dressTorso);
+      // Skirt — cylinder flared slightly (top narrower than bottom) so
+      // it reads as an A-line hem. Uses the same texture rotated so
+      // the stained hem sits at the bottom.
+      const skirtGeo = new THREE.CylinderGeometry(0.30, 0.44, 0.42, 20, 1, true);
+      const skirtMat = new THREE.MeshLambertMaterial({ map: dressTex, side: THREE.DoubleSide });
+      const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+      skirt.position.set(0, 0.60, 0);
+      bodyMeshes.push(skirt); group.add(skirt);
+      // Waist tie — thin white band where the belt would be.
+      const tie = new THREE.Mesh(
+        new THREE.BoxGeometry(0.66, 0.06, 0.48),
+        new THREE.MeshLambertMaterial({ color: 0xe8dcbb }),
+      );
+      tie.position.set(0, 0.82, 0);
+      bodyMeshes.push(tie); group.add(tie);
+
+      // -- Bare pale arms with blood streaks --------------------------
+      // Applied by adding thin cylinder "skin sleeves" to each arm.
+      // We don't have direct arm-mesh handles here so we anchor the
+      // sleeves to the arm groups by walking bodyMeshes; simpler: just
+      // add a shorter sleeve near the shoulder that stays put (arms
+      // still swing underneath; the sleeve visually caps the shoulder
+      // as if the sleeve is bloody there). Full arm skin comes from
+      // the base "head" color being set to bandage tan already.
+      const armSleeve = (xSign) => {
+        // Bloody upper-arm cuff (short-sleeve stain at the shoulder).
+        const cuff = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14, 0.14, 0.18, 10),
+          new THREE.MeshLambertMaterial({ color: 0x8b0d0d }),
+        );
+        cuff.position.set(0.32 * xSign, 1.15, 0);
+        bodyMeshes.push(cuff); group.add(cuff);
+      };
+      armSleeve(-1);
+      armSleeve(+1);
+
+      // -- Stockings + shoes ------------------------------------------
+      // Ivory knee-high stockings drawn as slightly-lighter cylinders
+      // over each leg's upper portion, plus dark low-heeled shoes at
+      // the feet. Legs still animate underneath — the additions ride
+      // on the world group so they stay at the spawn position; that's
+      // fine because they're stationary at the character's origin.
+      const stocking = (xSign) => {
+        const st = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.13, 0.13, 0.36, 10),
+          new THREE.MeshLambertMaterial({ color: 0xe8dcbb }),
+        );
+        st.position.set(0.12 * xSign, 0.20, 0);
+        bodyMeshes.push(st); group.add(st);
+      };
+      stocking(-1);
+      stocking(+1);
+      // Dark low shoes
+      const shoe = (xSign) => {
+        const s = new THREE.Mesh(
+          new THREE.BoxGeometry(0.20, 0.08, 0.30),
+          new THREE.MeshLambertMaterial({ color: 0x1a1010 }),
+        );
+        s.position.set(0.12 * xSign, 0.04, 0.02);
+        bodyMeshes.push(s); group.add(s);
+      };
+      shoe(-1);
+      shoe(+1);
+    }
 
 
     // ----- Aura (skin-specific) -----

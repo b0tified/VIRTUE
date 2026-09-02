@@ -900,6 +900,21 @@ SKINS_CATALOG: List[dict] = [
      "body": 0xC8CBD1, "leg": 0xA8ABB1, "head": 0xF2C08A, "accent": 0xE6C74A,
      "helmet": 0xC8CBD1, "visor": 0x1a1a1a, "shoulder": 0xB8BBC1, "stripe": 0xB80020, "belt": 0x8B6914, "cape": 0xB80020,
      "aura": 0xE6C74A, "aura_mode": "pulse"},
+
+    # ─── 2026-02 nurse — SILENT TOWN horror crossover, custom render hooks ─
+    # Triggered client-side by `id === "nurse"` in `_buildHumanoid`:
+    # Silent Hill 2 tribute — a bandage-wrapped nurse in a blood-stained
+    # short white dress. The head is entirely wound in bloody gauze so no
+    # face is visible (matches the source-material silhouette). Bare pale
+    # arms with blood streaks, white knee-high stockings, dark low-heeled
+    # shoes, and a small white nurse cap with a red cross. Slight twitch
+    # in idle animation + a low-lying red flicker aura. Colors below are
+    # the palette base (dress cream, stockings ivory, bandage tan, deep
+    # blood red); most of the horror detail is drawn by the render hook.
+    {"id": "nurse",     "name": "Silent Nurse",    "price": 5500, "rarity": "legendary", "obtain": "shop",
+     "body": 0xdfd0b8, "leg": 0xe8dcbb, "head": 0xc8b09a, "accent": 0x8b0d0d,
+     "helmet": 0xf0e6d0, "visor": 0x5a1010, "shoulder": 0xdfd0b8, "stripe": 0x6b0808, "belt": 0xe8dcbb, "cape": None,
+     "aura": 0x8b0d0d, "aura_mode": "flicker"},
 ]
 SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 

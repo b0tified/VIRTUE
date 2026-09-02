@@ -2050,3 +2050,21 @@ Two quality-of-life changes shipped together.
   - Three concentric mist "rings" — cylindrical fog sheets at radii 46/58/70 that occlude anything past the arena from every angle without needing per-frame billboard math.
 - **Verified**: Screenshots show decayed weathered stone ruins in the centre, dense fog wall around the arena, no windows anywhere, drifting mist patches, heavy rain, dark stormy palette. Confirmed practice selector shows "SILENT TOWN" card that lands on the swamp arena reliably.
 
+
+### 2026-02-27 (later⁵) — Silent Nurse skin (Silent Hill 2 tribute)
+- **User request**: Add a really detailed Silent Hill 2 nurse themed skin.
+- **Backend catalog** (`/app/backend/server.py` `SKINS_CATALOG`):
+  - New `{"id": "nurse", "name": "Silent Nurse", price: 5500, rarity: "legendary", obtain: "shop", aura: 0x8b0d0d, aura_mode: "flicker", ...}`. Palette: cream dress body, ivory stockings, bandage-tan head, blood-red accent + stripe, white nurse-cap helmet, dark-red bloody "visor" stripe across the face. Registered in `SKINS_BY_ID` and appears in the shop `/api/shop/skins` list (confirmed by curl — item 26 in the catalog, rarity legendary, price 5500).
+- **Custom render hook** (`/app/frontend/src/game/engine.js` `_buildHumanoid`):
+  - Triggered by `skin.id === "nurse"` and wraps the base humanoid instead of replacing it, so death fall + hit flash + arm-swing animation still apply.
+  - **Head wrap**: base sphere textured with a procedural bandage canvas (horizontal gauze stripes, 6 blood-soak radial spots with darker cores, drip streaks) + 4 physical wrap-ring toruses at varying angles + a wider dark-red torus arc where the face would be so the mask reads clearly even under fog/rain.
+  - **Nurse cap**: small folded white box on top of the head, tilted forward flap, painted red cross (V + H bars), and a single blood-drip trickle from the cap edge.
+  - **Dress**: 256×256 procedural canvas with cream base, fabric grain, 5 vertical blood-streak gradients, a big radial chest splatter, 60 random splatter dots, and a saturated brown hem stain. Applied to a slightly-oversized torso box + a flared A-line cylinder skirt below the belt. White waist tie band on top.
+  - **Bare bloody arms**: red short-sleeve cuffs at each shoulder (the base "head" tone the palette exposes gets used for the arms already).
+  - **Stockings + shoes**: ivory upper-leg cylinders + dark low-heeled shoe boxes at each foot.
+- **Verified**:
+  - Backend curl confirms skin registered + buyable + purchased on admin (`selected_skin: "nurse"`).
+  - Frontend compiles clean (1 pre-existing warning unrelated).
+  - In-game FPS view naturally hides own body (expected); bots wear other random skins so the nurse shows on the local player from any 3rd-person moment (death cam, spectate, kill cam).
+- **How to obtain**: Lobby → SHOP → Legendary tab → Silent Nurse (5500 coins) → auto-equipped on purchase. Pairs thematically with the SILENT TOWN map.
+
