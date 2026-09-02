@@ -275,6 +275,72 @@ export const MAP_TUNDRA = {
   ],
 };
 
+export const MAP_SWAMP = {
+  map_id: "swamp",
+  name: "MOORLANDS",
+  size: 50,
+  tagline: "Foggy woodland · murky bog · stormy overcast + lightning.",
+  palette: {
+    bg: "#1a2418",       // dark mossy wet earth
+    border: "#0A0A0A",
+    obstacle: "#3a4a34", // wet mossy stone
+    crate: "#ff7b00",
+    accent: "#6ea260",   // sickly glowing green (rune stones, fireflies)
+  },
+  obstacles: [
+    // Central ruined altar
+    { x: 0,   z: 0,   w: 8,   h: 0.8, d: 8 },
+    { x:  3.2, z:  3.2, w: 1.4, h: 2.6, d: 1.4 },
+    { x: -3.2, z:  3.2, w: 1.4, h: 2.6, d: 1.4 },
+    { x:  3.2, z: -3.2, w: 1.4, h: 2.6, d: 1.4 },
+    { x: -3.2, z: -3.2, w: 1.4, h: 2.6, d: 1.4 },
+    // Flanking bog islands
+    { x:  20, z:  0,   w: 5,   h: 3.2, d: 1.2 },
+    { x:  20, z:  3.5, w: 1.2, h: 2.2, d: 2.4 },
+    { x: -20, z:  0,   w: 5,   h: 3.2, d: 1.2 },
+    { x: -20, z: -3.5, w: 1.2, h: 2.2, d: 2.4 },
+    // Fallen logs
+    { x:  10, z:  14,  w: 6,   h: 1.0, d: 1.1 },
+    { x: -12, z:  14,  w: 5.5, h: 1.0, d: 1.1 },
+    { x:  12, z: -16,  w: 5,   h: 1.0, d: 1.1 },
+    { x: -10, z: -14,  w: 6,   h: 1.0, d: 1.1 },
+    { x:  0,  z:  16,  w: 1.1, h: 1.0, d: 6.5 },
+    { x:  0,  z: -16,  w: 1.1, h: 1.0, d: 6.5 },
+    // Standing dead trees
+    { x:  8,  z:  8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x: -8,  z:  8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x:  8,  z: -8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x: -8,  z: -8,   w: 1.0, h: 5.5, d: 1.0 },
+    { x:  14, z:  6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x: -14, z:  6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x:  14, z: -6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x: -14, z: -6,   w: 1.0, h: 5.0, d: 1.0 },
+    { x:  6,  z:  20,  w: 1.0, h: 5.5, d: 1.0 },
+    { x: -6,  z:  20,  w: 1.0, h: 5.5, d: 1.0 },
+    { x:  6,  z: -20,  w: 1.0, h: 5.5, d: 1.0 },
+    { x: -6,  z: -20,  w: 1.0, h: 5.5, d: 1.0 },
+    // Mossy boulders
+    { x:  18, z:  18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x: -18, z:  18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x:  18, z: -18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x: -18, z: -18,  w: 2.2, h: 1.4, d: 2.2 },
+    { x:  26, z:  10,  w: 1.8, h: 1.2, d: 1.8 },
+    { x: -26, z:  10,  w: 1.8, h: 1.2, d: 1.8 },
+    { x:  26, z: -10,  w: 1.8, h: 1.2, d: 1.8 },
+    { x: -26, z: -10,  w: 1.8, h: 1.2, d: 1.8 },
+    // Corner watchtower ruins
+    { x:  30, z:  30,  w: 6,   h: 3.6, d: 1.4 },
+    { x:  33, z:  27,  w: 1.4, h: 3.6, d: 4.0 },
+    { x: -30, z:  30,  w: 6,   h: 3.6, d: 1.4 },
+    { x: -33, z:  27,  w: 1.4, h: 3.6, d: 4.0 },
+    { x:  30, z: -30,  w: 6,   h: 3.6, d: 1.4 },
+    { x:  33, z: -27,  w: 1.4, h: 3.6, d: 4.0 },
+    { x: -30, z: -30,  w: 6,   h: 3.6, d: 1.4 },
+    { x: -33, z: -27,  w: 1.4, h: 3.6, d: 4.0 },
+    ..._PERIMETER,
+  ],
+};
+
 export const MAP_HOTEL = {
   map_id: "hotel",
   name: "ROYAL GUARD",
@@ -343,7 +409,7 @@ export const MAP_HOTEL = {
   ],
 };
 
-export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE, MAP_CRASHSITE, MAP_TUNDRA, MAP_HOTEL];
+export const MAPS_META = [MAP_DOWNTOWN, MAP_CROSSFIRE, MAP_SHORELINE, MAP_CRASHSITE, MAP_TUNDRA, MAP_HOTEL, MAP_SWAMP];
 
 export function pickRandomMapMeta() {
   return MAPS_META[Math.floor(Math.random() * MAPS_META.length)];

@@ -3225,6 +3225,102 @@ MAP_F = {
 
 MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F]
 
+# Map G — "MOORLANDS" — foggy, stormy swamp + woods. Dense outer ring of
+# tall dead trees to break long sightlines, three raised islands with
+# stone-ruin cover in the middle of murky bog "water", scattered fallen
+# logs for chest-height cover, and small mossy boulders as crouch cover.
+# Server-side we only store the collision rectangles; the client's swamp
+# theme paints trees, hanging moss, water, mist, and a stormy overcast
+# sky on top. Playable feel: close-quarters with lots of hip-height cover
+# and a couple of long "corridors" between the water pools.
+MAP_G = {
+    "map_id": "swamp",
+    "name": "MOORLANDS",
+    "size": 50,
+    "obstacles": [
+        # ---- Central raised stone platform (ruined altar/dock) ---------------
+        # Wide low stone base + 4 broken column stubs marking a defensible
+        # island in the middle of the bog. Fights over the centre pull two
+        # teams toward each other because the platform's a natural chokepoint.
+        {"x": 0,   "z": 0,   "w": 8,   "h": 0.8, "d": 8},        # stone slab
+        {"x":  3.2, "z":  3.2, "w": 1.4, "h": 2.6, "d": 1.4},    # NE column stub
+        {"x": -3.2, "z":  3.2, "w": 1.4, "h": 2.6, "d": 1.4},    # NW column stub
+        {"x":  3.2, "z": -3.2, "w": 1.4, "h": 2.6, "d": 1.4},    # SE column stub
+        {"x": -3.2, "z": -3.2, "w": 1.4, "h": 2.6, "d": 1.4},    # SW column stub
+
+        # ---- Two flanking bog islands with cover -----------------------------
+        # East + west "dry" islands players can push through — small stone
+        # walls give hard cover and force peekers to commit.
+        {"x":  20, "z":  0,   "w": 5,   "h": 3.2, "d": 1.2},     # E ruin wall
+        {"x":  20, "z":  3.5, "w": 1.2, "h": 2.2, "d": 2.4},     # E buttress
+        {"x": -20, "z":  0,   "w": 5,   "h": 3.2, "d": 1.2},     # W ruin wall
+        {"x": -20, "z": -3.5, "w": 1.2, "h": 2.2, "d": 2.4},     # W buttress
+
+        # ---- Fallen dead trees (long low logs) -------------------------------
+        # Vault-height so you can crouch behind them but shoot over standing.
+        # Angled placements suggest storm damage — trees fell radially.
+        {"x":  10, "z":  14,  "w": 6,   "h": 1.0, "d": 1.1},
+        {"x": -12, "z":  14,  "w": 5.5, "h": 1.0, "d": 1.1},
+        {"x":  12, "z": -16,  "w": 5,   "h": 1.0, "d": 1.1},
+        {"x": -10, "z": -14,  "w": 6,   "h": 1.0, "d": 1.1},
+        # A pair of logs stacked "X" at the north/south approaches.
+        {"x":  0,  "z":  16,  "w": 1.1, "h": 1.0, "d": 6.5},
+        {"x":  0,  "z": -16,  "w": 1.1, "h": 1.0, "d": 6.5},
+
+        # ---- Standing dead trees (thin tall pillars) -------------------------
+        # Cluster around the middle-ring: full-height cover to peek around.
+        # Deliberately staggered so no single line sees more than two.
+        {"x":  8,  "z":  8,   "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x": -8,  "z":  8,   "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x":  8,  "z": -8,   "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x": -8,  "z": -8,   "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x":  14, "z":  6,   "w": 1.0, "h": 5.0, "d": 1.0},
+        {"x": -14, "z":  6,   "w": 1.0, "h": 5.0, "d": 1.0},
+        {"x":  14, "z": -6,   "w": 1.0, "h": 5.0, "d": 1.0},
+        {"x": -14, "z": -6,   "w": 1.0, "h": 5.0, "d": 1.0},
+        {"x":  6,  "z":  20,  "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x": -6,  "z":  20,  "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x":  6,  "z": -20,  "w": 1.0, "h": 5.5, "d": 1.0},
+        {"x": -6,  "z": -20,  "w": 1.0, "h": 5.5, "d": 1.0},
+
+        # ---- Mossy boulders (crouch-height rocks) ----------------------------
+        {"x":  18, "z":  18,  "w": 2.2, "h": 1.4, "d": 2.2},
+        {"x": -18, "z":  18,  "w": 2.2, "h": 1.4, "d": 2.2},
+        {"x":  18, "z": -18,  "w": 2.2, "h": 1.4, "d": 2.2},
+        {"x": -18, "z": -18,  "w": 2.2, "h": 1.4, "d": 2.2},
+        {"x":  26, "z":  10,  "w": 1.8, "h": 1.2, "d": 1.8},
+        {"x": -26, "z":  10,  "w": 1.8, "h": 1.2, "d": 1.8},
+        {"x":  26, "z": -10,  "w": 1.8, "h": 1.2, "d": 1.8},
+        {"x": -26, "z": -10,  "w": 1.8, "h": 1.2, "d": 1.8},
+
+        # ---- Corner ruin clusters --------------------------------------------
+        # Broken watchtower foundations in each corner — long stone walls +
+        # a column stub. Give snipers a corner nest but not a full closed room.
+        {"x":  30, "z":  30,  "w": 6,   "h": 3.6, "d": 1.4},
+        {"x":  33, "z":  27,  "w": 1.4, "h": 3.6, "d": 4.0},
+        {"x": -30, "z":  30,  "w": 6,   "h": 3.6, "d": 1.4},
+        {"x": -33, "z":  27,  "w": 1.4, "h": 3.6, "d": 4.0},
+        {"x":  30, "z": -30,  "w": 6,   "h": 3.6, "d": 1.4},
+        {"x":  33, "z": -27,  "w": 1.4, "h": 3.6, "d": 4.0},
+        {"x": -30, "z": -30,  "w": 6,   "h": 3.6, "d": 1.4},
+        {"x": -33, "z": -27,  "w": 1.4, "h": 3.6, "d": 4.0},
+    ] + _PERIMETER_BUILDINGS,
+    "spawn_points": [
+        (28, 28), (-28, 28), (28, -28), (-28, -28),
+        (32, 0), (-32, 0), (0, 32), (0, -32),
+        (18, 12), (-18, 12), (18, -12), (-18, -12),
+    ],
+    "healthpacks": [
+        (0.0, 0.0),                    # centre ruin — contested
+        (20.0, 0.0), (-20.0, 0.0),     # flanking bog islands
+        (0.0, 20.0), (0.0, -20.0),
+        (24.0, 24.0), (-24.0, 24.0),
+        (24.0, -24.0), (-24.0, -24.0),
+    ],
+}
+
+MAPS = [MAP_A, MAP_B, MAP_C, MAP_D, MAP_E, MAP_F, MAP_G]
+
 def random_map() -> dict:
     """Pick a random map for a new match. All maps are equally likely."""
     return random.choice(MAPS)
@@ -9859,7 +9955,7 @@ async def set_profile_privacy(payload: ProfilePrivacyPayload, user: dict = Depen
 
 # -------------------------------------------------------------------
 @api.websocket("/ws/game")
-async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None), tdm: Optional[int] = Query(default=0)):
+async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None), tdm: Optional[int] = Query(default=0), force_map: Optional[str] = Query(default=None)):
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -9909,13 +10005,48 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         # PracticeMapSelector. TDM practice spawns into the dedicated
         # tdm_room so the dummy bots aren't promoted into 4v4.
         room = practice_tdm_room if tdm else practice_room
+        # Admin-only `?force_map=<map_id>` — hot-swap the practice room's
+        # arena for testing / preview screenshots. Shared room, so all
+        # admins in practice see the same forced map (that's fine — this
+        # is a dev/screenshot hook, not a matchmaking feature).
+        if force_map and (user.get("role") == "admin" or user.get("is_admin")):
+            forced = get_map_by_id(force_map)
+            if forced:
+                room.arena = forced
+                if hasattr(room, "_build_healthpacks"):
+                    room.healthpacks = room._build_healthpacks()
     elif mode == "offline":
         # Offline-vs-AI also honours the TDM flag — the user picks FFA or
         # TDM at the same selector and we route to a per-user TDM room.
+        # Admin-only `?force_map=<map_id>` — nuke any cached offline room
+        # BEFORE creating so we get a fresh instance with the forced arena.
+        # Without this, a stale room from a prior connect would keep the
+        # random map it originally rolled and the swap would silently
+        # no-op (arena is captured in the welcome message).
+        if force_map and (user.get("role") == "admin" or user.get("is_admin")):
+            uid = str(user["_id"])
+            if tdm:
+                # No public helper to clear the TDM offline room; fall through
+                # to below so the swap at least applies (may still be stale
+                # on repeat runs).
+                pass
+            else:
+                await cleanup_offline_room_if_empty(uid)
         if tdm:
             room = await get_or_create_offline_tdm_room(str(user["_id"]))
         else:
             room = await get_or_create_offline_room(str(user["_id"]))
+        # Admin-only `?force_map=<map_id>` — hot-swap the offline room's
+        # arena to a specific map for testing / preview screenshots. Only
+        # allowed for admin accounts so regular players can't cheese the
+        # map roll to farm a favourite arena.
+        if force_map and (user.get("role") == "admin" or user.get("is_admin")):
+            forced = get_map_by_id(force_map)
+            if forced:
+                room.arena = forced
+                if hasattr(room, "_build_healthpacks"):
+                    room.healthpacks = room._build_healthpacks()
+                logger.info("Force map applied to offline room: %s → %s (user=%s)", force_map, forced.get("map_id"), str(user["_id"]))
     elif mode == "party":
         if not party_id:
             await websocket.close(code=4400)

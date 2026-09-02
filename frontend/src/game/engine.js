@@ -1210,6 +1210,10 @@ export class GameEngine {
       // carpet, polished brass, walnut wood, gold leaf trim. Reads as
       // "grand entrance" the moment the round starts.
       arena.map_id === "hotel" ? [0xe8d9b0, 0x7a1e2b, 0xc9a24a, 0x4a2a1a, 0xd8b874] :
+      // SWAMP: waterlogged woodland palette — mossy stone, sunken bark,
+      // rotted timber, slate rock, sickly luminescent green for the
+      // occasional glowing mushroom / ruin rune.
+      arena.map_id === "swamp" ? [0x3a4a34, 0x2a2018, 0x1e2a1c, 0x4a4038, 0x6ea260] :
       /* default */                  [0xb84a3a, 0x386bbf, 0xd9aa3c, 0xc94a4f, 0x4a4a4a];
     const colored = arena.obstacles.map((ob, i) => {
       const isCrate = ob.w <= 2 && ob.d <= 2 && ob.h <= 2;
@@ -1261,6 +1265,12 @@ export class GameEngine {
         // indoor hotel lobby, not exterior concrete. Grass blades are
         // hidden below (see `_grassBlades` gate).
         newMat = new THREE.MeshToonMaterial({ color: 0xd8c99a, gradientMap: this.toonMap });
+      } else if (arena.map_id === "swamp") {
+        // Wet mossy earth — very dark green-brown so the murky water
+        // plane and mist layered on top pop. Grass blades stay hidden
+        // (see `_grassBlades` gate) since the swamp has its own water
+        // + fern decorations that would clash with cheerful green tufts.
+        newMat = new THREE.MeshToonMaterial({ color: 0x1a2418, gradientMap: this.toonMap });
       } else {
         // Default grass texture
         newMat = new THREE.MeshToonMaterial({ map: this._makeGrassTexture(), gradientMap: this.toonMap });
@@ -1674,11 +1684,199 @@ export class GameEngine {
       this._crashsiteExtras.add(rimGroup);
       this._crashsiteRim = rimGroup;
     }
+
+    // ── SWAMP decorative extras ─────────────────────────────────────────
+    // Murky bog water plane covering the arena floor (behind gameplay
+    // obstacles) + a ring of gnarled dead trees just outside the play
+    // area to sell the "surrounded by forest" feel. Floating fireflies
+    // drift above the water for a subtle "haunted marsh" atmosphere.
+    if (!this._swampExtras) {
+      this._swampExtras = new THREE.Group();
+      this.scene.add(this._swampExtras);
+    }
+    this._swampExtras.visible = arena.map_id === "swamp";
+    if (arena.map_id === "swamp" && this._swampExtras.children.length === 0) {
+      const size = arena.size || 50;
+      // Bog water — big dark-green plane lifted just above the ground
+      // floor. Painted with a swirling algae texture so the surface
+      // isn't a flat color. Slightly transparent so lightning flashes
+      // catch it. Non-collidable (visual only).
+      const wc = document.createElement("canvas");
+      wc.width = 256; wc.height = 256;
+      const wctx = wc.getContext("2d");
+      // Base — deep bog green
+      wctx.fillStyle = "#182018";
+      wctx.fillRect(0, 0, 256, 256);
+      // Algae swirls — random ellipses with a lighter murky green.
+      for (let i = 0; i < 30; i++) {
+        const cx = Math.random() * 256, cz = Math.random() * 256;
+        const rx = 8 + Math.random() * 22, ry = 6 + Math.random() * 18;
+        const shade = 0.15 + Math.random() * 0.12;
+        wctx.fillStyle = `rgba(88, 118, 78, ${shade})`;
+        wctx.beginPath();
+        wctx.ellipse(cx, cz, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+        wctx.fill();
+      }
+      // Faint highlights — reflected sky
+      wctx.strokeStyle = "rgba(120, 138, 128, 0.14)";
+      wctx.lineWidth = 1.2;
+      for (let i = 0; i < 18; i++) {
+        const y = Math.random() * 256;
+        wctx.beginPath();
+        for (let x = 0; x <= 256; x += 8) {
+          const yy = y + Math.sin(x * 0.15 + i) * 2;
+          if (x === 0) wctx.moveTo(x, yy); else wctx.lineTo(x, yy);
+        }
+        wctx.stroke();
+      }
+      const waterTex = new THREE.CanvasTexture(wc);
+      waterTex.colorSpace = THREE.SRGBColorSpace;
+      waterTex.wrapS = waterTex.wrapT = THREE.RepeatWrapping;
+      waterTex.repeat.set(4, 4);
+      const waterGeo = new THREE.PlaneGeometry(size * 2.4, size * 2.4);
+      const waterMat = new THREE.MeshBasicMaterial({
+        map: waterTex,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+      });
+      const water = new THREE.Mesh(waterGeo, waterMat);
+      water.rotation.x = -Math.PI / 2;
+      water.position.set(0, 0.05, 0);
+      this._swampExtras.add(water);
+      this._swampWater = water;
+
+      // Ring of gnarled dead trees just OUTSIDE the play area. Each is
+      // a tall trunk cylinder + 2-4 crooked branches at random angles.
+      // Placed at radius ~55-70 so they read as background forest, not
+      // gameplay cover.
+      const placeDeadTree = (x, z, scale = 1.0) => {
+        const g = new THREE.Group();
+        const trunkH = (7 + Math.random() * 5) * scale;
+        const trunk = this._outlined(
+          new THREE.CylinderGeometry(0.35 * scale, 0.55 * scale, trunkH, 6),
+          0x1a1410,
+          1.03,
+        );
+        trunk.position.y = trunkH / 2;
+        g.add(trunk);
+        // 2-4 crooked branches jutting out at random heights + angles.
+        const branchCount = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < branchCount; i++) {
+          const bLen = (1.8 + Math.random() * 2.4) * scale;
+          const b = this._outlined(
+            new THREE.CylinderGeometry(0.08 * scale, 0.14 * scale, bLen, 6),
+            0x231a12,
+            1.06,
+          );
+          const heightRatio = 0.35 + Math.random() * 0.55;
+          b.position.y = trunkH * heightRatio;
+          const yaw = Math.random() * Math.PI * 2;
+          const tilt = Math.PI / 3 + Math.random() * (Math.PI / 5);   // 60-96deg from vertical
+          b.rotation.z = tilt;
+          b.rotation.y = yaw;
+          // Offset the branch cylinder so its BASE sits at the trunk edge.
+          b.position.x = Math.cos(yaw) * (0.45 * scale + bLen * 0.5 * Math.sin(tilt));
+          b.position.z = Math.sin(yaw) * (0.45 * scale + bLen * 0.5 * Math.sin(tilt));
+          b.position.y += Math.cos(tilt) * bLen * 0.5 * -0.5;
+          g.add(b);
+        }
+        g.position.set(x, 0, z);
+        // Random slight lean so the ring doesn't look like a fence.
+        g.rotation.z = (Math.random() - 0.5) * 0.18;
+        g.rotation.x = (Math.random() - 0.5) * 0.12;
+        this._swampExtras.add(g);
+      };
+      const ringCount = 42;
+      for (let i = 0; i < ringCount; i++) {
+        const a = (i / ringCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.08;
+        const r = 55 + Math.random() * 18;
+        placeDeadTree(Math.cos(a) * r, Math.sin(a) * r, 0.9 + Math.random() * 0.5);
+      }
+      // A handful of extra "just inside the border" foreground trees
+      // for depth — sparse so they don't clutter the arena.
+      for (let i = 0; i < 8; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 44 + Math.random() * 6;
+        placeDeadTree(Math.cos(a) * r, Math.sin(a) * r, 0.7 + Math.random() * 0.3);
+      }
+
+      // Fireflies — tiny glowing points that drift slowly above the water.
+      // Additive-blended so they punch through the fog. Motion is driven
+      // per-frame from _updateWeather via _swampFireflies phase array.
+      const FIREFLY_COUNT = 60;
+      const flyPositions = new Float32Array(FIREFLY_COUNT * 3);
+      const flyPhases = new Float32Array(FIREFLY_COUNT * 3);   // xPhase, yPhase, zPhase
+      for (let i = 0; i < FIREFLY_COUNT; i++) {
+        flyPositions[i * 3]     = (Math.random() - 0.5) * 80;
+        flyPositions[i * 3 + 1] = 1.2 + Math.random() * 3.5;
+        flyPositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+        flyPhases[i * 3]     = Math.random() * Math.PI * 2;
+        flyPhases[i * 3 + 1] = Math.random() * Math.PI * 2;
+        flyPhases[i * 3 + 2] = Math.random() * Math.PI * 2;
+      }
+      const flyGeo = new THREE.BufferGeometry();
+      flyGeo.setAttribute("position", new THREE.BufferAttribute(flyPositions, 3));
+      // Warm yellow-green glow blob texture.
+      const fc = document.createElement("canvas");
+      fc.width = 32; fc.height = 32;
+      const fctx = fc.getContext("2d");
+      const fg = fctx.createRadialGradient(16, 16, 0, 16, 16, 15);
+      fg.addColorStop(0.00, "rgba(230, 255, 180, 1.0)");
+      fg.addColorStop(0.35, "rgba(180, 220, 120, 0.85)");
+      fg.addColorStop(1.00, "rgba(90, 140, 60, 0.0)");
+      fctx.fillStyle = fg; fctx.fillRect(0, 0, 32, 32);
+      const flyTex = new THREE.CanvasTexture(fc);
+      flyTex.colorSpace = THREE.SRGBColorSpace;
+      const flyMat = new THREE.PointsMaterial({
+        map: flyTex,
+        color: 0xdfffb0,
+        size: 0.45,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const fireflies = new THREE.Points(flyGeo, flyMat);
+      this._swampExtras.add(fireflies);
+      this._swampFireflies = fireflies;
+      this._swampFireflyPhases = flyPhases;
+
+      // Ground fog patches — a few flat, low-lying mist planes near the
+      // ruins so the ground reads as steaming. Very transparent so they
+      // don't kill visibility for combat.
+      const mfc = document.createElement("canvas");
+      mfc.width = 128; mfc.height = 128;
+      const mctx = mfc.getContext("2d");
+      const mg = mctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+      mg.addColorStop(0.00, "rgba(200, 216, 208, 0.65)");
+      mg.addColorStop(0.55, "rgba(160, 178, 168, 0.35)");
+      mg.addColorStop(1.00, "rgba(120, 138, 128, 0.0)");
+      mctx.fillStyle = mg; mctx.fillRect(0, 0, 128, 128);
+      const mistTex = new THREE.CanvasTexture(mfc);
+      mistTex.colorSpace = THREE.SRGBColorSpace;
+      const mistSpots = [
+        [-18, -8, 12], [16, 6, 14], [0, 18, 10],
+        [-6, -22, 11], [24, -18, 12], [-24, 20, 12],
+      ];
+      mistSpots.forEach(([x, z, r]) => {
+        const m = new THREE.Mesh(
+          new THREE.PlaneGeometry(r, r),
+          new THREE.MeshBasicMaterial({ map: mistTex, transparent: true, opacity: 0.5, depthWrite: false }),
+        );
+        m.rotation.x = -Math.PI / 2;
+        m.rotation.z = Math.random() * Math.PI;
+        m.position.set(x, 0.15, z);
+        this._swampExtras.add(m);
+      });
+    }
     if (Array.isArray(this._grassBlades)) {
       // Hide grass blades on shoreline (beach) and downtown (night city) —
       // neither aesthetic wants tall green tufts. Also hide on crashsite
-      // (scorched ground), tundra (snow), and hotel (indoor marble).
-      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite" && arena.map_id !== "tundra" && arena.map_id !== "hotel";
+      // (scorched ground), tundra (snow), hotel (indoor marble), and
+      // swamp (mossy bog with its own fern decorations).
+      const showBlades = arena.map_id !== "shoreline" && arena.map_id !== "downtown" && arena.map_id !== "crashsite" && arena.map_id !== "tundra" && arena.map_id !== "hotel" && arena.map_id !== "swamp";
       this._grassBlades.forEach((b) => { b.visible = showBlades; });
     }
   }
@@ -1688,12 +1886,20 @@ export class GameEngine {
      once at init with night=false to set up the default daytime look. */
   _applyDayNight(night, mapId) {
     // Atmospheric "mode" string used to gate theme-specific overlays
-    // (e.g. CRASHSITE's red dusk sky, TUNDRA's pale arctic overcast).
-    // null = vanilla day/night.
-    const theme = (mapId === "crashsite") ? "crashsite" : (mapId === "tundra" ? "tundra" : null);
+    // (e.g. CRASHSITE's red dusk sky, TUNDRA's pale arctic overcast,
+    // SWAMP's foggy stormy woodland). null = vanilla day/night.
+    const theme = (mapId === "crashsite") ? "crashsite"
+                : (mapId === "tundra") ? "tundra"
+                : (mapId === "swamp") ? "swamp"
+                : null;
     if (this._isNight === night && this._currentTheme === theme) return;
     this._isNight = night;
     this._currentTheme = theme;
+    // Storm gate — controls rain particles + lightning scheduling. Any
+    // theme that should have rain/thunder flips this on. Cel-shaded
+    // rain is expensive-ish (700 points + a puddle set) so we only
+    // enable it where the atmosphere calls for it.
+    this._stormActive = !!night || theme === "swamp";
 
     // 1) Sky gradient — regenerate the canvas texture for whichever theme.
     const sc = document.createElement("canvas");
@@ -1832,10 +2038,10 @@ export class GameEngine {
       this._dayDecorations.forEach((d) => { if (d) d.visible = !night; });
     }
 
-    // 7) Weather (rain + lightning + puddles + ambient hiss) — only on
-    // the downtown night map.
-    // Lazy-build the rain particle system the first time night activates.
-    if (night) {
+    // 7) Weather (rain + lightning + puddles + ambient hiss) — active
+    // during any stormy theme (downtown night, swamp).
+    // Lazy-build the rain particle system the first time storm activates.
+    if (this._stormActive) {
       if (!this._rain) {
         // Lighter rain — fewer, smaller drops so the storm is atmospheric
         // rather than a screen-fill.
@@ -2095,6 +2301,59 @@ export class GameEngine {
       // Hide snow when the theme changes back to a non-tundra map.
       this._snow.visible = false;
     }
+
+    // SWAMP overlay — foggy stormy woodland. Sits on top of the daytime
+    // base (swamp is night=false so the sky isn't full black — it's
+    // stormy overcast). Uses the shared rain + lightning weather that's
+    // already been activated above via `_stormActive`.
+    if (theme === "swamp") {
+      // Rebuild sky with a bruised slate → mossy green gradient. Reads
+      // as heavy storm clouds smothering the horizon.
+      const sc4 = document.createElement("canvas");
+      sc4.width = 8; sc4.height = 512;
+      const ctx4 = sc4.getContext("2d");
+      const grd4 = ctx4.createLinearGradient(0, 0, 0, 512);
+      grd4.addColorStop(0.00, "#141a1c");   // near-black overhead
+      grd4.addColorStop(0.25, "#20272a");
+      grd4.addColorStop(0.50, "#2e363a");   // bruised slate mid-band
+      grd4.addColorStop(0.72, "#3a4842");   // sickly green-grey
+      grd4.addColorStop(0.88, "#2b3730");
+      grd4.addColorStop(1.00, "#141a15");   // dark bog horizon
+      ctx4.fillStyle = grd4; ctx4.fillRect(0, 0, 8, 512);
+      const skyTex4 = new THREE.CanvasTexture(sc4);
+      skyTex4.colorSpace = THREE.SRGBColorSpace;
+      if (this._sky) {
+        const old = this._sky.material.map;
+        this._sky.material.map = skyTex4;
+        this._sky.material.color?.setRGB(1, 1, 1);
+        this._sky.material.needsUpdate = true;
+        old?.dispose?.();
+      }
+      this.scene.background = this._buildSkyGradient(0x141a1c, 0x1a221c);
+      // Dense green-tinted fog — pulled in close so distant trees dissolve
+      // into mist, giving the level real spatial mystery.
+      this.scene.fog = new THREE.Fog(0x2a3630, 30, 110);
+      if (this._sun) {
+        this._sun.intensity = 0.85;         // dim overcast — barely any direct sun
+        this._sun.color.set(0x9caea0);      // cool desaturated green-grey
+      }
+      if (this._hemi) {
+        this._hemi.intensity = 0.9;
+        this._hemi.color.set(0x6b7e70);
+        this._hemi.groundColor.set(0x18201a); // dark mossy ground bounce
+      }
+      if (this._ambientFill) {
+        this._ambientFill.intensity = 0.38;
+        this._ambientFill.color.set(0x8fa392);
+      }
+      // Hide the bright sun disc + halos — it's a storm.
+      const sunMeshes4 = [this._sunDisc, this._sunHaloInner, this._sunHaloOuter, this._sunGlow];
+      sunMeshes4.forEach((m) => { if (m) m.visible = false; });
+      // Hide day clouds + parkland decorations (green trees) — swamp has
+      // its own dead-tree + water decoration below.
+      if (Array.isArray(this._clouds)) this._clouds.forEach((c) => { if (c) c.visible = false; });
+      if (Array.isArray(this._dayDecorations)) this._dayDecorations.forEach((d) => { if (d) d.visible = false; });
+    }
   }
 
   /* Per-frame update for rain + lightning + snow. Called from the main loop. */
@@ -2130,7 +2389,28 @@ export class GameEngine {
       pos.needsUpdate = true;
     }
 
-    if (!this._isNight) return;
+    // --- Swamp fireflies: gently orbit their spawn point with sine
+    // wobble on all 3 axes. Runs whenever the swamp extras are visible.
+    if (this._swampFireflies && this._swampExtras && this._swampExtras.visible) {
+      const pos = this._swampFireflies.geometry.attributes.position;
+      const arr = pos.array;
+      const phases = this._swampFireflyPhases;
+      const tt = performance.now() / 1000;
+      for (let i = 0; i < phases.length / 3; i++) {
+        const i3 = i * 3;
+        // Small orbit around each firefly's home column; the home column
+        // itself is defined by whatever position it was born at.
+        arr[i3]     += Math.sin(tt * 0.9 + phases[i3])     * 0.012;
+        arr[i3 + 1] += Math.sin(tt * 0.6 + phases[i3 + 1]) * 0.008;
+        arr[i3 + 2] += Math.cos(tt * 0.8 + phases[i3 + 2]) * 0.012;
+      }
+      pos.needsUpdate = true;
+      // Twinkle by pulsing the material opacity subtly.
+      const mat = this._swampFireflies.material;
+      if (mat) mat.opacity = 0.75 + Math.sin(tt * 2.3) * 0.15;
+    }
+
+    if (!this._stormActive) return;
     // --- Rain: rotate each drop downward, recycle from below back to top
     // and shift the whole grid with the player's XZ so the rain follows
     // the camera and is always visible (saves drawing 100k+ drops).
@@ -2236,10 +2516,18 @@ export class GameEngine {
         c.setRGB(1, 1, 1).multiplyScalar(0.4 + strength * 0.6);
       }
     } else if (this._sun && this._sun.intensity !== 1.0) {
-      // Restore baseline night intensities once the flash ends.
-      this._sun.intensity = 1.0;
-      this._hemi.intensity = 1.0;
-      if (this._ambientFill) this._ambientFill.intensity = 0.48;
+      // Restore baseline intensities once the flash ends. Baselines are
+      // theme-specific: swamp keeps a dim overcast, downtown/night uses
+      // the standard moonlit values.
+      if (this._currentTheme === "swamp") {
+        this._sun.intensity = 0.85;
+        this._hemi.intensity = 0.9;
+        if (this._ambientFill) this._ambientFill.intensity = 0.38;
+      } else {
+        this._sun.intensity = 1.0;
+        this._hemi.intensity = 1.0;
+        if (this._ambientFill) this._ambientFill.intensity = 0.48;
+      }
       if (this._sky && this._sky.material && this._sky.material.color) {
         this._sky.material.color.setRGB(1, 1, 1);
       }

@@ -1995,3 +1995,25 @@ Two quality-of-life changes shipped together.
   - Thunder is fired from `audioBus.thunder()` 200-700ms AFTER the flash so light-then-sound feels like real distance.
 - **Verified**: 21 preview screenshots at `/tmp/admin_storm_try_*.png` show dense rain across the whole frame, tall dark pines silhouetted, stormy sky palette. Audio playback restored via HTMLAudioElement path.
 
+
+### 2026-02-27 (later²) — New Map: MOORLANDS (swamp + storm)
+- **User request**: "Make a new map that is foggy and stormy with a woods and swamp theme."
+- **Backend** (`/app/backend/server.py`):
+  - Added `MAP_G = { map_id: "swamp", name: "MOORLANDS", size: 50, obstacles: 55 rects, spawn_points: 12, healthpacks: 9 }`. Layout: central ruined-altar island with 4 broken columns, flanking east/west bog islands with hard-cover walls, fallen dead-tree logs (chest-height cover), a ring of standing dead-tree pillars (full-height peek cover), mossy boulders, and corner watchtower ruins for snipers. Appended to `MAPS` so casual/ranked/party rolls include it.
+  - Added `?force_map=<map_id>` admin-only WS query param (checked in both `mode == "offline"` and `mode == "practice"` branches). For offline, tears down any cached user room first so the swap always applies. Logs `Force map applied to offline room: ...` on hit. Useful for QA / preview screenshots.
+- **Frontend engine** (`/app/frontend/src/game/engine.js`):
+  - New palette entry for `swamp` (mossy stone / bark / rot / slate / glowing green).
+  - Floor material for swamp → dark mossy green-brown; grass blades hidden.
+  - `_applyDayNight` new theme branch `theme === "swamp"`: bruised slate → mossy horizon sky gradient, dense green-tinted fog (30-110 close range), dim overcast sun with cool desaturated green-grey tint, hidden clouds + parkland decorations.
+  - Introduced `_stormActive` gate (`night || theme === "swamp"`) so the existing rain particle system + lightning scheduler light up on the new map without reimplementing weather. Baseline sun/hemi/ambient restore branch now theme-aware (dimmer on swamp).
+  - New `_swampExtras` group (lazy-built once) with: procedural bog-water plane (algae swirl canvas, murky green, mildly transparent so lightning flashes catch it), 50+ gnarled dead trees ringing the arena (trunk + 2-4 randomly-angled crooked branches, all cel-outlined), 60 additive-blended fireflies drifting on a per-particle 3-axis sine wobble (updated in `_updateWeather`), and 6 low-lying mist puffs near the ruins.
+- **Frontend selector** (`/app/frontend/src/game/mapsMeta.js`, `/app/frontend/src/pages/Game.jsx`):
+  - Added `MAP_SWAMP` with tagline "Foggy woodland · murky bog · stormy overcast + lightning." + a swamp palette so the loading-screen minimap preview + practice map picker card render correctly.
+  - `MAPS_META` includes MAP_SWAMP so the PracticeMapSelector shows a "MOORLANDS" tile.
+  - `Game.jsx` reads `?force_map=` from the URL and forwards it in the WS `extra` params for offline/party modes.
+- **Verified**:
+  - Backend: `python3 -c` script confirms `MAP_G` registered (server MAPS list = downtown, crossfire, shoreline, crashsite, tundra, hotel, **swamp**; obstacle count 55; `get_map_by_id("swamp")` returns the map).
+  - Frontend: compiles clean (1 pre-existing lint warning unrelated to these files).
+  - Practice map selector shows MOORLANDS card after the change (screenshot flow launched a match with `?map=swamp`).
+- **How to play**: Lobby → PRACTICE → toggle "OFFLINE VS AI" → pick "MOORLANDS" → START. The map also auto-rolls in random casual + party matches now that it's in `MAPS`.
+

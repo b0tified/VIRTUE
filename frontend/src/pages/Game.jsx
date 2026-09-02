@@ -512,15 +512,20 @@ export default function Game() {
       // into the team-mode room (practice/offline) — and for casual
       // quick-match, forces TDM rather than letting the 50% roll decide.
       // (Reuses `wantsTdm` computed above.)
+      // `?force_map=<id>` is an admin-only debug hook that pins the
+      // offline room's arena to a specific map (see server.py). Passed
+      // through here so screenshots + preview flows can target one map.
+      const forceMap = searchParams.get("force_map") || null;
       const extra =
         mode === "party" && partyId
-          ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}) }
+          ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}), ...(forceMap ? { force_map: forceMap } : {}) }
           : mode === "spectate" && spectateTarget
           ? { target: spectateTarget }
-          : wantsTdm
-          ? { tdm: 1 }
-          : null;
-      sock.connect(accessToken, mode, extra);
+          : {
+              ...(wantsTdm ? { tdm: 1 } : {}),
+              ...(forceMap ? { force_map: forceMap } : {}),
+            };
+      sock.connect(accessToken, mode, Object.keys(extra || {}).length ? extra : null);
     }
 
     // Network send loop @ 20Hz
