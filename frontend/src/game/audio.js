@@ -462,7 +462,140 @@ class AudioBus {
 
   /* Looping rain-on-wet-streets ambient. Idempotent: calling start when
      already running is a no-op; stop fades out cleanly. Volume is very
-     low so it sits under the gun + UI sounds and acts as atmosphere. */
+     low so it sits under the gun + UI sounds and acts as atmosphere. */  /* SILENT TOWN ambient — layered synth atmosphere:
+       (1) Deep low-pass filtered pink-noise WIND loop with slow LFO
+           tremolo on its gain so it "gusts".
+       (2) Randomised FROG CROAK — a short pitched noise/pulse played
+           every 3-8s. Each croak is 2-3 short bursts at slightly
+           varying pitch, panned to a random side, and modulated
+           through a bandpass so it sounds throaty rather than clean.
+     Both paths route through `sfxGain` so the master + sfx volume
+     sliders control the whole bed. Idempotent: calling with `on=true`
+     twice is a no-op, `on=false` fades and cleans up. */
+  swampAmbient(on) {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    if (on) {
+      if (this._swampAmbient) return;
+      // ---- Wind loop (2s pink-noise buffer, low-passed) ----
+      const dur = 2.0;
+      const sampleCount = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      // Simple pink-noise via running average of white noise — cheap
+      // approximation good enough for a background loop.
+      let lastOut = 0;
+      for (let i = 0; i < sampleCount; i++) {
+        const white = Math.random() * 2 - 1;
+        lastOut = 0.98 * lastOut + 0.05 * white;
+        data[i] = lastOut;
+      }
+      const windSrc = ctx.createBufferSource();
+      windSrc.buffer = buf;
+      windSrc.loop = true;
+      // Muffled howl — heavy low-pass so only the low mid-range comes
+      // through, then a gentle peak at 400Hz for a bit of throat.
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 500;
+      lp.Q.value = 0.7;
+      const peak = ctx.createBiquadFilter();
+      peak.type = "peaking";
+      peak.frequency.value = 400;
+      peak.Q.value = 1.2;
+      peak.gain.value = 5;
+      // Master wind gain with slow LFO tremolo for gusts.
+      const windGain = ctx.createGain();
+      windGain.gain.value = 0;
+      windGain.gain.linearRampToValueAtTime(0.10, ctx.currentTime + 2.0);
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.frequency.value = 0.13;     // ~7.7s per gust
+      lfoGain.gain.value = 0.05;      // modulation depth
+      lfo.connect(lfoGain);
+      lfoGain.connect(windGain.gain);
+      lfo.start();
+      windSrc.connect(lp); lp.connect(peak); peak.connect(windGain);
+      windGain.connect(this.sfxGain);
+      windSrc.start();
+
+      // ---- Frog croak scheduler ----
+      // Fires every 3-8s. Each call synthesises a short 2-3 burst
+      // croak with pitch-envelope + bandpass so it sounds throaty.
+      let alive = { ok: true };
+      const scheduleCroak = () => {
+        if (!alive.ok) return;
+        const delayMs = 2500 + Math.random() * 5500;
+        setTimeout(() => {
+          if (!alive.ok) return;
+          try { this._playFrogCroak(); } catch {}
+          scheduleCroak();
+        }, delayMs);
+      };
+      // First croak ~1.5-3s in — small delay so entering the arena
+      // doesn't feel silent.
+      setTimeout(() => { if (alive.ok) { try { this._playFrogCroak(); } catch {} } }, 1500 + Math.random() * 1500);
+      scheduleCroak();
+
+      this._swampAmbient = { windSrc, windGain, lfo, lfoGain, lp, peak, alive };
+    } else if (this._swampAmbient) {
+      const { windSrc, windGain, lfo, alive } = this._swampAmbient;
+      alive.ok = false;
+      try {
+        windGain.gain.cancelScheduledValues(ctx.currentTime);
+        windGain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.9);
+      } catch {}
+      setTimeout(() => {
+        try { windSrc.stop(); } catch {}
+        try { lfo.stop(); } catch {}
+      }, 1000);
+      this._swampAmbient = null;
+    }
+  }
+
+  /* Single frog croak — 2-3 short throaty bursts at slightly varying
+     pitch. Uses filtered noise passed through a bandpass with a fast
+     pitch envelope so each burst reads as "throat then chirp". Panned
+     random left/right so multiple frogs feel spatial. */
+  _playFrogCroak() {
+    if (!this._ensure()) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const burstCount = 2 + Math.floor(Math.random() * 2);   // 2..3
+    const basePan = (Math.random() - 0.5) * 1.6;             // -0.8..0.8
+    const basePitch = 380 + Math.random() * 220;             // 380..600Hz
+    for (let i = 0; i < burstCount; i++) {
+      const t0 = now + i * (0.08 + Math.random() * 0.05);
+      // Short noise burst
+      const bDur = 0.09 + Math.random() * 0.05;
+      const bufLen = Math.max(1, Math.floor(ctx.sampleRate * bDur));
+      const nb = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+      const nd = nb.getChannelData(0);
+      for (let s = 0; s < bufLen; s++) nd[s] = (Math.random() * 2 - 1) * 0.9;
+      const src = ctx.createBufferSource();
+      src.buffer = nb;
+      // Bandpass sweeps pitch downward — mimics the "gulp then chirp" of a bullfrog.
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 8;
+      bp.frequency.setValueAtTime(basePitch + 60 + Math.random() * 40, t0);
+      bp.frequency.exponentialRampToValueAtTime(Math.max(120, basePitch - 40), t0 + bDur);
+      // Envelope
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, t0);
+      env.gain.exponentialRampToValueAtTime(0.55, t0 + 0.015);
+      env.gain.exponentialRampToValueAtTime(0.0001, t0 + bDur);
+      // Panner for spatial variety
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) { pan.pan.value = basePan + (Math.random() - 0.5) * 0.3; }
+      src.connect(bp); bp.connect(env);
+      if (pan) { env.connect(pan); pan.connect(this.sfxGain); }
+      else { env.connect(this.sfxGain); }
+      src.start(t0);
+      src.stop(t0 + bDur + 0.05);
+    }
+  }
+
   rainAmbient(on) {
     if (!this._ensure()) return;
     const ctx = this.ctx;

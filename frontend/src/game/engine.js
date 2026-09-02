@@ -287,8 +287,10 @@ export class GameEngine {
     window.removeEventListener("resize", this._onResize);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     // Stop the rain-on-wet-streets ambient so it doesn't keep hissing in
-    // the lobby after the player exits a downtown match.
+    // the lobby after the player exits a downtown match. Same for the
+    // SILENT TOWN wind + frog-croak bed.
     try { audioBus.rainAmbient(false); } catch {}
+    try { audioBus.swampAmbient(false); } catch {}
     this.renderer.dispose();
   }
 
@@ -2230,6 +2232,15 @@ export class GameEngine {
       // Looping rain-on-wet-streets hiss
       try { audioBus.rainAmbient(true); } catch {}
 
+      // SILENT TOWN — additional wind + frog-croak ambient layered on
+      // top of the storm hiss. Started only when the swamp theme is
+      // active so downtown/night doesn't get chirping frogs.
+      if (mapId === "swamp") {
+        try { audioBus.swampAmbient(true); } catch {}
+      } else {
+        try { audioBus.swampAmbient(false); } catch {}
+      }
+
       // Reset lightning scheduling. We schedule a "thunder cue" first.
       // SILENT TOWN swamp uses a much shorter first cue + tighter loop
       // (heavy-storm theme); other stormy maps stay on the calm 4-10s
@@ -2243,6 +2254,7 @@ export class GameEngine {
       if (this._puddles) this._puddles.visible = false;
       this._lightningActiveUntil = 0;
       try { audioBus.rainAmbient(false); } catch {}
+      try { audioBus.swampAmbient(false); } catch {}
     }
 
     // 8) CRASHSITE atmospheric overlay — paint a dusky red/violet sky,

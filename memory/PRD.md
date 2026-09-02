@@ -2068,3 +2068,22 @@ Two quality-of-life changes shipped together.
   - In-game FPS view naturally hides own body (expected); bots wear other random skins so the nurse shows on the local player from any 3rd-person moment (death cam, spectate, kill cam).
 - **How to obtain**: Lobby → SHOP → Legendary tab → Silent Nurse (5500 coins) → auto-equipped on purchase. Pairs thematically with the SILENT TOWN map.
 
+
+### 2026-02-27 (later⁶) — Nurse rename + SILENT TOWN ambient wind + frogs
+- **User requests**:
+  1. Rename "Silent Nurse" → "Nurse"
+  2. Add low frog-croak + wind ambient loop that starts on SILENT TOWN welcome
+- **Skin rename** (`/app/backend/server.py`): SKINS_CATALOG entry for `id="nurse"` now has `"name": "Nurse"`. Curl confirms — `/api/shop/skins` returns `name: "Nurse"` for the entry (still `id: "nurse"`, still owned + equipped on the admin account, still triggers the same client render hook).
+- **Swamp ambient audio** (`/app/frontend/src/game/audio.js`):
+  - New `swampAmbient(on)` method on `audioBus`. Fires ONLY when the swamp theme is active.
+  - **Wind bed**: 2s pink-noise buffer (running-average approximation of white noise) → low-pass @ 500Hz + a 400Hz peaking filter for throat → GainNode ramped 0 → 0.10 over 2s. A low-frequency oscillator (~0.13Hz, ~7.7s per gust) modulates the gain ±0.05 so the wind naturally "gusts" instead of running flat.
+  - **Frog croak scheduler**: `_playFrogCroak()` fires every 2.5-8s (first croak 1.5-3s after activation so entry isn't silent). Each croak is 2-3 short noise bursts (~90ms each) through a Q=8 bandpass that sweeps `basePitch+60Hz` → `basePitch-40Hz` (basePitch randomised 380-600Hz), envelope-shaped for a "gulp then chirp" bullfrog feel. Each burst is randomly stereo-panned via `StereoPannerNode` so the swamp reads as *multiple* distant frogs, not one on repeat.
+  - Both layers route through `sfxGain` so master + SFX sliders control the whole bed. `on=false` fades the wind to zero over 0.9s then stops both the source and the LFO so nothing leaks into the next map.
+- **Engine hook** (`/app/frontend/src/game/engine.js`):
+  - The storm block that starts `rainAmbient(true)` now also calls `audioBus.swampAmbient(true)` when `mapId === "swamp"`, and explicitly `false` otherwise (so a downtown match doesn't inherit frog chirps from a stale state).
+  - Engine dispose (returning to lobby / route change) calls `audioBus.swampAmbient(false)` alongside `rainAmbient(false)` so the bed doesn't hiss under the lobby music.
+- **Verified**:
+  - Curl: `/api/shop/skins` returns `name: "Nurse"` for the entry.
+  - Frontend compiles clean.
+  - Wind LFO + frog scheduler are both self-cleaning: LFO uses `.stop()` on ambient-off, scheduler's `alive.ok` flag halts the recursive setTimeout chain.
+

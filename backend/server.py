@@ -911,7 +911,7 @@ SKINS_CATALOG: List[dict] = [
     # in idle animation + a low-lying red flicker aura. Colors below are
     # the palette base (dress cream, stockings ivory, bandage tan, deep
     # blood red); most of the horror detail is drawn by the render hook.
-    {"id": "nurse",     "name": "Silent Nurse",    "price": 5500, "rarity": "legendary", "obtain": "shop",
+    {"id": "nurse",     "name": "Nurse",           "price": 5500, "rarity": "legendary", "obtain": "shop",
      "body": 0xdfd0b8, "leg": 0xe8dcbb, "head": 0xc8b09a, "accent": 0x8b0d0d,
      "helmet": 0xf0e6d0, "visor": 0x5a1010, "shoulder": 0xdfd0b8, "stripe": 0x6b0808, "belt": 0xe8dcbb, "cape": None,
      "aura": 0x8b0d0d, "aura_mode": "flicker"},
