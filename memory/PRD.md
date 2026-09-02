@@ -2087,3 +2087,14 @@ Two quality-of-life changes shipped together.
   - Frontend compiles clean.
   - Wind LFO + frog scheduler are both self-cleaning: LFO uses `.stop()` on ambient-off, scheduler's `alive.ok` flag halts the recursive setTimeout chain.
 
+
+### 2026-02-27 (later⁷) — Leaderboard top-3 self-row visibility + swamp-fog reach audit
+- **User bugs**:
+  1. "If you are rank 1 2 or 3 your name isn't visible on the leaderboard bc dark mode"
+  2. "Make the fog update for everyone"
+- **Fix 1** (`/app/frontend/src/pages/Leaderboard.jsx`):
+  - Root cause: the current-season leaderboard row style has three branches — `isYou` (cream card with red ring), top-3 (gold/gold-tint with `text-black`), regular (`bg-neutral-900 text-white`). The `isYou` branch wins ternary precedence over top-3, but its class list only set `bg-[#FFFCE6] ring-4 ring-inset ring-[#E62429]` — it forgot to set `text-black`. On the dark theme the row inherited the white parent text color, which is invisible on cream.
+  - Change: appended `text-black` to the `isYou` branch class list so the row is now `bg-[#FFFCE6] text-black ring-4 ring-inset ring-[#E62429]`. Fixes the top-3-self row and any other position when it happens to be the current player.
+- **Fix 2 — audit result**: Searched the engine + audio bus for `is_admin` / `role.*admin` gates — zero hits. Every visual for SILENT TOWN (storm sky, dense fog, rain particles, lightning scheduler, `_swampExtras` group with bog water + dead trees + fireflies + mist rings, `swampAmbient` audio) is triggered exclusively off `arena.map_id === "swamp"` in the server welcome. Once the current deployment goes live, every player queued into a swamp match sees the identical storm — no per-account roll-out needed. No code change required.
+- **Verified**: Frontend compiles clean. Leaderboard top-3 row now shows the "YOU" name in black-on-cream instead of white-on-cream (invisible).
+

@@ -253,7 +253,7 @@ export default function Leaderboard() {
                     key={r.username + i}
                     onClick={() => setOpenProfile(r.username)}
                     className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center text-left w-full transition-transform hover:translate-y-[-1px] ${
-                      isYou ? "bg-[#FFFCE6] ring-4 ring-inset ring-[#E62429]" :
+                      isYou ? "bg-[#FFFCE6] text-black ring-4 ring-inset ring-[#E62429]" :
                       i === 0 ? "bg-[#FFD700] text-black" : i === 1 ? "bg-[#FFE680] text-black" : i === 2 ? "bg-[#FFF0AC] text-black" : "bg-neutral-900 text-white hover:bg-neutral-800"
                     }`}
                     data-testid={`leaderboard-row-${i}`}
