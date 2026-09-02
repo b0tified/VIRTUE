@@ -23,6 +23,7 @@ import ProgressionModal from "@/components/ProgressionModal";
 import PracticeMapSelector from "@/components/PracticeMapSelector";
 import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import LobbyDailyPanel from "@/components/LobbyDailyPanel";
+import AdminFogLobby from "@/components/AdminFogLobby";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
 import useIsMobile, { detectIsMobile } from "@/game/useIsMobile";
@@ -594,6 +595,13 @@ export default function Lobby() {
         <>
           <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
           <LobbyBackgroundMeteor animated={animatedBg} />
+        </>
+      ) : isAdmin ? (
+        <>
+          {/* Admin-only fog-forest lobby background + looped ambient
+              music. Only ever mounts when `isAdmin` is true. */}
+          <span className="hidden" data-testid="lobby-bg-admin-fog" data-active="true" />
+          <AdminFogLobby enabled={true} />
         </>
       ) : (
         <>
