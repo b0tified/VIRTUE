@@ -373,6 +373,12 @@ export default function Lobby() {
   // If autoplay is still blocked (e.g. direct-nav / SSR-style first visit),
   // fall back to the first interaction listener.
   useEffect(() => {
+    // Admins get the fog-lobby ambient track from AdminFogLobby.jsx —
+    // skip the default synth music entirely to prevent overlap.
+    if (isAdmin) {
+      try { audioBus.stopLobbyMusic(); } catch {}
+      return;
+    }
     let started = false;
     // User asked to "go back to original lobby music" — pin the loop
     // to the Season 1 default variant regardless of season / picker
@@ -407,7 +413,7 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
-  }, []);
+  }, [isAdmin]);
 
   // Refresh the user payload whenever the Lobby mounts. After completing
   // a ranked match (where rank_points / rank_tier / level / coins can all
