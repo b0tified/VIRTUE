@@ -183,11 +183,13 @@ class AudioBus {
   setMuted(m) {
     this.muted = m;
     if (this.master) this.master.gain.value = m ? 0 : this._masterVol;
+    this._syncExternalAudio?.();
   }
 
   setMusicMuted(m) {
     this.musicMuted = m;
     if (this.musicGain) this.musicGain.gain.value = m ? 0 : this._musicVol;
+    this._syncExternalAudio?.();
   }
 
   setSfxMuted(m) {
@@ -201,10 +203,12 @@ class AudioBus {
   setMasterVolume(v) {
     this._masterVol = Math.max(0, Math.min(1, Number(v) || 0));
     if (this.master) this.master.gain.value = this.muted ? 0 : this._masterVol;
+    this._syncExternalAudio?.();
   }
   setMusicVolume(v) {
     this._musicVol = Math.max(0, Math.min(1, Number(v) || 0));
     if (this.musicGain) this.musicGain.gain.value = this.musicMuted ? 0 : this._musicVol;
+    this._syncExternalAudio?.();
   }
   setSfxVolume(v) {
     this._sfxVol = Math.max(0, Math.min(1, Number(v) || 0));
@@ -1802,49 +1806,41 @@ class AudioBus {
   stopMusic() { this.stopLobbyMusic(); this.stopFogAmbient(); }
 
   /* -------- Fog-Lobby ambient (streamed MP3) --------
-     Routes an HTMLAudioElement through the Web Audio graph so the master
-     and music sliders / mute toggles control it exactly like the synth
-     lobby loops. Idempotent: calling start when already running is a
-     no-op; stop pauses + disconnects so the track cannot leak into the
-     next route (e.g. a match). */
+     Uses a plain HTMLAudioElement (NOT createMediaElementSource — that
+     path silently outputs zero when the CDN lacks CORS headers, which
+     is how the last iteration ended up mute). Instead the element's
+     own `.volume` is driven from the same master × music × mute state
+     as the synth music, and any slider change updates it live via
+     `_syncExternalAudio()`. Idempotent: same url → resume if paused.
+     stop() pauses AND clears src so the track cannot leak into a
+     match, even if the element was still buffering. */
   startFogAmbient(url) {
-    if (!this._ensure()) return;
-    // Already streaming this exact url → do nothing.
+    // Already streaming this exact url → resume if paused, else no-op.
     if (this._fogAmbient && this._fogAmbient.el && this._fogAmbient.url === url) {
-      // If it was paused (e.g. we stopped then re-mounted quickly), resume.
       if (this._fogAmbient.el.paused) {
-        this._fogAmbient.el.play().catch(() => {
-          this._fogArmGesture();
-        });
+        this._fogAmbient.el.play().catch(() => this._fogArmGesture());
       }
+      this._syncExternalAudio();
       return;
     }
-    // Different url or first start → tear down any prior element cleanly.
     if (this._fogAmbient) this.stopFogAmbient();
 
-    const el = new Audio(url);
+    const el = new Audio();
     el.loop = true;
-    el.crossOrigin = "anonymous";
     el.preload = "auto";
-    // Element volume stays at 1 — the musicGain node handles user volume.
-    el.volume = 1.0;
+    // Explicitly DO NOT set crossOrigin — we're not piping into Web
+    // Audio, so leaving it as a plain <audio> stream lets the CDN
+    // serve without needing CORS + avoids the tainted-source silence.
+    el.src = url;
 
-    let node;
-    try {
-      node = this.ctx.createMediaElementSource(el);
-      node.connect(this.musicGain);
-    } catch {
-      // Some browsers throw if the same element was already piped once.
-      // Fall back to setting element.volume directly against the mix.
-      el.volume = this.musicMuted ? 0 : this._musicVol * (this.muted ? 0 : this._masterVol);
-      node = null;
-    }
-
-    this._fogAmbient = { el, node, url, armed: false, kick: null };
-
-    // Attempt immediate play; if the browser blocks (no user gesture yet)
-    // arm one-shot listeners on the window that will retry on the first
-    // click / key / touch.
+    this._fogAmbient = { el, url, armed: false, kick: null };
+    // Snap volume before play() so the first audible sample already
+    // matches the user's slider settings.
+    this._syncExternalAudio();
+    // Also make sure the AudioContext for the rest of the game is
+    // unlocked, but don't gate MP3 playback on it (Audio element and
+    // AudioContext have separate autoplay policies in some browsers).
+    this._ensure();
     el.play().catch(() => this._fogArmGesture());
   }
 
@@ -1867,17 +1863,28 @@ class AudioBus {
 
   stopFogAmbient() {
     if (!this._fogAmbient) return;
-    const { el, node, armed, kick } = this._fogAmbient;
+    const { el, armed, kick } = this._fogAmbient;
     this._fogAmbient = null;
     try { el.pause(); } catch {}
     try { el.currentTime = 0; } catch {}
-    try { el.src = ""; el.load(); } catch {}
-    try { if (node) node.disconnect(); } catch {}
+    try { el.src = ""; el.removeAttribute("src"); el.load(); } catch {}
     if (armed && kick) {
       window.removeEventListener("pointerdown", kick);
       window.removeEventListener("keydown", kick);
       window.removeEventListener("touchstart", kick);
     }
+  }
+
+  /* Effective mix level for HTMLAudio elements that aren't routed
+     through the Web Audio graph. Mirrors the master → music branch
+     of the synth mixer so a slider change hits every audio source
+     the same way. */
+  _syncExternalAudio() {
+    if (!this._fogAmbient || !this._fogAmbient.el) return;
+    const muted = this.muted || this.musicMuted;
+    const v = muted ? 0 : Math.max(0, Math.min(1, this._masterVol * this._musicVol));
+    try { this._fogAmbient.el.volume = v; } catch {}
+    try { this._fogAmbient.el.muted = muted; } catch {}
   }
 
   /* Leaderboard music — triumphant uptempo 8-bit synth-pop in C major.

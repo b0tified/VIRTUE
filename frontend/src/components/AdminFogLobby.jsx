@@ -25,17 +25,52 @@
  * On unmount we call `audioBus.stopFogAmbient()` which pauses AND
  * disconnects the node, so the track cannot leak into a match.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import audioBus from "@/game/audio";
 
 const MUSIC_URL =
   "https://customer-assets-wrfwihn1.emergentagent.net/job_blast-arena-servers/artifacts/4l14mia5_Avith%20Ortega%20-%20Recurring%20Tourism-%5BAudioTrimmer.com%5D.mp3";
 
 export default function AdminFogLobby({ enabled }) {
+  // Lightning flash key — bumps every strike so the flash overlay
+  // restarts its animation without keyframe stutter.
+  const [flash, setFlash] = useState({ id: 0, intensity: 0, forked: false });
+
   useEffect(() => {
     if (!enabled) return;
     audioBus.startFogAmbient(MUSIC_URL);
     return () => { audioBus.stopFogAmbient(); };
+  }, [enabled]);
+
+  // Lightning + thunder scheduler. Random strike every 6-14s. Each
+  // strike is either a single flash or a rapid double-flash. Thunder
+  // fires from `audioBus.thunder()` with a 200-700ms delay to feel
+  // like real distance between the light and the sound.
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    let timer;
+    const strike = () => {
+      if (!alive) return;
+      const intensity = 0.65 + Math.random() * 0.35;   // 0.65..1.0
+      const forked = Math.random() > 0.55;              // ~45% show a bolt
+      setFlash((f) => ({ id: f.id + 1, intensity, forked }));
+      // Optional quick re-flash (looks like the strike pulsing through
+      // the clouds) — 30% chance.
+      if (Math.random() < 0.3) {
+        setTimeout(() => {
+          if (!alive) return;
+          setFlash((f) => ({ id: f.id + 1, intensity: intensity * 0.65, forked: false }));
+        }, 120 + Math.random() * 90);
+      }
+      // Thunder — delayed so light-then-sound reads as distant.
+      const thunderDelay = 200 + Math.random() * 550;
+      setTimeout(() => { try { audioBus.thunder(); } catch {} }, thunderDelay);
+      timer = setTimeout(strike, 6000 + Math.random() * 8000);
+    };
+    // First strike after 2-4s so the effect kicks in shortly after login.
+    timer = setTimeout(strike, 2000 + Math.random() * 2000);
+    return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [enabled]);
 
   if (!enabled) return null;
@@ -46,20 +81,20 @@ export default function AdminFogLobby({ enabled }) {
       data-testid="admin-fog-lobby-bg"
       aria-hidden
     >
-      {/* Vertical atmospheric gradient — pale grey-blue haze top,
-          murky forest earth bottom. Roughly matches the reference
-          photo's light distribution. */}
+      {/* Vertical atmospheric gradient — heavy storm sky: bruised
+          slate top, near-black earth bottom. Darker than the calm-fog
+          palette so the lightning flashes read as bright. */}
       <div
         className="absolute inset-0"
         style={{
           background: `linear-gradient(
               180deg,
-              #c9d1d3 0%,
-              #b3bec1 22%,
-              #8e9a9d 42%,
-              #566065 62%,
-              #2b3236 82%,
-              #1c2124 100%)`,
+              #3d434a 0%,
+              #2b323a 22%,
+              #1e242b 42%,
+              #141a20 62%,
+              #0b0f13 82%,
+              #05080a 100%)`,
         }}
       />
 
@@ -129,6 +164,94 @@ export default function AdminFogLobby({ enabled }) {
         }}
       />
 
+      {/* -------- HEAVY STORM: rain + lightning -------- */}
+      {/* Rain: two SVG layers of diagonal streaks at different speeds
+          + tile offsets for parallax depth. Each SVG is a small tile
+          repeated across the viewport; the CSS animation slides the
+          background-position diagonally so streaks fall consistently
+          without React re-renders. */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url("data:image/svg+xml;utf8,${encodeURIComponent(RAIN_SVG_BACK)}")`,
+          backgroundRepeat: "repeat",
+          backgroundSize: "220px 300px",
+          opacity: 0.55,
+          animation: "admin-storm-rain-back 0.9s linear infinite",
+          mixBlendMode: "screen",
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url("data:image/svg+xml;utf8,${encodeURIComponent(RAIN_SVG_FRONT)}")`,
+          backgroundRepeat: "repeat",
+          backgroundSize: "180px 260px",
+          opacity: 0.72,
+          animation: "admin-storm-rain-front 0.55s linear infinite",
+          mixBlendMode: "screen",
+        }}
+      />
+
+      {/* Wind-driven rain streak (occasional heavier gust). Sits below
+          the near trees so trunks still occlude the drops in front of
+          them. */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url("data:image/svg+xml;utf8,${encodeURIComponent(RAIN_SVG_GUST)}")`,
+          backgroundRepeat: "repeat",
+          backgroundSize: "300px 380px",
+          opacity: 0.38,
+          animation: "admin-storm-rain-gust 1.3s linear infinite",
+          mixBlendMode: "screen",
+        }}
+      />
+
+      {/* Lightning flash overlay — a full-screen white wash whose
+          opacity animates from `intensity` → 0 over ~380ms every
+          time the strike counter bumps. The `key={flash.id}` on the
+          outer div forces the animation to restart cleanly. */}
+      <div
+        key={`flash-${flash.id}`}
+        className="absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.98) 0%, rgba(200,220,255,0.55) 35%, rgba(120,150,200,0) 70%)",
+          opacity: 0,
+          animation: flash.id > 0 ? `admin-storm-flash ${380}ms ease-out` : "none",
+          "--flash-peak": flash.intensity,
+        }}
+      />
+
+      {/* Fork bolt SVG — drawn only on strikes with `forked=true`, and
+          only for ~120ms so it feels like a real streak crackle. */}
+      {flash.forked && flash.id > 0 && (
+        <svg
+          key={`bolt-${flash.id}`}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 1600 900"
+          preserveAspectRatio="xMidYMid slice"
+          style={{ animation: "admin-storm-bolt 220ms ease-out forwards", opacity: 0 }}
+        >
+          <defs>
+            <filter id="bolt-glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <path
+            d={buildBoltPath(flash.id)}
+            stroke="#f0f6ff"
+            strokeWidth="3"
+            fill="none"
+            filter="url(#bolt-glow)"
+          />
+        </svg>
+      )}
+
       {/* Photographic film grain — noise-like halftone at very low
           opacity, no dot pattern so it feels more like a foggy photo
           than a comic panel. */}
@@ -195,6 +318,40 @@ export default function AdminFogLobby({ enabled }) {
           0%   { transform: translateX(0);   opacity: 0.85; }
           50%  { transform: translateX(4vw); opacity: 1;    }
           100% { transform: translateX(0);   opacity: 0.85; }
+        }
+        /* Rain: slide the tiled streak texture DOWN-and-slightly-RIGHT
+           each frame. Values match the tile size so the loop is
+           perfectly seamless. Wind angle is baked into the SVG streaks
+           themselves (~12deg tilt) — animating background-position
+           along both axes just re-projects that streak. */
+        @keyframes admin-storm-rain-back {
+          from { background-position: 0 0; }
+          to   { background-position: -55px 300px; }
+        }
+        @keyframes admin-storm-rain-front {
+          from { background-position: 0 0; }
+          to   { background-position: -72px 260px; }
+        }
+        @keyframes admin-storm-rain-gust {
+          from { background-position: 0 0; }
+          to   { background-position: -100px 380px; }
+        }
+        /* Lightning: white/blue wash flashes on, snaps to peak in the
+           first 30ms, and decays over the rest. --flash-peak is set
+           inline per strike so intensity varies naturally between hits. */
+        @keyframes admin-storm-flash {
+          0%   { opacity: 0; }
+          8%   { opacity: var(--flash-peak, 0.9); }
+          22%  { opacity: calc(var(--flash-peak, 0.9) * 0.55); }
+          40%  { opacity: calc(var(--flash-peak, 0.9) * 0.75); }
+          100% { opacity: 0; }
+        }
+        /* Fork bolt: flick on for ~120ms then fade. */
+        @keyframes admin-storm-bolt {
+          0%   { opacity: 0; }
+          15%  { opacity: 1; }
+          55%  { opacity: 0.55; }
+          100% { opacity: 0; }
         }
       `}</style>
     </div>
@@ -362,3 +519,68 @@ const FAR_TREES = (() => {
   }
   return out;
 })();
+
+// -- Storm helpers --------------------------------------------------
+
+/* Build a jagged lightning bolt path. Starts at the top of the frame
+   in a random-ish X position (deterministic per strike id so
+   consecutive strikes look distinct without React re-renders churning
+   on every animation frame), zig-zags downward with a couple of
+   branches for realism. Returns an SVG path `d` string. */
+function buildBoltPath(id) {
+  const rand = mulberry(id * 7919 + 13);
+  const startX = 320 + rand() * 960;                // 320..1280
+  const segments = 7 + Math.floor(rand() * 4);      // 7..10
+  const points = [`M ${startX.toFixed(0)} 0`];
+  let x = startX;
+  let y = 0;
+  for (let i = 0; i < segments; i++) {
+    const dy = 90 + rand() * 60;                    // vertical step
+    const dx = (rand() - 0.5) * 220;                // lateral wobble
+    x += dx;
+    y += dy;
+    points.push(`L ${x.toFixed(0)} ${y.toFixed(0)}`);
+  }
+  // Optional fork ~2/3 of the way down.
+  const forkStart = Math.floor(segments * 0.55);
+  if (points.length > forkStart + 1) {
+    const forkPoint = points[forkStart];
+    const fx = parseFloat(forkPoint.split(" ")[1]);
+    const fy = parseFloat(forkPoint.split(" ")[2]);
+    const forkLen = 3 + Math.floor(rand() * 3);
+    let bx = fx;
+    let by = fy;
+    let branch = ` M ${bx} ${by}`;
+    for (let i = 0; i < forkLen; i++) {
+      bx += (rand() - 0.2) * 140;
+      by += 60 + rand() * 40;
+      branch += ` L ${bx.toFixed(0)} ${by.toFixed(0)}`;
+    }
+    return points.join(" ") + branch;
+  }
+  return points.join(" ");
+}
+
+/* Build a rain-streak SVG tile. Streaks are short white lines tilted
+   ~12deg from vertical (wind blowing right). `count` controls density,
+   `alpha` the base opacity, `width` the stroke thickness. Same tile is
+   repeated across the whole viewport via CSS background-repeat. */
+function makeRainTileSVG({ tileW, tileH, count, alpha, width, length, tilt = 12 }) {
+  const rand = mulberry(count * 101 + tileW);
+  const streaks = [];
+  for (let i = 0; i < count; i++) {
+    const x1 = rand() * tileW;
+    const y1 = rand() * tileH;
+    const rad = (tilt * Math.PI) / 180;
+    const x2 = x1 + Math.sin(rad) * length;
+    const y2 = y1 + Math.cos(rad) * length;
+    streaks.push(
+      `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="rgba(220,232,245,${alpha})" stroke-width="${width}" stroke-linecap="round"/>`
+    );
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${tileW} ${tileH}" width="${tileW}" height="${tileH}">${streaks.join("")}</svg>`;
+}
+
+const RAIN_SVG_BACK  = makeRainTileSVG({ tileW: 220, tileH: 300, count: 24, alpha: 0.45, width: 1.0, length: 22 });
+const RAIN_SVG_FRONT = makeRainTileSVG({ tileW: 180, tileH: 260, count: 34, alpha: 0.85, width: 1.5, length: 30 });
+const RAIN_SVG_GUST  = makeRainTileSVG({ tileW: 300, tileH: 380, count: 14, alpha: 0.72, width: 2.2, length: 44, tilt: 16 });

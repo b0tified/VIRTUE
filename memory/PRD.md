@@ -1982,3 +1982,16 @@ Two quality-of-life changes shipped together.
 - **Verified**:
   - Preview screenshot at `/tmp/admin_fog_lobby.png` shows the redesigned taller conifer forest with visibly-tilted crowns (mid-cycle sway captured).
   - Static wiring: `startFogAmbient` connects to `this.musicGain` → `setMusicVolume`/`setMasterVolume`/`setMusicMuted` propagate; `stopFogAmbient` invoked from AdminFogLobby cleanup + `stopMusic()`.
+
+### 2026-02-27 (later) — Admin Fog Lobby: audio actually plays + heavy storm
+- **User bugs**: (1) The fog-lobby MP3 wasn't playing at all after the previous fix. (2) Wants the fog scene turned into a heavy storm with lightning + rain.
+- **Audio playing again** (`/app/frontend/src/game/audio.js`):
+  - Root cause: `ctx.createMediaElementSource(el)` requires CORS headers on the CDN, otherwise the Web Audio graph outputs zero even though the element is "playing" — that's why every slider showed the file loaded but nothing was audible.
+  - Replaced with a plain HTMLAudioElement path (no `crossOrigin`, no `createMediaElementSource`). The element's own `.volume` is driven from `_masterVol * _musicVol` with mute honored, and every slider/mute setter now calls `_syncExternalAudio()` so slider drags update the fog audio live.
+- **Heavy storm** (`/app/frontend/src/components/AdminFogLobby.jsx`):
+  - Palette darkened to stormy slate → near-black so lightning reads as bright.
+  - Three tiled SVG rain layers (`RAIN_SVG_BACK`, `_FRONT`, `_GUST`) at different densities, opacities, tilts and animation speeds. `background-position` animates diagonally in perfect sync with the tile size so streaks fall seamlessly with no seams.
+  - Lightning scheduler in `useEffect`: first strike at 2-4s, then every 6-14s. Each strike has random intensity, a 30% chance of a rapid re-flash pulse, and ~45% chance of drawing a jagged SVG fork bolt (via `buildBoltPath(id)`). Bolt path zig-zags top→bottom with random lateral wobble + one branching side-strike, all wrapped in an SVG `feGaussianBlur` glow filter.
+  - Thunder is fired from `audioBus.thunder()` 200-700ms AFTER the flash so light-then-sound feels like real distance.
+- **Verified**: 21 preview screenshots at `/tmp/admin_storm_try_*.png` show dense rain across the whole frame, tall dark pines silhouetted, stormy sky palette. Audio playback restored via HTMLAudioElement path.
+
