@@ -3110,7 +3110,7 @@ export class GameEngine {
     ak.add(lh);
     // Muzzle flash sprite (AK)
     const flashTex = this._makeFlashTexture();
-    const flashMat = new THREE.SpriteMaterial({ map: flashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0 });
+    const flashMat = new THREE.SpriteMaterial({ map: flashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0, depthWrite: false });
     const flash = new THREE.Sprite(flashMat);
     flash.scale.set(0.85, 0.85, 1);
     flash.position.set(0, 0.03, -1.32);
@@ -3269,7 +3269,7 @@ export class GameEngine {
     sniper.add(sLh);
     // Sniper muzzle flash (tighter + slightly whiter than AK's).
     const sFlashTex = this._makeFlashTexture();
-    const sFlashMat = new THREE.SpriteMaterial({ map: sFlashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0 });
+    const sFlashMat = new THREE.SpriteMaterial({ map: sFlashTex, transparent: true, blending: THREE.AdditiveBlending, opacity: 0, depthWrite: false });
     const sFlash = new THREE.Sprite(sFlashMat);
     sFlash.scale.set(1.05, 1.05, 1);
     sFlash.position.set(0, 0.02, -1.72);
