@@ -2115,3 +2115,10 @@ Two quality-of-life changes shipped together.
 - **Fix**: Added `text-neutral-900` to the modal card's `bg-white` wrapper so all children that don't set their own color inherit dark text. Explicitly-colored elements (yellow chips with `#0A0A0A`, red REPORT button, ULTIMATE GOONER pill, rank-color history badges, stat cards) are untouched — they set inline `color` already.
 - **Verified**: Screenshot after fix shows the entire modal reads clearly — "GOONMONARCH474" header, CURRENT/PEAK/MAX RANK/LEVEL labels, RP values, "PRIVATE PROFILE" banner and description text are all rendered in dark on the white card. Same fix carries into FriendsModal (which reuses the same PublicProfileModal component).
 
+
+### 2026-02-27 (later¹⁰) — HUD ammo panel: kill the ugly transparent box
+- **User bug** (with screenshot): a slanted `rgba(10,10,10,0.85)` parallelogram framed the "25 / 25" ammo counter for AK + sniper. On mobile it overlapped the touch FIRE button and read as an extra floating rectangle.
+- **Root cause** (`/app/frontend/src/components/Hud.jsx` line 370-393): the ammo counter wrapper used the shared `.hud-panel` class (`background rgba(10,10,10,0.82)` + 3px white border + `skewX(-10deg)` + padding). Great for the SCORE panel that anchors the stack; ugly next to the round FIRE button below it.
+- **Fix**: Replaced the `hud-panel` wrapper for the ammo counter with a plain right-aligned div. Ammo number + magazine text now float as clean drop-shadowed text (`textShadow: 0 2px 4px rgba(0,0,0,0.9)` + tight inline styling for Anton letter-spacing). The reload progress bar keeps its own 1.5px inline border so it still reads. Low-ammo / LOW AMMO pulse untouched.
+- **Verified**: Preview screenshot on the practice range shows "25 / 25" rendering as clean shadowed text between the SCORE trophy card and the yellow AK-47 badge — no more slanted transparent box, no FIRE-button overlap. Same fix applies for the sniper since it uses the same primary-weapon rendering path.
+

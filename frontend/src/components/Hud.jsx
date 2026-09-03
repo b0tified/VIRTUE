@@ -368,18 +368,31 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           </div>
         ) : (
           hud.weapon !== "secondary" && hud.ammo != null && (
-            <div className="hud-panel" style={{ background: "rgba(10,10,10,0.85)" }} data-testid="hud-ammo">
-              <div className="flex items-end gap-2">
+            <div
+              className="text-right"
+              style={{
+                // Drop the .hud-panel background/border/skew for the ammo
+                // counter — on mobile the boxed version overlapped the
+                // touch FIRE button and read as an ugly "extra" rectangle.
+                // Clean floating text with a strong shadow stays legible
+                // over any map background without needing a container.
+                textShadow: "0 2px 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9)",
+                fontFamily: "Anton, sans-serif",
+                letterSpacing: "0.06em",
+              }}
+              data-testid="hud-ammo"
+            >
+              <div className="flex items-end justify-end gap-2">
                 <span
-                  className="font-display text-4xl tabular-nums"
+                  className="font-display text-4xl tabular-nums leading-none"
                   style={{ color: hud.ammo === 0 ? "#E62429" : hud.ammo <= Math.max(3, Math.floor((hud.magSize || 1) * 0.2)) ? "#FFD700" : "#FFFFFF" }}
                 >
                   {hud.ammo}
                 </span>
-                <span className="font-anton text-lg text-white/60 mb-1">/ {hud.magSize ?? "—"}</span>
+                <span className="font-anton text-lg text-white/70 mb-1">/ {hud.magSize ?? "—"}</span>
               </div>
               {hud.reloading && (
-                <div className="mt-1 w-32 h-1.5 border border-white/40 overflow-hidden" data-testid="hud-reload-bar">
+                <div className="mt-1 w-32 h-1.5 border border-white/60 overflow-hidden ml-auto" data-testid="hud-reload-bar">
                   <div
                     className="h-full bg-[#FFD700] transition-all"
                     style={{ width: `${Math.min(100, Math.max(0, (hud.reloadProgress || 0) * 100))}%` }}
