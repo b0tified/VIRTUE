@@ -58,7 +58,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-3 sm:p-6" data-testid="public-profile-modal" onClick={onClose}>
-      <div className="card-pow p-0 w-full max-w-2xl bg-white" onClick={(e) => e.stopPropagation()}>
+      <div className="card-pow p-0 w-full max-w-2xl bg-white text-neutral-900" onClick={(e) => e.stopPropagation()}>
         <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
           <div className="font-display text-2xl sm:text-3xl text-[#FFD700] flex-1" data-testid="public-profile-username">
             {data?.username || username}

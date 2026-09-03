@@ -2108,3 +2108,10 @@ Two quality-of-life changes shipped together.
   - Test hook renamed `lobby-bg-admin-fog` → `lobby-bg-fog` since the backdrop is no longer admin-exclusive.
 - **Verified**: Preview screenshot on the admin account shows the new stormy fog forest with tall dark pines, heavy rain, and dark palette behind the entire lobby UI. Playwright confirms `lobby-bg-fog` marker is present + `lobby-bg-castle` marker is gone. Every logged-in user will see the same on their next visit once the current deploy ships.
 
+
+### 2026-02-27 (later⁹) — PublicProfileModal readable after dark-mode
+- **User bug**: "The text when you pull up another player's profile from the leaderboard and match history is not viable after dark mode update."
+- **Root cause** (`/app/frontend/src/components/PublicProfileModal.jsx` line 61): the modal card wraps its content in `bg-white` but never sets a text color. Before the dark-mode pass, the app's default body text was dark, so the white card inherited a dark text color and read fine. After Leaderboard/Profile went dark-themed, the ambient text color at the body level became white — inherited by every child that didn't set its own color. Result: labels, "Private Profile" banner, K/D stats, match-history rows all rendered white-on-white and were invisible.
+- **Fix**: Added `text-neutral-900` to the modal card's `bg-white` wrapper so all children that don't set their own color inherit dark text. Explicitly-colored elements (yellow chips with `#0A0A0A`, red REPORT button, ULTIMATE GOONER pill, rank-color history badges, stat cards) are untouched — they set inline `color` already.
+- **Verified**: Screenshot after fix shows the entire modal reads clearly — "GOONMONARCH474" header, CURRENT/PEAK/MAX RANK/LEVEL labels, RP values, "PRIVATE PROFILE" banner and description text are all rendered in dark on the white card. Same fix carries into FriendsModal (which reuses the same PublicProfileModal component).
+
