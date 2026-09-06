@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { X, UserPlus, UserMinus, UserCheck, UserX, Ban, Search, Loader2, Send, Eye, User, MessageCircle } from "lucide-react";
 import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
+import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import { divisionRoman } from "@/game/rankIcons";
 import PublicProfileModal from "@/components/PublicProfileModal";
 import WhisperChat from "@/components/WhisperChat";
@@ -259,6 +260,15 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
           )}
         </div>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          {/* Rank icon + text pill — same "tier icon + rank name + division"
+              pattern the leaderboard uses so a friend's status reads at a
+              glance without opening their profile. */}
+          <AnimatedRankIcon
+            tier={u.rank_tier ?? 0}
+            division={u.rank_division ?? 0}
+            size={22}
+            testid={`friend-rank-icon-${idx}`}
+          />
           <span
             className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black"
             style={{ background: rankColor, color: rankText }}
@@ -455,6 +465,12 @@ function SearchPanel({ onChange, onInspect }) {
               <div className="flex-1 min-w-0">
                 <div className="font-anton uppercase text-sm truncate">{u.username}</div>
                 <div className="flex items-center gap-2 mt-0.5">
+                  <AnimatedRankIcon
+                    tier={u.rank_tier ?? 0}
+                    division={u.rank_division ?? 0}
+                    size={20}
+                    testid={`search-rank-icon-${i}`}
+                  />
                   <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A" }}>
                     {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
                   </span>

@@ -38,8 +38,11 @@ export default function AdminFogLobby({ enabled }) {
 
   useEffect(() => {
     if (!enabled) return;
-    audioBus.startFogAmbient(MUSIC_URL);
-    return () => { audioBus.stopFogAmbient(); };
+    // Ambient MP3 removed per user request — the fog lobby now runs
+    // silent by default. Stop any previously-started fog ambient in case
+    // a stale audio element survived a hot-reload / navigation.
+    try { audioBus.stopFogAmbient(); } catch {}
+    return () => { try { audioBus.stopFogAmbient(); } catch {} };
   }, [enabled]);
 
   // Lightning + thunder scheduler. Random strike every 6-14s. Each

@@ -2129,3 +2129,21 @@ Two quality-of-life changes shipped together.
 - **Fix**: Added `depthWrite: false` to both muzzle-flash `SpriteMaterial`s (AK: line 3113, sniper: line 3272). Standard fix for transparent additive sprites — they now read depth (still occluded correctly by nearer opaque geometry) but never *write* depth themselves, so the transparent border stops occluding the wall behind it.
 - **Verified**: Frontend compiles clean. Both sprite materials updated identically. Laser weapon uses solid meshes (torus emitter ring + cone tip) so it wasn't affected.
 
+
+### 2026-02-27 (later¹²) — Friends list rank icon + fog-lobby ambient silenced
+- **User requests**:
+  1. Make the rank on the friends list show tier as well as rank
+  2. Remove ambient audio from lobby
+- **Fix 1 — Friends list tier icon** (`/app/frontend/src/components/FriendsModal.jsx`):
+  - Imported `AnimatedRankIcon` alongside `divisionRoman`.
+  - Friend row (line ~262): added a 22px `<AnimatedRankIcon tier=… division=…>` directly before the rank-name pill so the row now shows [avatar] · username · [tier badge] · [rank pill "BRONZE I"] · [RP] — matches the leaderboard row layout.
+  - Search-result row (line ~468): same treatment at 20px so search results also show the tier badge.
+- **Fix 2 — Silence lobby MP3** (`/app/frontend/src/components/AdminFogLobby.jsx`):
+  - Replaced the `audioBus.startFogAmbient(MUSIC_URL)` call in the mount effect with an explicit `stopFogAmbient()` so any lingering audio element from a prior visit or hot-reload is torn down. `MUSIC_URL` constant kept in the file (unused) so future re-enable is a one-line change.
+  - Cleanup still calls `stopFogAmbient()` on unmount for the same reason.
+  - `Lobby.jsx` already stops the default synth music when the fog backdrop is active (see 2026-02-27-later⁸), so the lobby is now fully silent for every player unless they're on the snow / meteor seasonal variants.
+- **Verified**:
+  - Preview screenshot: friends modal shows the BRONZE animated rank icon (circular gold-outlined coin) directly beside the "BRONZE" pill for the friend "botified" — tier + rank both visible.
+  - Frontend compiles clean.
+  - Lobby no longer starts any MP3 or synth music on the fog backdrop (default for all users).
+
