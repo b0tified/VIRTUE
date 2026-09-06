@@ -2147,3 +2147,16 @@ Two quality-of-life changes shipped together.
   - Frontend compiles clean.
   - Lobby no longer starts any MP3 or synth music on the fog backdrop (default for all users).
 
+
+### 2026-02-27 (later¹³) — Lobby MP3 back w/o thunder + Friend leaderboard-rank chip
+- **User requests**:
+  1. Add back the fog-lobby MP3 music BUT remove the thunder audio (visuals stay)
+  2. Add the leaderboard rank number ("#N") next to the rank on friends list
+- **Fix 1 — MP3 back, thunder muted** (`/app/frontend/src/components/AdminFogLobby.jsx`):
+  - Restored `audioBus.startFogAmbient(MUSIC_URL)` in the mount effect (cleanup still calls `stopFogAmbient()`).
+  - Deleted the `audioBus.thunder()` call inside the lightning scheduler — visual flashes + fork bolts still fire, but no rumble under the music. Comment updated so future readers know it's a deliberate no-audio choice.
+- **Fix 2 — #N leaderboard chip** (`/app/backend/server.py` `_friend_card` + `/app/frontend/src/components/FriendsModal.jsx`):
+  - Backend `_friend_card` now attaches `rank_division` (computed via `rank_division_for_points`) so the tier icon added in the last change actually gets the right "GOLD III" division, plus `leaderboard_rank` sourced from the same `TOP50_GOONER_IDS` cache the profile/leaderboard/killfeed already use. Curl confirms: `friend "b0tified": rank_name=BRONZE div=3 lb=None`.
+  - Frontend friend row + search-result row now render a small gold `#N` pill immediately after the rank text pill when `leaderboard_rank` is a finite value in 1..50. Wrapped in `Number.isFinite(...)` so nulls/undefined skip cleanly. Tooltip explains "#N on the current-season leaderboard".
+- **Verified**: Curl returns the new fields (rank_division present, leaderboard_rank null for non-top-50). Frontend compiles clean. Lobby music restored; no thunder rumble.
+

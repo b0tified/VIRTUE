@@ -7965,6 +7965,7 @@ def _friend_card(u: dict) -> dict:
     """Compact public view for friend rows (with online + location + last-seen)."""
     pts = int(u.get("rank_points", 0) or 0)
     t_idx, t_name = rank_for_points(pts)
+    t_div = rank_division_for_points(pts, t_idx)
     loc = player_location(str(u["_id"]))
     last_seen = u.get("last_seen_at")
     lvl = compute_level(u.get("stats", {}))
@@ -7992,6 +7993,14 @@ def _friend_card(u: dict) -> dict:
         "rank_points": pts,
         "rank_tier": t_idx,
         "rank_name": t_name,
+        # Division within the tier (0=IV, 3=I). Needed by the friends
+        # list's AnimatedRankIcon + rank pill so friends render with
+        # the same "GOLD III" precision as the leaderboard.
+        "rank_division": t_div,
+        # Leaderboard position — only present for top-50 GOONMASTERs
+        # (Ultimate Gooner cache). Friend rows show a "#N" gold chip
+        # when this is set so ladder-visible friends stand out.
+        "leaderboard_rank": TOP50_GOONER_IDS.get(uid),
         "level": lvl["level"],
         "banner_icon": int(u.get("banner_icon", 0) or 0),
         "banner_color": int(u.get("banner_color", 0) or 0),

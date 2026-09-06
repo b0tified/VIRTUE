@@ -38,17 +38,17 @@ export default function AdminFogLobby({ enabled }) {
 
   useEffect(() => {
     if (!enabled) return;
-    // Ambient MP3 removed per user request — the fog lobby now runs
-    // silent by default. Stop any previously-started fog ambient in case
-    // a stale audio element survived a hot-reload / navigation.
-    try { audioBus.stopFogAmbient(); } catch {}
+    // Ambient MP3 back on per user request. Thunder audio removed
+    // below in the lightning scheduler so we get the storm visuals
+    // without the loud rumble under the music.
+    audioBus.startFogAmbient(MUSIC_URL);
     return () => { try { audioBus.stopFogAmbient(); } catch {} };
   }, [enabled]);
 
   // Lightning + thunder scheduler. Random strike every 6-14s. Each
   // strike is either a single flash or a rapid double-flash. Thunder
-  // fires from `audioBus.thunder()` with a 200-700ms delay to feel
-  // like real distance between the light and the sound.
+  // AUDIO was removed per user request — flashes stay silent so the
+  // lobby MP3 has clean airtime.
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
@@ -66,9 +66,9 @@ export default function AdminFogLobby({ enabled }) {
           setFlash((f) => ({ id: f.id + 1, intensity: intensity * 0.65, forked: false }));
         }, 120 + Math.random() * 90);
       }
-      // Thunder — delayed so light-then-sound reads as distant.
-      const thunderDelay = 200 + Math.random() * 550;
-      setTimeout(() => { try { audioBus.thunder(); } catch {} }, thunderDelay);
+      // Thunder audio disabled — flashes still fire visually so the
+      // storm reads, but no rumble under the lobby MP3.
+      // (was: setTimeout(() => audioBus.thunder(), 200 + rand()*550))
       timer = setTimeout(strike, 6000 + Math.random() * 8000);
     };
     // First strike after 2-4s so the effect kicks in shortly after login.

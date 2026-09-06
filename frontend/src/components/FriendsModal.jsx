@@ -275,6 +275,19 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
           >
             {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
           </span>
+          {/* Ranked leaderboard position — only shown when the server
+              attached `leaderboard_rank` (top-50 GOONMASTER = Ultimate
+              Gooner). Gives friends a quick "#7 on the ladder" read
+              without opening the leaderboard tab. */}
+          {Number.isFinite(u.leaderboard_rank) && u.leaderboard_rank >= 1 && u.leaderboard_rank <= 50 && (
+            <span
+              className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black bg-[#FFD700] text-[#0A0A0A] tabular-nums"
+              data-testid={`friend-leaderboard-rank-${idx}`}
+              title={`#${u.leaderboard_rank} on the current-season leaderboard`}
+            >
+              #{u.leaderboard_rank}
+            </span>
+          )}
           <span className="text-[10px] font-anton uppercase tracking-widest text-neutral-500">{u.rank_points} RP</span>
           {/* Status chip — priority: in-match > in-queue > online > offline.
               Lets you see at a glance what a friend is doing right now. */}
@@ -474,6 +487,15 @@ function SearchPanel({ onChange, onInspect }) {
                   <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A" }}>
                     {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
                   </span>
+                  {Number.isFinite(u.leaderboard_rank) && u.leaderboard_rank >= 1 && u.leaderboard_rank <= 50 && (
+                    <span
+                      className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black bg-[#FFD700] text-[#0A0A0A] tabular-nums"
+                      data-testid={`search-leaderboard-rank-${i}`}
+                      title={`#${u.leaderboard_rank} on the current-season leaderboard`}
+                    >
+                      #{u.leaderboard_rank}
+                    </span>
+                  )}
                   <span className="text-[10px] font-anton text-neutral-500">{u.rank_points} RP</span>
                 </div>
               </div>
