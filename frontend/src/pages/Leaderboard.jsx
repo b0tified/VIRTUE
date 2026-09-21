@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "@/api";
-import { ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive, Medal, Crown } from "lucide-react";
+import {
+  ArrowLeft, Trophy, Calendar, RotateCcw, Eye, Archive, Medal, Crown,
+  Users, Swords, TrendingUp, TrendingDown,
+} from "lucide-react";
 import audioBus from "@/game/audio";
 import { divisionRoman, isUltimateGooner, rankLabelFor } from "@/game/rankIcons";
 import { useAuth } from "@/context/AuthContext";
@@ -10,6 +13,15 @@ import PublicProfileModal from "@/components/PublicProfileModal";
 import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+
+// Weapon sub-tab metadata for the WEAPONS leaderboard. Order = tab order.
+const WEAPON_TABS = [
+  { key: "ak47",   label: "AK-47",   short: "AK" },
+  { key: "sniper", label: "Sniper",  short: "SNP" },
+  { key: "pistol", label: "Pistol",  short: "PST" },
+  { key: "laser",  label: "Laser",   short: "LSR" },
+  { key: "katana", label: "Katana",  short: "KTN" },
+];
 
 function fmtDHMS(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -30,15 +42,33 @@ export default function Leaderboard() {
   const [openProfile, setOpenProfile] = useState(null); // username
   const [season, setSeason] = useState(null); // { season_number, seconds_left, season_ends_at, length_days }
   const [tick, setTick] = useState(0);
-  // CURRENT ↔ ARCHIVE tab. The archive tab loads the list of past
-  // seasons from /leaderboard/archive, then on selection fetches the
-  // full top-100 from /leaderboard/archive/:N.
+  // Outer tab: CURRENT vs ARCHIVE.
   const [tab, setTab] = useState("current"); // 'current' | 'archive'
-  const [archiveIndex, setArchiveIndex] = useState([]); // [{ season_number, started_at, ended_at, total_players }]
-  const [archiveSeason, setArchiveSeason] = useState(null); // selected season_number
+  // Inner tab (CURRENT only): which slice of the live board to show.
+  //   global  — all players (default)
+  //   friends — caller + accepted friends
+  //   weapons — per-weapon top kills, gated by an additional weapon slug
+  const [view, setView] = useState("global"); // 'global' | 'friends' | 'weapons'
+  const [weaponKey, setWeaponKey] = useState("ak47");
+  const [friendsRows, setFriendsRows] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [weaponsData, setWeaponsData] = useState({}); // { ak47:[...], sniper:[...], ... }
+  const [weaponsLoading, setWeaponsLoading] = useState(false);
+
+  // Live RP-delta indicator. On every /leaderboard poll we compare the
+  // new snapshot to `prevRpRef` (keyed by username) and record any
+  // delta with a timestamp. The row then flashes a ▲/▼ chip that
+  // fades out after DELTA_TTL_MS. Purely cosmetic — no server round-trip.
+  const DELTA_TTL_MS = 12000;
+  const prevRpRef = useRef({}); // { [username]: rank_points }
+  const [rpDeltas, setRpDeltas] = useState({}); // { [username]: { delta, at } }
+
+  const [archiveIndex, setArchiveIndex] = useState([]);
+  const [archiveSeason, setArchiveSeason] = useState(null);
   const [archiveRows, setArchiveRows] = useState([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
 
+  // --- Global board bootstrap ---------------------------------------
   useEffect(() => {
     (async () => {
       try {
@@ -46,6 +76,10 @@ export default function Leaderboard() {
           api.get("/leaderboard"),
           api.get("/season"),
         ]);
+        // Seed baseline RP map so the first refresh diff isn't spammy.
+        const baseline = {};
+        (rowsData || []).forEach((r) => { baseline[r.username] = r.rank_points ?? 0; });
+        prevRpRef.current = baseline;
         setRows(rowsData);
         setSeason(seasonData);
       } finally {
@@ -54,18 +88,13 @@ export default function Leaderboard() {
     })();
   }, []);
 
-  // Per-tab music — triumphant uptempo synth-pop. Swaps in over whatever
-  // the lobby was playing; restored to lobby music when the user
-  // navigates back (Lobby mounts and re-starts its own loop).
+  // Per-tab music — triumphant uptempo synth-pop.
   useEffect(() => {
     audioBus.startLeaderboardMusic?.();
     return () => { audioBus.stopMusic?.(); };
   }, []);
 
-  // Re-fetch season every 30s for accurate baseline; local tick every 1s for the timer.
-  // Also re-poll the leaderboard itself every 15s so in_match flags stay fresh
-  // — players queue, finish matches, and disconnect constantly, and a stale
-  // Spectate button would 404.
+  // Poll /leaderboard + /season every 15s and compute RP deltas per row.
   useEffect(() => {
     const refresh = setInterval(async () => {
       try {
@@ -74,15 +103,78 @@ export default function Leaderboard() {
       } catch {}
       try {
         const { data } = await api.get("/leaderboard");
+        const nextDeltas = { ...rpDeltas };
+        const now = Date.now();
+        (data || []).forEach((r) => {
+          const prev = prevRpRef.current[r.username];
+          const curr = r.rank_points ?? 0;
+          if (prev != null && prev !== curr) {
+            nextDeltas[r.username] = { delta: curr - prev, at: now };
+          }
+          prevRpRef.current[r.username] = curr;
+        });
+        setRpDeltas(nextDeltas);
         setRows(data);
       } catch {}
     }, 15000);
     const live = setInterval(() => setTick((t) => t + 1), 1000);
     return () => { clearInterval(refresh); clearInterval(live); };
+    // rpDeltas intentionally NOT in deps — we always read/merge the latest via a fresh ref of setRpDeltas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sweep expired RP-delta chips off the UI every second so they fade out cleanly.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setRpDeltas((prev) => {
+        const now = Date.now();
+        let changed = false;
+        const next = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (v && now - v.at < DELTA_TTL_MS) next[k] = v;
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(t);
   }, []);
 
   const secondsLeft = season ? Math.max(0, (season.seconds_left || 0) - tick) : 0;
   const { d, h, m, s } = fmtDHMS(secondsLeft);
+
+  // --- Friends board (lazy) -----------------------------------------
+  useEffect(() => {
+    if (tab !== "current" || view !== "friends") return;
+    setFriendsLoading(true);
+    (async () => {
+      try {
+        const { data } = await api.get("/leaderboard/friends");
+        setFriendsRows(Array.isArray(data) ? data : []);
+      } catch {
+        setFriendsRows([]);
+      } finally {
+        setFriendsLoading(false);
+      }
+    })();
+  }, [tab, view]);
+
+  // --- Weapons board (lazy) -----------------------------------------
+  useEffect(() => {
+    if (tab !== "current" || view !== "weapons") return;
+    if (Object.keys(weaponsData).length) return;
+    setWeaponsLoading(true);
+    (async () => {
+      try {
+        const { data } = await api.get("/leaderboard/weapons");
+        setWeaponsData(data || {});
+      } catch {
+        setWeaponsData({});
+      } finally {
+        setWeaponsLoading(false);
+      }
+    })();
+  }, [tab, view, weaponsData]);
 
   // Archive tab: fetch the index of past seasons once, on first open.
   useEffect(() => {
@@ -91,7 +183,6 @@ export default function Leaderboard() {
       try {
         const { data } = await api.get("/leaderboard/archive");
         setArchiveIndex(Array.isArray(data) ? data : []);
-        // Auto-select the most recent past season (newest first).
         if (data?.length && archiveSeason === null) {
           setArchiveSeason(data[0].season_number);
         }
@@ -133,12 +224,8 @@ export default function Leaderboard() {
       <div className="max-w-4xl mx-auto">
         <h1 className="font-display text-6xl uppercase text-[#E62429] text-pow-shadow-lg mb-3">LEADERBOARD</h1>
 
-        {/* "Your placement" jump-strip — only renders when the signed-in
-            user is anywhere in the live leaderboard. Scrolls them down
-            to their row on click. Adds a quick "I'm #N" signal at the
-            top of the page so players don't have to scroll the whole
-            list looking for themselves. */}
-        {tab === "current" && !loading && user && (() => {
+        {/* "Your placement" jump-strip — global view only */}
+        {tab === "current" && view === "global" && !loading && user && (() => {
           const myIdx = rows.findIndex((r) => r.id === user.id || r.username === user.username);
           if (myIdx < 0) return null;
           const me = rows[myIdx];
@@ -176,8 +263,7 @@ export default function Leaderboard() {
           );
         })()}
 
-        {/* CURRENT ↔ ARCHIVE tab switcher. Archive shows the top-100
-            snapshot we saved on the day each past season ended. */}
+        {/* CURRENT ↔ ARCHIVE outer tab switcher. */}
         <div className="flex gap-2 mb-4" data-testid="leaderboard-tab-switcher">
           <button
             type="button"
@@ -201,8 +287,64 @@ export default function Leaderboard() {
           </button>
         </div>
 
-        {/* Season banner (current tab only) */}
-        {tab === "current" && season && (
+        {/* GLOBAL / FRIENDS / WEAPONS inner tabs — only visible on CURRENT tab. */}
+        {tab === "current" && (
+          <div className="flex flex-wrap gap-2 mb-4" data-testid="leaderboard-view-switcher">
+            <button
+              type="button"
+              onClick={() => setView("global")}
+              data-testid="leaderboard-view-global"
+              className={`btn-pow flex items-center gap-2 [&]:py-1.5 [&]:px-3 [&]:text-xs ${
+                view === "global" ? "bg-[#FFD700] text-black" : "bg-neutral-900 text-white"
+              }`}
+            >
+              <Trophy size={12} strokeWidth={3} /> GLOBAL
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("friends")}
+              data-testid="leaderboard-view-friends"
+              className={`btn-pow flex items-center gap-2 [&]:py-1.5 [&]:px-3 [&]:text-xs ${
+                view === "friends" ? "bg-[#FFD700] text-black" : "bg-neutral-900 text-white"
+              }`}
+            >
+              <Users size={12} strokeWidth={3} /> FRIENDS
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("weapons")}
+              data-testid="leaderboard-view-weapons"
+              className={`btn-pow flex items-center gap-2 [&]:py-1.5 [&]:px-3 [&]:text-xs ${
+                view === "weapons" ? "bg-[#FFD700] text-black" : "bg-neutral-900 text-white"
+              }`}
+            >
+              <Swords size={12} strokeWidth={3} /> WEAPON KINGS
+            </button>
+          </div>
+        )}
+
+        {/* Weapon slug sub-picker (weapons view only). */}
+        {tab === "current" && view === "weapons" && (
+          <div className="flex flex-wrap gap-2 mb-4" data-testid="leaderboard-weapon-picker">
+            {WEAPON_TABS.map((w) => (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => setWeaponKey(w.key)}
+                data-testid={`weapon-pick-${w.key}`}
+                className={`px-3 py-1 font-anton uppercase tracking-widest text-xs border-pow-thin transition-transform ${
+                  weaponKey === w.key ? "bg-[#E62429] text-white" : "bg-neutral-900 text-white hover:translate-y-[-1px]"
+                }`}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Season banner (current + global only — the friends/weapons
+            slices aren't tied to season resets in a meaningful way). */}
+        {tab === "current" && view === "global" && season && (
           <div className="card-pow p-0 mb-6 overflow-hidden -rotate-1" data-testid="season-banner">
             <div className="bg-black text-white px-5 py-3 flex items-center gap-3">
               <div className="inline-block bg-[#E62429] text-white border-pow-thin px-2 py-0.5 font-anton uppercase tracking-widest text-xs rotate-2">
@@ -226,120 +368,94 @@ export default function Leaderboard() {
         )}
 
         <div className="card-pow p-0 overflow-hidden">
-          <div className="grid grid-cols-12 bg-black text-white font-anton uppercase tracking-widest px-4 py-3 text-sm">
-            <div className="col-span-1">#</div>
-            <div className="col-span-7">Player</div>
-            <div className="col-span-2 text-right">Rank</div>
-            <div className="col-span-2 text-right">RP</div>
-          </div>
-          {tab === "current" ? (
+          {/* Header row varies by view (weapons shows KILLS instead of RANK). */}
+          {tab === "current" && view === "weapons" ? (
+            <div className="grid grid-cols-12 bg-black text-white font-anton uppercase tracking-widest px-4 py-3 text-sm">
+              <div className="col-span-1">#</div>
+              <div className="col-span-7">Player</div>
+              <div className="col-span-2 text-right">Rank</div>
+              <div className="col-span-2 text-right">Kills</div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-12 bg-black text-white font-anton uppercase tracking-widest px-4 py-3 text-sm">
+              <div className="col-span-1">#</div>
+              <div className="col-span-7">Player</div>
+              <div className="col-span-2 text-right">Rank</div>
+              <div className="col-span-2 text-right">RP</div>
+            </div>
+          )}
+
+          {tab === "current" && view === "global" && (
             loading ? (
               <div className="p-8 font-display text-3xl text-center">LOADING...</div>
             ) : rows.length === 0 ? (
               <div className="p-8 font-anton text-center uppercase text-neutral-500">No frags yet. Be the first.</div>
             ) : (
-              rows.map((r, i) => {
-                const tier = Math.max(0, Math.min(8, r.rank_tier ?? 0));
-                const color = RANK_COLORS[tier];
-                const isYou = !!(user && (r.id === user.id || r.username === user.username));
-                // Top-3 medal icons (gold/silver/bronze). Top of the
-                // ladder gets the Crown instead of a medal to crown the
-                // current leader.
-                const MedalEl = i === 0 ? Crown : i <= 2 ? Medal : null;
-                const medalColor = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : null;
-                return (
-                  <button
-                    type="button"
-                    key={r.username + i}
-                    onClick={() => setOpenProfile(r.username)}
-                    className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center text-left w-full transition-transform hover:translate-y-[-1px] ${
-                      isYou ? "bg-[#FFFCE6] text-black ring-4 ring-inset ring-[#E62429]" :
-                      i === 0 ? "bg-[#FFD700] text-black" : i === 1 ? "bg-[#FFE680] text-black" : i === 2 ? "bg-[#FFF0AC] text-black" : "bg-neutral-900 text-white hover:bg-neutral-800"
-                    }`}
-                    data-testid={`leaderboard-row-${i}`}
-                    data-you={isYou ? "true" : "false"}
-                    title={`View ${r.username}'s profile`}
-                  >
-                    <div className="col-span-1 font-display text-2xl flex items-center gap-1">
-                      {MedalEl ? (
-                        <MedalEl size={22} strokeWidth={3} style={{ color: medalColor }} />
-                      ) : (
-                        <span className="text-neutral-700">{i + 1}</span>
-                      )}
-                    </div>
-                    <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2 min-w-0">
-                      <AnimatedRankIcon
-                        tier={tier}
-                        division={r.rank_division ?? 0}
-                        size={32}
-                        testid={`leaderboard-row-${i}-icon`}
-                      />
-                      <span className="truncate">{r.username}</span>
-                      {isYou && (
-                        <span
-                          className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex-shrink-0"
-                          data-testid={`leaderboard-row-${i}-you`}
-                        >
-                          YOU
-                        </span>
-                      )}
-                      {/* Live status chip — IN MATCH (red, clickable to spectate)
-                          > ONLINE (green dot) > nothing for offline rows.
-                          Mirrors the FriendsModal status chip pattern. */}
-                      {r.in_match ? (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); nav(`/spectate/${encodeURIComponent(r.username)}`); }}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); nav(`/spectate/${encodeURIComponent(r.username)}`); } }}
-                          className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform flex-shrink-0 cursor-pointer"
-                          data-testid={`leaderboard-spectate-${i}`}
-                          title={`Spectate ${r.username}`}
-                        >
-                          <Eye size={11} strokeWidth={3} />
-                          SPECTATE
-                        </span>
-                      ) : r.online ? (
-                        <span
-                          className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F] flex-shrink-0"
-                          data-testid={`leaderboard-status-${i}`}
-                          data-status="online"
-                        >
-                          ● ONLINE
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="col-span-2 text-right flex items-center justify-end gap-1.5">
-                      {(() => {
-                        const leaderPos = i + 1;
-                        const ultimate = isUltimateGooner(tier, leaderPos);
-                        return (
-                          <>
-                            <span
-                              className="font-anton uppercase text-sm px-2 py-1"
-                              style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A") }}
-                              data-testid={`leaderboard-rank-${i}`}
-                            >
-                              {ultimate ? "ULTIMATE GOONER" : rankLabelFor(tier, r.rank_division ?? 0, r.rank_name)}
-                            </span>
-                            {ultimate && (
-                              <UltimateGoonerBadge
-                                rank={leaderPos}
-                                size={22}
-                                data-testid={`leaderboard-ultimate-gooner-${i}`}
-                              />
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <div className="col-span-2 text-right font-display text-2xl tabular-nums">{r.rank_points ?? 0}</div>
-                  </button>
-                );
-              })
+              rows.map((r, i) => (
+                <PlayerRow
+                  key={r.username + i}
+                  r={r}
+                  i={i}
+                  user={user}
+                  delta={rpDeltas[r.username]}
+                  onProfile={() => setOpenProfile(r.username)}
+                  onSpectate={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
+                  testidPrefix="leaderboard"
+                  variant="rp"
+                />
+              ))
             )
-          ) : (
-            // Archive view — past-seasons picker + frozen top-100.
+          )}
+
+          {tab === "current" && view === "friends" && (
+            friendsLoading ? (
+              <div className="p-8 font-display text-3xl text-center">LOADING...</div>
+            ) : friendsRows.length === 0 ? (
+              <div className="p-8 font-anton text-center uppercase text-neutral-500" data-testid="leaderboard-friends-empty">
+                Add friends to see them ranked here.
+              </div>
+            ) : (
+              friendsRows.map((r, i) => (
+                <PlayerRow
+                  key={(r.id || r.username) + i}
+                  r={r}
+                  i={i}
+                  user={user}
+                  delta={rpDeltas[r.username]}
+                  onProfile={() => setOpenProfile(r.username)}
+                  onSpectate={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
+                  testidPrefix="leaderboard-friend"
+                  variant="rp"
+                />
+              ))
+            )
+          )}
+
+          {tab === "current" && view === "weapons" && (
+            weaponsLoading ? (
+              <div className="p-8 font-display text-3xl text-center">LOADING...</div>
+            ) : !(weaponsData[weaponKey]?.length) ? (
+              <div className="p-8 font-anton text-center uppercase text-neutral-500" data-testid="leaderboard-weapons-empty">
+                No kills recorded for this weapon yet.
+              </div>
+            ) : (
+              weaponsData[weaponKey].map((r, i) => (
+                <PlayerRow
+                  key={(r.user_id || r.username) + i}
+                  r={r}
+                  i={i}
+                  user={user}
+                  onProfile={() => r.user_id && setOpenProfile(r.username)}
+                  onSpectate={() => nav(`/spectate/${encodeURIComponent(r.username)}`)}
+                  testidPrefix={`leaderboard-weapon-${weaponKey}`}
+                  variant="kills"
+                  hideStatus
+                />
+              ))
+            )
+          )}
+
+          {tab === "archive" && (
             <ArchiveBody
               index={archiveIndex}
               selected={archiveSeason}
@@ -351,13 +467,117 @@ export default function Leaderboard() {
         </div>
       </div>
 
-      {/* Public-profile modal — opens when a leaderboard row is clicked.
-          Same component used by the friends list. */}
       <PublicProfileModal
         username={openProfile}
         onClose={() => setOpenProfile(null)}
       />
     </div>
+  );
+}
+
+/* ---------- Player row ---------- */
+// Shared row renderer for GLOBAL / FRIENDS / WEAPONS.
+// `variant` = "rp" (default) shows rank points in the last column;
+// "kills" shows the aggregated per-weapon kill count.
+function PlayerRow({ r, i, user, delta, onProfile, onSpectate, testidPrefix, variant, hideStatus }) {
+  const tier = Math.max(0, Math.min(8, r.rank_tier ?? 0));
+  const color = RANK_COLORS[tier];
+  const isYou = !!(user && (r.id === user.id || r.username === user.username || r.is_me));
+  const MedalEl = i === 0 ? Crown : i <= 2 ? Medal : null;
+  const medalColor = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : null;
+  const leaderPos = i + 1;
+  const ultimate = isUltimateGooner(tier, leaderPos);
+  const lastValue = variant === "kills" ? (r.kills ?? 0) : (r.rank_points ?? 0);
+
+  return (
+    <button
+      type="button"
+      onClick={onProfile}
+      className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black font-body items-center text-left w-full transition-transform hover:translate-y-[-1px] ${
+        isYou ? "bg-[#FFFCE6] text-black ring-4 ring-inset ring-[#E62429]" :
+        i === 0 ? "bg-[#FFD700] text-black" : i === 1 ? "bg-[#FFE680] text-black" : i === 2 ? "bg-[#FFF0AC] text-black" : "bg-neutral-900 text-white hover:bg-neutral-800"
+      }`}
+      data-testid={`${testidPrefix}-row-${i}`}
+      data-you={isYou ? "true" : "false"}
+      title={`View ${r.username}'s profile`}
+    >
+      <div className="col-span-1 font-display text-2xl flex items-center gap-1">
+        {MedalEl ? (
+          <MedalEl size={22} strokeWidth={3} style={{ color: medalColor }} />
+        ) : (
+          <span className="text-neutral-700">{i + 1}</span>
+        )}
+      </div>
+      <div className="col-span-7 font-anton uppercase text-lg flex items-center gap-2 min-w-0">
+        <AnimatedRankIcon
+          tier={tier}
+          division={r.rank_division ?? 0}
+          size={32}
+          testid={`${testidPrefix}-row-${i}-icon`}
+        />
+        <span className="truncate">{r.username}</span>
+        {isYou && (
+          <span
+            className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex-shrink-0"
+            data-testid={`${testidPrefix}-row-${i}-you`}
+          >
+            YOU
+          </span>
+        )}
+        {/* Live RP-delta chip — appears for ~12s after any RP change. */}
+        {delta && delta.delta !== 0 && (
+          <span
+            className={`text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 border-2 border-black flex items-center gap-1 flex-shrink-0 leaderboard-delta-pulse ${
+              delta.delta > 0 ? "bg-[#06A35F] text-white" : "bg-[#E62429] text-white"
+            }`}
+            data-testid={`${testidPrefix}-row-${i}-delta`}
+            data-delta-sign={delta.delta > 0 ? "up" : "down"}
+          >
+            {delta.delta > 0 ? <TrendingUp size={10} strokeWidth={3} /> : <TrendingDown size={10} strokeWidth={3} />}
+            {delta.delta > 0 ? "+" : ""}{delta.delta}
+          </span>
+        )}
+        {!hideStatus && r.in_match ? (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onSpectate && onSpectate(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onSpectate && onSpectate(); } }}
+            className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform flex-shrink-0 cursor-pointer"
+            data-testid={`${testidPrefix}-spectate-${i}`}
+            title={`Spectate ${r.username}`}
+          >
+            <Eye size={11} strokeWidth={3} />
+            SPECTATE
+          </span>
+        ) : !hideStatus && r.online ? (
+          <span
+            className="text-[10px] font-anton uppercase tracking-widest text-[#06A35F] flex-shrink-0"
+            data-testid={`${testidPrefix}-status-${i}`}
+            data-status="online"
+          >
+            ● ONLINE
+          </span>
+        ) : null}
+      </div>
+      <div className="col-span-2 text-right flex items-center justify-end gap-1.5">
+        <span
+          className="font-anton uppercase text-sm px-2 py-1"
+          style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A") }}
+          data-testid={`${testidPrefix}-rank-${i}`}
+        >
+          {ultimate ? "ULTIMATE GOONER" : rankLabelFor(tier, r.rank_division ?? 0, r.rank_name)}
+        </span>
+        {ultimate && (
+          <UltimateGoonerBadge
+            rank={leaderPos}
+            size={22}
+            data-testid={`${testidPrefix}-ultimate-gooner-${i}`}
+          />
+        )}
+      </div>
+      <div className="col-span-2 text-right font-display text-2xl tabular-nums">{lastValue}</div>
+    </button>
   );
 }
 
@@ -372,11 +592,7 @@ function TimeBlock({ value, unit, pulse = false }) {
   );
 }
 
-/* Archive tab body. Renders a horizontal pill picker of past season
-   numbers (newest-first) plus the frozen top-100 for the selected
-   season. Live "ONLINE / SPECTATE" status chips are intentionally
-   omitted — the rows are historical and players' current status is
-   irrelevant. */
+/* Archive tab body — unchanged from the previous implementation. */
 function ArchiveBody({ index, selected, onSelect, rows, loading }) {
   if (!index?.length) {
     return (
@@ -387,7 +603,6 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
   }
   return (
     <div data-testid="leaderboard-archive-body">
-      {/* Season picker pills */}
       <div className="flex flex-wrap gap-2 px-4 py-3 bg-[#FFF8DC] border-t-2 border-black">
         {index.map((meta) => {
           const isSel = meta.season_number === selected;
@@ -407,7 +622,6 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
         })}
       </div>
 
-      {/* Selected season's frozen top-100 */}
       {loading ? (
         <div className="p-8 font-display text-3xl text-center">LOADING...</div>
       ) : rows.length === 0 ? (
@@ -453,11 +667,6 @@ function ArchiveBody({ index, selected, onSelect, rows, loading }) {
                         style={{ background: ultimate ? "#FFD700" : color, color: ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A") }}
                         data-testid={`archive-rank-${i}`}
                       >
-                        {/* Match the CURRENT-tab format exactly — full
-                            tier + division label (e.g. "GOONMASTER III")
-                            not just the base rank name. Users asked
-                            for past-season chips to look like the live
-                            leaderboard chips. */}
                         {ultimate ? "ULTIMATE GOONER" : rankLabelFor(tier, r.rank_division ?? 0, r.rank_name)}
                       </span>
                       {ultimate && (

@@ -7269,6 +7269,38 @@ async def seeded_climb_loop():
                     update["stats.bonus_xp"] = xp_threshold_for_level(target_level)
                 await db.users.update_one({"_id": u["_id"]}, {"$set": update})
 
+            # v7 migration — VOLATILITY. Give every seeded bot a
+            # per-bot sine profile so their RP swings up and down over
+            # the season instead of climbing monotonically. Amplitude
+            # (`seed_volatility`) is 0.03..0.10 of their climb range;
+            # two harmonics with random frequencies + phases keep the
+            # pattern non-repetitive. One-shot per doc (guarded by
+            # `seed_v7_volatility`).
+            v7_cursor = db.users.find(
+                {"is_seeded": True, "seed_target_rp": {"$exists": True},
+                 "seed_v7_volatility": {"$exists": False}},
+                {"_id": 1},
+            )
+            async for u in v7_cursor:
+                await db.users.update_one(
+                    {"_id": u["_id"]},
+                    {"$set": {
+                        "seed_v7_volatility": True,
+                        # 3-10% of the climb range as swing amplitude —
+                        # most bots swing enough to lose then gain back
+                        # a division, top bots swing wider.
+                        "seed_volatility": round(random.uniform(0.03, 0.10), 4),
+                        # Frequencies expressed in "cycles per season".
+                        # 4-8 slow cycles + 9-15 fast cycles = organic.
+                        "seed_vol_freq_a": round(random.uniform(4.0, 8.0), 3),
+                        "seed_vol_freq_b": round(random.uniform(9.0, 15.0), 3),
+                        # Random phase per harmonic so bots don't all
+                        # dip at the same moment.
+                        "seed_vol_phase_a": round(random.uniform(0, 6.2832), 4),
+                        "seed_vol_phase_b": round(random.uniform(0, 6.2832), 4),
+                    }},
+                )
+
             doc = await get_or_init_season()
             start = doc.get("season_start")
             if isinstance(start, datetime) and start.tzinfo is None:
@@ -7290,6 +7322,12 @@ async def seeded_climb_loop():
                     "seed_climb_offset": 1, "seed_climb_speed": 1,
                     "seed_start_rp": 1,
                     "peak_rank_points": 1,
+                    # v7 volatility fields — added so each bot swings up
+                    # and down on top of the base lerp. See migration
+                    # block below (`seed_v7_volatility`).
+                    "seed_volatility": 1,
+                    "seed_vol_freq_a": 1, "seed_vol_freq_b": 1,
+                    "seed_vol_phase_a": 1, "seed_vol_phase_b": 1,
                 },
             )
             async for u in cursor:
@@ -7315,9 +7353,45 @@ async def seeded_climb_loop():
                     # Rollback already exceeded the target (edge case) —
                     # freeze at start_rp so the leaderboard doesn't
                     # oscillate.
-                    new_rp = _snap_rp_to_match_grid(start_rp)
+                    base_rp = start_rp
                 else:
-                    new_rp = _snap_rp_to_match_grid(int(round(start_rp + (t_rp - start_rp) * p)))
+                    base_rp = int(round(start_rp + (t_rp - start_rp) * p))
+                # ─── Volatility jitter (v7) ─────────────────────────────
+                # On top of the smooth base climb, each bot rides a
+                # two-harmonic sine wave so their RP visibly dips + gains
+                # over the season instead of ratcheting upward. Amplitude
+                # scales with the bot's `seed_volatility` (0..1, ~0.03-
+                # 0.10 typical) and with the base climb range so a
+                # small-climb bot swings less absolute RP than a big
+                # climber. Two sine terms at prime-ish periods keep the
+                # pattern non-repetitive over a season.
+                vol = float(u.get("seed_volatility", 0.0) or 0.0)
+                if vol > 0.0 and frac > 0.0:
+                    fa = float(u.get("seed_vol_freq_a", 6.0) or 6.0)
+                    fb = float(u.get("seed_vol_freq_b", 11.0) or 11.0)
+                    pa = float(u.get("seed_vol_phase_a", 0.0) or 0.0)
+                    pb = float(u.get("seed_vol_phase_b", 0.0) or 0.0)
+                    # Amplitude in absolute RP: percentage of the total
+                    # climb range (min 60 RP so even short-climb bots
+                    # visibly move). Kept modest so peak/rank tier
+                    # doesn't yo-yo — just a division or two.
+                    climb_range = max(60, t_rp - start_rp)
+                    amp = vol * climb_range
+                    # Composite wave: two-thirds first harmonic + one-
+                    # third faster harmonic → looks organic, not sine-y.
+                    wave = (
+                        (2.0 / 3.0) * math.sin(fa * frac * math.pi * 2 + pa)
+                        + (1.0 / 3.0) * math.sin(fb * frac * math.pi * 2 + pb)
+                    )
+                    base_rp = base_rp + int(round(amp * wave))
+                    # Never dip below the season-start floor (a bot that
+                    # begins Bronze IV shouldn't sink into unranked
+                    # territory) or above the target ceiling by more than
+                    # a small overshoot buffer.
+                    floor_rp = max(0, start_rp - int(amp * 0.5))
+                    ceil_rp = t_rp + int(amp * 0.3)
+                    base_rp = max(floor_rp, min(ceil_rp, base_rp))
+                new_rp = _snap_rp_to_match_grid(base_rp)
                 new_m = int(round(t_m * p))
                 new_k = int(round(t_k * p))
                 new_d = int(round(t_d * p))
@@ -7340,13 +7414,13 @@ async def seeded_climb_loop():
                 # RP would never get peak stamped.
                 if new_rp == cur_rp and cur_peak >= t_rp and p > 0.0:
                     continue
-                # Peak rank always reflects the season-end target, not
-                # the mid-climb value. Otherwise the profile's "Peak"
-                # card shows Bronze while the past-season title says
-                # Goonmaster — an obvious mismatch users reported. We
-                # only write peak_rank_points on the first climb tick
-                # (i.e. when it's missing or lower than the target) so
-                # subsequent ticks don't touch it.
+                # Peak rank tracks the highest RP the bot has actually
+                # reached — with the v7 volatility jitter a bot may
+                # spike above its base-lerp target temporarily, and we
+                # want that spike immortalised on their peak card. So
+                # stamp peak whenever the current RP exceeds the stored
+                # peak, in addition to the "climbing toward target"
+                # initial write.
                 update = {
                     "rank_points": new_rp,
                     "placement_matches_played": placement,
@@ -7355,12 +7429,13 @@ async def seeded_climb_loop():
                     "stats.deaths": new_d,
                     "stats.wins": new_w,
                 }
-                if cur_peak < t_rp:
-                    peak_idx, peak_name = rank_for_points(t_rp)
-                    update["peak_rank_points"] = t_rp
+                new_peak = max(cur_peak, t_rp, new_rp)
+                if new_peak > cur_peak:
+                    peak_idx, peak_name = rank_for_points(new_peak)
+                    update["peak_rank_points"] = new_peak
                     update["peak_rank_tier"] = int(peak_idx)
                     update["peak_rank_name"] = peak_name
-                    update["peak_rank_division"] = rank_division_for_points(t_rp, peak_idx)
+                    update["peak_rank_division"] = rank_division_for_points(new_peak, peak_idx)
                 await db.users.update_one(
                     {"_id": u["_id"]},
                     {"$set": update},
@@ -10349,6 +10424,199 @@ async def leaderboard_archive_season(season_number: int):
     rows = list(doc.get("top_100") or [])
     doc["top_100"] = rows[:50]
     return doc
+
+
+@api.get("/leaderboard/friends")
+async def leaderboard_friends(user: dict = Depends(get_current_user)):
+    """Friends-only leaderboard — same row shape as `/leaderboard` but
+    restricted to the caller's accepted friends plus the caller themselves
+    (so users always see themselves in the ranking context). Sorted by RP
+    descending. Bots don't have friendships so this is always real-player
+    only. Powers the "FRIENDS" sub-tab on the Leaderboard page."""
+    import hashlib
+    me_id = str(user["_id"])
+    # Collect accepted-friend user_ids on both sides of the row.
+    accepted_cur = db.friendships.find({
+        "status": "accepted",
+        "$or": [{"from_user_id": me_id}, {"to_user_id": me_id}],
+    })
+    friend_ids: set[str] = set()
+    async for f in accepted_cur:
+        other = f["to_user_id"] if f["from_user_id"] == me_id else f["from_user_id"]
+        friend_ids.add(other)
+    # Always include the caller so they can see their own placement
+    # relative to friends even before adding anyone.
+    friend_ids.add(me_id)
+
+    # Convert string ids to ObjectId for the users lookup.
+    obj_ids = []
+    for uid in friend_ids:
+        try:
+            obj_ids.append(ObjectId(uid))
+        except Exception:
+            pass
+    if not obj_ids:
+        return []
+
+    cursor = db.users.find(
+        {"_id": {"$in": obj_ids}},
+        {"username": 1, "rank_points": 1, "stats": 1, "email": 1, "is_seeded": 1},
+    ).sort([("rank_points", -1), ("stats.kills", -1)])
+    rows = []
+    async for u in cursor:
+        s = u.get("stats", {}) or {}
+        pts = int(u.get("rank_points", 0) or 0)
+        idx, name = rank_for_points(pts)
+        uid = str(u["_id"])
+        username = u.get("username", u.get("email", "anon"))
+        loc = player_location(uid)
+        in_match = loc is not None and loc.get("kind") in ("casual", "ranked", "party")
+        rows.append({
+            "id": uid,
+            "username": username,
+            "kills": int(s.get("kills", 0) or 0),
+            "deaths": int(s.get("deaths", 0) or 0),
+            "matches": int(s.get("matches", 0) or 0),
+            "rank_points": pts,
+            "rank_tier": idx,
+            "rank_name": name,
+            "rank_division": rank_division_for_points(pts, idx),
+            "online": is_online(uid),
+            "in_match": in_match,
+            "match_kind": loc.get("kind") if loc else None,
+            "is_me": uid == me_id,
+        })
+    return rows
+
+
+# Primary-weapon slugs surfaced on the Weapons leaderboard. Matches
+# WEAPON_CFG keys (excluding "katana" which is melee-only — we still
+# expose it for completeness). Order defines the tab order in the UI.
+WEAPON_LEADERBOARD_KEYS = ["ak47", "sniper", "pistol", "laser", "katana"]
+
+
+@api.get("/leaderboard/weapons")
+async def leaderboard_weapons():
+    """Per-weapon top-kills leaderboards. Aggregates real-player kills from
+    `match_history.kill_events` where the shooter was a human, then blends
+    in deterministic synthetic kill counts for the top ~60 seeded bots so
+    the board isn't empty in early seasons. Returns a dict keyed by weapon
+    slug — each value is a top-25 list sorted by kills desc."""
+    import hashlib
+    # 1) Real players — unwind kill_events and count kills per (shooter, weapon).
+    #    Group by user_id when present, fall back to username for older rows.
+    pipeline = [
+        {"$match": {"kill_events": {"$exists": True, "$ne": []}}},
+        {"$unwind": "$kill_events"},
+        {"$match": {
+            "kill_events.shooter_is_bot": {"$ne": True},
+            "kill_events.shooter_id": {"$ne": None},
+            "kill_events.weapon": {"$in": WEAPON_LEADERBOARD_KEYS},
+        }},
+        {"$group": {
+            "_id": {
+                "user_id": "$kill_events.shooter_id",
+                "weapon": "$kill_events.weapon",
+            },
+            "kills": {"$sum": 1},
+            "username": {"$last": "$kill_events.shooter_name"},
+        }},
+    ]
+    real_by_weapon: dict[str, dict[str, dict]] = {w: {} for w in WEAPON_LEADERBOARD_KEYS}
+    try:
+        async for row in db.match_history.aggregate(pipeline):
+            w = row["_id"]["weapon"]
+            uid = row["_id"]["user_id"]
+            if w not in real_by_weapon:
+                continue
+            real_by_weapon[w][uid] = {
+                "user_id": uid,
+                "username": row.get("username") or "player",
+                "kills": int(row.get("kills", 0) or 0),
+                "is_seeded": False,
+            }
+    except Exception:
+        pass
+
+    # 2) Hydrate real-player rank data. Batch-fetch their user docs.
+    all_real_ids: set[str] = set()
+    for w in WEAPON_LEADERBOARD_KEYS:
+        all_real_ids.update(real_by_weapon[w].keys())
+    real_user_docs: dict[str, dict] = {}
+    if all_real_ids:
+        obj_ids = []
+        for uid in all_real_ids:
+            try:
+                obj_ids.append(ObjectId(uid))
+            except Exception:
+                pass
+        if obj_ids:
+            cur = db.users.find(
+                {"_id": {"$in": obj_ids}},
+                {"username": 1, "rank_points": 1, "is_seeded": 1},
+            )
+            async for u in cur:
+                real_user_docs[str(u["_id"])] = u
+
+    # 3) Pull the top ~80 seeded bots and give them deterministic per-weapon
+    #    kill counts derived from username + weapon slug. This keeps the
+    #    board populated without requiring bot-schema migration. Counts
+    #    scale with RP so higher-ranked bots have more kills — feels natural.
+    seed_rows: list[dict] = []
+    try:
+        cur = db.users.find(
+            {"is_seeded": True, "rank_points": {"$gt": 0}},
+            {"username": 1, "rank_points": 1},
+        ).sort([("rank_points", -1)]).limit(80)
+        async for u in cur:
+            pts = int(u.get("rank_points", 0) or 0)
+            uname = u.get("username", "anon")
+            # Base count scales linearly with RP (top bot ~1500 kills).
+            base = max(20, pts // 3)
+            # Deterministic per-weapon variance ±40% from the base.
+            for w in WEAPON_LEADERBOARD_KEYS:
+                h = int(hashlib.md5(f"{uname}:{w}:kills".encode()).hexdigest()[:8], 16)
+                pct = 0.60 + (h % 1000) / 1000.0 * 0.80  # 0.60..1.40
+                kills = max(1, int(base * pct))
+                seed_rows.append({
+                    "weapon": w,
+                    "user_id": None,
+                    "username": uname,
+                    "rank_points": pts,
+                    "kills": kills,
+                    "is_seeded": True,
+                })
+    except Exception:
+        pass
+
+    # 4) Merge real + seeded per weapon, sort by kills, hydrate rank labels,
+    #    return top 25 per weapon.
+    out: dict[str, list[dict]] = {}
+    for w in WEAPON_LEADERBOARD_KEYS:
+        merged: list[dict] = []
+        for uid, r in real_by_weapon[w].items():
+            udoc = real_user_docs.get(uid) or {}
+            pts = int(udoc.get("rank_points", 0) or 0)
+            merged.append({
+                "user_id": uid,
+                "username": udoc.get("username") or r["username"],
+                "kills": r["kills"],
+                "rank_points": pts,
+                "is_seeded": bool(udoc.get("is_seeded")),
+            })
+        merged.extend([r for r in seed_rows if r["weapon"] == w])
+        merged.sort(key=lambda r: (-int(r.get("kills", 0) or 0), -int(r.get("rank_points", 0) or 0)))
+        top = merged[:25]
+        # Hydrate rank tier/name/division so the row can render the same
+        # coloured rank chip as the global board.
+        for r in top:
+            pts = int(r.get("rank_points", 0) or 0)
+            idx, name = rank_for_points(pts)
+            r["rank_tier"] = idx
+            r["rank_name"] = name
+            r["rank_division"] = rank_division_for_points(pts, idx)
+        out[w] = top
+    return out
 
 
 @api.get("/me/season_history")

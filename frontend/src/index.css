@@ -1952,3 +1952,21 @@ html.virtue-no-ui-blur .hud-panel {
   .lobby-castle-window,
   .lobby-castle-torch { animation: none !important; }
 }
+
+/* Leaderboard live-RP-delta chip. Fades in with a soft pulse, then
+   fades to zero over its ~12s lifetime. `animation-fill-mode: forwards`
+   keeps the final opacity=0 state so the chip disappears cleanly even
+   though React still keeps it mounted until sweep-out. */
+@keyframes leaderboard-delta-pulse-kf {
+  0%   { transform: scale(0.85); opacity: 0; filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+  10%  { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 6px rgba(255,255,255,0.55)); }
+  20%  { transform: scale(1.0);  opacity: 1; filter: drop-shadow(0 0 3px rgba(255,255,255,0.35)); }
+  85%  { transform: scale(1.0);  opacity: 1; filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+  100% { transform: scale(1.0);  opacity: 0; filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
+}
+.leaderboard-delta-pulse {
+  animation: leaderboard-delta-pulse-kf 12s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard-delta-pulse { animation: none !important; opacity: 1; }
+}

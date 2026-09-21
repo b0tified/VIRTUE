@@ -2160,3 +2160,43 @@ Two quality-of-life changes shipped together.
   - Frontend friend row + search-result row now render a small gold `#N` pill immediately after the rank text pill when `leaderboard_rank` is a finite value in 1..50. Wrapped in `Number.isFinite(...)` so nulls/undefined skip cleanly. Tooltip explains "#N on the current-season leaderboard".
 - **Verified**: Curl returns the new fields (rank_division present, leaderboard_rank null for non-top-50). Frontend compiles clean. Lobby music restored; no thunder rumble.
 
+
+### 2026-02-27 (later¹⁴) — Leaderboard bots gain + lose RP through the season
+- **User request**: Make the leaderboard bots lose RP and gain it back throughout the season.
+- **Root cause of old behaviour**: `seeded_climb_loop` in `/app/backend/server.py` did a pure linear lerp from `seed_start_rp` → `seed_target_rp` scaled by season fraction — RP only ever went up. Every seeded bot was monotonically climbing which made the leaderboard feel static.
+- **v7 volatility fields** (added via a one-shot migration inside the loop, guarded by `seed_v7_volatility: True`):
+  - `seed_volatility`: 0.03..0.10 (fraction of climb range) — swing amplitude per bot; smaller for gentle climbers, bigger for the top tail.
+  - `seed_vol_freq_a` / `_freq_b`: two harmonic frequencies in cycles-per-season (4-8 slow, 9-15 fast).
+  - `seed_vol_phase_a` / `_b`: random phase per harmonic so bots don't all dip in unison.
+- **Climb math change**:
+  ```
+  base_rp = start_rp + (target_rp - start_rp) * p
+  wave   = (2/3)·sin(freq_a·2π·frac + phase_a) + (1/3)·sin(freq_b·2π·frac + phase_b)
+  new_rp = snap_to_grid( base_rp + volatility · max(60, climb_range) · wave )
+  clamped(floor = start_rp - amp/2, ceil = target_rp + amp/3)
+  ```
+  Two-harmonic composite reads organic (never flat sine-y). Floor keeps a Bronze IV bot from falling into unranked; ceiling limits overshoot so tier can't yo-yo wildly.
+- **Peak-rank tracking updated**: previous logic stamped peak at first climb tick to the target. With volatility a bot may spike above the base target then dip — the peak field is now a running max of `(cur_peak, target_rp, new_rp)`, so momentary highs are immortalised on the profile Peak card exactly like a real player's peak grows.
+- **Verified**:
+  - Migration applied to all 107 seeded bots on first `seeded_climb_loop` tick after restart (`Seeded bots: 107, v7 volatility migrated: 107`).
+  - Sample bot GoonPhantasm421: RP 2835 vs target 2985, `seed_volatility=0.0602`, freqs 7.8 / 14.9. Amplitude ≈ 6% × 1785 climb range ≈ 107 RP swings — bots will visibly gain and lose ~1 division worth of RP over the season.
+  - Backend restarts cleanly, seeded_climb_loop ticks every 45s in the background.
+
+
+
+### 2026-02-27 (later¹⁵) — Leaderboard upgrades: Friends board + Weapon Kings + Live RP deltas
+- **User request**: Continue with the Leaderboard enhancements previously suggested — implemented options (c) Live RP deltas, (d) Friends-only tab, and (e) Weapon-specific boards.
+- **New backend endpoints** (`/app/backend/server.py`, before `/me/season_history`):
+  - `GET /api/leaderboard/friends` (auth required): Returns accepted friends of the caller + the caller themselves, in the same row shape as `/leaderboard`. Extra `is_me` flag so the client can highlight the self-row. Sorted by RP desc.
+  - `GET /api/leaderboard/weapons` (public): Aggregates `match_history.kill_events` by (shooter_id, weapon) for real players and adds deterministic synthetic per-weapon kill counts for the top-80 seeded bots so the board isn't empty pre-season. Returns `{ ak47, sniper, pistol, laser, katana }`, each list top-25 sorted by kills desc. Kill counts scale with bot RP (top bot ≈ 1500 kills) and vary ±40% per weapon via a stable md5(username:weapon:kills) hash.
+- **Frontend rewrite** (`/app/frontend/src/pages/Leaderboard.jsx`):
+  - Extracted a shared `PlayerRow` component so the three views (Global / Friends / Weapons) render identically with a `variant` prop that swaps the last column between RP and Kills.
+  - Added an inner "view switcher" (GLOBAL / FRIENDS / WEAPON KINGS) below the outer CURRENT/PAST tabs. WEAPON KINGS reveals a second row of pills (AK-47 / SNIPER / PISTOL / LASER / KATANA).
+  - **Live RP delta chip**: on every 15s `/leaderboard` poll the client compares each row's `rank_points` against a per-username `useRef` baseline, and if it changed emits a `{delta, at}` entry with a 12s TTL. A colored ▲/▼ chip (green up / red down) renders next to the player name using a `leaderboard-delta-pulse` CSS keyframe (`/app/frontend/src/index.css`) that scales in, holds, then fades.
+- **New tests** (`/app/backend/tests/test_leaderboard_upgrades.py`, 6/6 passing):
+  - Friends endpoint requires auth, always includes self, and reflects added friends symmetrically.
+  - Weapons endpoint is public, returns all 5 weapon keys with correct row shape, and each list is sorted by kills desc.
+- **Verified**:
+  - Preview screenshots confirm the new sub-tabs, weapon picker pills, and the Weapon Kings table showing the aggregated AK-47 leaderboard (GOONCIPHER_R1258 at 1582 kills, correct rank chips, medal icons).
+  - `pytest tests/test_leaderboard_upgrades.py` — 6 passed in 0.80s.
+  - Frontend compiles clean, no console errors.
