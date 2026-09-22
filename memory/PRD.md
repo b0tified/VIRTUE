@@ -2200,3 +2200,26 @@ Two quality-of-life changes shipped together.
   - Preview screenshots confirm the new sub-tabs, weapon picker pills, and the Weapon Kings table showing the aggregated AK-47 leaderboard (GOONCIPHER_R1258 at 1582 kills, correct rank chips, medal icons).
   - `pytest tests/test_leaderboard_upgrades.py` — 6 passed in 0.80s.
   - Frontend compiles clean, no console errors.
+
+
+### 2026-02-27 (later¹⁶) — 12-Player Big FFA mode
+- **User request**: Add a new game mode "12 player FFA" with its own button in the lobby. Must NOT be routed through Quick Match or Ranked matchmaking.
+- **Backend** (`/app/backend/server.py`):
+  - New `BIGFFA_LOBBY_SIZE = 12` constant and a dedicated `bigffa_room = GameRoom(is_ranked=False, match_duration=120.0)` singleton, tagged `is_bigffa=True` and `bots_target_size=12`. Task launched from the startup event alongside the other shared rooms.
+  - `_maintain_population` now honours `bots_target_size` when set, so the same fill/despawn logic that keeps casual FFA at 4 keeps bigffa at 12 (disguised-bot fill uses the existing `_get_casual_elite_bot_diff()` casual smurf logic — no separate bot pool).
+  - `player_location` records `kind="bigffa"` for real players in the room; spectate routing (`/ws/game?mode=spectate&target=...`) recognises the new kind and resolves back to `bigffa_room`.
+  - All `in_match` presence-check tuples (leaderboard row, friends card, admin dashboard) updated to include `"bigffa"` alongside `"casual"`.
+  - New WS branch: `mode=bigffa` routes straight to `bigffa_room` — no queue involvement, no ranked side effects, no party requirement.
+- **Frontend**:
+  - New "12P FFA" button in `/app/frontend/src/pages/Lobby.jsx` (bright orange `#FF7A00`, `Swords` icon, `data-testid="lobby-bigffa-button"`) placed between RANKED MATCH and PRACTICE. Disabled while the player is in the Quick Match or Ranked queue (same guard as PRACTICE).
+  - Click handler `startBigFfa` fires the same match-loading overlay + navigation as party/ranked entry (`navigateToMatch(nav, "/play?mode=bigffa", ...)`).
+  - `/app/frontend/src/pages/Game.jsx` accepts `mode=bigffa` alongside the existing routes and passes it verbatim to the WS URL.
+- **Tests** (`/app/backend/tests/test_bigffa_mode.py`, 4/4 passing):
+  - `bigffa_room` is configured with `is_bigffa=True`, `game_mode="ffa"`, `is_ranked=False`, `bots_target_size=12`.
+  - `_maintain_population` reads `bots_target_size` on the room.
+  - WS `/api/ws/game?mode=bigffa` returns a `welcome` payload with `game_mode="ffa"` + `is_ranked=False` + `is_practice=False`.
+  - Missing `?token=` param results in a rejected socket (no welcome fires).
+- **Verified end-to-end**:
+  - Preview lobby screenshot: orange "12P FFA" button visible between RANKED MATCH and PRACTICE.
+  - Clicking the button navigates to `/play?mode=bigffa` and drops the player into an active 12-combatant arena — screenshot shows QUICK 1:51 timer (matching 120s match_duration), 25/25 ammo, HP 52, and a live kill feed with 5 entries from disguised bots (BlitzReaper, QwiKshot, ShadowKnife, PixelPunk, redhatcat, x_zenith_x).
+  - Manual WS smoke test confirmed the room fills to exactly 12 players (1 real + 11 disguised bots).

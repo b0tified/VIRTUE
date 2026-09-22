@@ -1138,6 +1138,7 @@ async def on_startup():
     asyncio.create_task(ranked_room.run())
     asyncio.create_task(practice_room.run())
     asyncio.create_task(practice_tdm_room.run())
+    asyncio.create_task(bigffa_room.run())
     asyncio.create_task(matchmaker_loop())
     asyncio.create_task(season_loop())
     asyncio.create_task(seeded_climb_loop())
@@ -1737,7 +1738,7 @@ async def leaderboard():
             match_kind = None
         else:
             loc = player_location(uid)
-            in_match = loc is not None and loc.get("kind") in ("casual", "ranked", "party")
+            in_match = loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party")
             match_kind = loc.get("kind") if loc else None
             online = is_online(uid)
         rows.append({
@@ -4187,7 +4188,10 @@ class GameRoom:
         if self.game_mode == "tdm":
             target_total = TDM_TEAM_SIZE * 2
         else:
-            target_total = FFA_LOBBY_SIZE
+            # `bots_target_size` lets specific FFA rooms (e.g. the dedicated
+            # 12-player Big FFA room) opt out of the default 4-player lobby
+            # target while still using the same fill/despawn logic.
+            target_total = int(getattr(self, "bots_target_size", None) or FFA_LOBBY_SIZE)
         combat = [p for p in self.players.values() if not getattr(p, "is_spectator", False)]
         n = len(combat)
         if n > target_total:
@@ -4380,6 +4384,8 @@ class GameRoom:
                 kind = "party"
             elif getattr(self, "is_ranked_bot", False):
                 kind = "ranked"
+            elif getattr(self, "is_bigffa", False):
+                kind = "bigffa"
             PLAYER_LOCATION[player.user_id] = {
                 "kind": kind,
                 "party_id": getattr(self, "party_id", None),
@@ -6688,6 +6694,17 @@ practice_room.is_practice = True
 practice_tdm_room = GameRoom(is_ranked=False, match_duration=99999.0, game_mode="tdm")
 practice_tdm_room.is_practice = True
 
+# 12-player Big FFA — its own dedicated casual room, 2-minute matches so
+# the deathmatch has room to breathe with 12 combatants. Not tied to the
+# quick-match matchmaker or the ranked queue: players connect directly
+# via `?mode=bigffa` from the lobby's dedicated button. `bots_target_size`
+# overrides the default FFA_LOBBY_SIZE inside `_maintain_population` so
+# the room fills to 12 with disguised bots when solo/duo players hop in.
+BIGFFA_LOBBY_SIZE = 12
+bigffa_room = GameRoom(is_ranked=False, match_duration=120.0)
+bigffa_room.is_bigffa = True
+bigffa_room.bots_target_size = BIGFFA_LOBBY_SIZE
+
 # Offline-vs-AI: one private room per user, spawned on demand.
 OFFLINE_ROOMS: Dict[str, "GameRoom"] = {}
 OFFLINE_ROOM_TASKS: Dict[str, asyncio.Task] = {}
@@ -8081,7 +8098,7 @@ def _friend_card(u: dict) -> dict:
         "banner_color": int(u.get("banner_color", 0) or 0),
         "banner_animated": bool(u.get("banner_animated", False)),
         "online": is_online(uid),
-        "in_match": loc is not None and loc.get("kind") in ("casual", "ranked", "party", "offline"),
+        "in_match": loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party", "offline"),
         "match_kind": loc.get("kind") if loc else None,
         "in_queue": in_queue,
         "queue_tier": queue_tier,
@@ -9900,7 +9917,7 @@ async def spectate_info(username: str, _user: dict = Depends(get_current_user)):
     return {
         "username": u.get("username", ""),
         "online": is_online(str(u["_id"])),
-        "in_match": loc is not None and loc.get("kind") in ("casual", "ranked", "party", "offline"),
+        "in_match": loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party", "offline"),
         "match_kind": loc.get("kind") if loc else None,
     }
 
@@ -10159,6 +10176,13 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
             await websocket.close(code=4400)
             return
         room = await get_or_create_party_room(party_id)
+    elif mode == "bigffa":
+        # 12-player FFA — dedicated shared room, not routed through the
+        # casual matchmaker or the ranked queue. Any authenticated player
+        # can hop straight in from the lobby button. `_maintain_population`
+        # tops the room up to 12 with disguised bots so a solo joiner still
+        # gets a full lobby.
+        room = bigffa_room
     elif mode == "spectate":
         # Spectate a friend's match: find their current room and join read-only.
         if not target:
@@ -10175,6 +10199,8 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
         kind = loc.get("kind")
         if kind == "casual":
             room = game_room
+        elif kind == "bigffa":
+            room = bigffa_room
         elif kind == "ranked":
             # Real-vs-real ranked room; ranked-bot rooms are private — match by per-user key.
             bot_key = loc.get("ranked_bot_key")
@@ -10470,7 +10496,7 @@ async def leaderboard_friends(user: dict = Depends(get_current_user)):
         uid = str(u["_id"])
         username = u.get("username", u.get("email", "anon"))
         loc = player_location(uid)
-        in_match = loc is not None and loc.get("kind") in ("casual", "ranked", "party")
+        in_match = loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party")
         rows.append({
             "id": uid,
             "username": username,

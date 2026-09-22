@@ -39,6 +39,8 @@ export default function Game() {
     ? "practice"
     : rawMode === "offline"
     ? "offline"
+    : rawMode === "bigffa"
+    ? "bigffa"
     : rawMode === "party" && partyId
     ? "party"
     : "casual";

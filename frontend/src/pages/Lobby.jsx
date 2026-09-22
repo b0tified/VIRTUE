@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -445,6 +445,17 @@ export default function Lobby() {
     try { audioBus.playQueueStart(); } catch {}
   };
 
+  // 12-player FFA — direct WS join, no matchmaker. The dedicated
+  // `bigffa_room` on the backend tops itself up to 12 with disguised
+  // bots, so a solo click still drops the player into a full lobby.
+  // Deliberately does NOT touch the ranked queue or the quick-match
+  // queue: this is its own thing, per user request.
+  const startBigFfa = () => {
+    if (casualInQueue || !!queueState) return;
+    try { audioBus.playQueueStart(); } catch {}
+    navigateToMatch(nav, "/play?mode=bigffa", { mode: "bigffa", game_mode: "ffa" });
+  };
+
   const cancelQuickQueue = async () => {
     await queueCtx?.cancelCasual();
   };
@@ -858,6 +869,23 @@ export default function Lobby() {
                   ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...")
                   : "RANKED MATCH"}
               </span>
+            </button>
+            {/* 12-player FFA — its own dedicated mode. Not connected to
+                Quick Match or Ranked; drops the player straight into a
+                shared 12-player deathmatch room with disguised-bot fill. */}
+            <button
+              type="button"
+              onClick={startBigFfa}
+              disabled={casualInQueue || !!queueState || (party && party.leader_id !== user?.id)}
+              className="btn-pow bg-[#FF7A00] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+              data-testid="lobby-bigffa-button"
+              title={
+                casualInQueue ? "Cancel Quick Match queue to play 12P FFA"
+                : queueState ? "Cancel Ranked queue to play 12P FFA"
+                : undefined
+              }
+            >
+              <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
             </button>
             {/* Combined PRACTICE button — opens the map/mode selector
                 which lets the user pick between RANGE (no enemies) and
