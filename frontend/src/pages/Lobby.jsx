@@ -92,6 +92,7 @@ export default function Lobby() {
   // Ranked, Practice) whenever the 12P FFA queue is active.
   const bigffaQueueState = queueCtx?.bigffaQueueState ?? null;
   const bigffaWaitSec = queueCtx?.bigffaWaitSec ?? 0;
+  const bigffaMatchFoundSec = queueCtx?.bigffaMatchFoundSec ?? null;
   const bigffaInQueue = !!(bigffaQueueState && (bigffaQueueState.in_queue || bigffaQueueState.matched));
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
@@ -1246,6 +1247,82 @@ export default function Lobby() {
                   <X size={16} strokeWidth={3} /> LEAVE QUEUE
                 </span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 12P FFA queue toast — mirrors the Quick Match toast but in
+          the orange 12P palette, and shows a giant 3-2-1 countdown
+          when matched (mirrors the Ranked "Match Found!" overlay). */}
+      {bigffaInQueue && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="bigffa-queue-toast">
+          <div className="card-pow p-0 overflow-hidden">
+            <div
+              className="px-4 py-2 flex items-center gap-2 text-white"
+              style={{ background: bigffaQueueState?.matched ? "#06A35F" : "#FF7A00" }}
+            >
+              {bigffaQueueState?.matched ? (
+                <Trophy size={18} strokeWidth={3} />
+              ) : (
+                <Loader2 size={18} strokeWidth={3} className="animate-spin" />
+              )}
+              <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="bigffa-queue-header">
+                {bigffaQueueState?.matched ? "Match Found!" : "Searching · 12P FFA"}
+              </span>
+              {!bigffaQueueState?.matched && (
+                <button
+                  onClick={() => queueCtx?.cancelBigffa?.()}
+                  className="font-anton hover:opacity-80 ml-1"
+                  data-testid="bigffa-queue-cancel"
+                  title="Cancel"
+                >
+                  <X size={16} strokeWidth={3} />
+                </button>
+              )}
+            </div>
+            <div className="px-4 py-3 bg-white text-center">
+              {bigffaQueueState?.matched ? (
+                <div data-testid="bigffa-match-found">
+                  <div
+                    className="font-display text-8xl text-[#06A35F] leading-none tabular-nums animate-pulse"
+                    data-testid="bigffa-match-found-countdown"
+                  >
+                    {bigffaMatchFoundSec ?? 3}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="font-display text-6xl leading-none tabular-nums text-[#FF7A00]"
+                  data-testid="bigffa-queue-timer"
+                >
+                  {bigffaWaitSec}
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+                <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#FF7A00] text-black flex items-center gap-1">
+                  <Swords size={12} strokeWidth={3} /> 12P FFA
+                </div>
+              </div>
+              {!bigffaQueueState?.matched && Number.isFinite(bigffaQueueState?.estimated_wait_seconds) && (
+                <div
+                  className="mt-2 font-anton uppercase text-[11px] tracking-widest text-neutral-500"
+                  data-testid="bigffa-queue-eta"
+                >
+                  Est. wait <span className="text-[#FF7A00] tabular-nums">~{bigffaQueueState.estimated_wait_seconds}s</span>
+                </div>
+              )}
+              {!bigffaQueueState?.matched && (
+                <button
+                  onClick={() => queueCtx?.cancelBigffa?.()}
+                  className="mt-3 btn-pow bg-[#E62429] text-white w-full [&]:py-2 [&]:text-sm"
+                  data-testid="bigffa-queue-leave-button"
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <X size={16} strokeWidth={3} /> LEAVE QUEUE
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>

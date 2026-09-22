@@ -453,9 +453,15 @@ export function QueueProvider({ children }) {
   // ─────────────────────────────────────────────────────────────────────
   const [bigffaQueueState, setBigffaQueueState] = useState(null);
   const [bigffaWaitSec, setBigffaWaitSec] = useState(0);
+  // 3-2-1 countdown counterpart to ranked's `matchFoundSec` — populated
+  // the instant the queue matches and ticked down each second. The
+  // queue toast reads this to swap its timer for the giant countdown
+  // digit before the client nav-flips to /play.
+  const [bigffaMatchFoundSec, setBigffaMatchFoundSec] = useState(null);
   const bigffaJoinedAtRef = useRef(0);
   const bigffaPollRef = useRef(null);
   const bigffaLocalRef = useRef(null);
+  const bigffaMatchTimerRef = useRef(null);
   const bigffaLockedEtaRef = useRef(null);
   const bigffaJoiningRef = useRef(false);
   const bigffaMatchedRef = useRef(false);
@@ -465,6 +471,7 @@ export function QueueProvider({ children }) {
   const stopBigffa = useCallback(() => {
     if (bigffaPollRef.current) { clearInterval(bigffaPollRef.current); bigffaPollRef.current = null; }
     if (bigffaLocalRef.current) { clearInterval(bigffaLocalRef.current); bigffaLocalRef.current = null; }
+    if (bigffaMatchTimerRef.current) { clearInterval(bigffaMatchTimerRef.current); bigffaMatchTimerRef.current = null; }
   }, []);
 
   const joinBigffa = useCallback(async () => {
@@ -503,17 +510,31 @@ export function QueueProvider({ children }) {
             audioBus.matchFound();
             setBigffaQueueState({ in_queue: false, matched: true });
             bigffaLockedEtaRef.current = null;
-            try {
-              window.dispatchEvent(
-                new CustomEvent("virtue-match-loading", { detail: { mode: "bigffa" } }),
-              );
-            } catch {}
-            setTimeout(() => {
-              nav("/play?mode=bigffa", { replace: true, state: { fromLobby: true } });
-              setBigffaQueueState(null);
-              bigffaJoinedAtRef.current = 0;
-              setBigffaWaitSec(0);
-            }, 1200);
+            // 3-2-1 ceremonial countdown — mirrors the ranked "Match
+            // Found!" overlay. Fires the loading event + nav on 0.
+            setBigffaMatchFoundSec(3);
+            let sec = 3;
+            bigffaMatchTimerRef.current = setInterval(() => {
+              sec -= 1;
+              if (sec <= 0) {
+                clearInterval(bigffaMatchTimerRef.current);
+                bigffaMatchTimerRef.current = null;
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent("virtue-match-loading", { detail: { mode: "bigffa" } }),
+                  );
+                } catch {}
+                setTimeout(() => {
+                  nav("/play?mode=bigffa", { replace: true, state: { fromLobby: true } });
+                  setBigffaMatchFoundSec(null);
+                  setBigffaQueueState(null);
+                  bigffaJoinedAtRef.current = 0;
+                  setBigffaWaitSec(0);
+                }, 1200);
+              } else {
+                setBigffaMatchFoundSec(sec);
+              }
+            }, 1000);
           } else if (!s.in_queue) {
             bigffaMissesRef.current += 1;
             if (bigffaMissesRef.current >= 10) {
@@ -546,6 +567,7 @@ export function QueueProvider({ children }) {
     bigffaJoinedAtRef.current = 0;
     setBigffaWaitSec(0);
     setBigffaQueueState(null);
+    setBigffaMatchFoundSec(null);
     bigffaLockedEtaRef.current = null;
     bigffaMatchedRef.current = false;
     bigffaMissesRef.current = 0;
@@ -559,7 +581,8 @@ export function QueueProvider({ children }) {
     <QueueContext.Provider value={{
       queueState, waitSec, matchFoundSec, joinRanked, cancelRanked,
       casualQueueState, casualWaitSec, joinCasual, cancelCasual,
-      bigffaQueueState, bigffaWaitSec, joinBigffa, cancelBigffa,
+      bigffaQueueState, bigffaWaitSec, bigffaMatchFoundSec,
+      joinBigffa, cancelBigffa,
     }}>
       {children}
     </QueueContext.Provider>

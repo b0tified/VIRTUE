@@ -2243,3 +2243,10 @@ Two quality-of-life changes shipped together.
 - **Verified end-to-end** in preview:
   - Screenshot 1 (lobby, queued): button reads "CANCEL 12P FFA 00:02", timer counts up live
   - Screenshot 2 (matched): 12s later the client auto-navigated to `/play?mode=bigffa` and dropped into the 12-player arena (VIRTUE outdoor map, QUICK 1:56 timer, AK-47 25/25 ammo, 52 HP, visible enemy player "KryptOnite × RogueByte" indicator top-right)
+
+
+### 2026-02-27 (later¹⁸) — 12P FFA gets a proper queue toast + 3-2-1 overlay
+- **User request**: Mirror the queue box that ranked and quick match have, and mirror the ranked 3-2-1 countdown overlay so the 12P FFA drop-in feels ceremonial.
+- **QueueContext.jsx**: Added `bigffaMatchFoundSec` state alongside `bigffaWaitSec`. Matched-poll handler now runs a 3-2-1 `setInterval` identical to ranked — decrementing each second, firing the `virtue-match-loading` event on 0, and navigating to `/play?mode=bigffa` after the 1.2s pre-nav hold. `stopBigffa` and `cancelBigffa` clear the timer + reset the countdown state.
+- **Lobby.jsx**: New `bigffa-queue-toast` component (fixed top-center pill) — mirrors the Quick Match toast layout but in the 12P orange (#FF7A00) with a `Swords` chip. When `bigffaQueueState.matched` flips true, the header swaps to green "MATCH FOUND!" (Trophy icon) and the timer number is replaced with the animated `text-8xl` countdown digit reading `bigffaMatchFoundSec` (identical treatment to ranked's QueueOverlay). Same LEAVE QUEUE button + ETA pill as casual.
+- **Verified end-to-end** in preview: SEARCHING toast shows orange with live counter, waits ~13s for bot-fill dispatch, flips to green "MATCH FOUND!" with 3-2-1 digit → navigates to /play?mode=bigffa. Screenshot confirms the ceremonial overlay renders correctly.
