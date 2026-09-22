@@ -444,10 +444,122 @@ export function QueueProvider({ children }) {
 
   useEffect(() => () => stopCasual(), [stopCasual]);
 
+  // ─────────────────────────────────────────────────────────────────────
+  // BigFFA (12-player FFA) queue — mirrors the casual queue's plumbing
+  // so the client's poll/cancel/matched flow is identical. The backend
+  // pools queued players and dispatches everyone at once into the
+  // shared `bigffa_room` when either 12 humans have queued or the
+  // 12-second hold timer expires. See `/queue/bigffa` in server.py.
+  // ─────────────────────────────────────────────────────────────────────
+  const [bigffaQueueState, setBigffaQueueState] = useState(null);
+  const [bigffaWaitSec, setBigffaWaitSec] = useState(0);
+  const bigffaJoinedAtRef = useRef(0);
+  const bigffaPollRef = useRef(null);
+  const bigffaLocalRef = useRef(null);
+  const bigffaLockedEtaRef = useRef(null);
+  const bigffaJoiningRef = useRef(false);
+  const bigffaMatchedRef = useRef(false);
+  const bigffaMissesRef = useRef(0);
+  const bigffaCancelGuardUntilRef = useRef(0);
+
+  const stopBigffa = useCallback(() => {
+    if (bigffaPollRef.current) { clearInterval(bigffaPollRef.current); bigffaPollRef.current = null; }
+    if (bigffaLocalRef.current) { clearInterval(bigffaLocalRef.current); bigffaLocalRef.current = null; }
+  }, []);
+
+  const joinBigffa = useCallback(async () => {
+    if (bigffaJoiningRef.current || bigffaPollRef.current) {
+      return { ok: false, error: "Already queued" };
+    }
+    bigffaJoiningRef.current = true;
+    try {
+      const { data } = await api.post("/queue/bigffa");
+      stopBigffa();
+      bigffaMatchedRef.current = false;
+      bigffaMissesRef.current = 0;
+      bigffaJoinedAtRef.current = Date.now();
+      bigffaLockedEtaRef.current = Number.isFinite(data.estimated_wait_seconds)
+        ? data.estimated_wait_seconds
+        : (data.bot_fill_seconds || 12);
+      setBigffaQueueState({
+        in_queue: true,
+        matched: false,
+        bot_fill_seconds: data.bot_fill_seconds || 12,
+        estimated_wait_seconds: bigffaLockedEtaRef.current,
+      });
+      setBigffaWaitSec(0);
+      bigffaLocalRef.current = setInterval(() => {
+        setBigffaWaitSec(Math.max(0, Math.floor((Date.now() - bigffaJoinedAtRef.current) / 1000)));
+      }, 250);
+      bigffaPollRef.current = setInterval(async () => {
+        try {
+          const { data: s } = await api.get("/queue/bigffa");
+          if (Date.now() < bigffaCancelGuardUntilRef.current) return;
+          if (bigffaMatchedRef.current) return;
+          if (s.matched) {
+            bigffaMatchedRef.current = true;
+            stopBigffa();
+            bigffaCancelGuardUntilRef.current = Date.now() + 15000;
+            audioBus.matchFound();
+            setBigffaQueueState({ in_queue: false, matched: true });
+            bigffaLockedEtaRef.current = null;
+            try {
+              window.dispatchEvent(
+                new CustomEvent("virtue-match-loading", { detail: { mode: "bigffa" } }),
+              );
+            } catch {}
+            setTimeout(() => {
+              nav("/play?mode=bigffa", { replace: true, state: { fromLobby: true } });
+              setBigffaQueueState(null);
+              bigffaJoinedAtRef.current = 0;
+              setBigffaWaitSec(0);
+            }, 1200);
+          } else if (!s.in_queue) {
+            bigffaMissesRef.current += 1;
+            if (bigffaMissesRef.current >= 10) {
+              bigffaCancelGuardUntilRef.current = Date.now() + 6000;
+              stopBigffa();
+              bigffaJoinedAtRef.current = 0;
+              setBigffaWaitSec(0);
+              setBigffaQueueState(null);
+              bigffaMissesRef.current = 0;
+              bigffaLockedEtaRef.current = null;
+            }
+          } else {
+            bigffaMissesRef.current = 0;
+          }
+        } catch {
+          bigffaMissesRef.current += 1;
+        }
+      }, 1000);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.response?.data?.detail || e.message };
+    } finally {
+      bigffaJoiningRef.current = false;
+    }
+  }, [nav, stopBigffa]);
+
+  const cancelBigffa = useCallback(async () => {
+    bigffaCancelGuardUntilRef.current = Date.now() + 10000;
+    stopBigffa();
+    bigffaJoinedAtRef.current = 0;
+    setBigffaWaitSec(0);
+    setBigffaQueueState(null);
+    bigffaLockedEtaRef.current = null;
+    bigffaMatchedRef.current = false;
+    bigffaMissesRef.current = 0;
+    bigffaJoiningRef.current = false;
+    try { await api.delete("/queue/bigffa"); } catch {}
+  }, [stopBigffa]);
+
+  useEffect(() => () => stopBigffa(), [stopBigffa]);
+
   return (
     <QueueContext.Provider value={{
       queueState, waitSec, matchFoundSec, joinRanked, cancelRanked,
       casualQueueState, casualWaitSec, joinCasual, cancelCasual,
+      bigffaQueueState, bigffaWaitSec, joinBigffa, cancelBigffa,
     }}>
       {children}
     </QueueContext.Provider>

@@ -121,3 +121,94 @@ async def test_bigffa_rejects_missing_token():
             websockets.exceptions.InvalidHandshake):
         pass
     assert not saw_welcome, "auth bypass: bigffa accepted anonymous WS"
+
+
+# --- Queue endpoints (Feb-2026, second pass) -----------------------
+
+def test_bigffa_queue_join_returns_eta():
+    """POST /queue/bigffa enqueues the caller and returns bot_fill_seconds
+    + estimated_wait_seconds so the client can pin an ETA pill."""
+    tok = _register(uuid.uuid4().hex[:6])
+    hdr = {"Authorization": f"Bearer {tok}"}
+    # Clean any prior state.
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    r = requests.post(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["ok"] is True
+    assert int(j["bot_fill_seconds"]) == 12
+    assert 4 <= int(j["estimated_wait_seconds"]) <= 12
+    assert int(j["queue_size"]) >= 1
+    # Cleanup so we don't leave a match matched.
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+
+
+def test_bigffa_queue_poll_reflects_in_queue_state():
+    """GET /queue/bigffa returns in_queue:true immediately after join and
+    exposes wait_seconds + queue_position so the toast can render."""
+    tok = _register(uuid.uuid4().hex[:6])
+    hdr = {"Authorization": f"Bearer {tok}"}
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    requests.post(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    r = requests.get(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["in_queue"] is True
+    assert j["matched"] is False
+    assert "wait_seconds" in j
+    assert "queue_position" in j
+    assert int(j["bot_fill_seconds"]) == 12
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+
+
+def test_bigffa_queue_matches_after_bot_fill_timeout():
+    """After BIGFFA_BOT_FILL_SEC (12s) the matchmaker dispatches the
+    entire queue with matched:true + bigffa:true so the client routes
+    to /play?mode=bigffa."""
+    tok = _register(uuid.uuid4().hex[:6])
+    hdr = {"Authorization": f"Bearer {tok}"}
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    requests.post(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    # Poll for up to 20s waiting for matched dispatch.
+    matched = False
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        r = requests.get(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+        j = r.json()
+        if j.get("matched"):
+            assert j.get("bigffa") is True
+            assert "match_id" in j
+            matched = True
+            break
+        time.sleep(1)
+    # Clean up matched state.
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    assert matched, "bigffa queue never dispatched after 20s"
+
+
+def test_bigffa_queue_leave_clears_state():
+    """DELETE /queue/bigffa removes the entry — subsequent GETs report
+    in_queue:false."""
+    tok = _register(uuid.uuid4().hex[:6])
+    hdr = {"Authorization": f"Bearer {tok}"}
+    requests.post(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    r = requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    assert r.status_code == 200
+    r = requests.get(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+    j = r.json()
+    assert j["in_queue"] is False
+    assert j["matched"] is False
+
+
+def test_bigffa_queue_status_endpoint():
+    """GET /queue/bigffa/status returns live real-player count in the
+    room. Excludes the caller so a solo joiner in an otherwise-empty
+    room reads 0."""
+    tok = _register(uuid.uuid4().hex[:6])
+    hdr = {"Authorization": f"Bearer {tok}"}
+    r = requests.get(f"{LOCAL}/api/queue/bigffa/status", headers=hdr)
+    assert r.status_code == 200
+    j = r.json()
+    assert "real_players" in j
+    assert "total_players" in j
+    assert int(j["real_players"]) >= 0

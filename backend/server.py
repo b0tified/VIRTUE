@@ -6872,6 +6872,13 @@ RANKED_QUEUE: Dict[int, List[dict]] = {i: [] for i in range(len(RANK_TIERS))}
 # each entry is `{user_id?, user_ids?, username?, usernames?, joined_at, is_party?}`.
 CASUAL_QUEUE: List[dict] = []
 CASUAL_BOT_FILL_SEC = 10.0
+
+# BigFFA queue — same pattern as CASUAL_QUEUE but drops the whole cohort
+# into the shared `bigffa_room` at once. We hold queued players up to
+# BIGFFA_BOT_FILL_SEC seconds to try and group real humans together;
+# after that timeout the room bot-fills the remaining slots on entry.
+BIGFFA_QUEUE: List[dict] = []
+BIGFFA_BOT_FILL_SEC = 12.0
 MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 
 # Rolling window (last 10) of how long each match took to fill, per tier.
@@ -6985,6 +6992,36 @@ async def matchmaker_loop():
                         "Casual bot-filled entry=%s (%d users) after %ds queue tdm=%s",
                         ",".join(a.get("usernames") or [a.get("username", "?")]),
                         len(a_uids), int(CASUAL_BOT_FILL_SEC), bot_tdm,
+                    )
+                # BigFFA queue — everyone lands in the shared `bigffa_room`.
+                # Dispatch the whole queue at once when either (a) the
+                # queue has hit the room's target size (12 real humans) or
+                # (b) the oldest entry has been waiting BIGFFA_BOT_FILL_SEC.
+                # The room's own `_maintain_population` handles bot-fill
+                # once players arrive, so we don't need a separate bot
+                # branch — every dispatch is functionally the same.
+                if BIGFFA_QUEUE and (
+                    len(BIGFFA_QUEUE) >= BIGFFA_LOBBY_SIZE
+                    or (now - BIGFFA_QUEUE[0]["joined_at"]) >= BIGFFA_BOT_FILL_SEC
+                ):
+                    mid = uuid.uuid4().hex[:10]
+                    dispatched: List[str] = []
+                    while BIGFFA_QUEUE:
+                        entry = BIGFFA_QUEUE.pop(0)
+                        uids = entry.get("user_ids") or (
+                            [entry["user_id"]] if entry.get("user_id") else []
+                        )
+                        for uid in uids:
+                            MATCHED_USERS[uid] = {
+                                "match_id": mid,
+                                "bigffa": True,
+                                "matched_at": now,
+                            }
+                            dispatched.append(uid)
+                        RECENT_MATCH_WAITS[0].append(now - entry["joined_at"])
+                    logger.info(
+                        "BigFFA dispatched %d players into bigffa_room mid=%s",
+                        len(dispatched), mid,
                     )
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
@@ -7866,6 +7903,115 @@ def _remove_user_from_casual_queue(user_id: str) -> Optional[dict]:
         keep.append(e)
     CASUAL_QUEUE[:] = keep
     return removed
+
+
+def _remove_user_from_bigffa_queue(user_id: str) -> Optional[dict]:
+    """Same shape as _remove_user_from_casual_queue but for BIGFFA_QUEUE."""
+    removed: Optional[dict] = None
+    keep: List[dict] = []
+    for e in BIGFFA_QUEUE:
+        uids = e.get("user_ids") or ([e.get("user_id")] if e.get("user_id") else [])
+        if user_id in uids:
+            if removed is None:
+                removed = e
+            continue
+        keep.append(e)
+    BIGFFA_QUEUE[:] = keep
+    return removed
+
+
+# BigFFA queue endpoints — mirror the casual queue's shape so the client
+# can reuse its poll/cancel/ETA-lock plumbing. Doesn't touch CASUAL_QUEUE
+# or the ranked queue; dispatches everyone in the queue into `bigffa_room`
+# once the target size hits 12 or the 12s hold timer elapses.
+@api.post("/queue/bigffa")
+async def queue_bigffa_join(user: dict = Depends(get_current_user)):
+    """Enqueue the caller for a 12-player FFA lobby. Solo-only (parties
+    should use their own party lobby). Yanks any existing casual/bigffa
+    entry so a player can only be in one queue at a time."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        _remove_user_from_casual_queue(user_id)
+        _remove_user_from_bigffa_queue(user_id)
+        MATCHED_USERS.pop(user_id, None)
+        eta = random.uniform(4.0, 12.0)
+        BIGFFA_QUEUE.append({
+            "user_id": user_id,
+            "user_ids": [user_id],
+            "username": user.get("username", "?"),
+            "usernames": [user.get("username", "?")],
+            "joined_at": time.time(),
+            "estimated_wait_seconds": int(round(eta)),
+        })
+    return {
+        "ok": True,
+        "bot_fill_seconds": int(BIGFFA_BOT_FILL_SEC),
+        "estimated_wait_seconds": int(round(eta)),
+        "queue_size": len(BIGFFA_QUEUE),
+    }
+
+
+@api.get("/queue/bigffa")
+async def queue_bigffa_state(user: dict = Depends(get_current_user)):
+    """Poll BigFFA queue state — mirrors /queue/casual GET so the client's
+    queue polling code can be reused verbatim. `matched: true` carries a
+    `bigffa: true` marker so the client routes to /play?mode=bigffa
+    instead of the casual room."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        match = MATCHED_USERS.get(user_id)
+        if match and match.get("bigffa"):
+            return {
+                "in_queue": False,
+                "matched": True,
+                "match_id": match["match_id"],
+                "bigffa": True,
+                "bot_fill_seconds": int(BIGFFA_BOT_FILL_SEC),
+            }
+        for idx, e in enumerate(BIGFFA_QUEUE):
+            uids = e.get("user_ids") or ([e.get("user_id")] if e.get("user_id") else [])
+            if user_id in uids:
+                return {
+                    "in_queue": True,
+                    "matched": False,
+                    "wait_seconds": int(time.time() - e["joined_at"]),
+                    "queue_position": idx + 1,
+                    "queue_size": len(BIGFFA_QUEUE),
+                    "bot_fill_seconds": int(BIGFFA_BOT_FILL_SEC),
+                    "estimated_wait_seconds": int(e.get("estimated_wait_seconds", int(BIGFFA_BOT_FILL_SEC))),
+                }
+        return {"in_queue": False, "matched": False, "queue_size": len(BIGFFA_QUEUE)}
+
+
+@api.delete("/queue/bigffa")
+async def queue_bigffa_leave(user: dict = Depends(get_current_user)):
+    """Leave the BigFFA queue and clear any stale matched flag."""
+    user_id = str(user["_id"])
+    async with QUEUE_LOCK:
+        _remove_user_from_bigffa_queue(user_id)
+        # Only nuke MATCHED_USERS if this was a bigffa match — leaving
+        # this queue must never accidentally cancel a casual/ranked match
+        # that just resolved.
+        m = MATCHED_USERS.get(user_id)
+        if m and m.get("bigffa"):
+            MATCHED_USERS.pop(user_id, None)
+    return {"ok": True}
+
+
+@api.get("/queue/bigffa/status")
+async def queue_bigffa_status(user: dict = Depends(get_current_user)):
+    """Live real-player count in `bigffa_room`. Used by the lobby
+    countdown to show "X PLAYER(S) FOUND" — excludes the caller so the
+    number reads as 'other humans present'."""
+    user_id = str(user["_id"])
+    real_count = 0
+    for p in bigffa_room.players.values():
+        if p.is_bot or getattr(p, "is_spectator", False):
+            continue
+        if p.user_id and str(p.user_id) == user_id:
+            continue
+        real_count += 1
+    return {"real_players": real_count, "total_players": len(bigffa_room.players)}
 
 
 @api.get("/queue/casual/status")

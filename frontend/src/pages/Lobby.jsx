@@ -86,6 +86,13 @@ export default function Lobby() {
   const casualQueueState = queueCtx?.casualQueueState ?? null;
   const casualWaitSec = queueCtx?.casualWaitSec ?? 0;
   const casualInQueue = !!(casualQueueState && (casualQueueState.in_queue || casualQueueState.matched));
+  // BigFFA queue — same shape as casualQueueState so the button can
+  // render its wait timer identically. `bigffaInQueue` is the guard used
+  // across the lobby to disable competing entry points (Quick Match,
+  // Ranked, Practice) whenever the 12P FFA queue is active.
+  const bigffaQueueState = queueCtx?.bigffaQueueState ?? null;
+  const bigffaWaitSec = queueCtx?.bigffaWaitSec ?? 0;
+  const bigffaInQueue = !!(bigffaQueueState && (bigffaQueueState.in_queue || bigffaQueueState.matched));
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
   const RANKED_MIN_LEVEL = 5;
@@ -445,15 +452,26 @@ export default function Lobby() {
     try { audioBus.playQueueStart(); } catch {}
   };
 
-  // 12-player FFA — direct WS join, no matchmaker. The dedicated
-  // `bigffa_room` on the backend tops itself up to 12 with disguised
-  // bots, so a solo click still drops the player into a full lobby.
-  // Deliberately does NOT touch the ranked queue or the quick-match
-  // queue: this is its own thing, per user request.
-  const startBigFfa = () => {
+  // 12-player FFA queue. Same UX pattern as Quick Match — click to
+  // enqueue, click again (label flips to "CANCEL 12P FFA") to leave.
+  // The backend groups queued players up to `BIGFFA_LOBBY_SIZE=12` and
+  // dispatches them into the shared bigffa_room together; if 12s pass
+  // without a full lobby, everyone in the queue is dispatched anyway
+  // and the room bot-fills the remaining slots on arrival.
+  const startBigFfa = async () => {
+    if (bigffaInQueue) {
+      await queueCtx?.cancelBigffa?.();
+      return;
+    }
+    // Block if the player is already in another queue — the server
+    // will yank prior entries anyway but this prevents a jarring UX.
     if (casualInQueue || !!queueState) return;
+    const r = await queueCtx?.joinBigffa?.();
+    if (r && !r.ok) {
+      alert("Failed to join queue: " + r.error);
+      return;
+    }
     try { audioBus.playQueueStart(); } catch {}
-    navigateToMatch(nav, "/play?mode=bigffa", { mode: "bigffa", game_mode: "ffa" });
   };
 
   const cancelQuickQueue = async () => {
@@ -828,10 +846,14 @@ export default function Lobby() {
             )}
             <button
               onClick={casualInQueue ? undefined : startQuickQueue}
-              disabled={casualInQueue || !!queueState || (party && party.leader_id !== user?.id)}
+              disabled={casualInQueue || !!queueState || bigffaInQueue || (party && party.leader_id !== user?.id)}
               className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
-              title={queueState && !casualInQueue ? "You're already in the ranked queue" : undefined}
+              title={
+                queueState && !casualInQueue ? "You're already in the ranked queue"
+                : bigffaInQueue ? "Cancel the 12P FFA queue to play Quick Match"
+                : undefined
+              }
             >
               <span className="flex items-center gap-3">
                 {casualInQueue ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
@@ -840,13 +862,14 @@ export default function Lobby() {
             </button>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
-              disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue}
+              disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue || bigffaInQueue}
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
               title={
                 rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
                 : rankedBanned ? `Ranked locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
                 : casualInQueue ? "You're already in the Quick Match queue"
+                : bigffaInQueue ? "Cancel the 12P FFA queue to play Ranked"
                 : undefined
               }
             >
@@ -870,22 +893,39 @@ export default function Lobby() {
                   : "RANKED MATCH"}
               </span>
             </button>
-            {/* 12-player FFA — its own dedicated mode. Not connected to
-                Quick Match or Ranked; drops the player straight into a
-                shared 12-player deathmatch room with disguised-bot fill. */}
+            {/* 12-player FFA — its own dedicated queue. Groups queued
+                players into the shared `bigffa_room`; if the queue
+                doesn't fill to 12 within 12s the whole cohort is
+                dispatched and the room bot-fills the rest. */}
             <button
               type="button"
               onClick={startBigFfa}
-              disabled={casualInQueue || !!queueState || (party && party.leader_id !== user?.id)}
-              className="btn-pow bg-[#FF7A00] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={
+                (!bigffaInQueue && (casualInQueue || !!queueState)) ||
+                (party && party.leader_id !== user?.id)
+              }
+              className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed ${
+                bigffaInQueue ? "bg-neutral-800 text-white" : "bg-[#FF7A00] text-black"
+              }`}
               data-testid="lobby-bigffa-button"
               title={
-                casualInQueue ? "Cancel Quick Match queue to play 12P FFA"
+                bigffaInQueue ? "Cancel 12P FFA queue"
+                : casualInQueue ? "Cancel Quick Match queue to play 12P FFA"
                 : queueState ? "Cancel Ranked queue to play 12P FFA"
                 : undefined
               }
             >
-              <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
+              {bigffaInQueue ? (
+                <span className="flex items-center gap-3">
+                  <Loader2 size={18} strokeWidth={3} className="animate-spin" />
+                  CANCEL 12P FFA
+                  <span className="ml-auto font-display text-xl tabular-nums" data-testid="lobby-bigffa-wait">
+                    {String(Math.floor(bigffaWaitSec / 60)).padStart(2, "0")}:{String(bigffaWaitSec % 60).padStart(2, "0")}
+                  </span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
+              )}
             </button>
             {/* Combined PRACTICE button — opens the map/mode selector
                 which lets the user pick between RANGE (no enemies) and

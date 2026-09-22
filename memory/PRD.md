@@ -2223,3 +2223,23 @@ Two quality-of-life changes shipped together.
   - Preview lobby screenshot: orange "12P FFA" button visible between RANKED MATCH and PRACTICE.
   - Clicking the button navigates to `/play?mode=bigffa` and drops the player into an active 12-combatant arena — screenshot shows QUICK 1:51 timer (matching 120s match_duration), 25/25 ammo, HP 52, and a live kill feed with 5 entries from disguised bots (BlitzReaper, QwiKshot, ShadowKnife, PixelPunk, redhatcat, x_zenith_x).
   - Manual WS smoke test confirmed the room fills to exactly 12 players (1 real + 11 disguised bots).
+
+
+### 2026-02-27 (later¹⁷) — 12P FFA gets a proper queue
+- **User request**: Make the 12-player lobby have a queue in the lobby like the other 2 modes.
+- **Backend** (`/app/backend/server.py`):
+  - New `BIGFFA_QUEUE: List[dict]` + `BIGFFA_BOT_FILL_SEC = 12.0` alongside the existing casual/ranked queue globals.
+  - Matchmaker loop now runs a BigFFA branch after the casual bot-fill block: when either (a) queue size ≥ BIGFFA_LOBBY_SIZE (12) or (b) oldest entry has waited BIGFFA_BOT_FILL_SEC, the whole queue is dispatched in a single batch — each user marked in MATCHED_USERS with `bigffa: True, match_id: <hex10>`. The bigffa_room's own `_maintain_population` then tops off any missing slots with disguised bots on arrival.
+  - Four new endpoints mirroring the casual queue's shape: `POST /queue/bigffa`, `GET /queue/bigffa`, `DELETE /queue/bigffa`, `GET /queue/bigffa/status`. All solo-only (no party handshake needed for this MVP). `POST` yanks any existing casual/bigffa entry so a caller can't be in two queues at once.
+- **Frontend**:
+  - `QueueContext.jsx`: new `bigffaQueueState`, `bigffaWaitSec`, `joinBigffa`, `cancelBigffa` following the exact same poll/cancel/matched pattern as casual — including the ETA-lock ref, the 15s cancel-guard on matched, and the 10-miss tolerance for transient in_queue:false blips. Matched signal dispatches a `virtue-match-loading` event with `detail.mode="bigffa"` and navigates to `/play?mode=bigffa` after the 1.2s pre-nav hold.
+  - `Lobby.jsx`: 12P FFA button now toggles between orange "12P FFA" and dark "CANCEL 12P FFA MM:SS" with a live `bigffaWaitSec` timer (mirrors the Quick Match label pattern). Quick Match and Ranked buttons are now disabled while `bigffaInQueue` is true, with tooltips explaining why.
+- **Tests** (`/app/backend/tests/test_bigffa_mode.py`, 9/9 passing — 4 original + 5 new):
+  - Join returns ok + bot_fill_seconds=12 + eta in [4..12] range
+  - Poll reflects in_queue:true with wait_seconds/queue_position immediately after join
+  - After 20s the queue dispatches with matched:true + bigffa:true + match_id
+  - DELETE clears the entry (subsequent GET reports in_queue:false)
+  - /status endpoint returns real_players + total_players
+- **Verified end-to-end** in preview:
+  - Screenshot 1 (lobby, queued): button reads "CANCEL 12P FFA 00:02", timer counts up live
+  - Screenshot 2 (matched): 12s later the client auto-navigated to `/play?mode=bigffa` and dropped into the 12-player arena (VIRTUE outdoor map, QUICK 1:56 timer, AK-47 25/25 ammo, 52 HP, visible enemy player "KryptOnite × RogueByte" indicator top-right)
