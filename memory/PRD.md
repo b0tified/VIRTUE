@@ -2250,3 +2250,26 @@ Two quality-of-life changes shipped together.
 - **QueueContext.jsx**: Added `bigffaMatchFoundSec` state alongside `bigffaWaitSec`. Matched-poll handler now runs a 3-2-1 `setInterval` identical to ranked — decrementing each second, firing the `virtue-match-loading` event on 0, and navigating to `/play?mode=bigffa` after the 1.2s pre-nav hold. `stopBigffa` and `cancelBigffa` clear the timer + reset the countdown state.
 - **Lobby.jsx**: New `bigffa-queue-toast` component (fixed top-center pill) — mirrors the Quick Match toast layout but in the 12P orange (#FF7A00) with a `Swords` chip. When `bigffaQueueState.matched` flips true, the header swaps to green "MATCH FOUND!" (Trophy icon) and the timer number is replaced with the animated `text-8xl` countdown digit reading `bigffaMatchFoundSec` (identical treatment to ranked's QueueOverlay). Same LEAVE QUEUE button + ETA pill as casual.
 - **Verified end-to-end** in preview: SEARCHING toast shows orange with live counter, waits ~13s for bot-fill dispatch, flips to green "MATCH FOUND!" with 3-2-1 digit → navigates to /play?mode=bigffa. Screenshot confirms the ceremonial overlay renders correctly.
+
+
+### 2026-02-27 (later¹⁹) — Spawn immunity, 12P FFA queue timing, weapon-board removal
+- **User requests**:
+  1. Make spawn immunity go away when moving — for bots and players — in every mode.
+  2. Make 12P FFA queue times 20-60 seconds.
+  3. Remove the weapon leaderboard.
+- **Backend** (`/app/backend/server.py`):
+  - **Spawn immunity (players)**: In the `input` message handler, after `player.x/z` are applied, any actual displacement (>0.02 units to ignore joystick jitter) burns `player.invuln_until` to 0. Applies universally — casual, ranked, bigffa, party, practice.
+  - **Spawn immunity (bots)**: Dropped the earlier `smart and self.is_ranked` carve-out on both the movement branch (line ~5737) and the fire branch (line ~5801). Every bot in every mode now loses immunity the moment it moves or fires.
+  - **BigFFA queue timing**: `BIGFFA_BOT_FILL_SEC` bumped from `12.0` → `60.0`; new `BIGFFA_ETA_MIN_SEC = 20.0` / `BIGFFA_ETA_MAX_SEC = 60.0` constants drive the per-join ETA pill sampled in `POST /queue/bigffa`. Matchmaker branch reads `BIGFFA_BOT_FILL_SEC` directly so the 60s hold + dispatch is automatic.
+  - **Weapon leaderboard removed**: Deleted `WEAPON_LEADERBOARD_KEYS` + `/api/leaderboard/weapons` endpoint (verified 404). The seed-bot hashing logic went with it.
+- **Frontend**:
+  - `QueueContext.jsx`: bot_fill_seconds fallback bumped from 12 → 60 to match backend defaults.
+  - `Leaderboard.jsx`: removed the WEAPON KINGS sub-tab, weapon-picker pills row, `WEAPON_TABS` constant, `weaponKey/weaponsData/weaponsLoading` state, weapon-fetch effect, weapon rendering block, and the "variant"/"hideStatus" props on `PlayerRow`. Sub-tab set is now just GLOBAL / FRIENDS. `Swords` import removed since nothing else on the page used it.
+- **Tests**:
+  - `tests/test_leaderboard_upgrades.py`: dropped the three `test_weapons_*` cases + the `WEAPON_KEYS` fixture.
+  - `tests/test_bigffa_mode.py`: `test_bigffa_queue_join_returns_eta` now asserts `bot_fill_seconds == 60` and `20 ≤ estimated_wait_seconds ≤ 60`; timeout test poll deadline bumped from 20s → 70s.
+  - `pytest tests/test_leaderboard_upgrades.py tests/test_bigffa_mode.py` → 12 passed.
+- **Verified**:
+  - curl `GET /api/leaderboard/weapons` → 404 (removed).
+  - curl `POST /api/queue/bigffa` → `{bot_fill_seconds:60, estimated_wait_seconds:23, ...}` — ETA in-range.
+  - Preview screenshot of `/leaderboard` shows only CURRENT SEASON / PAST SEASONS outer tabs and GLOBAL / FRIENDS inner tabs. No WEAPON KINGS chip anywhere.

@@ -9,8 +9,6 @@ import pytest
 
 LOCAL = "http://localhost:8001"
 
-WEAPON_KEYS = ["ak47", "sniper", "pistol", "laser", "katana"]
-
 
 def _register(suffix: str):
     """Register or login a throwaway account and return (token, user, uname)."""
@@ -83,42 +81,3 @@ def test_friends_leaderboard_reflects_added_friend():
         assert r.status_code == 200
         names = {row["username"].lower() for row in r.json()}
         assert expected.issubset(names), f"expected {expected} ⊆ {names}"
-
-
-# --- /leaderboard/weapons -------------------------------------------
-
-def test_weapons_leaderboard_shape():
-    """/leaderboard/weapons returns a dict keyed by every weapon slug,
-    each mapping to a list of ≤ 25 rows with the row fields the UI needs."""
-    r = requests.get(f"{LOCAL}/api/leaderboard/weapons")
-    assert r.status_code == 200, r.text
-    data = r.json()
-    assert isinstance(data, dict)
-    for w in WEAPON_KEYS:
-        assert w in data, f"weapon {w} missing from response"
-        rows = data[w]
-        assert isinstance(rows, list)
-        assert len(rows) <= 25
-        # Row-shape sanity on the top row.
-        if rows:
-            top = rows[0]
-            for field in ("username", "kills", "rank_points",
-                          "rank_tier", "rank_name", "rank_division", "is_seeded"):
-                assert field in top, f"missing {field} in {w} top row"
-            assert top["kills"] >= 1
-
-
-def test_weapons_leaderboard_sorted_desc():
-    """Each per-weapon list must be sorted by kills descending."""
-    r = requests.get(f"{LOCAL}/api/leaderboard/weapons")
-    assert r.status_code == 200
-    data = r.json()
-    for w, rows in data.items():
-        kills = [int(r.get("kills", 0)) for r in rows]
-        assert kills == sorted(kills, reverse=True), f"{w} not sorted desc: {kills}"
-
-
-def test_weapons_leaderboard_public():
-    """The weapons board is public — no auth header required."""
-    r = requests.get(f"{LOCAL}/api/leaderboard/weapons")
-    assert r.status_code == 200

@@ -5243,6 +5243,13 @@ class GameRoom:
             if not self.collides_obstacle(x, z):
                 player.x = x
                 player.z = z
+                # Spawn immunity is forfeited the moment the player
+                # actually moves. Any non-zero delta (`dist > 0.02`
+                # ignores idle joystick jitter) burns the 3s bubble so
+                # players can't push into fights invulnerable. Applies
+                # to every mode — casual, ranked, bigffa, party, practice.
+                if dist > 0.02 and player.invuln_until > time.time():
+                    player.invuln_until = 0.0
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
             if "ads" in msg:
@@ -5730,11 +5737,13 @@ class GameRoom:
                     bot.bot_strafe_t += 0.5  # flip strafe direction sooner
                 elif not z_ok:
                     bot.bot_strafe_t += 0.5
-                # Ranked bots forfeit spawn immunity the moment they start
-                # moving — players were complaining that fresh ranked
-                # bots could push into a fight invulnerable. Casual bots
-                # keep the 3s safety net so the lobby still feels chill.
-                if smart and self.is_ranked and bot.invuln_until > now_s and move_speed > 0:
+                # Bots forfeit spawn immunity the moment they actually
+                # start moving — universal across every game-mode (casual,
+                # ranked, bigffa, party, practice). Players used to complain
+                # that fresh bots could push into a fight invulnerable; the
+                # earlier ranked-only carve-out has been removed so casual
+                # and bigffa lobbies get the same fairness rule.
+                if bot.invuln_until > now_s and move_speed > 0:
                     bot.invuln_until = 0.0
 
             # --- Human-like jumping (ranked smart bots only) ----------------------
@@ -5797,8 +5806,8 @@ class GameRoom:
             in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
-                    # Firing also forfeits spawn immunity on ranked bots.
-                    if smart and self.is_ranked and bot.invuln_until > now_s:
+                    # Firing forfeits spawn immunity on all bots (all modes).
+                    if bot.invuln_until > now_s:
                         bot.invuln_until = 0.0
                     bot.last_shot_ms = now_ms
                     orig_yaw, orig_pitch = bot.yaw, bot.pitch
@@ -6877,8 +6886,14 @@ CASUAL_BOT_FILL_SEC = 10.0
 # into the shared `bigffa_room` at once. We hold queued players up to
 # BIGFFA_BOT_FILL_SEC seconds to try and group real humans together;
 # after that timeout the room bot-fills the remaining slots on entry.
+# The 60s window is intentionally longer than casual's 10s so a 12-player
+# lobby has a realistic shot at filling with humans before bots take over.
 BIGFFA_QUEUE: List[dict] = []
-BIGFFA_BOT_FILL_SEC = 12.0
+BIGFFA_BOT_FILL_SEC = 60.0
+# Range from which the per-join ETA pill is sampled. Wider than casual
+# because the target lobby size is 3× larger.
+BIGFFA_ETA_MIN_SEC = 20.0
+BIGFFA_ETA_MAX_SEC = 60.0
 MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 
 # Rolling window (last 10) of how long each match took to fill, per tier.
@@ -7934,7 +7949,7 @@ async def queue_bigffa_join(user: dict = Depends(get_current_user)):
         _remove_user_from_casual_queue(user_id)
         _remove_user_from_bigffa_queue(user_id)
         MATCHED_USERS.pop(user_id, None)
-        eta = random.uniform(4.0, 12.0)
+        eta = random.uniform(BIGFFA_ETA_MIN_SEC, BIGFFA_ETA_MAX_SEC)
         BIGFFA_QUEUE.append({
             "user_id": user_id,
             "user_ids": [user_id],
@@ -10661,134 +10676,6 @@ async def leaderboard_friends(user: dict = Depends(get_current_user)):
     return rows
 
 
-# Primary-weapon slugs surfaced on the Weapons leaderboard. Matches
-# WEAPON_CFG keys (excluding "katana" which is melee-only — we still
-# expose it for completeness). Order defines the tab order in the UI.
-WEAPON_LEADERBOARD_KEYS = ["ak47", "sniper", "pistol", "laser", "katana"]
-
-
-@api.get("/leaderboard/weapons")
-async def leaderboard_weapons():
-    """Per-weapon top-kills leaderboards. Aggregates real-player kills from
-    `match_history.kill_events` where the shooter was a human, then blends
-    in deterministic synthetic kill counts for the top ~60 seeded bots so
-    the board isn't empty in early seasons. Returns a dict keyed by weapon
-    slug — each value is a top-25 list sorted by kills desc."""
-    import hashlib
-    # 1) Real players — unwind kill_events and count kills per (shooter, weapon).
-    #    Group by user_id when present, fall back to username for older rows.
-    pipeline = [
-        {"$match": {"kill_events": {"$exists": True, "$ne": []}}},
-        {"$unwind": "$kill_events"},
-        {"$match": {
-            "kill_events.shooter_is_bot": {"$ne": True},
-            "kill_events.shooter_id": {"$ne": None},
-            "kill_events.weapon": {"$in": WEAPON_LEADERBOARD_KEYS},
-        }},
-        {"$group": {
-            "_id": {
-                "user_id": "$kill_events.shooter_id",
-                "weapon": "$kill_events.weapon",
-            },
-            "kills": {"$sum": 1},
-            "username": {"$last": "$kill_events.shooter_name"},
-        }},
-    ]
-    real_by_weapon: dict[str, dict[str, dict]] = {w: {} for w in WEAPON_LEADERBOARD_KEYS}
-    try:
-        async for row in db.match_history.aggregate(pipeline):
-            w = row["_id"]["weapon"]
-            uid = row["_id"]["user_id"]
-            if w not in real_by_weapon:
-                continue
-            real_by_weapon[w][uid] = {
-                "user_id": uid,
-                "username": row.get("username") or "player",
-                "kills": int(row.get("kills", 0) or 0),
-                "is_seeded": False,
-            }
-    except Exception:
-        pass
-
-    # 2) Hydrate real-player rank data. Batch-fetch their user docs.
-    all_real_ids: set[str] = set()
-    for w in WEAPON_LEADERBOARD_KEYS:
-        all_real_ids.update(real_by_weapon[w].keys())
-    real_user_docs: dict[str, dict] = {}
-    if all_real_ids:
-        obj_ids = []
-        for uid in all_real_ids:
-            try:
-                obj_ids.append(ObjectId(uid))
-            except Exception:
-                pass
-        if obj_ids:
-            cur = db.users.find(
-                {"_id": {"$in": obj_ids}},
-                {"username": 1, "rank_points": 1, "is_seeded": 1},
-            )
-            async for u in cur:
-                real_user_docs[str(u["_id"])] = u
-
-    # 3) Pull the top ~80 seeded bots and give them deterministic per-weapon
-    #    kill counts derived from username + weapon slug. This keeps the
-    #    board populated without requiring bot-schema migration. Counts
-    #    scale with RP so higher-ranked bots have more kills — feels natural.
-    seed_rows: list[dict] = []
-    try:
-        cur = db.users.find(
-            {"is_seeded": True, "rank_points": {"$gt": 0}},
-            {"username": 1, "rank_points": 1},
-        ).sort([("rank_points", -1)]).limit(80)
-        async for u in cur:
-            pts = int(u.get("rank_points", 0) or 0)
-            uname = u.get("username", "anon")
-            # Base count scales linearly with RP (top bot ~1500 kills).
-            base = max(20, pts // 3)
-            # Deterministic per-weapon variance ±40% from the base.
-            for w in WEAPON_LEADERBOARD_KEYS:
-                h = int(hashlib.md5(f"{uname}:{w}:kills".encode()).hexdigest()[:8], 16)
-                pct = 0.60 + (h % 1000) / 1000.0 * 0.80  # 0.60..1.40
-                kills = max(1, int(base * pct))
-                seed_rows.append({
-                    "weapon": w,
-                    "user_id": None,
-                    "username": uname,
-                    "rank_points": pts,
-                    "kills": kills,
-                    "is_seeded": True,
-                })
-    except Exception:
-        pass
-
-    # 4) Merge real + seeded per weapon, sort by kills, hydrate rank labels,
-    #    return top 25 per weapon.
-    out: dict[str, list[dict]] = {}
-    for w in WEAPON_LEADERBOARD_KEYS:
-        merged: list[dict] = []
-        for uid, r in real_by_weapon[w].items():
-            udoc = real_user_docs.get(uid) or {}
-            pts = int(udoc.get("rank_points", 0) or 0)
-            merged.append({
-                "user_id": uid,
-                "username": udoc.get("username") or r["username"],
-                "kills": r["kills"],
-                "rank_points": pts,
-                "is_seeded": bool(udoc.get("is_seeded")),
-            })
-        merged.extend([r for r in seed_rows if r["weapon"] == w])
-        merged.sort(key=lambda r: (-int(r.get("kills", 0) or 0), -int(r.get("rank_points", 0) or 0)))
-        top = merged[:25]
-        # Hydrate rank tier/name/division so the row can render the same
-        # coloured rank chip as the global board.
-        for r in top:
-            pts = int(r.get("rank_points", 0) or 0)
-            idx, name = rank_for_points(pts)
-            r["rank_tier"] = idx
-            r["rank_name"] = name
-            r["rank_division"] = rank_division_for_points(pts, idx)
-        out[w] = top
-    return out
 
 
 @api.get("/me/season_history")

@@ -136,8 +136,8 @@ def test_bigffa_queue_join_returns_eta():
     assert r.status_code == 200, r.text
     j = r.json()
     assert j["ok"] is True
-    assert int(j["bot_fill_seconds"]) == 12
-    assert 4 <= int(j["estimated_wait_seconds"]) <= 12
+    assert int(j["bot_fill_seconds"]) == 60
+    assert 20 <= int(j["estimated_wait_seconds"]) <= 60
     assert int(j["queue_size"]) >= 1
     # Cleanup so we don't leave a match matched.
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
@@ -157,21 +157,21 @@ def test_bigffa_queue_poll_reflects_in_queue_state():
     assert j["matched"] is False
     assert "wait_seconds" in j
     assert "queue_position" in j
-    assert int(j["bot_fill_seconds"]) == 12
+    assert int(j["bot_fill_seconds"]) == 60
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
 
 
 def test_bigffa_queue_matches_after_bot_fill_timeout():
-    """After BIGFFA_BOT_FILL_SEC (12s) the matchmaker dispatches the
+    """After BIGFFA_BOT_FILL_SEC (60s) the matchmaker dispatches the
     entire queue with matched:true + bigffa:true so the client routes
-    to /play?mode=bigffa."""
+    to /play?mode=bigffa. Poll up to 70s so we don't flake on CI when
+    the loop's 0.5s tick lands just after the boundary."""
     tok = _register(uuid.uuid4().hex[:6])
     hdr = {"Authorization": f"Bearer {tok}"}
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
     requests.post(f"{LOCAL}/api/queue/bigffa", headers=hdr)
-    # Poll for up to 20s waiting for matched dispatch.
     matched = False
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + 70
     while time.monotonic() < deadline:
         r = requests.get(f"{LOCAL}/api/queue/bigffa", headers=hdr)
         j = r.json()
@@ -180,10 +180,10 @@ def test_bigffa_queue_matches_after_bot_fill_timeout():
             assert "match_id" in j
             matched = True
             break
-        time.sleep(1)
+        time.sleep(2)
     # Clean up matched state.
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
-    assert matched, "bigffa queue never dispatched after 20s"
+    assert matched, "bigffa queue never dispatched after 70s"
 
 
 def test_bigffa_queue_leave_clears_state():

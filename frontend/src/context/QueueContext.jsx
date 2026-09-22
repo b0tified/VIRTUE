@@ -487,11 +487,11 @@ export function QueueProvider({ children }) {
       bigffaJoinedAtRef.current = Date.now();
       bigffaLockedEtaRef.current = Number.isFinite(data.estimated_wait_seconds)
         ? data.estimated_wait_seconds
-        : (data.bot_fill_seconds || 12);
+        : (data.bot_fill_seconds || 60);
       setBigffaQueueState({
         in_queue: true,
         matched: false,
-        bot_fill_seconds: data.bot_fill_seconds || 12,
+        bot_fill_seconds: data.bot_fill_seconds || 60,
         estimated_wait_seconds: bigffaLockedEtaRef.current,
       });
       setBigffaWaitSec(0);
