@@ -1058,6 +1058,13 @@ async def on_startup():
     await db.friendships.create_index([("from_user_id", 1), ("to_user_id", 1)], unique=True)
     await db.friendships.create_index("to_user_id")
     await db.friendships.create_index("from_user_id")
+    # News-post like tracking. Compound unique index enforces the
+    # one-like-per-user rule cheaply, and the secondary lookup (list_news
+    # batch-fetching the caller's likes) uses the same prefix.
+    await db.news_post_likes.create_index(
+        [("user_id", 1), ("post_id", 1)], unique=True
+    )
+    await db.news_post_likes.create_index("post_id")
 
     # One-time migration: backfill `expires_at` on legacy admin-created
     # redeem codes that pre-date the expiry/cap feature. Default cutoff
@@ -4060,12 +4067,14 @@ class GameRoom:
         # HP: Ranked bots + all TDM bots share the player's HP pool
         # (100) — no difficulty scaling. High-tier bots stay threatening
         # via aim/movement/positioning, not by being HP-inflated damage
-        # sponges. Casual FFA / offline bots keep the old scaled HP so
-        # practice bots remain forgiving.
+        # sponges. Casual FFA / offline bots keep the difficulty-scaled
+        # HP for practice-friendliness, BUT the total is capped at
+        # MAX_HP (100) so smurf/elite bots (diff ≥ 1.25) never exceed
+        # a real player's HP pool.
         if self.is_ranked or self.game_mode == "tdm":
             bot.max_hp = MAX_HP
         else:
-            bot.max_hp = int(BOT_MAX_HP * bot.difficulty)
+            bot.max_hp = min(MAX_HP, int(BOT_MAX_HP * bot.difficulty))
         bot.hp = bot.max_hp
         # Human-like jump state (used only for smart ranked bots — see
         # `_tick_bots`). `_jump_start_ms` is the t=0 of the current jump
@@ -5247,8 +5256,14 @@ class GameRoom:
                 # actually moves. Any non-zero delta (`dist > 0.02`
                 # ignores idle joystick jitter) burns the 3s bubble so
                 # players can't push into fights invulnerable. Applies
-                # to every mode — casual, ranked, bigffa, party, practice.
-                if dist > 0.02 and player.invuln_until > time.time():
+                # to every mode EXCEPT `bigffa` — the 12-player deathmatch
+                # gives real players the full 3s regardless of movement
+                # so a fresh spawn isn't a free frag in a crowded lobby.
+                if (
+                    dist > 0.02
+                    and player.invuln_until > time.time()
+                    and not getattr(self, "is_bigffa", False)
+                ):
                     player.invuln_until = 0.0
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
@@ -9797,6 +9812,16 @@ class NewsPostIn(BaseModel):
     pinned: bool = False
 
 
+class NewsPostPatchIn(BaseModel):
+    """Admin-only news-post edit payload — all fields optional so a
+    partial update (e.g. just `likes`) works without re-sending the
+    full post."""
+    title: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    body: Optional[str] = Field(default=None, min_length=2, max_length=4000)
+    pinned: Optional[bool] = None
+    likes: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+
+
 @api.post("/admin/news")
 async def admin_create_news(payload: NewsPostIn, user: dict = Depends(get_current_user)):
     """Admin-only: publish a new announcement. Stored in the `news_posts`
@@ -9821,7 +9846,44 @@ async def admin_create_news(payload: NewsPostIn, user: dict = Depends(get_curren
         "author_username": doc["author_username"],
         "created_at": now.isoformat(),
         "pinned": doc["pinned"],
+        "likes": 0,
+        "liked_by_me": False,
     }
+
+
+@api.patch("/admin/news/{post_id}")
+async def admin_patch_news(
+    post_id: str,
+    payload: NewsPostPatchIn,
+    user: dict = Depends(get_current_user),
+):
+    """Admin-only: patch an existing news post. Accepts partial updates —
+    title / body / pinned / likes can each be sent independently. The
+    `likes` field is what powers the "edit like count" admin control on
+    the News page. Real user-driven likes still tick via the toggle
+    endpoint below; admins can overwrite the total at any time (e.g. to
+    seed a hype post at 200 or wipe brigading)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    try:
+        oid = ObjectId(post_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid post id.")
+    updates: dict = {}
+    if payload.title is not None:
+        updates["title"] = payload.title.strip()
+    if payload.body is not None:
+        updates["body"] = payload.body.strip()
+    if payload.pinned is not None:
+        updates["pinned"] = bool(payload.pinned)
+    if payload.likes is not None:
+        updates["likes"] = int(payload.likes)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+    res = await db.news_posts.update_one({"_id": oid}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return {"ok": True, "updated": list(updates.keys())}
 
 
 @api.delete("/admin/news/{post_id}")
@@ -9843,19 +9905,38 @@ async def admin_delete_news(post_id: str, user: dict = Depends(get_current_user)
 async def list_news(user: dict = Depends(get_current_user), limit: int = 50):
     """Public list of all news posts (newest first, pinned posts on top).
     Also stamps `users.news_last_read_at = now` so the unread badge clears
-    as soon as the user opens the feed."""
+    as soon as the user opens the feed. Each row carries the aggregate
+    `likes` count plus a per-caller `liked_by_me` flag so the thumbs-up
+    button can render its filled/hollow state without a follow-up call."""
     limit = max(1, min(200, int(limit)))
+    me_id = str(user["_id"])
     # Pinned first, then by created_at desc.
     cursor = db.news_posts.find({}).sort([("pinned", -1), ("created_at", -1)]).limit(limit)
-    rows: List[dict] = []
+    posts: List[dict] = []
     async for p in cursor:
+        posts.append(p)
+    # Batch-fetch the caller's likes across all rendered posts in one
+    # query so we don't N+1 the collection.
+    liked_ids: set[str] = set()
+    if posts:
+        cur = db.news_post_likes.find(
+            {"user_id": me_id, "post_id": {"$in": [str(p["_id"]) for p in posts]}},
+            {"post_id": 1},
+        )
+        async for row in cur:
+            liked_ids.add(row.get("post_id"))
+    rows: List[dict] = []
+    for p in posts:
+        pid = str(p["_id"])
         rows.append({
-            "id": str(p["_id"]),
+            "id": pid,
             "title": p.get("title", ""),
             "body": p.get("body", ""),
             "author_username": p.get("author_username", "Admin"),
             "created_at": p["created_at"].isoformat() if isinstance(p.get("created_at"), datetime) else p.get("created_at"),
             "pinned": bool(p.get("pinned", False)),
+            "likes": int(p.get("likes", 0) or 0),
+            "liked_by_me": pid in liked_ids,
         })
     # Mark as read for this user — the unread counter checks against the
     # latest post's `created_at`.
@@ -9867,6 +9948,44 @@ async def list_news(user: dict = Depends(get_current_user), limit: int = 50):
     except Exception:
         pass
     return rows
+
+
+@api.post("/news/{post_id}/like")
+async def toggle_news_like(post_id: str, user: dict = Depends(get_current_user)):
+    """Toggle the caller's thumbs-up on a news post. Each user gets one
+    like per post — clicking again removes it. Stored in
+    `news_post_likes` (compound index on (user_id, post_id) enforces
+    uniqueness). Returns the new aggregate count + the caller's flag so
+    the client can update the button optimistically."""
+    try:
+        oid = ObjectId(post_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid post id.")
+    post = await db.news_posts.find_one({"_id": oid})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    me_id = str(user["_id"])
+    existing = await db.news_post_likes.find_one({"user_id": me_id, "post_id": post_id})
+    if existing:
+        await db.news_post_likes.delete_one({"_id": existing["_id"]})
+        await db.news_posts.update_one({"_id": oid}, {"$inc": {"likes": -1}})
+        liked_by_me = False
+    else:
+        await db.news_post_likes.insert_one({
+            "user_id": me_id,
+            "post_id": post_id,
+            "created_at": datetime.now(timezone.utc),
+        })
+        await db.news_posts.update_one({"_id": oid}, {"$inc": {"likes": 1}})
+        liked_by_me = True
+    # Re-fetch the freshly-mutated total. Clamp at zero so admin
+    # overrides that set likes below the personal-like count can't
+    # produce negative aggregates.
+    updated = await db.news_posts.find_one({"_id": oid}, {"likes": 1})
+    likes = max(0, int((updated or {}).get("likes", 0) or 0))
+    if likes != int((updated or {}).get("likes", 0) or 0):
+        await db.news_posts.update_one({"_id": oid}, {"$set": {"likes": likes}})
+    return {"likes": likes, "liked_by_me": liked_by_me}
 
 
 @api.get("/news/unread")

@@ -12,7 +12,7 @@
 */
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Megaphone, Pin, Plus, Trash2, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Megaphone, Pin, Plus, Trash2, X, Loader2, ThumbsUp, Pencil, Check } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -85,6 +85,19 @@ export default function News() {
             key={p.id}
             post={p}
             isAdmin={isAdmin}
+            onLikeToggled={(newState) => {
+              // Optimistic update was already applied by NewsCard; this
+              // just resyncs the row with the server's authoritative
+              // count in case of clamp/race conditions.
+              setPosts((arr) => arr.map((x) =>
+                x.id === p.id ? { ...x, likes: newState.likes, liked_by_me: newState.liked_by_me } : x
+              ));
+            }}
+            onLikesEdited={(likes) => {
+              setPosts((arr) => arr.map((x) =>
+                x.id === p.id ? { ...x, likes } : x
+              ));
+            }}
             onDelete={async () => {
               if (!window.confirm(`Delete "${p.title}"?`)) return;
               try {
@@ -114,8 +127,54 @@ export default function News() {
   );
 }
 
-function NewsCard({ post, isAdmin, onDelete, testid }) {
+function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testid }) {
   const dt = formatRelative(post.created_at);
+  // Optimistic-first like toggle. We flip the button state on click and
+  // fire the request in the background; if it fails we roll back.
+  const [likeBusy, setLikeBusy] = useState(false);
+  // Admin inline edit for the like count. `null` = view mode. Numeric
+  // string while typing so we can preserve empty-input UX.
+  const [editVal, setEditVal] = useState(null);
+  const [editBusy, setEditBusy] = useState(false);
+
+  const toggleLike = async () => {
+    if (likeBusy) return;
+    setLikeBusy(true);
+    // Optimistic flip — the parent's setter uses this to render
+    // instantly; we resync from the server response below.
+    const nextLiked = !post.liked_by_me;
+    const nextCount = Math.max(0, (post.likes || 0) + (nextLiked ? 1 : -1));
+    onLikeToggled?.({ likes: nextCount, liked_by_me: nextLiked });
+    try {
+      const { data } = await api.post(`/news/${post.id}/like`);
+      onLikeToggled?.({ likes: data.likes, liked_by_me: data.liked_by_me });
+    } catch (e) {
+      // Roll back to server-side truth.
+      onLikeToggled?.({ likes: post.likes, liked_by_me: post.liked_by_me });
+    } finally {
+      setLikeBusy(false);
+    }
+  };
+
+  const saveEdit = async () => {
+    if (editBusy) return;
+    const n = parseInt(editVal, 10);
+    if (Number.isNaN(n) || n < 0) {
+      setEditVal(null);
+      return;
+    }
+    setEditBusy(true);
+    try {
+      await api.patch(`/admin/news/${post.id}`, { likes: n });
+      onLikesEdited?.(n);
+      setEditVal(null);
+    } catch (e) {
+      alert(e.response?.data?.detail || "Edit failed.");
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
   return (
     <article
       className={`card-pow p-0 overflow-hidden ${post.pinned ? "ring-4 ring-[#FFD700]" : ""}`}
@@ -143,16 +202,94 @@ function NewsCard({ post, isAdmin, onDelete, testid }) {
             <span className="mx-2 opacity-50">·</span>
             <span data-testid={`${testid}-timestamp`}>{dt}</span>
           </div>
-          {isAdmin && (
-            <button
-              onClick={onDelete}
-              className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
-              data-testid={`${testid}-delete`}
-              title="Delete post"
-            >
-              <span className="flex items-center gap-1"><Trash2 size={12} strokeWidth={3} /> DELETE</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Thumbs-up. Filled black-on-yellow when the caller has
+                liked the post; hollow-outlined otherwise. Admins get
+                an adjacent pencil that swaps in an inline input to
+                override the count. */}
+            {editVal === null ? (
+              <button
+                onClick={toggleLike}
+                disabled={likeBusy}
+                className={`btn-pow [&]:px-2 [&]:py-1 [&]:text-xs flex items-center gap-1.5 disabled:opacity-60 ${
+                  post.liked_by_me
+                    ? "bg-[#FFD700] text-black"
+                    : "bg-white text-black"
+                }`}
+                data-testid={`${testid}-like`}
+                data-liked={post.liked_by_me ? "true" : "false"}
+                title={post.liked_by_me ? "Remove like" : "Like this post"}
+              >
+                <ThumbsUp
+                  size={12}
+                  strokeWidth={3}
+                  fill={post.liked_by_me ? "currentColor" : "none"}
+                />
+                <span className="tabular-nums" data-testid={`${testid}-like-count`}>
+                  {post.likes || 0}
+                </span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  value={editVal}
+                  onChange={(e) => setEditVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveEdit();
+                    if (e.key === "Escape") setEditVal(null);
+                  }}
+                  disabled={editBusy}
+                  autoFocus
+                  className="w-20 border-2 border-black px-2 py-1 font-anton tabular-nums text-xs"
+                  data-testid={`${testid}-likes-input`}
+                />
+                <button
+                  onClick={saveEdit}
+                  disabled={editBusy}
+                  className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+                  data-testid={`${testid}-likes-save`}
+                  title="Save"
+                >
+                  {editBusy ? (
+                    <Loader2 size={12} strokeWidth={3} className="animate-spin" />
+                  ) : (
+                    <Check size={12} strokeWidth={3} />
+                  )}
+                </button>
+                <button
+                  onClick={() => setEditVal(null)}
+                  disabled={editBusy}
+                  className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+                  data-testid={`${testid}-likes-cancel`}
+                  title="Cancel"
+                >
+                  <X size={12} strokeWidth={3} />
+                </button>
+              </div>
+            )}
+            {isAdmin && editVal === null && (
+              <button
+                onClick={() => setEditVal(String(post.likes || 0))}
+                className="btn-pow bg-neutral-900 text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+                data-testid={`${testid}-likes-edit`}
+                title="Edit like count (admin)"
+              >
+                <Pencil size={12} strokeWidth={3} />
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={onDelete}
+                className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+                data-testid={`${testid}-delete`}
+                title="Delete post"
+              >
+                <span className="flex items-center gap-1"><Trash2 size={12} strokeWidth={3} /> DELETE</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </article>

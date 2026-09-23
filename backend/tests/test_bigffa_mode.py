@@ -212,3 +212,60 @@ def test_bigffa_queue_status_endpoint():
     assert "real_players" in j
     assert "total_players" in j
     assert int(j["real_players"]) >= 0
+
+
+# --- Feb-2026 (later): smurf HP cap + bigffa spawn immunity --------
+
+def test_casual_bot_hp_capped_at_max_hp():
+    """Smurf/elite casual FFA bots must never spawn above MAX_HP (100).
+    Guards a regression where `BOT_MAX_HP * diff` (80 * 1.5 = 120)
+    used to hand elite bots more HP than a real player."""
+    import importlib
+    server = importlib.import_module("server")
+    # Elite-difficulty bot in a casual FFA room → capped at MAX_HP.
+    room = server.game_room
+    prev_names = set(room.players.keys())
+    room.spawn_bot("HPCapTest_Smurf", disguised=True,
+                   difficulty=server._get_casual_elite_bot_diff(),
+                   disguise_tier_idx=5, disguise_rank_points=1600)
+    added = [pid for pid in room.players.keys() if pid not in prev_names]
+    assert added, "spawn_bot did not add the bot"
+    bot = room.players[added[0]]
+    try:
+        assert bot.max_hp <= server.MAX_HP, f"elite bot HP {bot.max_hp} > MAX_HP {server.MAX_HP}"
+        assert bot.hp <= server.MAX_HP
+    finally:
+        # Clean up the test bot so subsequent tests get a stable roster.
+        room.players.pop(added[0], None)
+
+
+def test_normal_casual_bot_hp_unchanged():
+    """Non-smurf casual FFA bots at diff=1.0 keep the original 80 HP.
+    The cap only clips high-difficulty bots — nothing else regressed."""
+    import importlib
+    server = importlib.import_module("server")
+    room = server.game_room
+    prev_names = set(room.players.keys())
+    room.spawn_bot("HPCapTest_Normal", disguised=True, difficulty=1.0)
+    added = [pid for pid in room.players.keys() if pid not in prev_names]
+    assert added
+    bot = room.players[added[0]]
+    try:
+        # BOT_MAX_HP * 1.0 = 80 — unchanged and still under the cap.
+        assert bot.max_hp == server.BOT_MAX_HP
+    finally:
+        room.players.pop(added[0], None)
+
+
+def test_bigffa_room_flagged_for_spawn_immunity_exemption():
+    """`bigffa_room.is_bigffa` is the switch the input handler reads to
+    KEEP the 3s spawn bubble even after the player moves. If a refactor
+    ever drops the attribute the spawn-immunity carve-out silently
+    breaks — this test locks it down."""
+    import importlib
+    server = importlib.import_module("server")
+    assert getattr(server.bigffa_room, "is_bigffa", False) is True
+    # Casual + ranked rooms must NOT carry the flag — otherwise real
+    # players in those modes would keep immunity while moving.
+    assert getattr(server.game_room, "is_bigffa", False) is False
+    assert getattr(server.ranked_room, "is_bigffa", False) is False

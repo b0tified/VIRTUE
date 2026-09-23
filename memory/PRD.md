@@ -2273,3 +2273,26 @@ Two quality-of-life changes shipped together.
   - curl `GET /api/leaderboard/weapons` → 404 (removed).
   - curl `POST /api/queue/bigffa` → `{bot_fill_seconds:60, estimated_wait_seconds:23, ...}` — ETA in-range.
   - Preview screenshot of `/leaderboard` shows only CURRENT SEASON / PAST SEASONS outer tabs and GLOBAL / FRIENDS inner tabs. No WEAPON KINGS chip anywhere.
+
+
+### 2026-02-27 (later²⁰) — News thumbs-up, bigffa spawn-immunity carve-out, smurf HP cap
+- **User requests**:
+  1. Add a thumbs-up feature to the News tab and let admins edit the like count.
+  2. In 12-player FFA, real players should keep the full 3-second spawn immunity (don't burn it on movement).
+  3. Cap smurf bots at 100 HP.
+- **News thumbs-up + admin edit** (backend `/app/backend/server.py`):
+  - New `NewsPostPatchIn` payload model with all fields optional (title/body/pinned/likes).
+  - New `PATCH /api/admin/news/{post_id}` endpoint — admin-only, applies any subset of fields; returns `{ok, updated:[keys]}`. Empty payload → 400.
+  - New `POST /api/news/{post_id}/like` — toggles the caller's like via a compound unique index on `news_post_likes.{user_id, post_id}`; increments/decrements `news_posts.likes` accordingly. Returns `{likes, liked_by_me}` for optimistic UI.
+  - `GET /api/news` now batch-fetches the caller's likes across all rendered posts in one query (no N+1), returning per-row `likes` + `liked_by_me` flags.
+  - MongoDB index created at startup: `news_post_likes` compound `(user_id, post_id)` unique + secondary `post_id`.
+- **News UI** (`/app/frontend/src/pages/News.jsx`):
+  - Every card now shows a `ThumbsUp` toggle chip — filled yellow-on-black when liked, hollow when not — with a tabular-nums count that flips instantly on click via optimistic update, then resyncs from the server. Rollback on failure.
+  - Admin-only pencil icon next to the like chip swaps in an inline `<input type=number>` with save (green check) / cancel (X) buttons that hits `PATCH /admin/news/{id}` with the new `likes` value. Keyboard shortcuts: `Enter` saves, `Escape` cancels.
+- **BigFFA spawn immunity** (`server.py`): the "movement drops immunity" rule from the previous iteration now checks `not getattr(self, "is_bigffa", False)` — so real players in the 12-player deathmatch keep the full 3-second bubble regardless of movement. Every other mode still burns immunity on movement.
+- **Smurf HP cap** (`server.py`): `spawn_bot` for casual FFA rooms now computes `bot.max_hp = min(MAX_HP, int(BOT_MAX_HP * bot.difficulty))`. Effect: default bots at diff=1.0 still spawn with 80 HP (unchanged); smurfs at diff≥1.25 that previously landed at 100/120 HP are now clamped at 100 HP — never exceeding a real player's pool.
+- **Tests**:
+  - `tests/test_news_likes.py` — 6 new cases: list carries likes/liked_by_me, toggle flips symmetrically, two users sum correctly, auth guard, admin PATCH override, PATCH empty-body 400.
+  - `tests/test_bigffa_mode.py` — 3 new cases: casual bot HP capped at MAX_HP, normal 1.0-diff bot HP unchanged at 80, `bigffa_room.is_bigffa` flag locked in place.
+  - `pytest tests/test_bigffa_mode.py tests/test_news_likes.py tests/test_leaderboard_upgrades.py` → 21 passed in 67s.
+- **Verified end-to-end** in preview: News page shows filled thumbs-up chip at 127 likes after admin edit; unliked posts render a hollow chip at 0. Screenshots captured.
