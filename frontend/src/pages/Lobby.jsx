@@ -750,6 +750,19 @@ export default function Lobby() {
       )}
 
       <header className="relative z-20 flex items-center justify-end flex-wrap gap-y-1.5 px-2 sm:px-6 md:px-12 py-1.5 md:py-3">
+        {/* Mobile-landscape-only VIRTUE logo (top-left of the header row,
+            same visual level as the tier card + coins + PASS/FRIENDS
+            buttons). Only shows on short viewports — desktop keeps the
+            big hero logo in the main grid below. `mr-auto` pushes the
+            rest of the header's flex children to the right, preserving
+            the existing right-aligned layout for coins + PASS etc.
+            Compact 20px so it slots neatly next to the tier card. */}
+        <h1
+          className="hidden [@media(max-height:500px)]:block font-display text-xl uppercase text-pow-shadow-sm leading-none mr-auto"
+          data-testid="lobby-hero-logo-header"
+        >
+          <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>
+        </h1>
         <div className="flex items-center gap-1 sm:gap-3 flex-wrap">
           {user && (
             <PlayerCard
@@ -906,16 +919,14 @@ export default function Lobby() {
         className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 mt-0 lg:-mt-20 xl:mt-2 flex-1 lg:min-h-0 overflow-y-auto lg:overflow-hidden pb-6 lg:pb-0"
       >
         <div className="lg:col-span-4 lg:-mt-4 xl:mt-6 lg:min-h-0 lg:overflow-y-auto pr-1">
-          {/* Big VIRTUE logo replaces the old "READY UP, name!" header.
-              Desktop scales up through sm/md/lg breakpoints. Short
-              viewports (mobile landscape after the forced-rotate gate
-              — ~390px tall) force the compact `text-xl` size via a
-              max-height media query so the ranked + queue buttons
-              stay above the fold without touching desktop scaling.
-              `!important` (`!text-xl`) needed to override the higher-
-              specificity sm/md/lg breakpoint utilities. */}
+          {/* Big VIRTUE logo in the main content area (desktop). On
+              short viewports (mobile landscape) this one is hidden
+              entirely — the compact VIRTUE badge already lives inside
+              the header row (`lobby-hero-logo-header`) so we don't
+              want to double it up in the button column. Desktop keeps
+              the giant hero as-is. */}
           <h1
-            className="font-display text-3xl sm:text-5xl md:text-7xl lg:text-8xl [@media(max-height:500px)]:!text-xl uppercase text-pow-shadow-lg leading-none mt-0"
+            className="font-display text-3xl sm:text-5xl md:text-7xl lg:text-8xl [@media(max-height:500px)]:hidden uppercase text-pow-shadow-lg leading-none mt-0"
             data-testid="lobby-hero-logo"
           >
             <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>

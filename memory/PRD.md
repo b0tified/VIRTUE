@@ -2564,3 +2564,15 @@ Two quality-of-life changes shipped together.
     - Rank progress + Show Tiers + placements badge all visible. ✅
     - `ffaPracSameRow=false` and `lbProfSameRow=false` — vertical stack preserved. ✅
     - Daily Challenges panel renders on the right (unchanged). ✅
+
+### 2026-02-27 (later³⁶) — Mobile lobby: VIRTUE logo moved into the header row
+- **User request**: Move the VIRTUE logo in the mobile lobby higher, onto the same visual level as the banner (the top header row containing tier card, coins, PASS/FRIENDS/NEWS/SETTINGS/EXIT).
+- **Frontend fix** (`/app/frontend/src/pages/Lobby.jsx`):
+  - Added a NEW `data-testid="lobby-hero-logo-header"` `<h1>` INSIDE the `<header>` as its first child. Gated behind `hidden [@media(max-height:500px)]:block` so it only renders on short viewports (mobile landscape post-forced-rotate). `mr-auto` pushes the existing right-aligned header contents to the far right, so the tier card + coins + PASS/FRIENDS/NEWS/SETTINGS stay in their current positions — the logo just fills the previously-empty left half of the header row.
+  - Changed the existing body-column hero (`data-testid="lobby-hero-logo"`) from `[@media(max-height:500px)]:!text-xl` to `[@media(max-height:500px)]:hidden` so the body version disappears entirely on short viewports — the header version replaces it (avoiding a duplicated logo).
+- **Net effect on mobile 844×390**:
+  - VIRTUE logo sits at `top: 35px, left: 48px` — inside the 90px-tall header row (top: 0), same visual level as the tier card + coins + PASS/FRIENDS buttons.
+  - Body column starts directly with the tier badge row (BRONZE III · 0 RP), then goes straight into the Quick Match button — reclaims ~28px of vertical space so the full Ranked + 12P FFA + Practice + Leaderboard + Profile + Moderation grid fits above the fold with even MORE breathing room than before.
+- **Verified via Playwright**:
+  - Mobile 844×390: `lobby-hero-logo-header` visible with `display:block` at `top:35px`; `lobby-hero-logo` hidden with `display:none`. ✅
+  - Desktop 1920×900: `lobby-hero-logo-header` hidden (base `hidden` class applies since max-height:500px doesn't match); `lobby-hero-logo` visible at 96px — big hero stays exactly where it was. ✅
