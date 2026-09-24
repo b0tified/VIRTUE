@@ -4079,6 +4079,41 @@ class GameRoom:
                 return True
         return False
 
+    def retag_existing_bots_mobile(self) -> int:
+        """Force every bot already in the room to the mobile platform tag
+        so the scoreboard renders the phone chip for all bots. Called
+        from the WS handshake right after a mobile-only real player is
+        registered — bots that spawned BEFORE the caller connected
+        would otherwise keep their pre-mobile-mode platform tags (a
+        random pc/mobile mix for disguised casual/BigFFA bots,
+        untagged/desktop-defaulting for undisguised bots).
+
+        Only rewrites the platform field — difficulty/HP already-spawned
+        bots keep their initial stats. Fresh spawns after this call
+        pick up the full mobile-mode treatment via `spawn_bot`.
+
+        Returns the number of bots retagged (useful for logging + tests).
+        """
+        count = 0
+        for p in self.players.values():
+            if not p.is_bot:
+                continue
+            # Disguised bots surface `disguise_platform` in state
+            # payloads; undisguised bots surface `platform`. Update
+            # whichever field the client will actually read so every
+            # bot shows the phone chip.
+            if getattr(p, "disguised", False):
+                if getattr(p, "disguise_platform", None) != "mobile":
+                    p.disguise_platform = "mobile"
+                    count += 1
+            else:
+                if getattr(p, "platform", None) != "mobile":
+                    p.platform = "mobile"
+                    count += 1
+        if count:
+            logger.info("Retagged %d existing bot(s) to mobile in room %s", count, getattr(self, "id", "?"))
+        return count
+
     def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None, disguise_rank_points: Optional[int] = None):
         # Mobile-mode nerf: when this room hosts a mobile-only player,
         # every fresh bot spawns weaker (raw difficulty × 0.45) and is
@@ -10840,6 +10875,19 @@ async def ws_game(
     if int(mobile or 0):
         player.platform = "mobile"
     player.is_mobile_only = bool(int(mobile_only or 0))
+    # If this connect flips the room into mobile-mode (this caller is
+    # the first / a mobile-only player), retag every bot already in
+    # the room so the scoreboard shows the phone chip on ALL of them.
+    # New bot spawns are already handled by `spawn_bot`'s mobile_mode
+    # branch — this covers the pre-existing bots that were spawned
+    # before this player joined (common in casual/BigFFA where the
+    # room may already be filled with disguised bots waiting for a
+    # real player).
+    if player.is_mobile_only:
+        try:
+            room.retag_existing_bots_mobile()
+        except Exception:
+            logger.exception("retag_existing_bots_mobile failed")
     # Seed primary-weapon loadout from the user's saved choice. `ak47`
     # remains the default for legacy accounts and anyone who hasn't
     # touched the lobby weapon-select. `sniper` is the only alternate

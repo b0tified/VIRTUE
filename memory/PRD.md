@@ -2384,3 +2384,14 @@ Two quality-of-life changes shipped together.
 - **Verified end-to-end**:
   - Desktop 1920×900: `[data-testid="lobby-exit-button"]` count = 1 ✅ · `[data-testid="settings-mobile-only-section"]` count = 0 ✅
   - Mobile landscape 844×390: `[data-testid="lobby-exit-button"]` count = 0 ✅ · `[data-testid="settings-mobile-only-section"]` count = 1 ✅ (still available where relevant)
+
+### 2026-02-27 (later²⁶) — Retag existing bots when a mobile-only player joins
+- **User request**: When Mobile Matchmaking Only is on, the bots should ONLY have mobile icons on the scoreboard (some bots were still showing desktop icons because they spawned before the real player connected).
+- **Root cause**: `spawn_bot()` already checks `has_mobile_only_players()` at spawn time and correctly tags fresh bots with `platform="mobile"` / `disguise_platform="mobile"`. BUT in casual/BigFFA the room can already be filled with disguised bots when a real mobile-only player finally joins — those pre-existing bots kept their pre-mobile-mode platform tags (random pc/mobile mix for disguised, pc/untagged for undisguised).
+- **Backend fix** (`/app/backend/server.py`):
+  - New `GameRoom.retag_existing_bots_mobile()` method — walks every bot in the room and forces `disguise_platform` (for disguised bots) or `platform` (for undisguised) to `"mobile"`. Idempotent. Only touches bots — real players' platform tags are untouched. Returns retag count for logging.
+  - WS `/ws/game` handshake: right after `player.is_mobile_only = bool(...)` is set, if true, calls `room.retag_existing_bots_mobile()`. Wrapped in try/except so a failure here can't drop the connection.
+- **Tests** (`/app/backend/tests/test_mobile_only_matchmaking.py`, now 10/10 passing):
+  - `test_retag_existing_bots_flips_platform_to_mobile`: pre-seeds a disguised (`disguise_platform="pc"`) + undisguised (`platform="pc"`) bot, calls retag, asserts both flip to `"mobile"` and second call is idempotent.
+  - `test_retag_ignores_real_players`: seeds a real PC player, calls retag, asserts real player's platform tag is preserved.
+- **Behaviour after fix**: Mobile-only players see the phone chip on 100% of bots in their room regardless of whether the bot was spawned before or after they connected. Non-mobile players and non-mobile-only players are unaffected (retag only fires when `player.is_mobile_only=True`).

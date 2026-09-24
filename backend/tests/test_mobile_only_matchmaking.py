@@ -218,3 +218,66 @@ def test_bot_spawned_in_normal_room_is_not_nerfed():
         assert abs(bot.difficulty - 2.0) < 0.01, f"bot.difficulty={bot.difficulty}"
     finally:
         room.players.pop(added[0], None)
+
+def test_retag_existing_bots_flips_platform_to_mobile():
+    """`retag_existing_bots_mobile` walks every bot in the room and forces
+    their platform tag (or disguise_platform for disguised bots) to
+    "mobile". This covers the case where bots were spawned BEFORE a
+    mobile-only real player joined the room — their pre-mobile-mode
+    platform tag would otherwise leak through to the scoreboard's
+    phone-chip renderer."""
+    import importlib
+    server = importlib.import_module("server")
+    room = server.bigffa_room
+
+    # Pre-seed the room with two bots BEFORE any mobile-only player is
+    # present. First is disguised (surfaces disguise_platform), second
+    # is undisguised (surfaces platform). Neither should be mobile at
+    # this stage since the room isn't in mobile mode yet.
+    prev_ids = set(room.players.keys())
+    disguised_bot = server.Player(ws=None, is_bot=True, bot_name="PreExistingDisguised")
+    disguised_bot.disguised = True
+    disguised_bot.disguise_platform = "pc"   # explicitly desktop
+    room.players[disguised_bot.id] = disguised_bot
+
+    plain_bot = server.Player(ws=None, is_bot=True, bot_name="PreExistingPlain")
+    plain_bot.disguised = False
+    plain_bot.platform = "pc"
+    room.players[plain_bot.id] = plain_bot
+
+    try:
+        # Now retag — as if a mobile-only real player just connected.
+        retagged = room.retag_existing_bots_mobile()
+        assert retagged >= 2, f"expected ≥2 retags, got {retagged}"
+        assert disguised_bot.disguise_platform == "mobile"
+        assert plain_bot.platform == "mobile"
+
+        # Second call is a no-op (idempotent) — bots already mobile.
+        retagged2 = room.retag_existing_bots_mobile()
+        # No specific bots we can guarantee stay in the room, but our
+        # two must not double-flip.
+        assert disguised_bot.disguise_platform == "mobile"
+        assert plain_bot.platform == "mobile"
+    finally:
+        for pid in (disguised_bot.id, plain_bot.id):
+            room.players.pop(pid, None)
+        # Sanity: room state restored.
+        assert set(room.players.keys()) == prev_ids | (set(room.players.keys()) - prev_ids)
+
+
+def test_retag_ignores_real_players():
+    """`retag_existing_bots_mobile` must ONLY touch bots — real players'
+    platform tags reflect their actual client and shouldn't be
+    overwritten by a room-wide retag."""
+    import importlib
+    server = importlib.import_module("server")
+    room = server.game_room
+
+    real = server.Player(ws=None, user={"_id": "test_r", "username": "RealPC", "email": "r@x.com"}, is_bot=False)
+    real.platform = "pc"
+    room.players[real.id] = real
+    try:
+        room.retag_existing_bots_mobile()
+        assert real.platform == "pc", "real player's platform tag must not be rewritten"
+    finally:
+        room.players.pop(real.id, None)
