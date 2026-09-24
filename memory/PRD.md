@@ -2465,3 +2465,14 @@ Two quality-of-life changes shipped together.
   - Existing 5 (list endpoint + rename e2e).
   - New 5: full avatar + RP PATCH round-trip (with revert), non-seeded refusal, partial-update (avatar-only) preserves RP, Pydantic gates on avatar>21 & rp>10000, non-admin gate.
 - **Verified in preview** (Playwright): row-0 shows avatar preview, palette button opens edit panel, avatar grid renders 22+ options, RP input pre-filled, SAVE/CANCEL visible. Screenshot captures the full expanded state.
+
+### 2026-02-27 (later³¹) — Friends list live status updates
+- **User request**: Make the friends list status update live so it doesn't need a refresh.
+- **Root cause**: `FriendsModal.jsx` only called `refresh()` once on open. The `last_seen_at` field on the server was being bumped on every 20Hz WS tick, but the modal never re-fetched, so users had to close+reopen to see a friend transition ONLINE → OFFLINE or LAST SEEN 5M → 6M.
+- **Frontend fix** (`/app/frontend/src/components/FriendsModal.jsx`):
+  - New `silentRefresh` callback that fetches `/friends` without toggling the loading spinner or wiping data on transient errors. Keeps the UI stable during background polling.
+  - Added a 6s interval that fires `silentRefresh` while the modal is open (in addition to the existing 6s `refreshUnread` poll for whisper badges).
+  - Also fires an immediate `silentRefresh` on `visibilitychange` when the tab becomes visible again — so a user who Alt-Tabs back after 20 minutes doesn't stare at stale statuses for up to 6 more seconds.
+  - All timers + the visibility listener are cleaned up on modal close, verified via Playwright: 0 extra `/api/friends` calls in the 8s after close.
+- **Verified in preview**: 1 initial fetch on open → 2 silent polls in the 14-second dwell window → 0 polls after close. Matches the 6s cadence exactly.
+- **No new dependencies**: WhisperToaster / Leaderboard / PartyPanel already own their own refresh loops for their own data.

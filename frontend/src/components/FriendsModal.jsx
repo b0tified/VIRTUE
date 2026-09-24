@@ -76,6 +76,22 @@ export default function FriendsModal({ open, onClose, initialWhisperWith = null 
     }
   }, []);
 
+  // Silent refresh — same fetch as `refresh` but doesn't toggle the
+  // loading spinner or wipe existing state on transient errors. Used
+  // by the live-status poller so the friends list updates its
+  // "ONLINE / LAST SEEN 5M AGO / IN MATCH" chips every few seconds
+  // without any UI blink or "Loading..." flash. On a failed fetch we
+  // silently keep the last-known data — a WiFi hiccup shouldn't nuke
+  // the currently-visible list.
+  const silentRefresh = useCallback(async () => {
+    try {
+      const { data } = await api.get("/friends");
+      setData(data);
+    } catch {
+      /* keep previous data on transient failure */
+    }
+  }, []);
+
   const refreshUnread = useCallback(async () => {
     try {
       const { data } = await api.get("/whispers/unread");
@@ -92,9 +108,29 @@ export default function FriendsModal({ open, onClose, initialWhisperWith = null 
     // Re-poll unread counts every 6s while the modal is open so a
     // friend's message lands on the list with a red pill within a
     // few seconds even if you're sitting on the Friends tab.
-    const id = setInterval(refreshUnread, 6000);
-    return () => clearInterval(id);
-  }, [open, refresh, refreshUnread]);
+    const unreadId = setInterval(refreshUnread, 6000);
+    // ALSO poll the friend list itself every 6s so the ONLINE /
+    // OFFLINE / IN MATCH / LAST SEEN chips stay fresh without needing
+    // the user to close+reopen the modal. Uses `silentRefresh` so no
+    // spinner flash and no error banner on a transient WiFi hiccup.
+    // The `last_seen_at` bumps happen on every 20Hz WS tick (see
+    // server.py `_tick`) so a friend that logs in / off is reflected
+    // in the next poll cycle (< 6s worst case).
+    const statusId = setInterval(silentRefresh, 6000);
+    // Bonus: fire an immediate silent refresh whenever the tab becomes
+    // visible again (e.g. the user Alt-Tabs back to the game). Fixes
+    // the "I've been AFK for 20 minutes so all my friends now show
+    // stale data until the next 6s tick" edge case.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") silentRefresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(unreadId);
+      clearInterval(statusId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [open, refresh, refreshUnread, silentRefresh]);
 
   // Reset the chat panel when the modal closes so the next open
   // returns to the friend list.
