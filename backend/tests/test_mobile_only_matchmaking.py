@@ -139,3 +139,82 @@ def test_bigffa_mobile_only_gets_own_match():
         f"mobile-only + desktop ended up in the same match ({mid_m}) — "
         "platform partition failed"
     )
+
+
+# --- Mobile mode: weakened bots + phone icon (Feb-2026, part 2) ----
+
+def test_room_has_mobile_only_players_helper():
+    """`has_mobile_only_players` is the single source of truth for the
+    room's mobile-mode nerf. False when the room is empty; True once a
+    real player with `is_mobile_only=True` joins; False again after
+    they leave."""
+    import importlib
+    server = importlib.import_module("server")
+    room = server.bigffa_room
+    # Clear-slate assertion (may be True if a lingering test player is present).
+    baseline = room.has_mobile_only_players()
+
+    # Manually add a synthetic real player marked mobile-only.
+    fake = server.Player(ws=None, user={"_id": "test", "username": "MobFake", "email": "mob@x.com"}, is_bot=False)
+    fake.is_mobile_only = True
+    room.players[fake.id] = fake
+    try:
+        assert room.has_mobile_only_players() is True
+    finally:
+        room.players.pop(fake.id, None)
+
+    assert room.has_mobile_only_players() == baseline  # restored
+
+
+def test_bot_spawned_in_mobile_room_is_nerfed_and_tagged():
+    """`spawn_bot` in a room with a mobile-only player scales difficulty
+    × 0.45 AND flips the (disguised) bot's platform to `mobile` so the
+    scoreboard renders the phone icon."""
+    import importlib
+    server = importlib.import_module("server")
+    room = server.bigffa_room
+    fake = server.Player(ws=None, user={"_id": "test2", "username": "MobFake2", "email": "mob2@x.com"}, is_bot=False)
+    fake.is_mobile_only = True
+    room.players[fake.id] = fake
+    try:
+        prev_ids = set(room.players.keys())
+        # Spawn a disguised smurf-tier bot (raw diff 2.0 → nerfed to 0.9).
+        room.spawn_bot("MobNerfTest",
+                      disguised=True,
+                      difficulty=2.0,
+                      disguise_tier_idx=5,
+                      disguise_rank_points=1600)
+        added = [pid for pid in room.players.keys() if pid not in prev_ids]
+        assert added, "spawn_bot did not add the bot"
+        bot = room.players[added[0]]
+        try:
+            # 2.0 * 0.45 = 0.90 → still ≥ the 0.5 floor in Player init.
+            assert abs(bot.difficulty - 0.9) < 0.01, f"bot.difficulty={bot.difficulty}"
+            assert bot.disguise_platform == "mobile"
+        finally:
+            room.players.pop(added[0], None)
+    finally:
+        room.players.pop(fake.id, None)
+
+
+def test_bot_spawned_in_normal_room_is_not_nerfed():
+    """Sanity control: when NO mobile-only player is in the room, bots
+    keep their vanilla difficulty and the disguise platform can be
+    non-mobile (random). Verifies the mobile-mode branch is properly
+    gated."""
+    import importlib
+    server = importlib.import_module("server")
+    room = server.game_room  # casual room — should not have any mobile-only players
+    # Skip if a lingering test polluted the room.
+    if room.has_mobile_only_players():
+        pytest.skip("casual room currently hosts a mobile-only player")
+    prev_ids = set(room.players.keys())
+    room.spawn_bot("NoNerfTest", disguised=True, difficulty=2.0,
+                  disguise_tier_idx=5, disguise_rank_points=1600)
+    added = [pid for pid in room.players.keys() if pid not in prev_ids]
+    assert added
+    bot = room.players[added[0]]
+    try:
+        assert abs(bot.difficulty - 2.0) < 0.01, f"bot.difficulty={bot.difficulty}"
+    finally:
+        room.players.pop(added[0], None)

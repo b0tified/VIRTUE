@@ -3847,6 +3847,12 @@ class Player:
         # room's pre-match freeze stays active until every real player
         # has reported in (or a 30s safety fallback elapses).
         self.is_loaded: bool = bool(is_bot)
+        # Mobile-Only Matchmaking marker. Set from the `?mobile_only=1`
+        # WS query param on connect. Only affects real players — bots
+        # spawn with False. Rooms use `has_mobile_only_players()` to
+        # decide whether newly-spawned bots should render as mobile
+        # (phone icon on scoreboard) and receive the difficulty nerf.
+        self.is_mobile_only: bool = False
 
     def cur_ammo(self) -> int:
         return self.ammo.get(self.weapon, 0)
@@ -4059,7 +4065,30 @@ class GameRoom:
             for i, (x, z) in enumerate(self.arena.get("healthpacks") or HEALTHPACK_POSITIONS)
         ]
 
+    def has_mobile_only_players(self) -> bool:
+        """True when any real (non-bot, non-spectator) player in this room
+        was queued with the Mobile-Only Matchmaking preference. Bots
+        spawned into such a room take the phone-icon platform + a stiff
+        difficulty penalty (see `spawn_bot`)."""
+        for p in self.players.values():
+            if p.is_bot:
+                continue
+            if getattr(p, "is_spectator", False):
+                continue
+            if getattr(p, "is_mobile_only", False):
+                return True
+        return False
+
     def spawn_bot(self, name: str, *, disguised: bool = False, difficulty: float = 1.0, disguise_tier_idx: Optional[int] = None, disguise_rank_points: Optional[int] = None):
+        # Mobile-mode nerf: when this room hosts a mobile-only player,
+        # every fresh bot spawns weaker (raw difficulty × 0.45) and is
+        # tagged mobile so it renders the phone icon on the scoreboard.
+        # 0.45 is aggressive on purpose — the user asked for "a lot
+        # worse". At default diff=1.0 this drops effective diff to 0.5
+        # (matching the spawn_bot floor); smurfs at 1.5 drop to ~0.68.
+        mobile_mode = self.has_mobile_only_players()
+        if mobile_mode:
+            difficulty = float(difficulty) * 0.45
         bot = Player(ws=None, is_bot=True, bot_name=name)
         bot.is_dummy = False
         # Difficulty scales aim accuracy and fire rate at runtime (see _tick_bots).
@@ -4089,7 +4118,9 @@ class GameRoom:
         if disguised:
             bot.disguised = True
             # Match a real-player-looking platform + avatar + tier-aligned rank.
-            bot.disguise_platform = random.choice(["pc", "mobile", "pc", "pc"])
+            # In mobile-mode rooms every disguise is a phone player so the
+            # scoreboard consistently shows the phone chip beside each bot.
+            bot.disguise_platform = "mobile" if mobile_mode else random.choice(["pc", "mobile", "pc", "pc"])
             bot.avatar = random.randint(0, 4)
             if disguise_tier_idx is None:
                 # Casual / generic disguise — keep the original low-rank look so
@@ -4144,6 +4175,11 @@ class GameRoom:
         bx, bz = random_spawn(self.arena, occupants=list(self.players.values()))
         bot.x = float(bx)
         bot.z = float(bz)
+        # Non-disguised bots (offline/practice/tdm) still carry the
+        # mobile platform tag when the room is in mobile mode so the
+        # scoreboard's phone chip appears everywhere.
+        if mobile_mode:
+            bot.platform = "mobile"
         # TDM team for bots — assigned the same way as real players so
         # the room balances naturally as bots are filled in.
         self._assign_team(bot)
@@ -10605,7 +10641,23 @@ async def set_profile_privacy(payload: ProfilePrivacyPayload, user: dict = Depen
 
 # -------------------------------------------------------------------
 @api.websocket("/ws/game")
-async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=None), mode: Optional[str] = Query(default="casual"), party_id: Optional[str] = Query(default=None), target: Optional[str] = Query(default=None), tdm: Optional[int] = Query(default=0), force_map: Optional[str] = Query(default=None), map: Optional[str] = Query(default=None)):
+async def ws_game(
+    websocket: WebSocket,
+    token: Optional[str] = Query(default=None),
+    mode: Optional[str] = Query(default="casual"),
+    party_id: Optional[str] = Query(default=None),
+    target: Optional[str] = Query(default=None),
+    tdm: Optional[int] = Query(default=0),
+    force_map: Optional[str] = Query(default=None),
+    map: Optional[str] = Query(default=None),
+    # Client platform flags — mirror the queue-join body so the room's
+    # `has_mobile_only_players` check works even for direct-connect flows
+    # (offline / practice / bigffa without prior queue). `mobile_only=1`
+    # is what activates the room's "mobile mode" that weakens bots and
+    # tags them with the phone icon on the scoreboard.
+    mobile: Optional[int] = Query(default=0),
+    mobile_only: Optional[int] = Query(default=0),
+):
     auth_token = token
     if not auth_token:
         auth_token = websocket.cookies.get("access_token")
@@ -10781,6 +10833,13 @@ async def ws_game(websocket: WebSocket, token: Optional[str] = Query(default=Non
     except Exception:
         pass
     player = Player(websocket, user=user, is_bot=False)
+    # Client platform tagging — flips the room into "mobile mode" (weaker
+    # bots + phone-icon scoreboard chips) whenever a mobile-only player
+    # is present. Non-mobile players don't affect the room; the
+    # `mobile_only` flag is what actually triggers the penalty.
+    if int(mobile or 0):
+        player.platform = "mobile"
+    player.is_mobile_only = bool(int(mobile_only or 0))
     # Seed primary-weapon loadout from the user's saved choice. `ak47`
     # remains the default for legacy accounts and anyone who hasn't
     # touched the lobby weapon-select. `sniper` is the only alternate

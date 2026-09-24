@@ -7,6 +7,7 @@ import { GameSocket } from "@/game/network";
 import { LocalSim } from "@/game/localSim";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
+import { detectIsMobile } from "@/game/useIsMobile";
 import Hud, { ReportPlayerModal } from "@/components/Hud";
 import TouchControls from "@/components/TouchControls";
 import Chat from "@/components/Chat";
@@ -522,15 +523,30 @@ export default function Game() {
       const forceMap = searchParams.get("force_map") || null;
       const pickedMap = searchParams.get("map") || null;
       const soloMap = (mode === "offline" || mode === "practice") && pickedMap ? { map: pickedMap } : {};
+      // Mobile-only matchmaking flags — mirror what /queue POSTs send.
+      // The server uses `mobile_only=1` to nerf bots + tag them mobile
+      // on the scoreboard. `mobile=1` is informational (renders the
+      // phone chip beside the caller's own name for other players).
+      const platformFlags = (() => {
+        try {
+          const isMobile = detectIsMobile();
+          const pref = !!settingsStore.get().mobileOnlyMatchmaking;
+          const flags = {};
+          if (isMobile) flags.mobile = 1;
+          if (isMobile && pref) flags.mobile_only = 1;
+          return flags;
+        } catch { return {}; }
+      })();
       const extra =
         mode === "party" && partyId
-          ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}), ...(forceMap ? { force_map: forceMap } : {}) }
+          ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}), ...(forceMap ? { force_map: forceMap } : {}), ...platformFlags }
           : mode === "spectate" && spectateTarget
           ? { target: spectateTarget }
           : {
               ...(wantsTdm ? { tdm: 1 } : {}),
               ...(forceMap ? { force_map: forceMap } : {}),
               ...soloMap,
+              ...platformFlags,
             };
       sock.connect(accessToken, mode, Object.keys(extra || {}).length ? extra : null);
     }

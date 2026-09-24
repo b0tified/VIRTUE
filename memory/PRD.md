@@ -2342,3 +2342,21 @@ Two quality-of-life changes shipped together.
   - `_platforms_compatible` unit test with all 6 combos
   - **End-to-end**: mobile-only queuer + desktop queuer both dispatched by the 60s timeout → verified `match_id` differs (platform partition works)
 - **Verified end-to-end** in preview: on a touch-emulated viewport the Settings → Controls tab shows the MOBILE MATCHMAKING section with the working toggle; screenshot confirms UI. Existing bigffa tests still pass (12/12).
+
+
+### 2026-02-27 (later²³) — Mobile bots: phone icon + heavy difficulty nerf
+- **User request**: When mobile matchmaking is on, ALL bots in the match should display the phone icon on the scoreboard AND be a lot worse.
+- **Backend** (`/app/backend/server.py`):
+  - `Player.__init__`: new `is_mobile_only: bool = False` attribute.
+  - `WS /ws/game`: accepts two new query params — `mobile=0|1` (tags the caller's platform="mobile") and `mobile_only=0|1` (sets `player.is_mobile_only=True` so the room's mobile-mode check fires).
+  - `GameRoom.has_mobile_only_players()`: single-source-of-truth helper that walks the room and returns True iff any real player is `is_mobile_only=True`.
+  - `GameRoom.spawn_bot()`: gates a "mobile-mode" branch at the top. When `has_mobile_only_players()` is True, incoming difficulty is scaled × 0.45 (aggressive) before hitting the 0.5 floor. Disguised bots get `disguise_platform="mobile"` (instead of the previous PC-weighted random); non-disguised bots get `platform="mobile"`. The nerf applies to every subsequent spawn until the last mobile-only player leaves.
+- **Frontend**:
+  - `Game.jsx`: WS connect now derives `platformFlags` from `detectIsMobile()` + `settingsStore.get().mobileOnlyMatchmaking`, spreading `{mobile:1, mobile_only:1}` into the WS `extra` params exactly the same way the queue-join POSTs do. Party + spectate modes retain their existing param shapes plus the platform flags.
+  - Scoreboard was already wired to render the phone chip when `platform === "mobile"` (via the existing `Smartphone` icon in `Hud.jsx`) — every bot now inherits that automatically.
+- **Tests** (`/app/backend/tests/test_mobile_only_matchmaking.py`, now 8/8 passing):
+  - Existing 5 (endpoint payload, legacy compat, `_platforms_compatible` unit, e2e bigffa partition)
+  - New 3: `has_mobile_only_players` helper, mobile-mode bot spawn (diff × 0.45 + platform="mobile"), sanity control that non-mobile rooms preserve raw difficulty.
+- **Verified end-to-end**:
+  - Live WS test: joining bigffa with `?mobile=1&mobile_only=1` → all 12 combatants report `platform="mobile"` in state payload; scoreboard renders phone chips.
+  - Backend log confirms fresh bot spawn diff=0.90 (raw 2.0 × 0.45) instead of the previous smurf-tier 1.70.
