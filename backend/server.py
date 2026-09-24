@@ -8880,6 +8880,160 @@ async def admin_close_report(report_id: str, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+# -------------------------------------------------------------------
+# Admin account-management endpoints (Feb-2026).
+# Powers the Moderation dashboard's:
+#   • Total-accounts stat card (GET /admin/users/count)
+#   • Account-lookup + rename + password-reset actions
+# Excludes seeded leaderboard bots from the aggregate so the number
+# tracks real user signups.
+# -------------------------------------------------------------------
+@api.get("/admin/users/count")
+async def admin_users_count(user: dict = Depends(get_current_user)):
+    """Return `{total, real, seeded, admins}` — the real-account total
+    is what the Moderation dashboard headlines. Seeded leaderboard
+    bots (created by the auto-seed job) are excluded from `real` so
+    the number reflects human signups, not filler."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    total = await db.users.count_documents({})
+    seeded = await db.users.count_documents({"is_seeded": True})
+    admins = await db.users.count_documents({"role": "admin"})
+    return {
+        "total": int(total),
+        "real": int(total - seeded),
+        "seeded": int(seeded),
+        "admins": int(admins),
+    }
+
+
+class AdminUserSearchIn(BaseModel):
+    """Fuzzy user lookup for the Moderation dashboard's account table.
+    Matches `username` prefix (case-insensitive) or exact email."""
+    q: str = Field(min_length=1, max_length=64)
+
+
+@api.get("/admin/users/search")
+async def admin_users_search(
+    q: str,
+    user: dict = Depends(get_current_user),
+    limit: int = 25,
+):
+    """Search real (non-seeded) accounts by username prefix or exact
+    email. Returns id/username/email/role/level/rank_points/created_at
+    so the admin table can render summary chips per row."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    q = (q or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(100, int(limit)))
+    # Case-insensitive prefix match on username OR exact-lowercased email.
+    safe_q = re.escape(q)
+    query = {
+        "$and": [
+            {"is_seeded": {"$ne": True}},
+            {"$or": [
+                {"username": {"$regex": f"^{safe_q}", "$options": "i"}},
+                {"email": q.lower()},
+            ]},
+        ]
+    }
+    cursor = db.users.find(
+        query,
+        {"username": 1, "email": 1, "role": 1, "level": 1,
+         "rank_points": 1, "created_at": 1, "ban": 1},
+    ).limit(limit)
+    rows: List[dict] = []
+    async for u in cursor:
+        rows.append({
+            "id": str(u["_id"]),
+            "username": u.get("username", ""),
+            "email": u.get("email", ""),
+            "role": u.get("role", "user"),
+            "level": int(u.get("level", 1) or 1),
+            "rank_points": int(u.get("rank_points", 0) or 0),
+            "created_at": (
+                u["created_at"].isoformat()
+                if isinstance(u.get("created_at"), datetime)
+                else u.get("created_at")
+            ),
+            "ban_status": (u.get("ban") or {}).get("status", "active"),
+        })
+    return rows
+
+
+class AdminRenameUserIn(BaseModel):
+    new_username: str = Field(min_length=2, max_length=20)
+
+
+@api.post("/admin/users/{username}/rename")
+async def admin_rename_user(
+    username: str,
+    payload: AdminRenameUserIn,
+    user: dict = Depends(get_current_user),
+):
+    """Admin-only username change. Enforces the same 2-20 length window
+    the user-facing rename endpoint uses, plus a uniqueness check
+    (case-insensitive) so we never end up with duplicate usernames."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    target = await db.users.find_one({"username": username})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    new_username = payload.new_username.strip()
+    if not new_username:
+        raise HTTPException(status_code=400, detail="Username cannot be empty.")
+    # Case-insensitive collision check (skip the caller's own row).
+    existing = await db.users.find_one({
+        "username": {"$regex": f"^{re.escape(new_username)}$", "$options": "i"},
+        "_id": {"$ne": target["_id"]},
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already taken.")
+    await db.users.update_one(
+        {"_id": target["_id"]},
+        {"$set": {"username": new_username}},
+    )
+    logger.info("Admin %s renamed %s → %s", user.get("username"), username, new_username)
+    return {"ok": True, "old_username": username, "new_username": new_username}
+
+
+class AdminSetPasswordIn(BaseModel):
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+@api.post("/admin/users/{username}/password")
+async def admin_set_password(
+    username: str,
+    payload: AdminSetPasswordIn,
+    user: dict = Depends(get_current_user),
+):
+    """Admin-only password reset. Uses the same `hash_password` (bcrypt)
+    the signup / user-facing password-change flows use so verification
+    stays consistent. Never returns the hash — just an ok flag."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    target = await db.users.find_one({"username": username})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.get("role") == "admin" and str(target["_id"]) != str(user["_id"]):
+        # Guardrail: an admin can reset their own password here but can
+        # never reset another admin's password (protects the seeded
+        # admin account from lateral compromise). Non-admin targets have
+        # no such restriction.
+        raise HTTPException(
+            status_code=400,
+            detail="Refusing to change another admin's password.",
+        )
+    await db.users.update_one(
+        {"_id": target["_id"]},
+        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    )
+    logger.info("Admin %s reset password for %s", user.get("username"), username)
+    return {"ok": True, "username": username}
+
+
 @api.get("/admin/settings/smurf")
 async def admin_get_smurf_ratio(user: dict = Depends(get_current_user)):
     """Return the current casual smurf-bot ratio + difficulty.

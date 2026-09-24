@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2 } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -108,6 +108,20 @@ export default function AdminReports() {
   };
 
 
+  // Total-accounts stat card. Fetched from /admin/users/count on mount
+  // (and again after any admin action that could shift the number).
+  // `real` excludes seeded leaderboard bots.
+  const [accountsCount, setAccountsCount] = useState(null);
+  const refreshAccountsCount = useCallback(async () => {
+    try {
+      const { data: c } = await api.get("/admin/users/count");
+      setAccountsCount(c);
+    } catch {
+      setAccountsCount(null);
+    }
+  }, []);
+  useEffect(() => { refreshAccountsCount(); }, [refreshAccountsCount]);
+
   const reports = data?.reports || [];
   const summary = data?.summary || [];
   const bans = data?.bans || {};
@@ -169,11 +183,27 @@ export default function AdminReports() {
       )}
 
       {/* Stat cards */}
-      <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+      <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-5 gap-4 mb-6">
+        <StatCard
+          label="Accounts"
+          value={accountsCount?.real ?? "…"}
+          color="#FFB000"
+          Icon={Users}
+          hint={accountsCount ? `${accountsCount.seeded} seeded · ${accountsCount.admins} admin` : ""}
+          testid="stat-accounts"
+        />
         <StatCard label="Total Reports" value={data?.total ?? 0} color="#0055FF" />
         <StatCard label="Open" value={openCount} color="#E62429" Icon={Flag} />
         <StatCard label="Closed" value={closedCount} color="#06A35F" Icon={CheckCircle} />
         <StatCard label="Active Sanctions" value={bannedCount} color="#9B59B6" Icon={ShieldAlert} />
+      </div>
+
+      {/* Account management — search, rename, reset password. */}
+      <div className="max-w-6xl mx-auto mb-6">
+        <AccountsPanel
+          onChanged={() => { refreshAccountsCount(); load(); }}
+          onToast={setToast}
+        />
       </div>
 
       {/* Live player activity + mode popularity — polls every 5s. */}
@@ -268,15 +298,20 @@ export default function AdminReports() {
   );
 }
 
-function StatCard({ label, value, color, Icon }) {
+function StatCard({ label, value, color, Icon, hint, testid }) {
   return (
-    <div className="card-pow p-0 overflow-hidden" data-testid={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+    <div className="card-pow p-0 overflow-hidden" data-testid={testid || `stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <div className="px-3 py-1.5 font-anton uppercase tracking-widest text-xs text-white flex items-center gap-2" style={{ background: color }}>
         {Icon ? <Icon size={14} strokeWidth={3} /> : null}
         {label}
       </div>
       <div className="bg-white px-4 py-3">
-        <div className="font-display text-4xl text-pow-shadow">{value}</div>
+        <div className="font-display text-4xl text-pow-shadow tabular-nums">{value}</div>
+        {hint ? (
+          <div className="font-anton uppercase tracking-widest text-[10px] text-neutral-500 mt-1">
+            {hint}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1380,3 +1415,257 @@ function ResetPassCard({ setToast }) {
   );
 }
 
+
+
+/* AccountsPanel — search real accounts by username prefix or exact email;
+   for each result, inline-rename the username and reset the password.
+   Both actions hit admin-only endpoints (/admin/users/{u}/rename and
+   /admin/users/{u}/password) so the audit trail runs server-side. */
+function AccountsPanel({ onChanged, onToast }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const search = useCallback(async () => {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setRows([]);
+      setTouched(false);
+      return;
+    }
+    setBusy(true);
+    setTouched(true);
+    try {
+      const { data } = await api.get("/admin/users/search", { params: { q: trimmed, limit: 25 } });
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setRows([]);
+      onToast?.({ kind: "err", text: e?.response?.data?.detail || "Search failed." });
+    } finally {
+      setBusy(false);
+    }
+  }, [q, onToast]);
+
+  // Debounced auto-search — kick off 400ms after the last keystroke so
+  // fast typing doesn't fan out 8 requests.
+  useEffect(() => {
+    const t = setTimeout(() => { search(); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  const patchRow = (id, patch) =>
+    setRows((arr) => arr.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="card-pow p-0 overflow-hidden" data-testid="accounts-panel">
+      <div className="bg-black text-white px-4 py-2 font-display text-2xl text-pow-shadow flex items-center justify-between">
+        <span className="flex items-center gap-2"><Users size={20} strokeWidth={3} /> ACCOUNTS</span>
+        <span className="font-anton uppercase tracking-widest text-xs opacity-70" data-testid="accounts-result-count">
+          {rows.length} result{rows.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="bg-white px-4 py-3 border-b-2 border-black">
+        <label className="flex items-center gap-2">
+          <Search size={16} strokeWidth={3} className="text-neutral-500 flex-shrink-0" />
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by username or exact email..."
+            className="flex-1 border-2 border-black px-3 py-2 font-anton uppercase tracking-widest text-sm"
+            data-testid="accounts-search-input"
+            autoComplete="off"
+          />
+          {busy && <Loader2 size={16} strokeWidth={3} className="animate-spin text-neutral-500" />}
+        </label>
+      </div>
+      {!touched ? (
+        <div className="bg-white px-4 py-6 font-anton uppercase tracking-widest text-xs text-neutral-500 text-center" data-testid="accounts-idle">
+          Type a username or email to look up an account.
+        </div>
+      ) : rows.length === 0 && !busy ? (
+        <div className="bg-white px-4 py-6 font-anton uppercase tracking-widest text-xs text-neutral-500 text-center" data-testid="accounts-empty">
+          No accounts match "{q}"
+        </div>
+      ) : (
+        <div className="bg-white divide-y-2 divide-black/10">
+          {rows.map((r, i) => (
+            <AccountRow
+              key={r.id}
+              row={r}
+              testid={`account-row-${i}`}
+              onRenamed={(newName) => {
+                patchRow(r.id, { username: newName });
+                onToast?.({ kind: "ok", text: `Renamed ${r.username} → ${newName}` });
+                onChanged?.();
+              }}
+              onPassReset={() => {
+                onToast?.({ kind: "ok", text: `Password reset for ${r.username}` });
+              }}
+              onError={(msg) => onToast?.({ kind: "err", text: msg })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Inline row for a single account. Renders username/email chips + two
+   inline actions: rename (pencil → text input → save/cancel) and
+   password reset (key → password input → save/cancel). Actions collapse
+   back to their icons on save/cancel so the row stays compact. */
+function AccountRow({ row, testid, onRenamed, onPassReset, onError }) {
+  // `null` = idle (icon showing). String = active edit input value.
+  const [renameVal, setRenameVal] = useState(null);
+  const [passVal, setPassVal] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const doRename = async () => {
+    const next = (renameVal || "").trim();
+    if (!next || next === row.username || next.length < 2 || next.length > 20) {
+      setRenameVal(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/admin/users/${encodeURIComponent(row.username)}/rename`, { new_username: next });
+      onRenamed?.(next);
+      setRenameVal(null);
+    } catch (e) {
+      onError?.(e?.response?.data?.detail || "Rename failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doPass = async () => {
+    const next = passVal || "";
+    if (next.length < 6 || next.length > 128) {
+      onError?.("Password must be 6–128 characters.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/admin/users/${encodeURIComponent(row.username)}/password`, { new_password: next });
+      onPassReset?.();
+      setPassVal(null);
+    } catch (e) {
+      onError?.(e?.response?.data?.detail || "Password reset failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="px-4 py-3 flex flex-wrap items-center gap-3" data-testid={testid}>
+      <div className="flex-1 min-w-[220px]">
+        <div className="font-anton uppercase tracking-widest text-sm" data-testid={`${testid}-username`}>
+          {row.username}
+          {row.role === "admin" && (
+            <span className="ml-2 text-[10px] px-1.5 py-0.5 border-2 border-black bg-[#E62429] text-white">
+              ADMIN
+            </span>
+          )}
+          {row.ban_status && row.ban_status !== "active" && (
+            <span className="ml-2 text-[10px] px-1.5 py-0.5 border-2 border-black bg-[#9B59B6] text-white uppercase">
+              {row.ban_status}
+            </span>
+          )}
+        </div>
+        <div className="font-body text-xs text-neutral-500 truncate">
+          {row.email} · Lv {row.level} · {row.rank_points} RP
+        </div>
+      </div>
+
+      {/* Rename controls */}
+      {renameVal === null ? (
+        <button
+          onClick={() => setRenameVal(row.username)}
+          disabled={busy}
+          className="btn-pow bg-[#0055FF] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+          data-testid={`${testid}-rename-open`}
+          title="Change username"
+        >
+          <span className="flex items-center gap-1"><Pencil size={12} strokeWidth={3} /> RENAME</span>
+        </button>
+      ) : (
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            value={renameVal}
+            onChange={(e) => setRenameVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenameVal(null); }}
+            maxLength={20}
+            className="w-36 border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-xs"
+            data-testid={`${testid}-rename-input`}
+            autoFocus
+            disabled={busy}
+          />
+          <button
+            onClick={doRename}
+            disabled={busy}
+            className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-rename-save`}
+          >
+            {busy ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+          </button>
+          <button
+            onClick={() => setRenameVal(null)}
+            disabled={busy}
+            className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-rename-cancel`}
+          >
+            <X size={12} strokeWidth={3} />
+          </button>
+        </div>
+      )}
+
+      {/* Password reset controls */}
+      {passVal === null ? (
+        <button
+          onClick={() => setPassVal("")}
+          disabled={busy}
+          className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+          data-testid={`${testid}-pass-open`}
+          title="Reset password"
+        >
+          <span className="flex items-center gap-1"><KeyRound size={12} strokeWidth={3} /> RESET PW</span>
+        </button>
+      ) : (
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            value={passVal}
+            onChange={(e) => setPassVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") doPass(); if (e.key === "Escape") setPassVal(null); }}
+            placeholder="new password"
+            maxLength={128}
+            className="w-40 border-2 border-black px-2 py-1 font-body text-xs"
+            data-testid={`${testid}-pass-input`}
+            autoFocus
+            disabled={busy}
+          />
+          <button
+            onClick={doPass}
+            disabled={busy}
+            className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-pass-save`}
+          >
+            {busy ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+          </button>
+          <button
+            onClick={() => setPassVal(null)}
+            disabled={busy}
+            className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-pass-cancel`}
+          >
+            <X size={12} strokeWidth={3} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

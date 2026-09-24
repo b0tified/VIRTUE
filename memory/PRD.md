@@ -2296,3 +2296,29 @@ Two quality-of-life changes shipped together.
   - `tests/test_bigffa_mode.py` — 3 new cases: casual bot HP capped at MAX_HP, normal 1.0-diff bot HP unchanged at 80, `bigffa_room.is_bigffa` flag locked in place.
   - `pytest tests/test_bigffa_mode.py tests/test_news_likes.py tests/test_leaderboard_upgrades.py` → 21 passed in 67s.
 - **Verified end-to-end** in preview: News page shows filled thumbs-up chip at 127 likes after admin edit; unliked posts render a hollow chip at 0. Screenshots captured.
+
+
+### 2026-02-27 (later²¹) — Moderation: account count + account management
+- **User requests**:
+  1. Show how many accounts have been created on the moderation page.
+  2. Let admins manage other accounts — username changes and password changes.
+- **Backend** (`/app/backend/server.py`):
+  - `GET /api/admin/users/count` — returns `{total, real, seeded, admins}`. `real = total − seeded` so the headline number tracks human signups only.
+  - `GET /api/admin/users/search?q=&limit=25` — case-insensitive username-prefix match OR exact-email lookup, always excluding seeded leaderboard bots. Returns id/username/email/role/level/rank_points/created_at/ban_status per row (all the chips the admin table needs).
+  - `POST /api/admin/users/{username}/rename` — admin-only username change. Enforces the same 2-20 length window as user-facing rename plus a case-insensitive uniqueness check (409 on collision).
+  - `POST /api/admin/users/{username}/password` — admin-only password reset via the shared `hash_password` (bcrypt) so the reset password verifies through the normal login flow. Guardrail: an admin can never reset ANOTHER admin's password (protects the seeded admin from lateral compromise).
+- **Frontend** (`/app/frontend/src/pages/AdminReports.jsx`):
+  - New yellow "ACCOUNTS" stat card in the top row (5-column grid instead of 4), showing the real-user total headline with a "N seeded · N admin" hint underneath. `StatCard` gained optional `hint` + `testid` props.
+  - New `AccountsPanel` component — search input with 400ms debounce; each result row shows username + admin/ban chips + email/level/RP hint + two inline actions: RENAME (pencil → text input → save/cancel; Enter/Escape shortcuts) and RESET PW (key → password input → save/cancel). Successful actions toast + refresh the count stat card.
+  - New `AccountRow` sub-component keeps each row's edit state local so multiple rows can be edited concurrently without cross-talk.
+- **Tests** (`/app/backend/tests/test_admin_users.py`, 10 passed + 1 skipped):
+  - count returns all buckets + `total == real + seeded`
+  - count requires admin auth
+  - search finds by username prefix + by exact email
+  - search excludes seeded leaderboard bots
+  - rename changes the username end-to-end
+  - rename rejects duplicates with 409
+  - rename requires admin auth
+  - password reset lets the target log in with the new password AND blocks the old
+  - password reset requires admin auth
+- **Verified end-to-end** in preview: Moderation screenshot shows the "ACCOUNTS 980 · 107 SEEDED · 1 ADMIN" stat card at the top of the 5-column row and a functional ACCOUNTS panel with the debounced search filtering to matching users and inline RENAME + RESET PW buttons per row.
