@@ -150,6 +150,25 @@ function read() {
 
 let cache = read();
 
+// Defensive normalization: `mobileOnlyMatchmaking` is a mobile-only concept.
+// If a user toggled it on while on mobile then loaded the game on desktop
+// (same account/localStorage across devices, or DevTools' responsive mode
+// off), we clear the flag so the toggle can't linger invisibly. The queue
+// payload already double-checks `mobile && pref`, but this keeps the store
+// itself honest — Settings on desktop will always read `false`, so no
+// exported UI can present a "checked" state without the toggle being visible.
+try {
+  const touch = "ontouchstart" in window || (navigator.maxTouchPoints || 0) > 0;
+  const coarse = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  const noHover = window.matchMedia?.("(hover: none)")?.matches ?? false;
+  const narrow = (window.innerWidth || 0) < 900;
+  const isMobile = touch || coarse || noHover || narrow;
+  if (!isMobile && cache.mobileOnlyMatchmaking) {
+    cache = { ...cache, mobileOnlyMatchmaking: false };
+    try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch {}
+  }
+} catch {}
+
 function broadcast() {
   try { window.dispatchEvent(new CustomEvent(EVT, { detail: { ...cache } })); } catch {}
 }

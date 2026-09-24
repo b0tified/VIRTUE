@@ -5,6 +5,7 @@ import PlayerCard from "@/components/PlayerCard";
 import MatchResultOverlay from "@/components/MatchResultOverlay";
 import settingsStore from "@/game/settings";
 import api from "@/api";
+import { detectIsMobile } from "@/game/useIsMobile";
 
 const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
 
@@ -455,8 +456,11 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           pointer lock directly. (See Game.jsx canvas onClick wiring.) A small
           EXIT button stays in the top-left so users can leave before locking,
           BUT it's hidden in ranked — the pause menu shows a "Quitting bans
-          you for 10 minutes" warning instead, gated on `hud.isRanked`. */}
-      {!pointerLocked && !hud.isRanked && (
+          you for 10 minutes" warning instead, gated on `hud.isRanked`. It's
+          also hidden on mobile: touch users don't have pointer lock, they
+          reach the pause menu via the touch pause button, and the tiny corner
+          EXIT was fighting for space with the joystick + fire buttons. */}
+      {!pointerLocked && !hud.isRanked && !detectIsMobile() && (
         <button
           onClick={onExit}
           className="absolute top-4 left-4 z-30 btn-pow bg-white text-black [&]:px-3 [&]:py-2 [&]:text-xs"

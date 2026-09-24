@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords, Smartphone } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -94,6 +94,41 @@ export default function Lobby() {
   const bigffaWaitSec = queueCtx?.bigffaWaitSec ?? 0;
   const bigffaMatchFoundSec = queueCtx?.bigffaMatchFoundSec ?? null;
   const bigffaInQueue = !!(bigffaQueueState && (bigffaQueueState.in_queue || bigffaQueueState.matched));
+
+  // Cross-play warning banner state. Renders when the caller is on a
+  // mobile device AND the Mobile-Only Matchmaking preference is OFF —
+  // reminding them they'll be paired with desktop players. The banner
+  // can be dismissed for the current session (`localStorage` flag) so
+  // it doesn't nag users who've made an informed choice; toggling
+  // Mobile Only ON also hides it because the condition no longer holds.
+  const [mobileOnlyPref, setMobileOnlyPref] = useState(() => !!settingsStore.get().mobileOnlyMatchmaking);
+  const [crossplayDismissed, setCrossplayDismissed] = useState(() => {
+    try { return sessionStorage.getItem("virtue_crossplay_dismissed") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    // Track the mobile-only setting via the store's subscribe fanout so
+    // flipping the toggle inside the Settings modal instantly hides the
+    // banner without a re-mount.
+    const unsub = settingsStore.subscribe((s) => setMobileOnlyPref(!!s.mobileOnlyMatchmaking));
+    return () => { try { unsub(); } catch {} };
+  }, []);
+  const showCrossplayBanner =
+    detectIsMobile()
+    && !mobileOnlyPref
+    && !crossplayDismissed
+    && !casualInQueue
+    && !bigffaInQueue
+    && !queueState;
+  const enableMobileOnlyFromBanner = () => {
+    // One-tap opt-in from the banner. Persists the flag; the queue
+    // buttons pick it up on their next click via `_platformFlags()`.
+    settingsStore.set({ mobileOnlyMatchmaking: true });
+    setMobileOnlyPref(true);
+  };
+  const dismissCrossplayBanner = () => {
+    try { sessionStorage.setItem("virtue_crossplay_dismissed", "1"); } catch {}
+    setCrossplayDismissed(true);
+  };
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
   const RANKED_MIN_LEVEL = 5;
@@ -754,37 +789,43 @@ export default function Lobby() {
           >
             <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
           </button>
-          {/* Exit to desktop. window.close() succeeds only for windows
-              that were script-opened (e.g. the installed PWA), so we
-              attempt it AND swap the page out for a goodbye screen as a
-              guaranteed fallback that works in normal tabs too. The user
-              gets a clear "you can close this tab now" cue either way. */}
-          <button
-            onClick={() => {
-              if (!window.confirm("Exit VIRTUE?")) return;
-              try { audioBus.stopLobbyMusic(); } catch {}
-              try {
-                // Best-effort close — works on PWA / popups / window.opener
-                window.close();
-              } catch {}
-              // Fallback: replace the page with a comic-style goodbye so
-              // the user knows it's safe to close. Uses location.replace
-              // so back-button doesn't bring them back into the lobby.
-              setTimeout(() => {
-                document.body.innerHTML = `
-                  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F4F5;font-family:'Anton',sans-serif">
-                    <div style="text-align:center;padding:2rem 3rem;background:white;border:4px solid #000;box-shadow:8px 8px 0 #000;transform:rotate(-1.5deg)">
-                      <h1 style="font-family:'Bangers',cursive;color:#E62429;font-size:4rem;margin:0;letter-spacing:0.05em">SEE YOU SOON!</h1>
-                    </div>
-                  </div>`;
-              }, 80);
-            }}
-            className="btn-pow bg-[#222] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
-            data-testid="lobby-exit-button"
-            title="Exit to desktop"
-          >
-            <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /><span className="hidden sm:inline">EXIT</span></span>
-          </button>
+          {/* Exit to desktop. Hidden on mobile — mobile users close via
+              their OS gestures / tab UI, and window.close() plus the
+              goodbye-page fallback is a desktop-first flow. On mobile
+              the button just adds clutter to the already-cramped header,
+              so we hide it entirely there.
+              window.close() succeeds only for windows that were
+              script-opened (e.g. the installed PWA), so we attempt it
+              AND swap the page out for a goodbye screen as a guaranteed
+              fallback that works in normal tabs too. */}
+          {!detectIsMobile() && (
+            <button
+              onClick={() => {
+                if (!window.confirm("Exit VIRTUE?")) return;
+                try { audioBus.stopLobbyMusic(); } catch {}
+                try {
+                  // Best-effort close — works on PWA / popups / window.opener
+                  window.close();
+                } catch {}
+                // Fallback: replace the page with a comic-style goodbye so
+                // the user knows it's safe to close. Uses location.replace
+                // so back-button doesn't bring them back into the lobby.
+                setTimeout(() => {
+                  document.body.innerHTML = `
+                    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F4F5;font-family:'Anton',sans-serif">
+                      <div style="text-align:center;padding:2rem 3rem;background:white;border:4px solid #000;box-shadow:8px 8px 0 #000;transform:rotate(-1.5deg)">
+                        <h1 style="font-family:'Bangers',cursive;color:#E62429;font-size:4rem;margin:0;letter-spacing:0.05em">SEE YOU SOON!</h1>
+                      </div>
+                    </div>`;
+                }, 80);
+              }}
+              className="btn-pow bg-[#222] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
+              data-testid="lobby-exit-button"
+              title="Exit to desktop"
+            >
+              <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /><span className="hidden sm:inline">EXIT</span></span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -844,6 +885,44 @@ export default function Lobby() {
           <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 max-w-md">
             {party && (
               <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
+            )}
+            {/* Cross-play warning — surfaces only on mobile devices whose
+                Mobile-Only Matchmaking toggle is off. One-tap "MOBILE ONLY"
+                button flips the setting so the very next queue-join
+                request carries `mobile_only=1`. Dismissible for the
+                current tab session. */}
+            {showCrossplayBanner && (
+              <div
+                className="card-pow p-0 overflow-hidden -rotate-[0.5deg]"
+                data-testid="lobby-crossplay-banner"
+              >
+                <div className="bg-[#FF7A00] text-black px-3 py-1.5 font-anton uppercase tracking-widest text-xs flex items-center gap-2">
+                  <Smartphone size={14} strokeWidth={3} />
+                  <span className="flex-1">CROSS-PLAY IS ON</span>
+                  <button
+                    onClick={dismissCrossplayBanner}
+                    className="hover:opacity-70"
+                    data-testid="lobby-crossplay-dismiss"
+                    aria-label="Dismiss cross-play warning"
+                    title="Dismiss"
+                  >
+                    <X size={14} strokeWidth={3} />
+                  </button>
+                </div>
+                <div className="bg-white text-black px-3 py-2 flex flex-wrap items-center gap-2">
+                  <span className="font-body text-[13px] leading-snug flex-1 min-w-[160px]">
+                    You're queueing cross-play with desktop players. Tap to only match on mobile.
+                  </span>
+                  <button
+                    onClick={enableMobileOnlyFromBanner}
+                    className="btn-pow bg-black text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+                    data-testid="lobby-crossplay-enable-mobile-only"
+                    title="Turn on Mobile Only matchmaking"
+                  >
+                    <span className="flex items-center gap-1"><Smartphone size={12} strokeWidth={3} /> MOBILE ONLY</span>
+                  </button>
+                </div>
+              </div>
             )}
             <button
               onClick={casualInQueue ? undefined : startQuickQueue}

@@ -2360,3 +2360,27 @@ Two quality-of-life changes shipped together.
 - **Verified end-to-end**:
   - Live WS test: joining bigffa with `?mobile=1&mobile_only=1` → all 12 combatants report `platform="mobile"` in state payload; scoreboard renders phone chips.
   - Backend log confirms fresh bot spawn diff=0.90 (raw 2.0 × 0.45) instead of the previous smurf-tier 1.70.
+
+
+### 2026-02-27 (later²⁴) — Cross-play warning banner in the lobby
+- **User request**: Toast a "you are queueing cross-play" reminder when a mobile user's Mobile Only toggle is off so they can flip it before searching.
+- **Frontend** (`/app/frontend/src/pages/Lobby.jsx`):
+  - New inline `lobby-crossplay-banner` component inserted right above the queue-mode buttons (below the PartyPanel).
+  - Renders only when ALL of: `detectIsMobile()` is true, `settingsStore.mobileOnlyMatchmaking` is false, no active queue is in flight, and the banner wasn't dismissed for this session (`sessionStorage['virtue_crossplay_dismissed'] === '1'`).
+  - Orange "CROSS-PLAY IS ON" header (matches the 12P FFA palette) + Smartphone icon + copy: *"You're queueing cross-play with desktop players. Tap to only match on mobile."*
+  - Two actions: `MOBILE ONLY` (calls `settingsStore.set({mobileOnlyMatchmaking: true})` — banner disappears reactively, the next queue-join POST carries `mobile_only:1`) and dismiss `X` (session-scoped so the banner comes back next tab).
+  - Subscribes to `settingsStore.subscribe` so if the Settings modal flips the toggle, the banner hides without a re-mount.
+- **Verified in preview** (touch-emulated 390×844 viewport):
+  - Banner visible after login with Mobile Only OFF.
+  - Clicking `MOBILE ONLY` → banner disappears + `localStorage['virtue-settings-v1'].mobileOnlyMatchmaking = true` confirmed.
+  - Screenshot captures both states.
+
+### 2026-02-27 (later²⁵) — Hide EXIT button on mobile + harden mobile-only setting on desktop
+- **User request**: Remove the EXIT button on mobile but keep it on desktop; make sure the Mobile Matchmaking option isn't available on PC.
+- **Frontend changes** (verified via Playwright at both 1920×900 and 844×390 viewports):
+  - `/app/frontend/src/pages/Lobby.jsx`: wrapped the header `lobby-exit-button` in `!detectIsMobile()`. Mobile users close via OS gestures / tab UI — no more crowding the compact header. Desktop retains the button + goodbye-page fallback.
+  - `/app/frontend/src/components/Hud.jsx`: added `detectIsMobile` import; `game-exit-button` (top-left, pre-pointer-lock corner button) now gated behind `!detectIsMobile()` too. Touch users reach the pause menu via the on-screen pause control, so the corner EXIT is redundant clutter for them.
+  - `/app/frontend/src/game/settings.js`: added defensive one-shot normalization at module load — if `detectIsMobile()` reports desktop AND `mobileOnlyMatchmaking:true` is persisted (e.g. same account/localStorage synced from a mobile session, or DevTools responsive-mode toggled off), the flag is auto-cleared and re-serialized so no invisible-checked-state can linger. Belt-and-suspenders on top of `QueueContext._platformFlags` which already `&&` the pref with `detectIsMobile()` before sending `mobile_only` upstream.
+- **Verified end-to-end**:
+  - Desktop 1920×900: `[data-testid="lobby-exit-button"]` count = 1 ✅ · `[data-testid="settings-mobile-only-section"]` count = 0 ✅
+  - Mobile landscape 844×390: `[data-testid="lobby-exit-button"]` count = 0 ✅ · `[data-testid="settings-mobile-only-section"]` count = 1 ✅ (still available where relevant)
