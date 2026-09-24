@@ -288,6 +288,17 @@ export function QueueProvider({ children }) {
         // cancelled while we were awaiting, the response is stale.
         if (Date.now() < cancelGuardUntilRef.current) return;
         if (s && (s.in_queue || s.matched)) {
+          // Follower detection: the bg poll only enters this branch
+          // when THIS client didn't press the ranked button but the
+          // server nonetheless says we're queued/matched — i.e. our
+          // party leader queued us. Fire the mini-toast event before
+          // the full 3-2-1 overlay so the follower knows what's
+          // happening in the ~1s gap. Fire once — the pollIdRef
+          // check at the top of `tick` guarantees this branch only
+          // runs on the first successful discovery.
+          try {
+            window.dispatchEvent(new CustomEvent("virtue-follower-joined-ranked"));
+          } catch {}
           beginActivePoll(s);
         }
       } catch {}
@@ -477,8 +488,25 @@ export function QueueProvider({ children }) {
         // ~4.2s match-found overlay). If in_queue, we back-date it
         // so the follower's timer roughly matches the leader's.
         if (s && s.matched) {
+          // Followers who land here missed the "leader started" moment
+          // (either the leader queued while this client was offline
+          // or the initial in_queue tick already got consumed). Still
+          // fire the follower-detected event so the mini-toast plays,
+          // then the match-found overlay takes over immediately.
+          try {
+            window.dispatchEvent(new CustomEvent("virtue-follower-joined-casual"));
+          } catch {}
           beginCasualActivePoll(s, Date.now());
         } else if (s && s.in_queue) {
+          // Fresh discovery — this client didn't queue itself, but
+          // the server says we're in the casual queue. That means
+          // our party leader hit Quick Match. Announce it via the
+          // custom event so the Lobby can render its
+          // "LEADER STARTED QUICK MATCH" mini-toast before the full
+          // match-found overlay lands.
+          try {
+            window.dispatchEvent(new CustomEvent("virtue-follower-joined-casual"));
+          } catch {}
           const joinTs = Date.now() - (Number(s.wait_seconds || 0) * 1000);
           beginCasualActivePoll(s, joinTs);
         }

@@ -403,6 +403,33 @@ export default function Lobby() {
     return () => clearTimeout(t);
   }, [spectateEnded, searchParams, setSearchParams]);
 
+  // Follower mini-toast — when the casual / ranked background poll
+  // discovers that THIS client is now queued (i.e. our party leader
+  // just kicked off the queue for the whole party), fire a short
+  // "LEADER STARTED QUICK MATCH" chip in the top-right for ~2.6s so
+  // the follower knows what's happening in the brief window before
+  // the full match-found overlay lands. `followerToast.mode` is
+  // "casual" or "ranked" so the copy + accent color can match.
+  const [followerToast, setFollowerToast] = useState(null);
+  useEffect(() => {
+    const onCasual = () => setFollowerToast({ mode: "casual", ts: Date.now() });
+    const onRanked = () => setFollowerToast({ mode: "ranked", ts: Date.now() });
+    window.addEventListener("virtue-follower-joined-casual", onCasual);
+    window.addEventListener("virtue-follower-joined-ranked", onRanked);
+    return () => {
+      window.removeEventListener("virtue-follower-joined-casual", onCasual);
+      window.removeEventListener("virtue-follower-joined-ranked", onRanked);
+    };
+  }, []);
+  // Auto-dismiss the follower toast — ~2.6s is short enough to clear
+  // before the match-found 3-2-1 overlay steals attention but long
+  // enough to read the copy.
+  useEffect(() => {
+    if (!followerToast) return;
+    const t = setTimeout(() => setFollowerToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [followerToast]);
+
   // Poll active player counts every 3s — disabled. The lobby now shows a
   // single fluctuating "Players online" widget driven client-side; real per-
   // room counts are no longer surfaced in the UI.
@@ -1256,6 +1283,35 @@ export default function Lobby() {
           setShowFriends(true);
         }}
       />
+      {/* Follower mini-toast — top-right corner, ~2.6s auto-dismiss.
+          Fires when the bg poll first sees THIS client is queued
+          without them personally hitting the queue button (i.e. the
+          party leader kicked off the queue). Distinct from the full
+          match-found overlay so followers get an instant "your leader
+          just started Quick Match" cue in the ~1s gap before the
+          overlay lands. */}
+      {followerToast && (
+        <div
+          className="fixed top-4 right-4 z-[70] card-pow bg-black text-white px-4 py-2 flex items-center gap-2 max-w-[300px] pointer-events-none"
+          style={{ animation: "party-follower-toast-in 220ms ease-out both" }}
+          data-testid="follower-queue-toast"
+          data-mode={followerToast.mode}
+        >
+          <Loader2 size={14} strokeWidth={3} className="animate-spin flex-shrink-0" style={{ color: followerToast.mode === "ranked" ? "#0055FF" : "#E62429" }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 leading-none">Party</div>
+            <div className="font-display text-sm leading-tight truncate">
+              Leader started {followerToast.mode === "ranked" ? "Ranked" : "Quick Match"}
+            </div>
+          </div>
+          <style>{`
+            @keyframes party-follower-toast-in {
+              from { transform: translateY(-16px); opacity: 0; }
+              to   { transform: translateY(0);     opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
       <ShopModal open={showShop} onClose={() => setShowShop(false)} />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
       <PracticeMapSelector

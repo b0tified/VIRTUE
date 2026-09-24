@@ -2494,3 +2494,19 @@ Two quality-of-life changes shipped together.
   - Leader clicks Quick Match → follower's next 3s bg tick discovers `in_queue:true` → follower's active poll kicks in → both hit match-found at almost the same moment → both nav to /play?mode=casual within a second of each other → both land in the same singleton `game_room`/`tdm_room` match cycle.
   - Party panel stays visible through the entire matchmaking sequence (via the queue-active skip) plus tolerates 6 consecutive nulls before ever tearing down.
 - **Verified in preview** (Playwright): app compiles cleanly (HTTP 200), casual bg poll fires `/api/queue/casual` at exactly the 3s cadence (2 requests in 8s dwell window), party poll fires `/api/party/me` at the new 3s cadence. Lobby renders normally with the new plumbing.
+
+### 2026-02-27 (later³³) — Follower mini-toast for party queue discovery
+- **User request**: Display a small notification when a follower detects the leader starting Quick Match (also useful for Ranked).
+- **Frontend implementation**:
+  - `/app/frontend/src/context/QueueContext.jsx`:
+    - Ranked bg poll: on the first tick that discovers `in_queue || matched` for THIS client (only possible if a party leader queued us), dispatches `window` CustomEvent `virtue-follower-joined-ranked` before calling `beginActivePoll(s)`. The active-poll guard at the top of the tick guarantees this branch only runs on first successful discovery, so the event fires exactly once per queue session.
+    - Casual bg poll: same pattern — dispatches `virtue-follower-joined-casual` before firing `beginCasualActivePoll(...)`.
+  - `/app/frontend/src/pages/Lobby.jsx`:
+    - New `followerToast` state (`{mode, ts}`) + a `useEffect` that listens for both custom events and stores the mode.
+    - Second `useEffect` auto-clears the toast after 2.6s — short enough to clear before the 3-2-1 match-found overlay steals attention, long enough to read the copy.
+    - Renders a top-right chip (`data-testid="follower-queue-toast"`) with a mode-tinted spinner (red for casual, blue for ranked), a small "PARTY" label, and the copy `Leader started Quick Match` or `Leader started Ranked`. Uses a local `@keyframes party-follower-toast-in` for the slide-down + fade-in entrance so it doesn't depend on any external animation utility.
+- **Verified in preview** (Playwright):
+  - Firing `virtue-follower-joined-casual` → toast renders with `data-mode="casual"`, inner text `PARTY\nLeader started Quick Match`. ✅
+  - Firing `virtue-follower-joined-ranked` → toast renders with `data-mode="ranked"`, inner text `PARTY\nLeader started Ranked`. ✅
+  - Auto-dismiss after 2.6s: count goes 1 → 0. ✅
+- **Why only followers see it**: The leader path (`joinCasual` / `joinRanked`) calls `beginCasualActivePoll` / `beginActivePoll` directly with their own POST response — the bg poll's follower-detection branch is guarded by `casualPollRef.current` / `pollIdRef.current`, which are already set on the leader before the bg poll's next tick can run.
