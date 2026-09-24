@@ -2410,3 +2410,19 @@ Two quality-of-life changes shipped together.
   - E1 strafes to ~63° (outside 52° acquire cone, inside 83° track cone) → aim STAYS on E1 despite E2 being closer to center now. ✅ (this is the tracking behaviour the user asked for)
   - E1 continues to ~100° (past 83° track cone) → sticky releases, re-acquisition picks E2. ✅
 - **No behaviour change on desktop/controller**: sticky logic is gated on `this.touchActive`; the `TRACK_CONE` collapses to the same value as `ACQUIRE_CONE` for controller so nothing changes there.
+
+### 2026-02-27 (later²⁸) — Bullet magnetism on mobile hip-fire
+- **User request**: Bend fired bullets a few degrees toward the sticky target for extra polish on mobile hip-fire.
+- **Frontend fix** (`/app/frontend/src/game/engine.js`):
+  - New helper `_applyBulletMagnetism(rawYaw, rawPitch)` next to `applyAimAssist`. When the caller is on touch AND has a valid sticky target AND is NOT ADS, it computes the desired yaw/pitch to the sticky target's torso, then bends the outgoing shot direction toward it — capped at `MAX_BEND = 0.07 rad` (~4°) so a perfectly-aimed shot passes through unchanged and a "close enough" shoulder-graze becomes a torso hit.
+  - Safety threshold: if the raw aim is more than 0.55 rad (~31.5°) off from the target, magnetism returns null (i.e. a completely missed shot stays missed — no aimbot).
+  - Applied inside `_tryShoot` right before setting `pendingShootAim`. Camera doesn't move — only the direction sent to the server does. ADS shooters (right-click on desktop, ADS toggle on touch) get NO magnetism so precise scoped shots aren't nudged off-target.
+- **Behavioural properties** (verified via headless Playwright test with 7 assertions):
+  - `A_perfect`: perfectly-centered aim → 0 yaw change (no unwanted nudge)
+  - `B_within`: 3° offset → fully corrected to target (below cap)
+  - `C_capped`: 10° offset → shifted exactly 0.07 rad (~4°), no more
+  - `D_safety`: 45° offset → returns null (missed shots stay missed)
+  - `E_no_sticky`: no sticky target → null (magnetism only activates when aim assist has already locked on)
+  - `F_dead`: dead sticky target → null
+  - `G_never_exceeds_cap`: swept 0–30° offsets, max shift is exactly `MAX_BEND`
+- **Where it applies**: touch hip-fire only. All primary weapons (AK / sniper hip-fire). Excludes ADS, desktop, controller. Server hitscan runs on the bent direction so this is authoritative — no client-side deception.

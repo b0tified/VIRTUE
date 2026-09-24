@@ -514,7 +514,21 @@ export class GameEngine {
       return;
     }
     this.pendingShoot = true;
-    this.pendingShootAim = { yaw: aimYaw, pitch: aimPitch };
+    // Bullet magnetism (touch hip-fire only): if aim assist locked onto
+    // a sticky target this frame, gently bend the OUTGOING shot yaw/pitch
+    // a few degrees toward the target's torso. The camera doesn't move —
+    // only the direction sent to the server does — so it plays like an
+    // ever-so-slight nudge that closes the gap between a "close enough"
+    // reticle and a torso-center hit. ADS shooters get NO magnetism —
+    // they've already committed to precise aim, applying magnetism would
+    // feel like the sniper is being pulled off-target.
+    let outYaw = aimYaw;
+    let outPitch = aimPitch;
+    if (this.touchActive && !this.ads && this._stickyTargetId) {
+      const bent = this._applyBulletMagnetism(aimYaw, aimPitch);
+      if (bent) { outYaw = bent.yaw; outPitch = bent.pitch; }
+    }
+    this.pendingShootAim = { yaw: outYaw, pitch: outPitch };
     // Stamp the shot time so the hold-to-fire tick in _update() knows
     // when the next shot may be queued. Prevents the per-frame loop
     // from filling `pendingShoot` faster than the server cooldown.
@@ -6786,6 +6800,59 @@ export class GameEngine {
     const k = 1 - Math.exp(-lerpRate * dt);
     this.yaw += yd * k;
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch + pd * k));
+  }
+
+  /* Bullet magnetism (touch hip-fire only). Returns a slightly bent
+     {yaw, pitch} pointing MORE toward the sticky target than the raw
+     aim did — capped at MAX_BEND radians so the bullet never snaps
+     onto a target that wasn't already close to the reticle. Returns
+     null if the sticky target is missing/dead/too far/behind us.
+
+     Design notes:
+       - Cap = 0.07 rad (~4°). Big enough to turn a "close enough"
+         shoulder-graze into a torso hit, small enough that firing
+         wildly off-target still misses (matches Halo/Destiny hip-fire
+         magnetism feel).
+       - Bend scales with how far the aim ALREADY is from the target:
+         perfectly-centered shots barely move (no bend needed); shots
+         at the edge of the acquire cone get the full ~4° pull.
+       - Applied in world space to yaw/pitch, not to bullet trajectory.
+         The server does hitscan on the sent (bent) direction so this
+         is authoritative — no client-side deception. */
+  _applyBulletMagnetism(rawYaw, rawPitch) {
+    const p = this.players?.get(this._stickyTargetId);
+    if (!p || !p.alive) return null;
+    const dx = p.x - this.position.x;
+    const dy = ((p.y || 1.8) - 0.6) - this.position.y;
+    const dz = p.z - this.position.z;
+    const horiz = Math.hypot(dx, dz);
+    const dist = Math.hypot(horiz, dy);
+    // Same range envelope as the sticky tracker — no magnetism to
+    // out-of-range or behind-you targets.
+    if (dist < 0.5 || dist > 60) return null;
+    // Match Three.js camera convention (see applyAimAssist).
+    const desiredYaw = Math.atan2(-dx, -dz);
+    const desiredPitch = Math.atan2(dy, horiz);
+    // Signed shortest yaw delta.
+    let yd = desiredYaw - rawYaw;
+    while (yd >  Math.PI) yd -= Math.PI * 2;
+    while (yd < -Math.PI) yd += Math.PI * 2;
+    const pd = desiredPitch - rawPitch;
+    const total = Math.hypot(yd, pd);
+    // Never magnetize if the aim is already pointing well past the
+    // target (angular offset > ~30°). This is the safety net that
+    // prevents magnetism from turning a fully-missed shot into a hit
+    // just because a sticky target exists somewhere off-screen.
+    if (total > 0.55) return null;
+    const MAX_BEND = 0.07; // ~4°
+    // Bend up to MAX_BEND, but never more than the actual offset (so
+    // a perfectly-aimed shot passes through unbent).
+    const bend = Math.min(MAX_BEND, total);
+    const scale = total > 1e-4 ? bend / total : 0;
+    return {
+      yaw: rawYaw + yd * scale,
+      pitch: rawPitch + pd * scale,
+    };
   }
 
   _loop = () => {
