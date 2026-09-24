@@ -6,9 +6,10 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
+import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 
 const REASON_LABEL = {
   cheating: "Cheating",
@@ -1770,6 +1771,13 @@ function LeaderboardBotsPanel({ onToast }) {
                 patchRow(r.id, { username: newName });
                 onToast?.({ kind: "ok", text: `Renamed ${r.username} → ${newName}` });
               }}
+              onEdited={(patch) => {
+                patchRow(r.id, patch);
+                const bits = [];
+                if (patch.avatar !== undefined) bits.push(`avatar → #${patch.avatar}`);
+                if (patch.rank_points !== undefined) bits.push(`${patch.rank_points} RP`);
+                onToast?.({ kind: "ok", text: `Updated ${r.username}: ${bits.join(", ")}` });
+              }}
               onError={(msg) => onToast?.({ kind: "err", text: msg })}
             />
           ))}
@@ -1779,12 +1787,22 @@ function LeaderboardBotsPanel({ onToast }) {
   );
 }
 
-/* Inline row for a leaderboard bot — RP + rank chip on the left,
-   inline rename control on the right (pencil → input → save/cancel).
-   Same rename endpoint as `AccountRow`. */
-function LeaderboardBotRow({ row, rank, testid, onRenamed, onError }) {
+/* Inline row for a leaderboard bot — RP + rank chip + avatar preview on
+   the left, inline rename control on the right (pencil → input →
+   save/cancel), plus a Palette button that opens an "Edit" panel below
+   the row for tweaking `avatar` (0-21) + `seed_target_rp`. Rename hits
+   `/admin/users/{u}/rename`; avatar+RP edits hit
+   `PATCH /admin/leaderboard_bots/{u}`. */
+function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) {
   const [renameVal, setRenameVal] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+  // Draft state for the avatar + RP edit panel. Mirrors `row` on open
+  // and resets on cancel/save so re-opening reflects the persisted
+  // values, not stale edits.
+  const [draftAvatar, setDraftAvatar] = useState(row.avatar ?? 0);
+  const [draftRp, setDraftRp] = useState(row.seed_target_rp ?? row.rank_points ?? 0);
   const [busy, setBusy] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const doRename = async () => {
     const next = (renameVal || "").trim();
@@ -1804,64 +1822,178 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onError }) {
     }
   };
 
+  const openEdit = () => {
+    // Snapshot current values so cancel restores cleanly.
+    setDraftAvatar(row.avatar ?? 0);
+    setDraftRp(row.seed_target_rp ?? row.rank_points ?? 0);
+    setEditOpen(true);
+  };
+
+  const doSaveEdit = async () => {
+    const payload = {};
+    if (draftAvatar !== (row.avatar ?? 0)) payload.avatar = draftAvatar;
+    const rpInt = Math.max(0, Math.min(10000, parseInt(draftRp, 10) || 0));
+    if (rpInt !== (row.seed_target_rp ?? row.rank_points ?? 0)) payload.seed_target_rp = rpInt;
+    if (Object.keys(payload).length === 0) {
+      setEditOpen(false);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const { data } = await api.patch(
+        `/admin/leaderboard_bots/${encodeURIComponent(row.username)}`,
+        payload,
+      );
+      onEdited?.({
+        avatar: data.avatar,
+        seed_target_rp: data.seed_target_rp,
+        rank_points: data.rank_points,
+      });
+      setEditOpen(false);
+    } catch (e) {
+      onError?.(e?.response?.data?.detail || "Edit failed.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
-    <div className="px-4 py-3 flex items-center gap-3" data-testid={testid}>
-      <span className="font-display text-xl text-[#FFB000] w-10 text-center" data-testid={`${testid}-rank`}>
-        #{rank}
-      </span>
-      <div className="flex-1 min-w-0">
+    <div className="px-4 py-3" data-testid={testid}>
+      <div className="flex items-center gap-3">
+        <span className="font-display text-xl text-[#FFB000] w-10 text-center" data-testid={`${testid}-rank`}>
+          #{rank}
+        </span>
+        <div className="flex-shrink-0" data-testid={`${testid}-avatar-preview`}>
+          <Avatar idx={row.avatar ?? 0} size={40} />
+        </div>
+        <div className="flex-1 min-w-0">
+          {renameVal === null ? (
+            <div className="font-anton uppercase tracking-widest text-sm truncate" data-testid={`${testid}-name`}>
+              {row.username}
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={renameVal}
+              autoFocus
+              onChange={(e) => setRenameVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenameVal(null); }}
+              className="w-full border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-sm"
+              minLength={2}
+              maxLength={20}
+              data-testid={`${testid}-rename-input`}
+            />
+          )}
+          <div className="mt-0.5 flex flex-wrap gap-2 font-anton uppercase tracking-widest text-[10px] text-neutral-600">
+            <span data-testid={`${testid}-rp`}>{row.rank_points} RP</span>
+            <span>·</span>
+            <span>{row.matches}M</span>
+            <span>·</span>
+            <span>{row.kills}K</span>
+          </div>
+        </div>
         {renameVal === null ? (
-          <div className="font-anton uppercase tracking-widest text-sm truncate" data-testid={`${testid}-name`}>
-            {row.username}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={openEdit}
+              className={`btn-pow ${editOpen ? "bg-[#FFB000] text-black" : "bg-white text-black"} [&]:px-2 [&]:py-1 [&]:text-xs`}
+              title="Edit avatar & RP"
+              data-testid={`${testid}-edit-btn`}
+            >
+              <Palette size={12} strokeWidth={3} />
+            </button>
+            <button
+              onClick={() => setRenameVal(row.username)}
+              className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+              title="Rename bot"
+              data-testid={`${testid}-rename-btn`}
+            >
+              <Pencil size={12} strokeWidth={3} />
+            </button>
           </div>
         ) : (
-          <input
-            type="text"
-            value={renameVal}
-            autoFocus
-            onChange={(e) => setRenameVal(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenameVal(null); }}
-            className="w-full border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-sm"
-            minLength={2}
-            maxLength={20}
-            data-testid={`${testid}-rename-input`}
-          />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={doRename}
+              disabled={busy}
+              className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+              data-testid={`${testid}-rename-save`}
+            >
+              {busy ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+            </button>
+            <button
+              onClick={() => setRenameVal(null)}
+              disabled={busy}
+              className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+              data-testid={`${testid}-rename-cancel`}
+            >
+              <X size={12} strokeWidth={3} />
+            </button>
+          </div>
         )}
-        <div className="mt-0.5 flex flex-wrap gap-2 font-anton uppercase tracking-widest text-[10px] text-neutral-600">
-          <span data-testid={`${testid}-rp`}>{row.rank_points} RP</span>
-          <span>·</span>
-          <span>{row.matches}M</span>
-          <span>·</span>
-          <span>{row.kills}K</span>
-        </div>
       </div>
-      {renameVal === null ? (
-        <button
-          onClick={() => setRenameVal(row.username)}
-          className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
-          title="Rename bot"
-          data-testid={`${testid}-rename-btn`}
-        >
-          <Pencil size={12} strokeWidth={3} />
-        </button>
-      ) : (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={doRename}
-            disabled={busy}
-            className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
-            data-testid={`${testid}-rename-save`}
-          >
-            {busy ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
-          </button>
-          <button
-            onClick={() => setRenameVal(null)}
-            disabled={busy}
-            className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
-            data-testid={`${testid}-rename-cancel`}
-          >
-            <X size={12} strokeWidth={3} />
-          </button>
+
+      {/* Expanded edit panel — appears below the row when the Palette
+          button is toggled. Avatar picker (compact grid of all 22 slots)
+          + numeric RP input. Save/Cancel commit the diff. */}
+      {editOpen && (
+        <div className="mt-3 bg-neutral-100 border-2 border-black p-3" data-testid={`${testid}-edit-panel`}>
+          <div className="font-anton uppercase tracking-widest text-xs mb-2 text-neutral-700">
+            Avatar
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3" data-testid={`${testid}-edit-avatar-grid`}>
+            {Array.from({ length: AVATAR_COUNT }).map((_, i) => {
+              const active = i === draftAvatar;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setDraftAvatar(i)}
+                  className={`p-1 transition-transform ${active ? "ring-2 ring-[#FFB000] translate-y-[-1px]" : "hover:translate-y-[-1px]"}`}
+                  title={`Avatar #${i}`}
+                  data-testid={`${testid}-edit-avatar-${i}`}
+                  aria-pressed={active}
+                >
+                  <Avatar idx={i} size={36} />
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-end gap-3 flex-wrap">
+            <label className="flex-1 min-w-[160px]">
+              <div className="font-anton uppercase tracking-widest text-xs mb-1 text-neutral-700">
+                Target RP (0-10000)
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={10000}
+                step={15}
+                value={draftRp}
+                onChange={(e) => setDraftRp(e.target.value)}
+                className="w-full border-2 border-black px-2 py-1 font-anton tracking-widest text-sm tabular-nums"
+                data-testid={`${testid}-edit-rp-input`}
+              />
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={doSaveEdit}
+                disabled={savingEdit}
+                className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-1 [&]:text-xs"
+                data-testid={`${testid}-edit-save`}
+              >
+                {savingEdit ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : "SAVE"}
+              </button>
+              <button
+                onClick={() => setEditOpen(false)}
+                disabled={savingEdit}
+                className="btn-pow bg-white text-black [&]:px-3 [&]:py-1 [&]:text-xs"
+                data-testid={`${testid}-edit-cancel`}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

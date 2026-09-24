@@ -117,3 +117,121 @@ def test_rename_leaderboard_bot_end_to_end():
             headers=_hdr(tok),
             json={"new_username": original},
         )
+
+
+# --- PATCH /admin/leaderboard_bots/{u} -----------------------------
+
+def test_patch_leaderboard_bot_avatar_and_rp():
+    """Admin PATCH updates avatar + seed_target_rp; rank_points mirrors
+    the new target so the leaderboard reflects the change immediately."""
+    tok = _admin_token()
+    seed = requests.get(f"{LOCAL}/api/admin/leaderboard_bots?limit=1",
+                        headers=_hdr(tok)).json()
+    assert seed, "no seeded bots"
+    name = seed[0]["username"]
+    orig_avatar = seed[0]["avatar"]
+    orig_target = seed[0]["seed_target_rp"]
+    orig_rp = seed[0]["rank_points"]
+
+    new_avatar = (orig_avatar + 3) % 22
+    new_target = 1234
+
+    try:
+        r = requests.patch(
+            f"{LOCAL}/api/admin/leaderboard_bots/{name}",
+            headers=_hdr(tok),
+            json={"avatar": new_avatar, "seed_target_rp": new_target},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["avatar"] == new_avatar
+        assert body["seed_target_rp"] == new_target
+        # rank_points must mirror the new target (leaderboard-visible now).
+        assert body["rank_points"] == new_target
+
+        # Verify the list endpoint reflects the change.
+        fresh = requests.get(
+            f"{LOCAL}/api/admin/leaderboard_bots",
+            params={"q": name, "limit": 5},
+            headers=_hdr(tok),
+        ).json()
+        matched = next((r for r in fresh if r["username"] == name), None)
+        assert matched, fresh
+        assert matched["avatar"] == new_avatar
+        assert matched["seed_target_rp"] == new_target
+    finally:
+        # Revert so the seed remains stable.
+        requests.patch(
+            f"{LOCAL}/api/admin/leaderboard_bots/{name}",
+            headers=_hdr(tok),
+            json={"avatar": orig_avatar, "seed_target_rp": orig_target},
+        )
+
+
+def test_patch_leaderboard_bot_refuses_non_seeded():
+    """Refuse to edit a real (non-seeded) user through this endpoint —
+    the admin's own account should return 400."""
+    tok = _admin_token()
+    me = requests.get(f"{LOCAL}/api/auth/me", headers=_hdr(tok)).json()
+    r = requests.patch(
+        f"{LOCAL}/api/admin/leaderboard_bots/{me['username']}",
+        headers=_hdr(tok),
+        json={"avatar": 5},
+    )
+    assert r.status_code == 400, r.text
+    assert "non-seeded" in r.json()["detail"]
+
+
+def test_patch_leaderboard_bot_partial_update():
+    """PATCH accepts only one field (e.g. just avatar) without touching
+    the other. Confirms `Optional` handling on the payload model."""
+    tok = _admin_token()
+    seed = requests.get(f"{LOCAL}/api/admin/leaderboard_bots?limit=1",
+                        headers=_hdr(tok)).json()
+    name = seed[0]["username"]
+    orig_avatar = seed[0]["avatar"]
+    orig_target = seed[0]["seed_target_rp"]
+    new_avatar = (orig_avatar + 5) % 22
+
+    try:
+        r = requests.patch(
+            f"{LOCAL}/api/admin/leaderboard_bots/{name}",
+            headers=_hdr(tok),
+            json={"avatar": new_avatar},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["avatar"] == new_avatar
+        # Target RP untouched.
+        assert body["seed_target_rp"] == orig_target
+    finally:
+        requests.patch(
+            f"{LOCAL}/api/admin/leaderboard_bots/{name}",
+            headers=_hdr(tok),
+            json={"avatar": orig_avatar},
+        )
+
+
+def test_patch_leaderboard_bot_rejects_out_of_range():
+    """Pydantic gates: avatar > 21 → 422; seed_target_rp > 10000 → 422."""
+    tok = _admin_token()
+    seed = requests.get(f"{LOCAL}/api/admin/leaderboard_bots?limit=1",
+                        headers=_hdr(tok)).json()
+    name = seed[0]["username"]
+    r1 = requests.patch(
+        f"{LOCAL}/api/admin/leaderboard_bots/{name}",
+        headers=_hdr(tok), json={"avatar": 99},
+    )
+    assert r1.status_code == 422
+    r2 = requests.patch(
+        f"{LOCAL}/api/admin/leaderboard_bots/{name}",
+        headers=_hdr(tok), json={"seed_target_rp": 999999},
+    )
+    assert r2.status_code == 422
+
+
+def test_patch_leaderboard_bot_requires_admin():
+    """Non-admin token → 401/403."""
+    r = requests.patch(f"{LOCAL}/api/admin/leaderboard_bots/AnyName",
+                       json={"avatar": 5})
+    assert r.status_code in (401, 403)

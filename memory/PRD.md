@@ -2445,3 +2445,23 @@ Two quality-of-life changes shipped together.
   - `q` substring filter (case-insensitive).
   - End-to-end rename + revert via the shared endpoint.
 - **Verified in preview** with a Playwright smoke test: panel renders with 25 seeded bots after admin login → `/admin/reports`, clicking pencil on row 0 opens the rename input.
+
+### 2026-02-27 (later³⁰) — Admin: edit leaderboard bot avatar + target RP
+- **User request**: Extend the Leaderboard Bots panel to also tweak avatar + target RP so seasonal seeds can be re-shaped without redeploy.
+- **Backend** (`/app/backend/server.py`):
+  - New endpoint `PATCH /api/admin/leaderboard_bots/{username}` accepting an optional `AdminLeaderboardBotEditIn` payload — `avatar` (0-21, matches real player range) + `seed_target_rp` (0-10000, matches the seed climb window).
+  - Refuses non-seeded users (400) so the mutation surface stays scoped; requires admin (403 otherwise).
+  - When `seed_target_rp` is set, mirrors it into `rank_points` immediately so the leaderboard reflects the change in the very next `/leaderboard` fetch — otherwise admins would have to wait for the next climb-loop tick.
+  - Returns the refreshed `{username, avatar, seed_target_rp, rank_points}` so the client can patch its row without a second fetch.
+- **Frontend** (`/app/frontend/src/pages/AdminReports.jsx`):
+  - Imported `Avatar` + `AVATAR_COUNT` from `PlayerCard.jsx` for the preview + grid.
+  - Added a 40px `Avatar` preview to the left of each `LeaderboardBotRow` name.
+  - New `Palette` button next to the rename pencil that toggles an inline "edit panel" beneath the row:
+    - Compact grid of all 22 avatars (36px each) — click to select; active slot gets a yellow ring.
+    - Numeric input for Target RP (0-10000, step 15 to match the ranked-match grid).
+    - SAVE (green) + CANCEL (white) buttons.
+  - SAVE PATCHes only the diff (avatar-only / rp-only edits both work). Successful save triggers `onEdited` callback which patches the parent's row state + toasts `Updated <name>: avatar → #X, <rp> RP`.
+- **Tests** (`/app/backend/tests/test_admin_leaderboard_bots.py`, now 10/10 passing):
+  - Existing 5 (list endpoint + rename e2e).
+  - New 5: full avatar + RP PATCH round-trip (with revert), non-seeded refusal, partial-update (avatar-only) preserves RP, Pydantic gates on avatar>21 & rp>10000, non-admin gate.
+- **Verified in preview** (Playwright): row-0 shows avatar preview, palette button opens edit panel, avatar grid renders 22+ options, RP input pre-filled, SAVE/CANCEL visible. Screenshot captures the full expanded state.

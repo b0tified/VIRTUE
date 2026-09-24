@@ -9138,6 +9138,74 @@ class AdminRenameUserIn(BaseModel):
     new_username: str = Field(min_length=2, max_length=20)
 
 
+class AdminLeaderboardBotEditIn(BaseModel):
+    """Admin-only edits for a seeded leaderboard bot. All fields are
+    optional so callers can PATCH just one field at a time (e.g. only
+    the avatar) without disturbing the other.
+
+    - `avatar`: 0-21, matches the `AvatarIn` gate used by real players.
+    - `seed_target_rp`: bot's climb target. The nightly climb loops
+      re-approach this value; we also mirror it into `rank_points`
+      right away so the leaderboard reflects the change immediately
+      (otherwise admins wouldn't see the edit until the next climb
+      tick, which is confusing UX).
+    """
+    avatar: Optional[int] = Field(default=None, ge=0, le=21)
+    seed_target_rp: Optional[int] = Field(default=None, ge=0, le=10000)
+
+
+@api.patch("/admin/leaderboard_bots/{username}")
+async def admin_edit_leaderboard_bot(
+    username: str,
+    payload: AdminLeaderboardBotEditIn,
+    user: dict = Depends(get_current_user),
+):
+    """PATCH a seeded leaderboard bot's avatar and/or target RP. Only
+    accepts targets that are actually seeded — refuses to modify real
+    users through this surface. Returns the updated {username, avatar,
+    seed_target_rp, rank_points} so the client can re-render the row
+    without a second fetch."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    target = await db.users.find_one({"username": username})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if not target.get("is_seeded"):
+        raise HTTPException(
+            status_code=400,
+            detail="Refusing to edit a non-seeded user through the leaderboard-bot endpoint.",
+        )
+    updates: Dict[str, Any] = {}
+    if payload.avatar is not None:
+        updates["avatar"] = int(payload.avatar)
+    if payload.seed_target_rp is not None:
+        # Mirror into rank_points so the leaderboard updates instantly.
+        # The climb loops will keep nudging rank_points toward
+        # seed_target_rp from here on out, so this is the right
+        # "authoritative" write for both fields.
+        rp = int(payload.seed_target_rp)
+        updates["seed_target_rp"] = rp
+        updates["rank_points"] = rp
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+    await db.users.update_one({"_id": target["_id"]}, {"$set": updates})
+    fresh = await db.users.find_one(
+        {"_id": target["_id"]},
+        {"username": 1, "avatar": 1, "seed_target_rp": 1, "rank_points": 1},
+    )
+    logger.info(
+        "Admin %s edited leaderboard bot %s: %s",
+        user.get("username"), username, updates,
+    )
+    return {
+        "ok": True,
+        "username": fresh.get("username", ""),
+        "avatar": int(fresh.get("avatar", 0) or 0),
+        "seed_target_rp": int(fresh.get("seed_target_rp", 0) or 0),
+        "rank_points": int(fresh.get("rank_points", 0) or 0),
+    }
+
+
 @api.get("/admin/leaderboard_bots")
 async def admin_list_leaderboard_bots(
     user: dict = Depends(get_current_user),
