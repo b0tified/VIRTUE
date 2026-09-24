@@ -895,16 +895,27 @@ export default function Lobby() {
         </div>
       </header>
 
+      {/* Grid container. Mobile fallback: `overflow-y-auto` on <lg
+          breakpoints so if content still exceeds the viewport after
+          all the height-gated compaction below, users can scroll
+          rather than have the flex-1 root clip content invisibly.
+          Desktop keeps `lg:overflow-hidden` because its two columns
+          own their own scroll (`lg:overflow-y-auto` on the left col,
+          challenges panel has its own scroll region). */}
       <main
-        className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 mt-0 lg:-mt-20 xl:mt-2 flex-1 lg:min-h-0 lg:overflow-hidden pb-6 lg:pb-0"
+        className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-6 px-3 sm:px-6 md:px-12 lg:px-20 mt-0 lg:-mt-20 xl:mt-2 flex-1 lg:min-h-0 overflow-y-auto lg:overflow-hidden pb-6 lg:pb-0"
       >
         <div className="lg:col-span-4 lg:-mt-4 xl:mt-6 lg:min-h-0 lg:overflow-y-auto pr-1">
           {/* Big VIRTUE logo replaces the old "READY UP, name!" header.
-              On mobile landscape (short height) the giant `text-5xl`
-              default eats too much vertical space and pushes buttons off
-              the fold — shrink to a compact 3xl unless there's room. */}
+              Desktop scales up through sm/md/lg breakpoints. Short
+              viewports (mobile landscape after the forced-rotate gate
+              — ~390px tall) force the compact `text-xl` size via a
+              max-height media query so the ranked + queue buttons
+              stay above the fold without touching desktop scaling.
+              `!important` (`!text-xl`) needed to override the higher-
+              specificity sm/md/lg breakpoint utilities. */}
           <h1
-            className="font-display text-3xl sm:text-5xl md:text-7xl lg:text-8xl uppercase text-pow-shadow-lg leading-none mt-0"
+            className="font-display text-3xl sm:text-5xl md:text-7xl lg:text-8xl [@media(max-height:500px)]:!text-xl uppercase text-pow-shadow-lg leading-none mt-0"
             data-testid="lobby-hero-logo"
           >
             <span className="text-[#FFD700]">VIR</span><span className="text-[#E62429]">TUE</span>
@@ -914,7 +925,7 @@ export default function Lobby() {
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} leaderboardRank={user?.leaderboard_rank ?? null} />
             {user?.in_placements && (
               <div
-                className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white"
+                className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white [@media(max-height:500px)]:hidden"
                 data-testid="placement-streak-badge"
                 title="Placement streak: performance-scaled RP anchors your first 5 ranked matches to your true skill."
               >
@@ -931,15 +942,22 @@ export default function Lobby() {
             )}
             <button
               onClick={() => setShowTiers(true)}
-              className="btn-pow bg-white text-black !hidden sm:!inline-block"
+              className="btn-pow bg-white text-black !hidden sm:!inline-block [@media(max-height:500px)]:!hidden"
               data-testid="show-tiers-button"
             >
               <span className="flex items-center gap-2"><Award size={16} strokeWidth={3} /> SHOW TIERS</span>
             </button>
           </div>
 
-          {/* Rank progress to next sub-division (or next main tier from I). */}
-          <div className="mt-2 sm:mt-3 max-w-md" data-testid="lobby-rank-progress-wrap">
+          {/* Rank progress to next sub-division (or next main tier from I).
+              Wrap gets a tighter top margin on short viewports so the
+              ranked + queue buttons pull closer to the fold on mobile
+              landscape. Desktop keeps the roomier sm:mt-3.
+              Hidden entirely on very short viewports (mobile landscape)
+              — the info is still visible in Profile, and cutting it
+              here reclaims ~24px of vertical space that lets all mode
+              buttons stay above the fold. */}
+          <div className="mt-2 sm:mt-3 [@media(max-height:500px)]:mt-1 [@media(max-height:500px)]:hidden max-w-md" data-testid="lobby-rank-progress-wrap">
             <RankProgressBar
               tier={user?.rank_tier ?? 0}
               division={user?.rank_division ?? 0}
@@ -948,7 +966,7 @@ export default function Lobby() {
             />
           </div>
 
-          <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 max-w-md">
+          <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 [@media(max-height:500px)]:space-y-1 max-w-md">
             {party && (
               <PartyPanel party={party} myId={user?.id} refresh={refreshParty} className="mb-3" />
             )}
@@ -975,9 +993,15 @@ export default function Lobby() {
                     <X size={14} strokeWidth={3} />
                   </button>
                 </div>
-                <div className="bg-white text-black px-3 py-2 flex flex-wrap items-center gap-2">
-                  <span className="font-body text-[13px] leading-snug flex-1 min-w-[160px]">
+                <div className="bg-white text-black px-3 py-1.5 sm:py-2 flex flex-wrap items-center gap-2">
+                  {/* Full explainer on tablets+ (sm:) — mobile portrait
+                      would waste 2 whole lines of vertical space on the
+                      copy, so we swap in a one-liner there. */}
+                  <span className="font-body text-[13px] leading-snug flex-1 min-w-[120px] hidden sm:inline">
                     You're queueing cross-play with desktop players. Tap to only match on mobile.
+                  </span>
+                  <span className="font-body text-[12px] leading-snug flex-1 min-w-[100px] sm:hidden">
+                    Playing cross-play with desktop.
                   </span>
                   <button
                     onClick={enableMobileOnlyFromBanner}
@@ -993,7 +1017,7 @@ export default function Lobby() {
             <button
               onClick={casualInQueue ? undefined : startQuickQueue}
               disabled={casualInQueue || !!queueState || bigffaInQueue || (party && party.leader_id !== user?.id)}
-              className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
               title={
                 queueState && !casualInQueue ? "You're already in the ranked queue"
@@ -1009,7 +1033,7 @@ export default function Lobby() {
             <button
               onClick={queueState ? undefined : joinRankedQueue}
               disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue || bigffaInQueue}
-              className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
               title={
                 rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
@@ -1039,10 +1063,14 @@ export default function Lobby() {
                   : "RANKED MATCH"}
               </span>
             </button>
-            {/* 12-player FFA — its own dedicated queue. Groups queued
-                players into the shared `bigffa_room`; if the queue
-                doesn't fill to 12 within 12s the whole cohort is
-                dispatched and the room bot-fills the rest. */}
+            {/* Mobile-landscape compaction: on short viewports (height
+                ≤ 500px, which is where phones land after the forced-
+                rotate gate) pack 12P FFA + Practice into a 2-col grid
+                so both stay above the fold. Desktop / tablet portrait
+                keep the vertical stack via the `contents` fallback at
+                > 500px height. Height-gate (not width-gate) so laptops
+                with narrow windows aren't mistaken for phones. */}
+            <div className="grid grid-cols-2 gap-1 [@media(min-height:501px)]:contents [@media(min-height:501px)]:gap-0">
             <button
               type="button"
               onClick={startBigFfa}
@@ -1050,7 +1078,7 @@ export default function Lobby() {
                 (!bigffaInQueue && (casualInQueue || !!queueState)) ||
                 (party && party.leader_id !== user?.id)
               }
-              className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed ${
+              className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed ${
                 bigffaInQueue ? "bg-neutral-800 text-white" : "bg-[#FF7A00] text-black"
               }`}
               data-testid="lobby-bigffa-button"
@@ -1082,7 +1110,7 @@ export default function Lobby() {
               type="button"
               onClick={() => setPracticeSelectorMode("practice")}
               disabled={casualInQueue || !!queueState}
-              className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-practice-button"
               title={
                 casualInQueue ? "Cancel Quick Match queue to play Practice"
@@ -1092,14 +1120,20 @@ export default function Lobby() {
             >
               <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE</span>
             </button>
-            <Link to="/leaderboard" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-leaderboard-button">
+            </div>
+            {/* Leaderboard + Profile — same short-viewport 2-col
+                treatment as 12P FFA / Practice above. Height-gated so
+                narrow desktop windows aren't compacted. */}
+            <div className="grid grid-cols-2 gap-1 [@media(min-height:501px)]:contents [@media(min-height:501px)]:gap-0">
+            <Link to="/leaderboard" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#FFD700] text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm select-none" data-testid="lobby-leaderboard-button">
               <span className="flex items-center gap-3"><Trophy size={18} strokeWidth={3} /> LEADERBOARD</span>
             </Link>
-            <Link to="/profile" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-profile-button">
+            <Link to="/profile" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-white text-black w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm select-none" data-testid="lobby-profile-button">
               <span className="flex items-center gap-3"><User size={18} strokeWidth={3} /> PROFILE</span>
             </Link>
+            </div>
             {user?.role === "admin" && (
-              <Link to="/admin/reports" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 select-none" data-testid="lobby-admin-button">
+              <Link to="/admin/reports" draggable={false} onDragStart={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }} className="btn-pow bg-[#E62429] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm select-none" data-testid="lobby-admin-button">
                 <span className="flex items-center gap-3"><Shield size={18} strokeWidth={3} /> MODERATION</span>
               </Link>
             )}

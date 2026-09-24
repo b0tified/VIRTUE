@@ -2538,3 +2538,29 @@ Two quality-of-life changes shipped together.
   - Pref="off" → never engages even at 20 FPS. ✅
   - Non-BigFFA mode → never engages even at 20 FPS. ✅
   - Settings UI row + AUTO/ON/OFF buttons all render. ✅
+
+### 2026-02-27 (later³⁵) — Mobile lobby: no more scrolling to see everything
+- **User request**: Improve mobile UI so you don't have to scroll to see everything, without affecting the PC version.
+- **Strategy**: Gate every compaction rule on `[@media(max-height:500px)]` — mobile landscape (post forced-rotate) is always ≤ ~400px tall, desktop laptops with narrow windows never are. This keeps the mobile fixes surgical and completely invisible to desktop.
+- **Changes** (all `/app/frontend/src/pages/Lobby.jsx`):
+  - Hero logo (`lobby-hero-logo`): `[@media(max-height:500px)]:!text-xl` forces the compact 20px size on short viewports; desktop keeps its `text-5xl → text-8xl` responsive ladder (96px on 1920×900).
+  - Button-stack wrapper: `[@media(max-height:500px)]:space-y-1` tightens vertical gaps between mode buttons on short viewports without touching `sm:space-y-3` for desktop.
+  - Rank progress bar (`lobby-rank-progress-wrap`): `[@media(max-height:500px)]:hidden` — info is still visible in Profile, but reclaims ~24px on mobile.
+  - Placements badge (`placement-streak-badge`): `[@media(max-height:500px)]:hidden` — same rationale.
+  - "SHOW TIERS" button: added `[@media(max-height:500px)]:!hidden` on top of existing `!hidden sm:!inline-block`.
+  - Every mode button padding: `[@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm` — tighter vertical footprint per button.
+  - **2-column grids on short viewports**: 12P FFA + Practice wrapped in `<div className="grid grid-cols-2 gap-1 [@media(min-height:501px)]:contents [@media(min-height:501px)]:gap-0">`. Same treatment for Leaderboard + Profile. The `min-height:501px` variant uses `display:contents` to flatten the wrapper back into the parent's vertical `space-y` stack on desktop, so the PC layout is completely untouched.
+  - Cross-play banner: swapped in a shorter "Playing cross-play with desktop." one-liner via `hidden sm:inline` / `sm:hidden` twin spans.
+  - `<main>` container: added base `overflow-y-auto` (with `lg:overflow-hidden` preserved for desktop) so if content still exceeds the fold, mobile users can scroll INSIDE the main flex-1 region instead of having content invisibly clipped by the fixed `h-[100dvh]` root.
+- **Verified via Playwright**:
+  - **Mobile 844×390** (post-forced-rotate landscape):
+    - Hero renders at 20px (was 48px+). ✅
+    - `ffaPracSameRow=true` — 12P FFA and Practice share a row. ✅
+    - `lbProfSameRow=true` — Leaderboard and Profile share a row. ✅
+    - Rank progress and placements badge hidden (`display:none`). ✅
+    - After dismissing cross-play banner: `mainOverflow=2px` (was 240px+ before). Effectively no scroll needed. ✅
+  - **Desktop 1920×900**:
+    - Hero renders at 96px. ✅
+    - Rank progress + Show Tiers + placements badge all visible. ✅
+    - `ffaPracSameRow=false` and `lbProfSameRow=false` — vertical stack preserved. ✅
+    - Daily Challenges panel renders on the right (unchanged). ✅
