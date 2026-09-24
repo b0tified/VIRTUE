@@ -12,6 +12,19 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "@/api";
 import audioBus from "@/game/audio";
+import settingsStore from "@/game/settings";
+import { detectIsMobile } from "@/game/useIsMobile";
+
+/** Build the platform-flags payload every queue-join POST needs.
+ *  `is_mobile` is the caller's device (touch/coarse-pointer). `mobile_only`
+ *  is the user's Mobile-Only Matchmaking preference AND actually being on
+ *  mobile — desktop users can't accidentally trigger it via a stale saved
+ *  setting. The matchmaker enforces the cross-play rule server-side. */
+function _platformFlags() {
+  const mobile = detectIsMobile();
+  const pref = !!settingsStore.get().mobileOnlyMatchmaking;
+  return { is_mobile: mobile, mobile_only: mobile && pref };
+}
 
 const QueueContext = createContext(null);
 
@@ -222,7 +235,7 @@ export function QueueProvider({ children }) {
     }
     rankedJoiningRef.current = true;
     try {
-      const { data } = await api.post("/queue/ranked");
+      const { data } = await api.post("/queue/ranked", _platformFlags());
       beginActivePoll(data);
       return { ok: true };
     } catch (e) {
@@ -337,7 +350,7 @@ export function QueueProvider({ children }) {
     }
     casualJoiningRef.current = true;
     try {
-      const { data } = await api.post("/queue/casual");
+      const { data } = await api.post("/queue/casual", _platformFlags());
       // Belt-and-braces: even if the lock somehow raced, tear down any
       // existing interval before creating a new one so orphans are
       // impossible.
@@ -480,7 +493,7 @@ export function QueueProvider({ children }) {
     }
     bigffaJoiningRef.current = true;
     try {
-      const { data } = await api.post("/queue/bigffa");
+      const { data } = await api.post("/queue/bigffa", _platformFlags());
       stopBigffa();
       bigffaMatchedRef.current = false;
       bigffaMissesRef.current = 0;

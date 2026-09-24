@@ -5,6 +5,7 @@ import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
 import AdvancedControls from "@/components/AdvancedControls";
 import AccountSettingsCard from "@/components/AccountSettingsCard";
+import { detectIsMobile } from "@/game/useIsMobile";
 import api from "@/api";
 
 // Matchmaking regions exposed in Account → Server Region. `basePing` seeds a
@@ -573,6 +574,26 @@ export default function SettingsModal({ open, onClose }) {
 
           {tab === "controls" && (
           <>
+          {/* Mobile-Only Matchmaking — only surfaced on touch/mobile
+              devices. When on, the queue-join payload sends
+              `mobile_only:true` so the matchmaker cohorts the caller
+              with other mobile players only. Hidden on desktop
+              because it has no effect there. */}
+          {detectIsMobile() && (
+            <section data-testid="settings-mobile-only-section">
+              <div className="font-anton uppercase tracking-widest text-sm mb-2 flex items-center gap-2">
+                <Smartphone size={14} strokeWidth={3} /> Mobile Matchmaking
+              </div>
+              <ToggleRow
+                label="Mobile Only"
+                note="Only match against other mobile players in Quick Match, Ranked, and 12P FFA. Cross-play resumes when off."
+                checked={!!s.mobileOnlyMatchmaking}
+                onChange={(v) => patch({ mobileOnlyMatchmaking: v })}
+                testid="settings-mobile-only"
+              />
+            </section>
+          )}
+
           {/* Touch controls */}
           <section>
             <div className="font-anton uppercase tracking-widest text-sm mb-2">Touch Controls</div>

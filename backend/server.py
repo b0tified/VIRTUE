@@ -20,7 +20,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import bcrypt
 import jwt
 from bson import ObjectId
-from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, APIRouter, Body, Request, Response, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -6909,6 +6909,30 @@ BIGFFA_BOT_FILL_SEC = 60.0
 # because the target lobby size is 3× larger.
 BIGFFA_ETA_MIN_SEC = 20.0
 BIGFFA_ETA_MAX_SEC = 60.0
+
+
+def _platforms_compatible(a: dict, b: dict) -> bool:
+    """Two queue entries are platform-compatible unless one demands
+    mobile-only matchmaking AND the other isn't on mobile. This is the
+    single symmetric rule the matchmaker consults across casual, ranked,
+    and bigffa — a mobile player with the "Mobile Only" toggle can only
+    be matched with other mobile players. A mobile player WITHOUT the
+    toggle can match with anyone (their toggle-off is opt-in to cross-
+    play). Desktop players are always compatible with each other."""
+    if a.get("mobile_only") and not b.get("is_mobile"):
+        return False
+    if b.get("mobile_only") and not a.get("is_mobile"):
+        return False
+    return True
+
+
+class QueueFlagsIn(BaseModel):
+    """Optional POST body for the queue-join endpoints. Carries the
+    caller's platform flags so the matchmaker can honour the Mobile
+    Only preference. Both fields default to False for legacy clients
+    that don't send a body."""
+    is_mobile: bool = False
+    mobile_only: bool = False
 MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 
 # Rolling window (last 10) of how long each match took to fill, per tier.
@@ -6942,9 +6966,26 @@ async def matchmaker_loop():
                 # entry is tagged MATCHED with the same match_id so all
                 # party-mates enter the ranked room together.
                 for tier_idx, q in RANKED_QUEUE.items():
-                    while len(q) >= 2:
-                        a = q.pop(0)
-                        b = q.pop(0)
+                    # Pair-find: instead of unconditionally popping the
+                    # top two entries, walk the queue and pop the first
+                    # pair whose platform flags are compatible (Mobile
+                    # Only preference honored). Keep iterating until no
+                    # compatible pair is found.
+                    while True:
+                        pair: Optional[tuple[int, int]] = None
+                        for i in range(len(q)):
+                            for j in range(i + 1, len(q)):
+                                if _platforms_compatible(q[i], q[j]):
+                                    pair = (i, j)
+                                    break
+                            if pair:
+                                break
+                        if not pair:
+                            break
+                        i, j = pair
+                        # Pop j first (higher index) so i stays valid.
+                        b = q.pop(j)
+                        a = q.pop(i)
                         mid = uuid.uuid4().hex[:10]
                         a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
                         b_uids = b.get("user_ids") or ([b["user_id"]] if b.get("user_id") else [])
@@ -6990,10 +7031,23 @@ async def matchmaker_loop():
                 # Casual queue — single FIFO, no tiers. Pair head-to-head
                 # when two entries are present, otherwise bot-fill after
                 # CASUAL_BOT_FILL_SEC (10s). Quicker than ranked so
-                # casual queues feel instant.
-                while len(CASUAL_QUEUE) >= 2:
-                    a = CASUAL_QUEUE.pop(0)
-                    b = CASUAL_QUEUE.pop(0)
+                # casual queues feel instant. The pair-find loop honours
+                # the Mobile Only platform preference the same way ranked
+                # does — see `_platforms_compatible`.
+                while True:
+                    pair = None
+                    for i in range(len(CASUAL_QUEUE)):
+                        for j in range(i + 1, len(CASUAL_QUEUE)):
+                            if _platforms_compatible(CASUAL_QUEUE[i], CASUAL_QUEUE[j]):
+                                pair = (i, j)
+                                break
+                        if pair:
+                            break
+                    if not pair:
+                        break
+                    i, j = pair
+                    b = CASUAL_QUEUE.pop(j)
+                    a = CASUAL_QUEUE.pop(i)
                     mid = uuid.uuid4().hex[:10]
                     a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
                     b_uids = b.get("user_ids") or ([b["user_id"]] if b.get("user_id") else [])
@@ -7024,20 +7078,41 @@ async def matchmaker_loop():
                         len(a_uids), int(CASUAL_BOT_FILL_SEC), bot_tdm,
                     )
                 # BigFFA queue — everyone lands in the shared `bigffa_room`.
-                # Dispatch the whole queue at once when either (a) the
-                # queue has hit the room's target size (12 real humans) or
-                # (b) the oldest entry has been waiting BIGFFA_BOT_FILL_SEC.
-                # The room's own `_maintain_population` handles bot-fill
-                # once players arrive, so we don't need a separate bot
-                # branch — every dispatch is functionally the same.
-                if BIGFFA_QUEUE and (
-                    len(BIGFFA_QUEUE) >= BIGFFA_LOBBY_SIZE
-                    or (now - BIGFFA_QUEUE[0]["joined_at"]) >= BIGFFA_BOT_FILL_SEC
-                ):
+                # Dispatch when either (a) the queue holds ≥ BIGFFA_LOBBY_SIZE
+                # (12) real humans OR (b) any entry has been waiting
+                # BIGFFA_BOT_FILL_SEC seconds. Each dispatched cohort is
+                # filtered by `_platforms_compatible` against a "lead"
+                # entry so a mobile-only mobile queuer only lands with
+                # other mobile players. Incompatible entries stay in the
+                # queue for the next scan (their own timeout will eventually
+                # promote them into a lead). Repeat until no more matches
+                # fire this scan so bursts of joins don't get held back.
+                dispatched_any = True
+                while dispatched_any:
+                    dispatched_any = False
+                    if not BIGFFA_QUEUE:
+                        break
+                    # Find a "lead" entry — either the queue is at 12+ (any
+                    # entry becomes lead) or an entry has waited past the
+                    # timeout. Scan from oldest so the FIFO order holds.
+                    lead_idx: Optional[int] = None
+                    if len(BIGFFA_QUEUE) >= BIGFFA_LOBBY_SIZE:
+                        lead_idx = 0
+                    else:
+                        for idx, e in enumerate(BIGFFA_QUEUE):
+                            if (now - e["joined_at"]) >= BIGFFA_BOT_FILL_SEC:
+                                lead_idx = idx
+                                break
+                    if lead_idx is None:
+                        break
+                    lead = BIGFFA_QUEUE[lead_idx]
                     mid = uuid.uuid4().hex[:10]
+                    kept: List[dict] = []
                     dispatched: List[str] = []
-                    while BIGFFA_QUEUE:
-                        entry = BIGFFA_QUEUE.pop(0)
+                    for entry in BIGFFA_QUEUE:
+                        if entry is not lead and not _platforms_compatible(lead, entry):
+                            kept.append(entry)
+                            continue
                         uids = entry.get("user_ids") or (
                             [entry["user_id"]] if entry.get("user_id") else []
                         )
@@ -7049,10 +7124,14 @@ async def matchmaker_loop():
                             }
                             dispatched.append(uid)
                         RECENT_MATCH_WAITS[0].append(now - entry["joined_at"])
-                    logger.info(
-                        "BigFFA dispatched %d players into bigffa_room mid=%s",
-                        len(dispatched), mid,
-                    )
+                    BIGFFA_QUEUE[:] = kept
+                    if dispatched:
+                        dispatched_any = True
+                        logger.info(
+                            "BigFFA dispatched %d players into bigffa_room mid=%s "
+                            "(lead_mobile_only=%s)",
+                            len(dispatched), mid, bool(lead.get("mobile_only")),
+                        )
         except Exception as e:
             logger.warning("matchmaker error: %s", e)
         await asyncio.sleep(0.5)
@@ -7618,7 +7697,10 @@ def _remove_user_from_ranked_queue(user_id: str) -> Optional[dict]:
 
 
 @api.post("/queue/ranked")
-async def queue_ranked_join(user: dict = Depends(get_current_user)):
+async def queue_ranked_join(
+    payload: Optional[QueueFlagsIn] = Body(default=None),
+    user: dict = Depends(get_current_user),
+):
     """Enqueue the caller for ranked. If they're in a party, the whole
     party queues together at the *highest* member's tier; only the leader
     can press the button. Solo players are unchanged."""
@@ -7732,6 +7814,10 @@ async def queue_ranked_join(user: dict = Depends(get_current_user)):
             "joined_at": now_ts,
             "is_party": is_party,
             "party_id": (party or {}).get("party_id") if is_party else None,
+            # Platform flags — see `_platforms_compatible`. Falsy for
+            # legacy clients that don't send a payload.
+            "is_mobile": bool(payload.is_mobile) if payload else False,
+            "mobile_only": bool(payload.mobile_only) if payload else False,
         })
     return {"in_queue": True, "tier": tier_idx, "tier_name": tier_name, "position": len(RANKED_QUEUE[tier_idx]), "tier_size": len(RANKED_QUEUE[tier_idx]), "wait_seconds": 0, "bot_fill_seconds": fill, "estimated_wait_seconds": estimate_wait_seconds(tier_idx, 0.0), "is_party": is_party, "party_size": len(member_ids)}
 
@@ -7806,7 +7892,10 @@ async def queue_ranked_ack(user: dict = Depends(get_current_user)):
 
 
 @api.post("/queue/casual")
-async def queue_casual_join(user: dict = Depends(get_current_user)):
+async def queue_casual_join(
+    payload: Optional[QueueFlagsIn] = Body(default=None),
+    user: dict = Depends(get_current_user),
+):
     """Enqueue the caller for casual matchmaking. Single FIFO queue
     (no rank tiers). Matched head-to-head when another entry exists,
     otherwise bot-filled after CASUAL_BOT_FILL_SEC (10s).
@@ -7853,6 +7942,9 @@ async def queue_casual_join(user: dict = Depends(get_current_user)):
             "estimated_wait_seconds": int(round(eta)),
             "is_party": is_party,
             "party_id": (party or {}).get("party_id") if is_party else None,
+            # Platform flags — see `_platforms_compatible`.
+            "is_mobile": bool(payload.is_mobile) if payload else False,
+            "mobile_only": bool(payload.mobile_only) if payload else False,
         })
     return {
         "ok": True,
@@ -7955,7 +8047,10 @@ def _remove_user_from_bigffa_queue(user_id: str) -> Optional[dict]:
 # or the ranked queue; dispatches everyone in the queue into `bigffa_room`
 # once the target size hits 12 or the 12s hold timer elapses.
 @api.post("/queue/bigffa")
-async def queue_bigffa_join(user: dict = Depends(get_current_user)):
+async def queue_bigffa_join(
+    payload: Optional[QueueFlagsIn] = Body(default=None),
+    user: dict = Depends(get_current_user),
+):
     """Enqueue the caller for a 12-player FFA lobby. Solo-only (parties
     should use their own party lobby). Yanks any existing casual/bigffa
     entry so a player can only be in one queue at a time."""
@@ -7972,6 +8067,11 @@ async def queue_bigffa_join(user: dict = Depends(get_current_user)):
             "usernames": [user.get("username", "?")],
             "joined_at": time.time(),
             "estimated_wait_seconds": int(round(eta)),
+            # Platform flags — see `_platforms_compatible`. When
+            # `mobile_only` is true, the dispatcher will only cohort
+            # this entry with other is_mobile=True entries.
+            "is_mobile": bool(payload.is_mobile) if payload else False,
+            "mobile_only": bool(payload.mobile_only) if payload else False,
         })
     return {
         "ok": True,

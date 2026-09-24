@@ -2322,3 +2322,23 @@ Two quality-of-life changes shipped together.
   - password reset lets the target log in with the new password AND blocks the old
   - password reset requires admin auth
 - **Verified end-to-end** in preview: Moderation screenshot shows the "ACCOUNTS 980 · 107 SEEDED · 1 ADMIN" stat card at the top of the 5-column row and a functional ACCOUNTS panel with the debounced search filtering to matching users and inline RENAME + RESET PW buttons per row.
+
+
+### 2026-02-27 (later²²) — Mobile-Only Matchmaking
+- **User request**: Add a mobile-only toggle for mobile devices so they can play against only other mobile players.
+- **Backend** (`/app/backend/server.py`):
+  - New `QueueFlagsIn` optional Pydantic body model with `is_mobile: bool = False` and `mobile_only: bool = False`. Optional — legacy clients still work.
+  - New `_platforms_compatible(a, b)` symmetric helper: two entries are incompatible iff one has `mobile_only=True` AND the other has `is_mobile=False`.
+  - `POST /queue/casual`, `POST /queue/ranked`, `POST /queue/bigffa` all now accept the optional body and stamp `is_mobile`/`mobile_only` onto the queue entry.
+  - Ranked + Casual matchmaker pairing loops rewritten from `pop(0) + pop(0)` to a pair-find loop that skips incompatible pairs (walks O(n²) once — fine for realistic queue sizes).
+  - BigFFA dispatch rewritten: instead of dispatching the whole queue at once, each scan promotes a "lead" (either queue-size ≥ 12 → head, or oldest waited ≥ 60s → that entry). Only compat entries join the lead's match_id; the rest stay in queue. Loop repeats until no more dispatches this scan. Net effect: mobile-only + desktop queuers land in **different match IDs**.
+- **Frontend**:
+  - `settings.js`: new `mobileOnlyMatchmaking: false` default.
+  - `SettingsModal.jsx` → Controls tab: new "MOBILE MATCHMAKING" section (Smartphone icon) with a "Mobile Only" toggle. Only rendered when `detectIsMobile()` returns true — hidden on desktop.
+  - `QueueContext.jsx`: new `_platformFlags()` helper reads `settingsStore.get().mobileOnlyMatchmaking` and `detectIsMobile()` and returns `{is_mobile, mobile_only}`. `joinRanked`, `joinCasual`, `joinBigffa` all POST the flags.
+- **Tests** (`/app/backend/tests/test_mobile_only_matchmaking.py`, 5/5 passing):
+  - Endpoint payload acceptance (casual + bigffa)
+  - Endpoints still accept legacy empty bodies
+  - `_platforms_compatible` unit test with all 6 combos
+  - **End-to-end**: mobile-only queuer + desktop queuer both dispatched by the 60s timeout → verified `match_id` differs (platform partition works)
+- **Verified end-to-end** in preview: on a touch-emulated viewport the Settings → Controls tab shows the MOBILE MATCHMAKING section with the working toggle; screenshot confirms UI. Existing bigffa tests still pass (12/12).

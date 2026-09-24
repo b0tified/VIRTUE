@@ -74,6 +74,12 @@ const DEFAULTS = Object.freeze({
   // based on the listener's head orientation. Off = legacy distance-only
   // volume falloff.
   audio3D: true,
+  // Mobile-Only Matchmaking — when true (and the caller is on mobile),
+  // the client passes `mobile_only:true` on every queue-join POST so
+  // the matchmaker cohorts them with other mobile players only. The
+  // toggle is hidden from the Settings UI on desktop devices (where
+  // it has no effect). Default off so cross-play stays the norm.
+  mobileOnlyMatchmaking: false,
   // V-Sync — when true, the engine renders on a setTimeout loop instead of
   // requestAnimationFrame so it can tick faster than the display refresh.
   // Mostly reduces input latency on high-refresh monitors.
