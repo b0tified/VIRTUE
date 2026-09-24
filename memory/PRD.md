@@ -2476,3 +2476,21 @@ Two quality-of-life changes shipped together.
   - All timers + the visibility listener are cleaned up on modal close, verified via Playwright: 0 extra `/api/friends` calls in the 8s after close.
 - **Verified in preview**: 1 initial fetch on open → 2 silent polls in the 14-second dwell window → 0 polls after close. Matches the 6s cadence exactly.
 - **No new dependencies**: WhisperToaster / Leaderboard / PartyPanel already own their own refresh loops for their own data.
+
+### 2026-02-27 (later³²) — Party stability: no more disappearing panel + follower actually joins the match
+- **User request**: "Party constantly disappears and sometimes doesn't put both into same match."
+- **Bug 1 — Party panel disappearing**: `Lobby.jsx` polled `/party/me` every 5s and tore the panel down after just 3 consecutive nulls (~15s). A single flake during the poll cadence + queue-state churn could flip the panel off, wasting whichever queue the leader had started.
+  - **Fix** (`/app/frontend/src/pages/Lobby.jsx`):
+    - Bumped miss threshold from 3 → 6 (~18s at 3s poll).
+    - Poll cadence tightened from 5s → 3s so state transitions land within one queue-tick.
+    - Added `activelyQueueingRef` (mirrored from queueContext state via a lightweight effect). Miss-teardown is now SKIPPED entirely whenever ANY queue is active — the party is literally what owns the queue entry, so a null response during matchmaking must be a transient blip.
+    - Added a `visibilitychange` handler that fires an immediate `fetchAll` when the tab regains focus, mirroring the friends-list live-update fix.
+- **Bug 2 — Party members split across matches**: The **casual queue had no background poll**, unlike the ranked queue. When a party leader hit Quick Match, only the leader's client entered the active-poll flow. The follower never observed the shared queue entry, never navigated at match-found, and either stayed on the lobby or joined a DIFFERENT casual match cycle when they eventually reached /play by another path.
+  - **Fix** (`/app/frontend/src/context/QueueContext.jsx`):
+    - Extracted the leader's active-poll setup into a reusable `beginCasualActivePoll(initial, joinTimestampMs)` — same match-found handling, same 1s poll, same 3-2-1 countdown, same 1.2s pre-nav delay.
+    - Added a 3s background poll (mirrors the ranked bg poll) that fires once on mount + every 3s, hits `/queue/casual`, and if the server reports `in_queue` or `matched` (which happens for followers whose party leader queued them), the follower kicks into the same active-poll flow — including firing the match-found event and navigating to /play?mode=casual at the exact 4.2s timing the leader hit.
+    - Skipped while `casualPollRef.current` is already set (leader path, or a follower who already discovered the queue) so we don't stack intervals.
+- **Net effect**: Party of 2 now behaves like a real group:
+  - Leader clicks Quick Match → follower's next 3s bg tick discovers `in_queue:true` → follower's active poll kicks in → both hit match-found at almost the same moment → both nav to /play?mode=casual within a second of each other → both land in the same singleton `game_room`/`tdm_room` match cycle.
+  - Party panel stays visible through the entire matchmaking sequence (via the queue-active skip) plus tolerates 6 consecutive nulls before ever tearing down.
+- **Verified in preview** (Playwright): app compiles cleanly (HTTP 200), casual bg poll fires `/api/queue/casual` at exactly the 3s cadence (2 requests in 8s dwell window), party poll fires `/api/party/me` at the new 3s cadence. Lobby renders normally with the new plumbing.

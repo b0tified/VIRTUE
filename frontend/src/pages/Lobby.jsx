@@ -520,10 +520,19 @@ export default function Lobby() {
   // Miss counter for /party/me — a single "no party" response used to
   // instantly nuke the panel, so any transient blip (worker gc, JWT
   // clock skew, load-balancer hiccup on prod) caused the party UI to
-  // flash off, then reappear on the next poll. Match the ranked-queue
-  // pattern: require 3 consecutive "no party" responses (~15s at 5s
-  // poll cadence) before believing the user actually left.
+  // flash off, then reappear on the next poll. Bumped from 3 → 6 so
+  // the tolerance covers ~18s of consecutive nulls (at 3s poll cadence)
+  // instead of ~15s — matches the "party constantly disappears" user
+  // report. On top of the raw counter, we now ALSO refuse to tear down
+  // the panel while ANY queue is active (`activelyQueueing` below) —
+  // a party can't legitimately vanish while it's matchmaking, so the
+  // right response to a null blip during a queue is "wait longer".
   const partyMissesRef = useRef(0);
+  // Track queue activity via a ref (updated by an effect below) so the
+  // fetch closure can read the latest value without being re-created
+  // on every queue-state tick. `queueCtx` in scope at build time hasn't
+  // populated the queue states yet, so we bind through a ref.
+  const activelyQueueingRef = useRef(false);
   const refreshParty = useCallback(async () => {
     try {
       const { data } = await api.get("/party/me");
@@ -535,8 +544,12 @@ export default function Lobby() {
         // Server explicitly says "no party" — but be defensive against
         // transient nulls (race between PARTY_MEMBER_INDEX rebuild
         // and the read). Require N consecutive nulls before clearing.
+        // Also NEVER clear the panel while the caller is mid-queue —
+        // the party is the queue owner in that case; a null must be
+        // a transient blip, not a real "you left the party".
         partyMissesRef.current += 1;
-        if (partyMissesRef.current >= 3) {
+        if (activelyQueueingRef.current) return;
+        if (partyMissesRef.current >= 6) {
           setParty(null);
         }
       }
@@ -546,7 +559,8 @@ export default function Lobby() {
         // Explicit 404 also goes through miss-tolerance (same
         // rationale: don't nuke UI on a single flake).
         partyMissesRef.current += 1;
-        if (partyMissesRef.current >= 3) {
+        if (activelyQueueingRef.current) return;
+        if (partyMissesRef.current >= 6) {
           setParty(null);
         }
       }
@@ -559,6 +573,16 @@ export default function Lobby() {
       // Other failures (timeout, 5xx, network): leave existing state.
     }
   }, []);
+  // Mirror the queue-context activity flags into a ref so the poll
+  // closure can gate its miss-teardown on "am I currently queueing"
+  // without needing to be re-created every time queue state ticks.
+  useEffect(() => {
+    activelyQueueingRef.current = !!(
+      (queueState && (queueState.in_queue || queueState.matched)) ||
+      casualInQueue ||
+      bigffaInQueue
+    );
+  }, [queueState, casualInQueue, bigffaInQueue]);
   useEffect(() => {
     let alive = true;
     const fetchAll = async () => {
@@ -577,8 +601,23 @@ export default function Lobby() {
       refreshParty();
     };
     fetchAll();
-    const id = setInterval(fetchAll, 5000);
-    return () => { alive = false; clearInterval(id); };
+    // Poll 3s (was 5s) so a follower's party panel picks up leader-
+    // side changes (queue kicked off, member joined/left) within one
+    // poll cycle. Matches the queue-context bg poll cadence.
+    const id = setInterval(fetchAll, 3000);
+    // Also fire an immediate refresh whenever the tab regains focus —
+    // matches the friends-list "live status" fix. Prevents a member
+    // who alt-tabbed away for 30s from staring at a stale/torn panel
+    // for up to another 3s.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") fetchAll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [refreshParty]);
 
   // News unread-count poll — every 30s while the lobby is open. Also

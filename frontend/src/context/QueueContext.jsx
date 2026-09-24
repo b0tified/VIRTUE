@@ -340,6 +340,75 @@ export function QueueProvider({ children }) {
     if (casualLocalRef.current) { clearInterval(casualLocalRef.current); casualLocalRef.current = null; }
   }, []);
 
+  // Extract the "active poll + local timer + match-found handler" setup
+  // so both `joinCasual` (leader path) AND the new background poll
+  // (follower path — detects when a party leader kicked off the queue)
+  // share identical behaviour. Idempotent: bails if the active poll is
+  // already running so we can't stack two intervals.
+  const beginCasualActivePoll = useCallback((initial, joinTimestampMs) => {
+    if (casualPollRef.current) return;
+    stopCasual();
+    casualMatchedRef.current = !!(initial && initial.matched);
+    casualMissesRef.current = 0;
+    casualJoinedAtRef.current = joinTimestampMs || Date.now();
+    // Prefer the server's stable ETA on first observation; fall back to
+    // bot-fill if the server didn't provide one (older follower path).
+    casualLockedEtaRef.current = Number.isFinite(initial?.estimated_wait_seconds)
+      ? initial.estimated_wait_seconds
+      : (initial?.bot_fill_seconds || 10);
+    setCasualQueueState({
+      in_queue: !!initial?.in_queue,
+      matched: !!initial?.matched,
+      bot_fill_seconds: initial?.bot_fill_seconds || 10,
+      estimated_wait_seconds: casualLockedEtaRef.current,
+    });
+    setCasualWaitSec(Math.max(0, Math.floor((Date.now() - casualJoinedAtRef.current) / 1000)));
+    casualLocalRef.current = setInterval(() => {
+      setCasualWaitSec(Math.max(0, Math.floor((Date.now() - casualJoinedAtRef.current) / 1000)));
+    }, 250);
+    casualPollRef.current = setInterval(async () => {
+      try {
+        const { data: s } = await api.get("/queue/casual");
+        if (Date.now() < casualCancelGuardUntilRef.current) return;
+        if (casualMatchedRef.current) return;
+        if (s.matched) {
+          casualMatchedRef.current = true;
+          stopCasual();
+          casualCancelGuardUntilRef.current = Date.now() + 15000;
+          audioBus.matchFound();
+          setCasualQueueState({ in_queue: false, matched: true });
+          casualLockedEtaRef.current = null;
+          try {
+            window.dispatchEvent(
+              new CustomEvent("virtue-match-loading", { detail: { mode: "casual" } }),
+            );
+          } catch {}
+          setTimeout(() => {
+            nav("/play?mode=casual", { replace: true, state: { fromLobby: true } });
+            setCasualQueueState(null);
+            casualJoinedAtRef.current = 0;
+            setCasualWaitSec(0);
+          }, 1200);
+        } else if (!s.in_queue) {
+          casualMissesRef.current += 1;
+          if (casualMissesRef.current >= 10) {
+            casualCancelGuardUntilRef.current = Date.now() + 6000;
+            stopCasual();
+            casualJoinedAtRef.current = 0;
+            setCasualWaitSec(0);
+            setCasualQueueState(null);
+            casualMissesRef.current = 0;
+            casualLockedEtaRef.current = null;
+          }
+        } else {
+          casualMissesRef.current = 0;
+        }
+      } catch {
+        casualMissesRef.current += 1;
+      }
+    }, 1000);
+  }, [nav, stopCasual]);
+
   const joinCasual = useCallback(async () => {
     // In-flight lock: rejects double-clicks that would otherwise start
     // a second setInterval and orphan the first one. Without this the
@@ -351,95 +420,20 @@ export function QueueProvider({ children }) {
     casualJoiningRef.current = true;
     try {
       const { data } = await api.post("/queue/casual", _platformFlags());
-      // Belt-and-braces: even if the lock somehow raced, tear down any
-      // existing interval before creating a new one so orphans are
-      // impossible.
-      stopCasual();
-      casualMatchedRef.current = false;
-      casualMissesRef.current = 0;
-      casualJoinedAtRef.current = Date.now();
-      casualLockedEtaRef.current = Number.isFinite(data.estimated_wait_seconds)
-        ? data.estimated_wait_seconds
-        : (data.bot_fill_seconds || 10);
-      setCasualQueueState({
+      // Leader path — kick the shared active-poll setup.
+      beginCasualActivePoll({
         in_queue: true,
         matched: false,
         bot_fill_seconds: data.bot_fill_seconds || 10,
-        estimated_wait_seconds: casualLockedEtaRef.current,
-      });
-      setCasualWaitSec(0);
-      casualLocalRef.current = setInterval(() => {
-        setCasualWaitSec(Math.max(0, Math.floor((Date.now() - casualJoinedAtRef.current) / 1000)));
-      }, 250);
-      casualPollRef.current = setInterval(async () => {
-        try {
-          const { data: s } = await api.get("/queue/casual");
-          // Drop the response if the user cancelled while we were
-          // awaiting — otherwise the toast can reappear after LEAVE.
-          if (Date.now() < casualCancelGuardUntilRef.current) return;
-          // One-shot: if we've already handled the match-found event
-          // (dispatched loading + scheduled nav), IGNORE every
-          // subsequent response so late/orphan ticks can't fire a
-          // second virtue-match-loading over live gameplay.
-          if (casualMatchedRef.current) return;
-          if (s.matched) {
-            casualMatchedRef.current = true;
-            stopCasual();
-            // Slam the cancel-guard so any stray poll (this one is
-            // already stopped, but a hypothetical orphan or an in-
-            // flight fetch about to resolve) can't re-fire the
-            // loading event during the 1.2s pre-nav window.
-            casualCancelGuardUntilRef.current = Date.now() + 15000;
-            audioBus.matchFound();
-            setCasualQueueState({ in_queue: false, matched: true });
-            casualLockedEtaRef.current = null;
-            try {
-              window.dispatchEvent(
-                new CustomEvent("virtue-match-loading", { detail: { mode: "casual" } }),
-              );
-            } catch {}
-            setTimeout(() => {
-              nav("/play?mode=casual", { replace: true, state: { fromLobby: true } });
-              // Clear ephemeral state after nav — the QueueOverlay /
-              // Lobby toast is location-scoped so it hides on its own,
-              // and we want the "MATCH FOUND!" banner visible right
-              // up to the nav flip.
-              setCasualQueueState(null);
-              casualJoinedAtRef.current = 0;
-              setCasualWaitSec(0);
-            }, 1200);
-          } else if (!s.in_queue) {
-            // Tolerate transient `in_queue:false` for 10 ticks (~10s)
-            // before tearing the toast down. Same rationale as the
-            // ranked miss threshold: a single flaky poll used to nuke
-            // the toast, tricking the user into clicking Quick Match
-            // again and orphaning the previous interval.
-            casualMissesRef.current += 1;
-            if (casualMissesRef.current >= 10) {
-              casualCancelGuardUntilRef.current = Date.now() + 6000;
-              stopCasual();
-              casualJoinedAtRef.current = 0;
-              setCasualWaitSec(0);
-              setCasualQueueState(null);
-              casualMissesRef.current = 0;
-              casualLockedEtaRef.current = null;
-            }
-          } else {
-            // Healthy in_queue:true — reset miss counter.
-            casualMissesRef.current = 0;
-          }
-        } catch {
-          // Network blip: treat as a soft miss too.
-          casualMissesRef.current += 1;
-        }
-      }, 1000);
+        estimated_wait_seconds: data.estimated_wait_seconds,
+      }, Date.now());
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.response?.data?.detail || e.message };
     } finally {
       casualJoiningRef.current = false;
     }
-  }, [nav, stopCasual]);
+  }, [beginCasualActivePoll]);
 
   const cancelCasual = useCallback(async () => {
     // Block any in-flight or bg poll from re-populating the toast.
@@ -456,6 +450,51 @@ export function QueueProvider({ children }) {
   }, [stopCasual]);
 
   useEffect(() => () => stopCasual(), [stopCasual]);
+
+  // Casual background poll — mirrors the ranked bg poll. Fires every
+  // 3s so a party FOLLOWER (who never clicks Quick Match themselves —
+  // the leader does it for the group) detects the shared queue entry
+  // and joins the active-poll flow, ensuring both party members
+  // navigate into the SAME casual match. Without this the follower
+  // simply sat on the lobby forever with a live server-side queue
+  // entry — exactly the "sometimes doesn't put both into same match"
+  // symptom reported.
+  const casualBgPollRef = useRef(null);
+  useEffect(() => {
+    if (inMatchRoute) return;
+    const tick = async () => {
+      // Skip while the active poll is already running (leader path,
+      // or follower who already discovered the queue) so we don't
+      // stack two intervals.
+      if (casualPollRef.current) return;
+      if (Date.now() < casualCancelGuardUntilRef.current) return;
+      try {
+        const { data: s } = await api.get("/queue/casual");
+        if (Date.now() < casualCancelGuardUntilRef.current) return;
+        // If matched, `wait_seconds` from the server is "time since
+        // match" not "time since join" — so we bind joinTimestamp to
+        // now for the local timer (short-lived, only used for the
+        // ~4.2s match-found overlay). If in_queue, we back-date it
+        // so the follower's timer roughly matches the leader's.
+        if (s && s.matched) {
+          beginCasualActivePoll(s, Date.now());
+        } else if (s && s.in_queue) {
+          const joinTs = Date.now() - (Number(s.wait_seconds || 0) * 1000);
+          beginCasualActivePoll(s, joinTs);
+        }
+      } catch { /* soft-fail */ }
+    };
+    // Fire once on mount so a follower who lands on /lobby with the
+    // party already queued doesn't wait a full 3s for the first tick.
+    tick();
+    casualBgPollRef.current = setInterval(tick, 3000);
+    return () => {
+      if (casualBgPollRef.current) {
+        clearInterval(casualBgPollRef.current);
+        casualBgPollRef.current = null;
+      }
+    };
+  }, [beginCasualActivePoll, inMatchRoute]);
 
   // ─────────────────────────────────────────────────────────────────────
   // BigFFA (12-player FFA) queue — mirrors the casual queue's plumbing
