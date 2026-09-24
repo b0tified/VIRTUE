@@ -9138,6 +9138,55 @@ class AdminRenameUserIn(BaseModel):
     new_username: str = Field(min_length=2, max_length=20)
 
 
+@api.get("/admin/leaderboard_bots")
+async def admin_list_leaderboard_bots(
+    user: dict = Depends(get_current_user),
+    q: Optional[str] = None,
+    limit: int = 50,
+):
+    """List seeded leaderboard bots (`is_seeded: True`) ordered by
+    rank_points desc — the same order the public leaderboard uses. Used
+    by the Moderation dashboard's "Leaderboard Bots" panel so an admin
+    can rename filler names without touching the actual seed script.
+
+    Optional `q` — case-insensitive substring match on username so
+    admins can search their way to a specific bot (e.g. "goon" to find
+    "GoonMaster42"). Empty q returns the top `limit` bots by RP.
+
+    Renames go through the existing `/admin/users/{u}/rename` endpoint
+    (which is already agnostic of `is_seeded`), so we don't need a
+    separate mutation surface here.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    limit = max(1, min(200, int(limit)))
+    query: Dict[str, Any] = {"is_seeded": True}
+    if q:
+        query["username"] = {"$regex": re.escape(q.strip()), "$options": "i"}
+    cursor = (
+        db.users.find(
+            query,
+            {"username": 1, "rank_points": 1, "avatar": 1, "seed_target_rp": 1,
+             "stats.matches": 1, "stats.kills": 1},
+        )
+        .sort("rank_points", -1)
+        .limit(limit)
+    )
+    rows: List[dict] = []
+    async for u in cursor:
+        stats = u.get("stats") or {}
+        rows.append({
+            "id": str(u["_id"]),
+            "username": u.get("username", ""),
+            "rank_points": int(u.get("rank_points", 0) or 0),
+            "avatar": int(u.get("avatar", 0) or 0),
+            "seed_target_rp": int(u.get("seed_target_rp", 0) or 0),
+            "matches": int(stats.get("matches", 0) or 0),
+            "kills": int(stats.get("kills", 0) or 0),
+        })
+    return rows
+
+
 @api.post("/admin/users/{username}/rename")
 async def admin_rename_user(
     username: str,

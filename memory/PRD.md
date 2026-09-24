@@ -2426,3 +2426,22 @@ Two quality-of-life changes shipped together.
   - `F_dead`: dead sticky target → null
   - `G_never_exceeds_cap`: swept 0–30° offsets, max shift is exactly `MAX_BEND`
 - **Where it applies**: touch hip-fire only. All primary weapons (AK / sniper hip-fire). Excludes ADS, desktop, controller. Server hitscan runs on the bent direction so this is authoritative — no client-side deception.
+
+### 2026-02-27 (later²⁹) — Admin: edit leaderboard bot names
+- **User request**: Add an option to edit the names of the leaderboard bots inside the Moderation dashboard.
+- **Context**: The public leaderboard is populated by "seeded" users (`is_seeded:true` in the `users` collection). The existing Accounts panel in Moderation deliberately EXCLUDES seeded users so admin CRUD stays scoped to human accounts. That meant there was no way to rename filler names like "GoonMonarch474" without touching the seed script.
+- **Backend** (`/app/backend/server.py`):
+  - New endpoint `GET /api/admin/leaderboard_bots` — lists seeded users sorted by `rank_points` desc (mirrors the public leaderboard order), with optional case-insensitive `q` substring filter and a `limit` clamped to 200. Returns `{id, username, rank_points, avatar, seed_target_rp, matches, kills}` per row.
+  - No new mutation endpoint — renames reuse the already-agnostic `/api/admin/users/{u}/rename` endpoint, so audit logging + collision checks stay centralised.
+- **Frontend** (`/app/frontend/src/pages/AdminReports.jsx`):
+  - New `LeaderboardBotsPanel` component inserted right below the existing `AccountsPanel` (`max-w-6xl mx-auto mb-6` wrapper).
+  - Fields: search input (debounced 350ms), top-N limit dropdown (25/50/100/200), scrollable list capped at 520px.
+  - Rows show `#rank`, current username, `{rp} RP · {matches}M · {kills}K` chip strip, and an inline rename pencil that expands to an input + save/cancel. Renamed rows patch in place, and the toast reports `Renamed <old> → <new>`.
+  - Reuses the existing `admin/users/{u}/rename` endpoint so the rename UX matches the AccountRow flow exactly (Enter to save, Esc to cancel, 2-20 chars).
+- **Tests** (`/app/backend/tests/test_admin_leaderboard_bots.py`, 5/5 passing):
+  - Non-admin token → 401/403.
+  - Happy path: top-10 bots returned, sorted RP-desc.
+  - `limit` param honored + clamped to 200.
+  - `q` substring filter (case-insensitive).
+  - End-to-end rename + revert via the shared endpoint.
+- **Verified in preview** with a Playwright smoke test: panel renders with 25 seeded bots after admin login → `/admin/reports`, clicking pencil on row 0 opens the rename input.

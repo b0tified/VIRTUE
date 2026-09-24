@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy } from "lucide-react";
 import api from "@/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -204,6 +204,14 @@ export default function AdminReports() {
           onChanged={() => { refreshAccountsCount(); load(); }}
           onToast={setToast}
         />
+      </div>
+
+      {/* Leaderboard bots — rename the seeded filler accounts that
+          populate the public leaderboard. Same rename endpoint as
+          AccountsPanel, but scoped to `is_seeded:true` and sorted by
+          RP so it mirrors the leaderboard order the players see. */}
+      <div className="max-w-6xl mx-auto mb-6">
+        <LeaderboardBotsPanel onToast={setToast} />
       </div>
 
       {/* Live player activity + mode popularity — polls every 5s. */}
@@ -1661,6 +1669,196 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError }) {
             disabled={busy}
             className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
             data-testid={`${testid}-pass-cancel`}
+          >
+            <X size={12} strokeWidth={3} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* LeaderboardBotsPanel — lists the seeded users that populate the
+   public leaderboard, sorted by RP desc so the order mirrors what
+   players see. Admin can search/paginate + rename each bot inline;
+   rename calls the existing `/admin/users/{u}/rename` endpoint
+   (works on seeded users too — no special-case backend path). */
+function LeaderboardBotsPanel({ onToast }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [limit, setLimit] = useState(25);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const params = { limit };
+      if (q.trim()) params.q = q.trim();
+      const { data } = await api.get("/admin/leaderboard_bots", { params });
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setRows([]);
+      onToast?.({ kind: "err", text: e?.response?.data?.detail || "Failed to load leaderboard bots." });
+    } finally {
+      setBusy(false);
+    }
+  }, [q, limit, onToast]);
+
+  // Debounced auto-search — mirror AccountsPanel's UX.
+  useEffect(() => {
+    const t = setTimeout(() => { load(); }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, limit]);
+
+  const patchRow = (id, patch) =>
+    setRows((arr) => arr.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="card-pow p-0 overflow-hidden" data-testid="leaderboard-bots-panel">
+      <div className="bg-black text-white px-4 py-2 font-display text-2xl text-pow-shadow flex items-center justify-between">
+        <span className="flex items-center gap-2">
+          <Bot size={20} strokeWidth={3} /> LEADERBOARD BOTS
+        </span>
+        <span className="font-anton uppercase tracking-widest text-xs opacity-70" data-testid="lb-bots-count">
+          {rows.length} shown
+        </span>
+      </div>
+      <div className="bg-white px-4 py-3 border-b-2 border-black flex items-center gap-3 flex-wrap">
+        <label className="flex items-center gap-2 flex-1 min-w-[200px]">
+          <Search size={16} strokeWidth={3} className="text-neutral-500 flex-shrink-0" />
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search bot name..."
+            className="flex-1 border-2 border-black px-3 py-2 font-anton uppercase tracking-widest text-sm"
+            data-testid="lb-bots-search-input"
+            autoComplete="off"
+          />
+          {busy && <Loader2 size={16} strokeWidth={3} className="animate-spin text-neutral-500" />}
+        </label>
+        <label className="flex items-center gap-2 font-anton uppercase tracking-widest text-xs">
+          <Trophy size={14} strokeWidth={3} className="text-[#FFB000]" /> TOP
+          <select
+            value={limit}
+            onChange={(e) => setLimit(parseInt(e.target.value, 10))}
+            className="border-2 border-black px-2 py-1 text-sm font-anton uppercase"
+            data-testid="lb-bots-limit-select"
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+          </select>
+        </label>
+      </div>
+      {rows.length === 0 && !busy ? (
+        <div className="bg-white px-4 py-6 font-anton uppercase tracking-widest text-xs text-neutral-500 text-center" data-testid="lb-bots-empty">
+          {q.trim() ? `No leaderboard bots match "${q}"` : "No seeded leaderboard bots found."}
+        </div>
+      ) : (
+        <div className="bg-white divide-y-2 divide-black/10 max-h-[520px] overflow-y-auto">
+          {rows.map((r, i) => (
+            <LeaderboardBotRow
+              key={r.id}
+              row={r}
+              rank={i + 1}
+              testid={`lb-bot-row-${i}`}
+              onRenamed={(newName) => {
+                patchRow(r.id, { username: newName });
+                onToast?.({ kind: "ok", text: `Renamed ${r.username} → ${newName}` });
+              }}
+              onError={(msg) => onToast?.({ kind: "err", text: msg })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Inline row for a leaderboard bot — RP + rank chip on the left,
+   inline rename control on the right (pencil → input → save/cancel).
+   Same rename endpoint as `AccountRow`. */
+function LeaderboardBotRow({ row, rank, testid, onRenamed, onError }) {
+  const [renameVal, setRenameVal] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const doRename = async () => {
+    const next = (renameVal || "").trim();
+    if (!next || next === row.username || next.length < 2 || next.length > 20) {
+      setRenameVal(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/admin/users/${encodeURIComponent(row.username)}/rename`, { new_username: next });
+      onRenamed?.(next);
+      setRenameVal(null);
+    } catch (e) {
+      onError?.(e?.response?.data?.detail || "Rename failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="px-4 py-3 flex items-center gap-3" data-testid={testid}>
+      <span className="font-display text-xl text-[#FFB000] w-10 text-center" data-testid={`${testid}-rank`}>
+        #{rank}
+      </span>
+      <div className="flex-1 min-w-0">
+        {renameVal === null ? (
+          <div className="font-anton uppercase tracking-widest text-sm truncate" data-testid={`${testid}-name`}>
+            {row.username}
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={renameVal}
+            autoFocus
+            onChange={(e) => setRenameVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenameVal(null); }}
+            className="w-full border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-sm"
+            minLength={2}
+            maxLength={20}
+            data-testid={`${testid}-rename-input`}
+          />
+        )}
+        <div className="mt-0.5 flex flex-wrap gap-2 font-anton uppercase tracking-widest text-[10px] text-neutral-600">
+          <span data-testid={`${testid}-rp`}>{row.rank_points} RP</span>
+          <span>·</span>
+          <span>{row.matches}M</span>
+          <span>·</span>
+          <span>{row.kills}K</span>
+        </div>
+      </div>
+      {renameVal === null ? (
+        <button
+          onClick={() => setRenameVal(row.username)}
+          className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+          title="Rename bot"
+          data-testid={`${testid}-rename-btn`}
+        >
+          <Pencil size={12} strokeWidth={3} />
+        </button>
+      ) : (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={doRename}
+            disabled={busy}
+            className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-rename-save`}
+          >
+            {busy ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+          </button>
+          <button
+            onClick={() => setRenameVal(null)}
+            disabled={busy}
+            className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-rename-cancel`}
           >
             <X size={12} strokeWidth={3} />
           </button>
