@@ -74,20 +74,10 @@ const DEFAULTS = Object.freeze({
   // based on the listener's head orientation. Off = legacy distance-only
   // volume falloff.
   audio3D: true,
-  // Ray-traced lighting (cosmetic). Enables real-time soft shadow maps,
-  // an additional directional sun + 3 colored point lights around the map,
-  // and a brighter ambient pass for the cel-shaded toon materials. Costs
-  // ~25-35% extra GPU on modern hardware; falls back gracefully on weak
-  // devices (renderer just ignores the shadow flag).
-  rayTracedLighting: false,
   // V-Sync — when true, the engine renders on a setTimeout loop instead of
   // requestAnimationFrame so it can tick faster than the display refresh.
   // Mostly reduces input latency on high-refresh monitors.
   disableVsync: false,
-  // Frame Generation — render extra interpolated frames between physics
-  // ticks. "off" = 1x (default), "2x" = render 2 frames per RAF, "3x" = 3.
-  // Cheap on modern GPUs; helps perceived smoothness on 60Hz displays.
-  frameGen: "off",
   // Animated lobby background — when true, the lobby uses the new
   // souped-up animated background (parallax meteors, pulsing crater
   // glow, drifting embers). Off = legacy static-ish background
