@@ -180,6 +180,15 @@ export class GameEngine {
     this._aimAssistStrength = 0.6;
     this.touchActive = false;
     this.gamepadConnected = false;
+    // Sticky-target tracking (touch only). Once aim assist picks a
+    // target, we remember them across frames — as long as they stay
+    // alive, in range, and within a wider "tracking cone" than the
+    // initial acquisition cone, subsequent frames keep pulling toward
+    // that same target instead of re-scanning. Feels like a soft
+    // console-style lock that continues tracking a moving target
+    // rather than repeatedly re-acquiring the nearest silhouette.
+    this._stickyTargetId = null;
+    this._stickyTargetSince = 0;
     // Graphics / FPS cap
     this._frameMinMs = 0;
     this._settings = null;
@@ -6657,39 +6666,94 @@ export class GameEngine {
 
   /* Aim assist (soft snap) — called every frame for gamepad/touch users.
      Finds the closest visible enemy within an aim cone and nudges yaw/pitch
-     toward their head/torso. `intensity` 0..1 controls strength. */
+     toward their head/torso. `intensity` 0..1 controls strength.
+
+     Touch adds a "sticky target" behaviour: once a target has been
+     acquired (the initial ~50° cone), subsequent frames keep pulling
+     toward that same target so long as they're alive, within a wider
+     TRACK_CONE (~85°), and within range. This means a strafing enemy
+     stays under the reticle instead of the aim swinging to whichever
+     silhouette is nearest to center each frame. Controller path keeps
+     the old per-frame nearest-enemy scan (no sticky) so it stays a
+     gentle nudge, not a lock.
+  */
   applyAimAssist(dt, intensity = 0.5) {
     if (!intensity || intensity <= 0) return;
     const me = this.players?.get(this.youId);
     if (!me || !me.alive) return;
-    let best = null;
-    // Wide near-autolock cone on touch (~50° / ~0.9 rad) so mobile
-    // players don't have to precisely center the crosshair — the camera
-    // snaps to any enemy in the same general direction. Controller
-    // keeps a tighter 20° so it's a nudge, not an auto-aim.
-    let bestAngle = this.touchActive ? 0.90 : 0.35;
+    if (!this.players) return;
+
+    // Cone sizes / range. Touch gets a wide acquisition cone AND an
+    // even wider tracking cone so a moving target under the reticle
+    // stays sticky as they strafe past 90° of screen space; controller
+    // stays tight.
+    const ACQUIRE_CONE = this.touchActive ? 0.90 : 0.35;   // ~52° / ~20°
+    const TRACK_CONE   = this.touchActive ? 1.45 : 0.35;   // ~83° for sticky on touch
+    const MAX_RANGE    = this.touchActive ? 60 : 35;
+
     const cp = Math.cos(this.pitch);
     // Match Three.js camera forward exactly (rotation.y=yaw on a camera that
     // looks at -Z by default → effective forward is (-sin(yaw)*cp, sin(pitch), -cos(yaw)*cp)).
     const fwd = new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
     const eye = new THREE.Vector3(this.position.x, this.position.y, this.position.z);
-    if (!this.players) return;
-    this.players.forEach((p, id) => {
-      if (!p || id === this.youId || !p.alive) return;
-      // Target the torso (~1.2m off the ground) for stability
+
+    // Helper: measure a candidate enemy → returns {tgt, dist, ang} or null.
+    const measure = (p) => {
+      if (!p || !p.alive) return null;
       const tgt = new THREE.Vector3(p.x, (p.y || 1.8) - 0.6, p.z);
       const to = new THREE.Vector3().subVectors(tgt, eye);
       const dist = to.length();
-      if (dist < 0.5 || dist > (this.touchActive ? 60 : 35)) return;
+      if (dist < 0.5 || dist > MAX_RANGE) return null;
       to.normalize();
       const dot = Math.max(-1, Math.min(1, fwd.dot(to)));
       const ang = Math.acos(dot);
-      if (ang < bestAngle) {
-        bestAngle = ang;
-        best = { tgt, dist, ang };
+      return { tgt, dist, ang };
+    };
+
+    let best = null;
+    let bestId = null;
+
+    // Sticky-target retention: on touch, if we locked onto someone last
+    // frame and they're still valid + inside TRACK_CONE, keep tracking
+    // them without re-scanning. This is what makes the reticle "follow"
+    // a moving target instead of the aim swinging around the room.
+    if (this.touchActive && this._stickyTargetId) {
+      const sticky = this.players.get(this._stickyTargetId);
+      const m = measure(sticky);
+      if (m && m.ang < TRACK_CONE) {
+        best = m;
+        bestId = this._stickyTargetId;
+      } else {
+        // Sticky broke — dead / out of range / turned too far. Fall
+        // through to a fresh acquisition scan.
+        this._stickyTargetId = null;
+        this._stickyTargetSince = 0;
       }
-    });
+    }
+
+    if (!best) {
+      // Fresh acquisition: pick the closest-to-center enemy inside the
+      // (narrower) ACQUIRE_CONE. Same behaviour as before, but we now
+      // remember the winner as the sticky target for touch users.
+      let bestAngle = ACQUIRE_CONE;
+      this.players.forEach((p, id) => {
+        if (!p || id === this.youId || !p.alive) return;
+        const m = measure(p);
+        if (!m) return;
+        if (m.ang < bestAngle) {
+          bestAngle = m.ang;
+          best = m;
+          bestId = id;
+        }
+      });
+      if (best && this.touchActive && bestId) {
+        this._stickyTargetId = bestId;
+        this._stickyTargetSince = performance.now();
+      }
+    }
+
     if (!best) return;
+
     const dx = best.tgt.x - this.position.x;
     const dy = best.tgt.y - this.position.y;
     const dz = best.tgt.z - this.position.z;
@@ -6698,10 +6762,23 @@ export class GameEngine {
     // Flip dx sign so the desired yaw matches what the camera will actually face.
     const desiredYaw = Math.atan2(-dx, -dz);
     const desiredPitch = Math.atan2(dy, horiz);
-    // Touch users get a console-style aggressive snap (rate 28) so the
-    // crosshair locks onto the nearest target as soon as it enters the
-    // wide cone. Controller stays at a gentle 6 for a soft nudge.
-    const lerpRate = (this.touchActive ? 28 : 6) * intensity;
+    // Base lerp rates. Touch stays aggressive (rate 28) for the console-
+    // style snap; controller stays gentle at 6.
+    let lerpRate = (this.touchActive ? 28 : 6) * intensity;
+    // Touch "near-lock" boost: when the target is already close to the
+    // center of the screen (inside ACQUIRE_CONE/2), crank the rate up so
+    // the reticle appears to stick to them mid-strafe. Falls back to the
+    // baseline snap when the target is at the edge of the tracking cone
+    // so re-acquiring a wide-angle target still feels like a soft snap
+    // rather than a violent whip.
+    if (this.touchActive) {
+      const halfAcquire = ACQUIRE_CONE * 0.5;
+      if (best.ang < halfAcquire) {
+        // Full near-lock: up to 1.7x rate when perfectly centered.
+        const nearness = 1 - Math.min(1, best.ang / Math.max(halfAcquire, 0.001));
+        lerpRate *= 1 + 0.7 * nearness;
+      }
+    }
     let yd = desiredYaw - this.yaw;
     while (yd >  Math.PI) yd -= Math.PI * 2;
     while (yd < -Math.PI) yd += Math.PI * 2;

@@ -2395,3 +2395,18 @@ Two quality-of-life changes shipped together.
   - `test_retag_existing_bots_flips_platform_to_mobile`: pre-seeds a disguised (`disguise_platform="pc"`) + undisguised (`platform="pc"`) bot, calls retag, asserts both flip to `"mobile"` and second call is idempotent.
   - `test_retag_ignores_real_players`: seeds a real PC player, calls retag, asserts real player's platform tag is preserved.
 - **Behaviour after fix**: Mobile-only players see the phone chip on 100% of bots in their room regardless of whether the bot was spawned before or after they connected. Non-mobile players and non-mobile-only players are unaffected (retag only fires when `player.is_mobile_only=True`).
+
+### 2026-02-27 (later²⁷) — Mobile aim assist: near-lock + sticky target tracking
+- **User request**: Make mobile aim assist "almost lock onto players and continue tracking".
+- **Root problem**: Previous touch aim assist did a per-frame nearest-enemy scan inside a ~50° acquire cone. When a target strafed out of that cone, aim would snap to whichever OTHER enemy was now closest to center — meaning the reticle never "followed" a moving target; it just swapped to a different one. There was also no distinction between "target near center" (should feel near-locked) and "target near edge" (should feel like a soft snap).
+- **Frontend fix** (`/app/frontend/src/game/engine.js`):
+  - New sticky-target state on the engine: `_stickyTargetId`, `_stickyTargetSince`. Initialized to null in the ctor.
+  - Rewrote `applyAimAssist(dt, intensity)`:
+    - Two cones for touch: `ACQUIRE_CONE = 0.90 rad` (~52°) to pick up a new target and `TRACK_CONE = 1.45 rad` (~83°) to keep tracking an existing one. Controller stays at 0.35 for both (no sticky, no behaviour change).
+    - Every frame: if a sticky ID exists AND the target is alive + in range + inside TRACK_CONE, keep pulling toward THAT target. Otherwise clear sticky and run the old nearest-to-center acquire scan; the winner becomes the new sticky.
+    - New "near-lock" boost: when the sticky target sits inside `ACQUIRE_CONE/2` (~26°) of center, lerp rate scales up to 1.7× baseline as the angle → 0. Perfectly-centered targets get a firm lock; edge-of-cone targets keep the softer snap so re-acquiring doesn't feel like a whip.
+- **Verified via Playwright** (headless in-page test that mirrors the sticky state machine exactly):
+  - Initial scan picks the closest-to-center enemy (E1). ✅
+  - E1 strafes to ~63° (outside 52° acquire cone, inside 83° track cone) → aim STAYS on E1 despite E2 being closer to center now. ✅ (this is the tracking behaviour the user asked for)
+  - E1 continues to ~100° (past 83° track cone) → sticky releases, re-acquisition picks E2. ✅
+- **No behaviour change on desktop/controller**: sticky logic is gated on `this.touchActive`; the `TRACK_CONE` collapses to the same value as `ACQUIRE_CONE` for controller so nothing changes there.
