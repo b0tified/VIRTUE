@@ -125,6 +125,7 @@ export default function Game() {
     if (!canvas) return;
 
     const engine = new GameEngine(canvas, {
+      mode,
       onState: (msg) => {
         // Build kill feed
         const newKills = (msg.events || []).filter((e) => e.type === "kill");
@@ -1243,7 +1244,22 @@ export function PerfCounter() {
   const [s, setS] = useState(() => settingsStore.get());
   const [fps, setFps] = useState(0);
   const [ping, setPing] = useState(null);
+  // `autoPerfActive` mirrors the engine's watchdog state via the two
+  // custom events emitted from `_autoPerfEngage` / `_autoPerfDisengage`.
+  // Shown as a small pill next to FPS so the user knows the engine
+  // dialled quality down for them — no more silent switch.
+  const [autoPerfActive, setAutoPerfActive] = useState(false);
   useEffect(() => settingsStore.subscribe(setS), []);
+  useEffect(() => {
+    const onEng = () => setAutoPerfActive(true);
+    const onDis = () => setAutoPerfActive(false);
+    window.addEventListener("virtue-autoperf-engaged", onEng);
+    window.addEventListener("virtue-autoperf-disengaged", onDis);
+    return () => {
+      window.removeEventListener("virtue-autoperf-engaged", onEng);
+      window.removeEventListener("virtue-autoperf-disengaged", onDis);
+    };
+  }, []);
   useEffect(() => {
     if (!s.showFps) return;
     let last = performance.now();
@@ -1275,7 +1291,7 @@ export function PerfCounter() {
     window.addEventListener("virtue-ping", onPing);
     return () => window.removeEventListener("virtue-ping", onPing);
   }, [s.showPing]);
-  if (!s.showFps && !s.showPing) return null;
+  if (!s.showFps && !s.showPing && !autoPerfActive) return null;
   return (
     <div
       className="pointer-events-none fixed top-2 left-2 z-30 font-mono text-xs flex gap-2"
@@ -1295,6 +1311,15 @@ export function PerfCounter() {
           data-testid="perf-ping"
         >
           {ping} MS
+        </span>
+      )}
+      {autoPerfActive && (
+        <span
+          className="px-1.5 py-0.5 rounded bg-[#FFB000] text-black tabular-nums font-bold"
+          data-testid="perf-auto-perf-chip"
+          title="Auto Performance mode is active — the engine dropped resolution and fog to boost FPS."
+        >
+          AUTO PERF
         </span>
       )}
     </div>

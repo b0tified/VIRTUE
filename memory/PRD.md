@@ -2510,3 +2510,31 @@ Two quality-of-life changes shipped together.
   - Firing `virtue-follower-joined-ranked` → toast renders with `data-mode="ranked"`, inner text `PARTY\nLeader started Ranked`. ✅
   - Auto-dismiss after 2.6s: count goes 1 → 0. ✅
 - **Why only followers see it**: The leader path (`joinCasual` / `joinRanked`) calls `beginCasualActivePoll` / `beginActivePoll` directly with their own POST response — the bg poll's follower-detection branch is guarded by `casualPollRef.current` / `pollIdRef.current`, which are already set on the leader before the bg poll's next tick can run.
+
+### 2026-02-27 (later³⁴) — Performance Auto Mode (BigFFA <60 FPS gate)
+- **User request**: Add an auto low-detail switch that boosts FPS on weaker devices during 12P FFA only if drops below 60fps.
+- **Frontend implementation**:
+  - `/app/frontend/src/game/engine.js`:
+    - Constructor now accepts `mode` (e.g. "bigffa", "casual"). Stored as `_matchMode` — used by the watchdog to gate its behaviour.
+    - New watchdog state: `_autoPerfActive`, `_autoPerfSamples` (last 6 FPS samples ≈ 3s window), `_autoPerfBaseline` (snapshot of overridden fields), `_autoPerfPref` (`"auto" | "on" | "off"`).
+    - `_autoPerfTick()` invoked once per ~500ms FPS window (from the fps counter block in the render loop, wrapped in try/catch so a watchdog bug can't crash rendering). Logic:
+      - Wrong mode / pref off → force-disengage.
+      - Pref on + BigFFA → force-engage.
+      - Auto in BigFFA → wait for 6 samples, then engage if rolling avg < 60, disengage only after 10 consecutive samples with avg > 68 (hysteresis prevents 60/61 flapping).
+    - `_autoPerfEngage()` — captures baseline once, then drops `renderer.pixelRatio → 0.6`, tightens `scene.fog.far` and `camera.far`, disables shadow map casts. Emits `virtue-autoperf-engaged` window event.
+    - `_autoPerfDisengage()` — restores every field from the baseline. Emits `virtue-autoperf-disengaged`.
+    - `applySettings({ autoPerf })` — writes the pref, and hot-engages / hot-disengages if the switch flip requires immediate effect.
+  - `/app/frontend/src/pages/Game.jsx`: passes `mode` into the `new GameEngine(...)` constructor so BigFFA is detectable inside the engine.
+  - `/app/frontend/src/game/settings.js`: new `autoPerf: "auto"` default.
+  - `/app/frontend/src/components/SettingsModal.jsx` (Video tab): new 3-button segmented control (AUTO / ON / OFF) under Disable V-Sync, with the copy "Only in 12P FFA. AUTO drops resolution + fog only if your FPS falls under 60 for a few seconds. ON forces it every match. OFF keeps full quality."
+  - `PerfCounter` in Game.jsx: mirrors the engine's watchdog state via the two custom events and shows an `AUTO PERF` yellow pill next to the FPS chip whenever it's active — so users know the engine adjusted quality for them instead of guessing why resolution suddenly softened.
+- **Verified via Playwright** (9 assertions covering the full state machine):
+  - Warmup: 5 samples at 45 FPS → still off (need full 6-sample window). ✅
+  - 6th sample at 45 → avg 45 < 60 → engages. ✅
+  - 20 more samples at 45 → stays engaged. ✅
+  - Recover to 75, but < 10 consecutive high samples → still engaged (hysteresis). ✅
+  - 10th consecutive high sample → disengages. ✅
+  - Pref="on" → engages immediately in BigFFA regardless of FPS. ✅
+  - Pref="off" → never engages even at 20 FPS. ✅
+  - Non-BigFFA mode → never engages even at 20 FPS. ✅
+  - Settings UI row + AUTO/ON/OFF buttons all render. ✅

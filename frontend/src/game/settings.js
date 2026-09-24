@@ -84,6 +84,14 @@ const DEFAULTS = Object.freeze({
   // requestAnimationFrame so it can tick faster than the display refresh.
   // Mostly reduces input latency on high-refresh monitors.
   disableVsync: false,
+  // Auto Performance mode — a watchdog that engages when the client's
+  // rolling 3s FPS drops below 60 during BigFFA (12P FFA), which is
+  // the mode that ships enough players + bullet FX to weaker GPUs to
+  // matter. Engaging drops pixelRatio → 0.6, tightens fog + camera
+  // far, and disables shadow map casts; disengages when FPS recovers.
+  // Values: "auto" (default, FPS-gated), "on" (force-on in BigFFA),
+  // "off" (never engage, even during framerate dips).
+  autoPerf: "auto",
   // Animated lobby background — when true, the lobby uses the new
   // souped-up animated background (parallax meteors, pulsing crater
   // glow, drifting embers). Off = legacy static-ish background

@@ -21,11 +21,17 @@ function _ctrlBind(name, fallback) {
 }
 
 export class GameEngine {
-  constructor(canvas, { onState, onLocalUpdate, onShoot } = {}) {
+  constructor(canvas, { onState, onLocalUpdate, onShoot, mode } = {}) {
     this.canvas = canvas;
     this.onState = onState || (() => {});
     this.onLocalUpdate = onLocalUpdate || (() => {});
     this.onShoot = onShoot || (() => {});
+    // Match mode passed from Game.jsx (`casual`/`ranked`/`bigffa`/`practice`
+    // etc). Used by the Auto Performance watchdog to gate its FPS-driven
+    // low-detail switch — right now it only activates in `bigffa` where
+    // 12 players + their bullet FX push weaker GPUs below 60 FPS. Other
+    // modes render at 60+ on the same hardware, so we don't touch them.
+    this._matchMode = mode || null;
 
     this.scene = new THREE.Scene();
     // Gradient sky — replaces the flat sky-blue with a vertical
@@ -244,6 +250,28 @@ export class GameEngine {
     this._fpsFrames = 0;
     this._fpsLastT = performance.now();
     this.fps = 0;
+    // Auto Performance mode watchdog. Only ever engages in BigFFA
+    // (`this._matchMode === "bigffa"`) because that's the only mode
+    // that ships 12 players + heavy bullet-FX to weaker GPUs; other
+    // modes render at 60+ FPS on the same hardware. When engaged we
+    // drop pixelRatio to 0.6x, tighten the fog envelope, disable
+    // shadow map casts, and reduce max muzzle-flash sprites. When the
+    // FPS recovers (sustained > 68) we back out. Hysteresis via
+    // separate below/above dwell counters prevents flapping.
+    this._autoPerfActive = false;
+    // Rolling last-N FPS samples (each ~500ms via the fps counter
+    // window). N=6 = 3s of history, enough to smooth over one-frame
+    // hitches while still reacting quickly.
+    this._autoPerfSamples = [];
+    // Snapshot of user-selected quality knobs we override — restored
+    // on disengage / mode-exit so the user's Settings choices come
+    // back untouched.
+    this._autoPerfBaseline = null;
+    // Manual override: `applySettings({ autoPerf: "on" | "off" | "auto" })`.
+    // "off" → never engage. "on" → engage as soon as BigFFA starts,
+    // no FPS gate. "auto" (default) → FPS-gated. Exposed in Settings
+    // for tinkerers who want to force one behaviour.
+    this._autoPerfPref = "auto";
   }
 
   getFps() { return this.fps; }
@@ -6909,6 +6937,11 @@ export class GameEngine {
       this.fps = Math.round((this._fpsFrames * 1000) / (now - this._fpsLastT));
       this._fpsFrames = 0;
       this._fpsLastT = now;
+      // Feed the auto-perf watchdog once per FPS window (~500ms).
+      // Guarded internally by mode + pref checks so it's a no-op
+      // outside BigFFA. Wrap in try/catch so a bug in the watchdog
+      // can never take down the render loop.
+      try { this._autoPerfTick(); } catch (e) { /* watchdog error — ignore */ }
     }
     this._scheduleFrame();
   };
@@ -6927,6 +6960,122 @@ export class GameEngine {
     } else {
       requestAnimationFrame(this._loop);
     }
+  }
+
+  /* Auto Performance watchdog — invoked once per ~500ms FPS window.
+
+     Behaviour is a strict subset of "engage when the user's session
+     is actually struggling AND we're in the mode that matters":
+
+     1. Only runs in BigFFA (12P FFA). Every other mode is a no-op.
+     2. Off if the user's `autoPerfPref` is "off". Force-on if "on".
+     3. In "auto" mode:
+        - Track a rolling window of the last 6 samples (~3s).
+        - ENGAGE when the AVERAGE of the last 6 samples drops below
+          60 fps, i.e. sustained 3-second dip — not a one-frame hitch.
+        - DISENGAGE only after 10 consecutive samples (~5s) with
+          average > 68 fps. The wider gap between engage-60 and
+          disengage-68 gives hysteresis so the mode doesn't flap on
+          borderline hardware.
+     4. Engage/disengage are cheap idempotent renderer tweaks — no
+        scene rebuilds, no shader recompiles — so mid-match flips
+        are visually smooth (users just see a brief pixel-density
+        change).
+
+     The FIRST 6 samples after entering BigFFA are skipped so a slow
+     warmup (asset decode, first-frame shader compile spikes) doesn't
+     trigger an immediate false-positive engage. */
+  _autoPerfTick() {
+    if (this._matchMode !== "bigffa") {
+      // Wrong mode: make sure we're not stuck in engaged state from
+      // a previous BigFFA session (e.g. player exited to lobby and
+      // rejoined into casual on same engine instance — unlikely but
+      // defensive).
+      if (this._autoPerfActive) this._autoPerfDisengage();
+      return;
+    }
+    if (this._autoPerfPref === "off") {
+      if (this._autoPerfActive) this._autoPerfDisengage();
+      return;
+    }
+    if (this._autoPerfPref === "on") {
+      if (!this._autoPerfActive) this._autoPerfEngage();
+      return;
+    }
+    // "auto" — FPS-gated.
+    this._autoPerfSamples.push(this.fps);
+    if (this._autoPerfSamples.length > 6) this._autoPerfSamples.shift();
+    // Warmup: need a full window before deciding either way.
+    if (this._autoPerfSamples.length < 6) return;
+    const avg = this._autoPerfSamples.reduce((a, b) => a + b, 0) / this._autoPerfSamples.length;
+    if (!this._autoPerfActive) {
+      // Engage as soon as the rolling 3s window drops under 60 FPS —
+      // that's the "if drops below 60fps" from the user request. No
+      // dwell counter needed here: 6 consecutive samples IS the dwell.
+      if (avg < 60) {
+        this._autoPerfEngage();
+      }
+    } else {
+      // Disengage only after another sustained window above 68 so we
+      // don't flap on ~60 FPS borderline hardware.
+      if (avg > 68) {
+        this._autoPerfConsecutiveHigh = (this._autoPerfConsecutiveHigh || 0) + 1;
+        if (this._autoPerfConsecutiveHigh >= 10) this._autoPerfDisengage();
+      } else {
+        this._autoPerfConsecutiveHigh = 0;
+      }
+    }
+  }
+
+  /* Applies the low-detail overrides. Idempotent — the baseline is
+     only captured on the FIRST engage per session so a repeated call
+     doesn't overwrite it with the already-lowered values. */
+  _autoPerfEngage() {
+    if (this._autoPerfActive) return;
+    // Snapshot the settings we're about to override so we can restore
+    // them cleanly. Only capture on first engage.
+    if (!this._autoPerfBaseline) {
+      this._autoPerfBaseline = {
+        pixelRatio: (this.renderer && this.renderer.getPixelRatio && this.renderer.getPixelRatio()) || 1,
+        fogFar: this.scene?.fog?.far ?? null,
+        cameraFar: this.camera?.far ?? null,
+        shadowsEnabled: this.renderer?.shadowMap?.enabled ?? false,
+      };
+    }
+    try { this.renderer.setPixelRatio(0.6); } catch {}
+    try {
+      if (this.scene?.fog) this.scene.fog.far = Math.min(this.scene.fog.far, 130);
+    } catch {}
+    try {
+      if (this.camera) { this.camera.far = Math.min(this.camera.far, 160); this.camera.updateProjectionMatrix(); }
+    } catch {}
+    try { if (this.renderer?.shadowMap) this.renderer.shadowMap.enabled = false; } catch {}
+    this._autoPerfActive = true;
+    this._autoPerfConsecutiveHigh = 0;
+    try {
+      window.dispatchEvent(new CustomEvent("virtue-autoperf-engaged", { detail: { fps: this.fps } }));
+    } catch {}
+  }
+
+  _autoPerfDisengage() {
+    if (!this._autoPerfActive) return;
+    const b = this._autoPerfBaseline || {};
+    try { if (b.pixelRatio) this.renderer.setPixelRatio(b.pixelRatio); } catch {}
+    try { if (this.scene?.fog && b.fogFar != null) this.scene.fog.far = b.fogFar; } catch {}
+    try {
+      if (this.camera && b.cameraFar != null) { this.camera.far = b.cameraFar; this.camera.updateProjectionMatrix(); }
+    } catch {}
+    try { if (this.renderer?.shadowMap) this.renderer.shadowMap.enabled = !!b.shadowsEnabled; } catch {}
+    this._autoPerfActive = false;
+    this._autoPerfConsecutiveHigh = 0;
+    this._autoPerfSamples = [];
+    try {
+      window.dispatchEvent(new CustomEvent("virtue-autoperf-disengaged"));
+    } catch {}
+  }
+
+  isAutoPerfActive() {
+    return !!this._autoPerfActive;
   }
 
   /* Live-applies graphics + FPS-cap settings from the settings store.
@@ -6966,6 +7115,20 @@ export class GameEngine {
     }
     if (s.disableVsync !== undefined) {
       this._vsyncDisabled = !!s.disableVsync;
+    }
+    if (s.autoPerf !== undefined) {
+      // "off" | "on" | "auto". Default is "auto" (FPS-gated in BigFFA).
+      const v = String(s.autoPerf);
+      this._autoPerfPref = (v === "off" || v === "on") ? v : "auto";
+      // If the user just switched to "off" mid-match, drop out
+      // immediately so their setting takes effect without waiting
+      // for the next FPS window.
+      if (this._autoPerfPref === "off" && this._autoPerfActive) {
+        this._autoPerfDisengage();
+      }
+      if (this._autoPerfPref === "on" && this._matchMode === "bigffa" && !this._autoPerfActive) {
+        this._autoPerfEngage();
+      }
     }
     if (s.frameGen !== undefined) {
       // "off" / "2x" / "3x" → 1 / 2 / 3 render passes per RAF
