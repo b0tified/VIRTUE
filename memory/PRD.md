@@ -2593,3 +2593,17 @@ Two quality-of-life changes shipped together.
   - `test_bigffa_dispatch_time_range_and_bias`: 5000 samples of `_sample_bigffa_dispatch_secs()` — asserts range [20, 64] AND ≥90% of samples land < 60s.
   - `test_bigffa_dispatch_after_persisted_on_queue_entry`: hits the POST endpoint 8 times, asserts every returned `estimated_wait_seconds` lands in [20, 64].
 - **Client impact**: Zero client changes needed. The pill display + queue-poll wait-seconds field already source from `estimated_wait_seconds`, which now spans 20-64 with a strong low bias.
+
+### 2026-02-27 (later³⁸) — Friends list: show queue kind for Quick Match / 12P FFA
+- **User request**: Show "in queue" status on the friends list for 12P FFA and Quick Match (previously only Ranked triggered the badge).
+- **Backend fix** (`/app/backend/server.py`, `_friend_card`):
+  - Extended the queue-scan to also walk `CASUAL_QUEUE` and `BIGFFA_QUEUE` (was only scanning `RANKED_QUEUE`).
+  - New `queue_kind` field on the response — one of `"ranked" | "casual" | "bigffa"` — so the client knows which mode label to render.
+  - `queue_tier` still only populated for ranked (bronze/silver/etc.) since the other queues aren't tier-partitioned.
+- **Frontend fix** (`/app/frontend/src/components/FriendsModal.jsx`):
+  - Extended the `IN QUEUE` chip to suffix the queue kind: `IN QUEUE · QUICK`, `IN QUEUE · 12P FFA`, or `IN QUEUE · RANKED`. Fallback to plain `IN QUEUE` if the server hasn't yet exposed `queue_kind` (rolling deploy safety).
+  - Added `data-queue-kind` attribute for tests.
+- **Verified** (2 new pytests, `test_bigffa_mode.py` now 16/16 passing):
+  - `test_friend_card_shows_casual_queue_kind` — A befriends B, B joins Quick Match queue → A's `/friends` response shows B with `in_queue:true, queue_kind:"casual"`.
+  - `test_friend_card_shows_bigffa_queue_kind` — same flow for BigFFA. Both cleanup queue state in a `try/finally`.
+- **Live status polling**: The 6s silent refresh in `FriendsModal` (from the earlier live-status fix) automatically picks up queue transitions — a friend clicking Quick Match now shows up as "IN QUEUE · QUICK" within one poll cycle.

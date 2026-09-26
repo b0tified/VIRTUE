@@ -341,9 +341,20 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
               className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#0055FF] text-white border border-black flex items-center gap-1"
               data-testid={`friend-status-${idx}`}
               data-status="in-queue"
+              data-queue-kind={u.queue_kind || "ranked"}
             >
               <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-              IN QUEUE
+              {/* Suffix the queue label with the specific kind so a
+                  friend hunting for a duo partner can tell at a glance
+                  whether the target is queueing Ranked, Quick Match,
+                  or 12P FFA. Fallback keeps the old "IN QUEUE" copy
+                  for any deploys mid-rollout where the server hasn't
+                  yet exposed `queue_kind`. */}
+              IN QUEUE{
+                u.queue_kind === "casual" ? " · QUICK" :
+                u.queue_kind === "bigffa" ? " · 12P FFA" :
+                u.queue_kind === "ranked" ? " · RANKED" : ""
+              }
             </span>
           ) : (
             <span

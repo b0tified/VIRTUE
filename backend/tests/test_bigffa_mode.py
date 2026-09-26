@@ -309,3 +309,64 @@ def test_bigffa_dispatch_after_persisted_on_queue_entry():
         eta = r.json()["estimated_wait_seconds"]
         assert 20 <= eta <= 64, f"eta {eta} outside [20, 64]"
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+
+
+# --- Friend card queue-kind detection ------------------------
+
+def test_friend_card_shows_casual_queue_kind():
+    """A friend actively queueing Quick Match should surface
+    `in_queue:true, queue_kind:"casual"` on their /friends row so the
+    modal can render `IN QUEUE · QUICK`. Uses the /admin/friend-card
+    debug endpoint if present, otherwise queues + befriends two
+    accounts and reads /friends from the OTHER side."""
+    a_tok = _register("cq_a_" + uuid.uuid4().hex[:5])
+    b_tok = _register("cq_b_" + uuid.uuid4().hex[:5])
+    a_hdr = {"Authorization": f"Bearer {a_tok}"}
+    b_hdr = {"Authorization": f"Bearer {b_tok}"}
+    # Fetch B's username so A can send them a friend request.
+    b_me = requests.get(f"{LOCAL}/api/auth/me", headers=b_hdr).json()
+    a_me = requests.get(f"{LOCAL}/api/auth/me", headers=a_hdr).json()
+    # A sends → B accepts
+    r = requests.post(f"{LOCAL}/api/friends/request", headers=a_hdr,
+                      json={"username": b_me["username"]})
+    assert r.status_code == 200, r.text
+    r = requests.post(f"{LOCAL}/api/friends/accept", headers=b_hdr,
+                      json={"username": a_me["username"]})
+    assert r.status_code == 200, r.text
+    try:
+        # B queues Quick Match, then A views their friends list.
+        requests.post(f"{LOCAL}/api/queue/casual", headers=b_hdr, json={})
+        # Give the friend-card scan a tick to observe the queue entry.
+        time.sleep(0.4)
+        friends = requests.get(f"{LOCAL}/api/friends", headers=a_hdr).json()
+        b_row = next((f for f in friends.get("friends", []) if f["username"] == b_me["username"]), None)
+        assert b_row is not None, friends
+        assert b_row["in_queue"] is True, b_row
+        assert b_row["queue_kind"] == "casual", b_row
+    finally:
+        requests.delete(f"{LOCAL}/api/queue/casual", headers=b_hdr)
+
+
+def test_friend_card_shows_bigffa_queue_kind():
+    """Same as above but for 12P FFA — the row must report
+    `queue_kind:"bigffa"` when a friend is queued for BigFFA."""
+    a_tok = _register("bq_a_" + uuid.uuid4().hex[:5])
+    b_tok = _register("bq_b_" + uuid.uuid4().hex[:5])
+    a_hdr = {"Authorization": f"Bearer {a_tok}"}
+    b_hdr = {"Authorization": f"Bearer {b_tok}"}
+    b_me = requests.get(f"{LOCAL}/api/auth/me", headers=b_hdr).json()
+    a_me = requests.get(f"{LOCAL}/api/auth/me", headers=a_hdr).json()
+    requests.post(f"{LOCAL}/api/friends/request", headers=a_hdr,
+                  json={"username": b_me["username"]})
+    requests.post(f"{LOCAL}/api/friends/accept", headers=b_hdr,
+                  json={"username": a_me["username"]})
+    try:
+        requests.post(f"{LOCAL}/api/queue/bigffa", headers=b_hdr)
+        time.sleep(0.4)
+        friends = requests.get(f"{LOCAL}/api/friends", headers=a_hdr).json()
+        b_row = next((f for f in friends.get("friends", []) if f["username"] == b_me["username"]), None)
+        assert b_row is not None
+        assert b_row["in_queue"] is True
+        assert b_row["queue_kind"] == "bigffa", b_row
+    finally:
+        requests.delete(f"{LOCAL}/api/queue/bigffa", headers=b_hdr)

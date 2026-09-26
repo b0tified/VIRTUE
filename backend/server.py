@@ -8451,10 +8451,17 @@ def _friend_card(u: dict) -> dict:
     last_seen = u.get("last_seen_at")
     lvl = compute_level(u.get("stats", {}))
     uid = str(u["_id"])
-    # `in_queue` checks the ranked matchmaker dict — friend rows surface a
-    # small "QUEUEING…" badge when a friend is waiting for ranked.
+    # `in_queue` covers ALL three matchmaking queues (ranked / casual /
+    # bigffa) — friend rows surface a "QUEUEING…" badge with the
+    # specific queue kind so friends can see if someone's about to
+    # drop into Quick Match or 12P FFA and join them / party-invite
+    # them before they land. `queue_kind` is one of "ranked" | "casual"
+    # | "bigffa" and drives the label suffix on the client. `queue_tier`
+    # stays set only for ranked so the tier chip can render (bronze
+    # icon vs gold icon etc.).
     in_queue = False
     queue_tier = None
+    queue_kind: Optional[str] = None
     try:
         for ti, q in RANKED_QUEUE.items():
             for e in q:
@@ -8462,9 +8469,24 @@ def _friend_card(u: dict) -> dict:
                 if uid in uids:
                     in_queue = True
                     queue_tier = ti
+                    queue_kind = "ranked"
                     break
             if in_queue:
                 break
+        if not in_queue:
+            for e in CASUAL_QUEUE:
+                uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+                if uid in uids:
+                    in_queue = True
+                    queue_kind = "casual"
+                    break
+        if not in_queue:
+            for e in BIGFFA_QUEUE:
+                uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
+                if uid in uids:
+                    in_queue = True
+                    queue_kind = "bigffa"
+                    break
     except Exception:
         pass
     return {
@@ -8491,6 +8513,7 @@ def _friend_card(u: dict) -> dict:
         "match_kind": loc.get("kind") if loc else None,
         "in_queue": in_queue,
         "queue_tier": queue_tier,
+        "queue_kind": queue_kind,
         "last_seen_at": float(last_seen) if last_seen else None,
     }
 
