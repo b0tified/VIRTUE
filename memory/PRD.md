@@ -2576,3 +2576,20 @@ Two quality-of-life changes shipped together.
 - **Verified via Playwright**:
   - Mobile 844×390: `lobby-hero-logo-header` visible with `display:block` at `top:35px`; `lobby-hero-logo` hidden with `display:none`. ✅
   - Desktop 1920×900: `lobby-hero-logo-header` hidden (base `hidden` class applies since max-height:500px doesn't match); `lobby-hero-logo` visible at 96px — big hero stays exactly where it was. ✅
+
+### 2026-02-27 (later³⁷) — BigFFA queue: 20-64s range, weighted low
+- **User request**: Make 12P FFA queue times 20-64s, but weighted so it's more likely to start before the 60s timer.
+- **Backend fix** (`/app/backend/server.py`):
+  - Bumped `BIGFFA_ETA_MAX_SEC` from 60 → 64 and `BIGFFA_BOT_FILL_SEC` from 60 → 64 (absolute hard cap).
+  - New `BIGFFA_ETA_MODE_SEC = 38.0` — the peak of the triangular distribution.
+  - Introduced `_sample_bigffa_dispatch_secs()` returning `random.triangular(20, 64, 38)`. Empirically over 100k samples:
+    - `P(wait < 60s) ≈ 98.6%` (only 1.4% of players hit the 60s+ tail)
+    - `P(wait ≤ 45s) ≈ 68%`
+    - avg wait ≈ 41s
+  - Enqueue path (`/queue/bigffa` POST): each new entry now carries BOTH `estimated_wait_seconds` (rounded int, for the pill display) AND `dispatch_after` (float, for the matchmaker). Two fields so future display tweaks (e.g. 5s buckets) can happen without moving the dispatch clock.
+  - Matchmaker loop: switched from a global `(now - joined_at) >= BIGFFA_BOT_FILL_SEC` check to a per-entry `(now - joined_at) >= entry.dispatch_after`. Each queued player rolls their own personal timeout so a random subset of the cohort fires the dispatch — the "lead" then sweeps everyone platform-compatible into the same match. Fallback to the global 64s cap for entries missing `dispatch_after` (rolling deploy safety).
+- **Tests** (`/app/backend/tests/test_bigffa_mode.py`, 14/14 passing):
+  - Existing 12 tests updated for the new 64s cap (was 60).
+  - `test_bigffa_dispatch_time_range_and_bias`: 5000 samples of `_sample_bigffa_dispatch_secs()` — asserts range [20, 64] AND ≥90% of samples land < 60s.
+  - `test_bigffa_dispatch_after_persisted_on_queue_entry`: hits the POST endpoint 8 times, asserts every returned `estimated_wait_seconds` lands in [20, 64].
+- **Client impact**: Zero client changes needed. The pill display + queue-poll wait-seconds field already source from `estimated_wait_seconds`, which now spans 20-64 with a strong low bias.

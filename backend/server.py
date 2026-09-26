@@ -6975,11 +6975,35 @@ CASUAL_BOT_FILL_SEC = 10.0
 # The 60s window is intentionally longer than casual's 10s so a 12-player
 # lobby has a realistic shot at filling with humans before bots take over.
 BIGFFA_QUEUE: List[dict] = []
-BIGFFA_BOT_FILL_SEC = 60.0
-# Range from which the per-join ETA pill is sampled. Wider than casual
-# because the target lobby size is 3× larger.
+# Absolute hard cap on how long a BigFFA entry can wait before its
+# personal dispatch time is enforced. Set to the upper bound of the
+# per-entry ETA distribution below — never fires in practice unless
+# a client's ETA happens to sample to the top of the triangle.
+BIGFFA_BOT_FILL_SEC = 64.0
+# Range from which the per-join ETA is sampled. Wider than casual
+# because the target lobby size is 3× larger. Sampled via a triangular
+# distribution biased LOW (mode = 38) so most players start well
+# before the 60s mark — occasional 60-64s waits still happen but are
+# rare. Empirically (100k samples with mode=38):
+#   • P(wait < 60s) ≈ 98.6%   (only 1.4% of players hit the 60s+ tail)
+#   • P(wait ≤ 45s) ≈ 68%
+#   • avg wait     ≈ 41s
+# Users tuning this: raising `_MODE` toward 64 flattens the distribution
+# toward the max; lowering it toward 20 makes most matches fire nearly
+# instantly.
 BIGFFA_ETA_MIN_SEC = 20.0
-BIGFFA_ETA_MAX_SEC = 60.0
+BIGFFA_ETA_MAX_SEC = 64.0
+BIGFFA_ETA_MODE_SEC = 38.0
+
+
+def _sample_bigffa_dispatch_secs() -> float:
+    """Return this entry's personal dispatch time, sampled from the
+    triangular distribution described above. Split out so the queue
+    add + the ETA pill + any future tests can share one source of
+    truth for the "when will you land" number."""
+    return random.triangular(
+        BIGFFA_ETA_MIN_SEC, BIGFFA_ETA_MAX_SEC, BIGFFA_ETA_MODE_SEC,
+    )
 
 
 def _platforms_compatible(a: dict, b: dict) -> bool:
@@ -7164,14 +7188,21 @@ async def matchmaker_loop():
                     if not BIGFFA_QUEUE:
                         break
                     # Find a "lead" entry — either the queue is at 12+ (any
-                    # entry becomes lead) or an entry has waited past the
-                    # timeout. Scan from oldest so the FIFO order holds.
+                    # entry becomes lead) or an entry has waited past ITS
+                    # OWN personal dispatch time. Scan from oldest so
+                    # the FIFO order holds. Per-entry `dispatch_after`
+                    # is sampled from the triangular distribution at
+                    # enqueue time (see `_sample_bigffa_dispatch_secs`);
+                    # falls back to the global BIGFFA_BOT_FILL_SEC hard
+                    # cap for entries created before this field existed
+                    # (e.g. mid-deploy rolling upgrades).
                     lead_idx: Optional[int] = None
                     if len(BIGFFA_QUEUE) >= BIGFFA_LOBBY_SIZE:
                         lead_idx = 0
                     else:
                         for idx, e in enumerate(BIGFFA_QUEUE):
-                            if (now - e["joined_at"]) >= BIGFFA_BOT_FILL_SEC:
+                            personal_timeout = float(e.get("dispatch_after") or BIGFFA_BOT_FILL_SEC)
+                            if (now - e["joined_at"]) >= personal_timeout:
                                 lead_idx = idx
                                 break
                     if lead_idx is None:
@@ -8130,14 +8161,25 @@ async def queue_bigffa_join(
         _remove_user_from_casual_queue(user_id)
         _remove_user_from_bigffa_queue(user_id)
         MATCHED_USERS.pop(user_id, None)
-        eta = random.uniform(BIGFFA_ETA_MIN_SEC, BIGFFA_ETA_MAX_SEC)
+        # Personal dispatch time — see `_sample_bigffa_dispatch_secs`.
+        # Triangular distribution [20, 64] with mode=38 → most players
+        # land under the 60s mark, a rare tail extends to 64s.
+        eta = _sample_bigffa_dispatch_secs()
         BIGFFA_QUEUE.append({
             "user_id": user_id,
             "user_ids": [user_id],
             "username": user.get("username", "?"),
             "usernames": [user.get("username", "?")],
             "joined_at": time.time(),
+            # Store BOTH the raw eta (for the ETA pill display) AND a
+            # duplicate as `dispatch_after` — the matchmaker reads
+            # `dispatch_after` to know when THIS entry personally
+            # times out into the "promote to lead and dispatch with
+            # bot fill" branch. Keeping them separate fields means we
+            # can later tweak the display (e.g. round to 5s buckets)
+            # without changing the dispatch clock.
             "estimated_wait_seconds": int(round(eta)),
+            "dispatch_after": float(eta),
             # Platform flags — see `_platforms_compatible`. When
             # `mobile_only` is true, the dispatcher will only cohort
             # this entry with other is_mobile=True entries.

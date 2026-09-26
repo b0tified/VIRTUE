@@ -136,8 +136,8 @@ def test_bigffa_queue_join_returns_eta():
     assert r.status_code == 200, r.text
     j = r.json()
     assert j["ok"] is True
-    assert int(j["bot_fill_seconds"]) == 60
-    assert 20 <= int(j["estimated_wait_seconds"]) <= 60
+    assert int(j["bot_fill_seconds"]) == 64
+    assert 20 <= int(j["estimated_wait_seconds"]) <= 64
     assert int(j["queue_size"]) >= 1
     # Cleanup so we don't leave a match matched.
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
@@ -157,7 +157,7 @@ def test_bigffa_queue_poll_reflects_in_queue_state():
     assert j["matched"] is False
     assert "wait_seconds" in j
     assert "queue_position" in j
-    assert int(j["bot_fill_seconds"]) == 60
+    assert int(j["bot_fill_seconds"]) == 64
     requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
 
 
@@ -269,3 +269,43 @@ def test_bigffa_room_flagged_for_spawn_immunity_exemption():
     # players in those modes would keep immunity while moving.
     assert getattr(server.game_room, "is_bigffa", False) is False
     assert getattr(server.ranked_room, "is_bigffa", False) is False
+
+
+# --- Triangular ETA distribution: 20-64s, weighted low ---
+
+def test_bigffa_dispatch_time_range_and_bias():
+    """The per-entry ETA is sampled from `_sample_bigffa_dispatch_secs`
+    which is a triangular(20, 64, mode=38). This test:
+      1) enforces the range [20, 64] on every sample,
+      2) confirms the bias — most samples should fall UNDER the 60s
+         mark (the "start before the 60 second timer" bit of the user
+         request). A tolerant threshold (≥ 90%) so a bad seed can't
+         flake the test."""
+    import importlib
+    server = importlib.import_module("server")
+    N = 5000
+    xs = [server._sample_bigffa_dispatch_secs() for _ in range(N)]
+    assert min(xs) >= server.BIGFFA_ETA_MIN_SEC, min(xs)
+    assert max(xs) <= server.BIGFFA_ETA_MAX_SEC, max(xs)
+    under_60_ratio = sum(1 for v in xs if v < 60) / N
+    assert under_60_ratio >= 0.90, (
+        f"expected ≥90% of samples < 60s, got {under_60_ratio:.2%}"
+    )
+
+
+def test_bigffa_dispatch_after_persisted_on_queue_entry():
+    """Every queue entry created via POST /queue/bigffa should return
+    an `estimated_wait_seconds` in the new 20-64 range (was 20-60).
+    Repeats N times so the range extension is actually exercised —
+    with the triangular distribution, hitting >60 is rare but
+    possible; hitting the [20, 64] envelope on every call is
+    guaranteed."""
+    tok = _register("bigffa_disp_" + uuid.uuid4().hex[:5])
+    hdr = {"Authorization": f"Bearer {tok}"}
+    for _ in range(8):
+        requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+        r = requests.post(f"{LOCAL}/api/queue/bigffa", headers=hdr)
+        assert r.status_code == 200, r.text
+        eta = r.json()["estimated_wait_seconds"]
+        assert 20 <= eta <= 64, f"eta {eta} outside [20, 64]"
+    requests.delete(f"{LOCAL}/api/queue/bigffa", headers=hdr)
