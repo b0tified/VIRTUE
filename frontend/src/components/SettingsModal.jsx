@@ -658,7 +658,7 @@ export default function SettingsModal({ open, onClose }) {
                   data-testid="settings-aim-assist-strength-slider"
                 />
                 <p className="text-[10px] text-neutral-500 mt-0.5">
-                  Higher values pull harder toward enemies in your aim cone.
+                  Higher values pull harder toward enemies in your aim cone. 100% = full lock-on (crosshair snaps + tracks automatically).
                 </p>
               </div>
             )}

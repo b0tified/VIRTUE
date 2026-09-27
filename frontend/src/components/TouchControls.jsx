@@ -17,6 +17,71 @@ function isTouchDevice() {
   );
 }
 
+/* Build touch handlers that fire `onTap()` on touchstart AND rotate the
+   engine yaw/pitch when the finger drags — regardless of whether the drag
+   stays over the button or leaves it. Used by every touch button (Fire,
+   Reload, Jump, ADS, weapon switcher) so the player never has to lift
+   their thumb to aim. `autoRepeatMs>0` also arms an auto-repeat interval
+   (used by Fire for hold-to-spray). */
+function makeAimWhileHeld(engineRef, onTap, { autoRepeatMs = 0 } = {}) {
+  const state = { touchId: null, lastX: 0, lastY: 0, interval: null };
+  const start = (e) => {
+    e.preventDefault();
+    onTap && onTap(e);
+    if (autoRepeatMs > 0) {
+      if (state.interval) clearInterval(state.interval);
+      state.interval = setInterval(() => onTap && onTap(null), autoRepeatMs);
+    }
+    if (engineRef?.current && e.changedTouches && e.changedTouches[0]) {
+      const t = e.changedTouches[0];
+      state.touchId = t.identifier;
+      state.lastX = t.clientX;
+      state.lastY = t.clientY;
+    }
+  };
+  const move = (e) => {
+    const eng = engineRef?.current;
+    if (!eng || state.touchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== state.touchId) continue;
+      e.preventDefault();
+      const dx = t.clientX - state.lastX;
+      const dy = t.clientY - state.lastY;
+      state.lastX = t.clientX;
+      state.lastY = t.clientY;
+      const adsFactor = eng._adsSensFactor ? eng._adsSensFactor() : 1.0;
+      const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0) * adsFactor;
+      eng.yaw -= dx * sens;
+      eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
+    }
+  };
+  const end = (e) => {
+    if (e) e.preventDefault();
+    if (state.interval) {
+      clearInterval(state.interval);
+      state.interval = null;
+    }
+    if (e && e.changedTouches) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === state.touchId) {
+          state.touchId = null;
+        }
+      }
+    } else {
+      state.touchId = null;
+    }
+  };
+  return {
+    onTouchStart: start,
+    onTouchMove: move,
+    onTouchEnd: end,
+    onTouchCancel: end,
+    // expose so button-unmount handlers can nuke the interval
+    _cleanup: () => { if (state.interval) { clearInterval(state.interval); state.interval = null; } },
+  };
+}
+
 export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWeapon, onToggleScoreboard }) {
   const [enabled, setEnabled] = useState(false);
   const [hudLayout, setHudLayout] = useState(() => settingsStore.get().hudLayout || settingsStore.DEFAULTS.hudLayout);
@@ -294,14 +359,15 @@ export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWe
           opacity: actL.opacity,
         }}
       >
-        <ActionBtn label="Reload" onPress={() => onReload?.()} color="#FFD700" testid="touch-reload" />
+        <ActionBtn label="Reload" onPress={() => onReload?.()} color="#FFD700" testid="touch-reload" engineRef={engineRef} />
         {/* ADS toggle — occupies the former Melee slot. Aim-down-sights is
             only meaningful for primary + laser (secondary/katana has no
-            ADS), so we no-op when katana is equipped. Tap to toggle. */}
-        <button
-          type="button"
-          onTouchStart={(e) => {
-            e.preventDefault();
+            ADS), so we no-op when katana is equipped. Tap to toggle.
+            Aim-while-held: dragging off the button also rotates the
+            camera, so the player never has to lift their thumb. */}
+        <AimAwareButton
+          engineRef={engineRef}
+          onTap={() => {
             const eng = engineRef.current;
             if (!eng) return;
             if (eng.currentWeapon === "secondary") return;
@@ -314,12 +380,12 @@ export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWe
             boxShadow: "0 4px 0 #000",
             touchAction: "none",
           }}
-          data-testid="touch-ads"
-          aria-label="Aim down sights"
+          testid="touch-ads"
+          ariaLabel="Aim down sights"
         >
           ADS
-        </button>
-        <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" />
+        </AimAwareButton>
+        <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" engineRef={engineRef} />
         {/* Fire button: hold for auto-fire on AK-47 (engine cooldown gates
             shots to the weapon's RPM, so calling _tryShoot every 50ms is
             safe — the function bails when the cooldown timer hasn't elapsed).
@@ -334,7 +400,6 @@ export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWe
           autoRepeatMs={50}
           testid="touch-fire"
           engineRef={engineRef}
-          aimWhileHeld
         />
       </div>
 
@@ -356,15 +421,16 @@ export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWe
           { w: "secondary", k: "2", label: "KAT" },
           { w: "tertiary",  k: "3", label: "LSR" },
         ].map((it) => (
-          <button
+          <AimAwareButton
             key={it.w}
-            type="button"
-            onTouchStart={(e) => { e.preventDefault(); onSwitchWeapon?.(it.w); }}
+            engineRef={engineRef}
+            onTap={() => onSwitchWeapon?.(it.w)}
             className="pointer-events-auto bg-black/60 border border-white/30 rounded px-2 py-1 text-[10px] font-anton uppercase tracking-widest text-white"
-            data-testid={`touch-weapon-${it.w}`}
+            style={{ touchAction: "none" }}
+            testid={`touch-weapon-${it.w}`}
           >
             {it.k} · {it.label}
-          </button>
+          </AimAwareButton>
         ))}
       </div>
 
@@ -404,84 +470,61 @@ function Knob({ dx, dy }) {
   );
 }
 
-function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 0, engineRef = null, aimWhileHeld = false }) {
-  // Auto-repeat handle (for the Fire button). When the touch is held, we
-  // fire `onPress` every `autoRepeatMs` ms; engine-side cooldown gates the
-  // actual shot rate so this is safe.
-  const intervalRef = useRef(null);
-  // Aim-while-held state: track the touch that started ON the button and
-  // feed yaw/pitch deltas to the engine as it moves. Lets the player fire
-  // and simultaneously drag-aim without lifting their thumb off the FIRE
-  // button — same gesture Call of Duty Mobile / PUBG Mobile use.
-  const aimStateRef = useRef({ touchId: null, lastX: 0, lastY: 0 });
-  const startRepeat = (e) => {
-    e.preventDefault();
-    onPress();
-    if (autoRepeatMs > 0) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => onPress(), autoRepeatMs);
-    }
-    if (aimWhileHeld && engineRef?.current) {
-      const t = e.changedTouches[0];
-      aimStateRef.current.touchId = t.identifier;
-      aimStateRef.current.lastX = t.clientX;
-      aimStateRef.current.lastY = t.clientY;
-    }
-  };
-  const onMove = (e) => {
-    if (!aimWhileHeld) return;
-    const eng = engineRef?.current;
-    const st = aimStateRef.current;
-    if (!eng || st.touchId === null) return;
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const t = e.changedTouches[i];
-      if (t.identifier !== st.touchId) continue;
-      e.preventDefault();
-      const dx = t.clientX - st.lastX;
-      const dy = t.clientY - st.lastY;
-      st.lastX = t.clientX;
-      st.lastY = t.clientY;
-      // Mirror the look-pad math so sensitivity feels identical whether
-      // the drag started on empty screen area or on the FIRE button.
-      const adsFactor = eng._adsSensFactor ? eng._adsSensFactor() : 1.0;
-      const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0) * adsFactor;
-      eng.yaw -= dx * sens;
-      eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
-    }
-  };
-  const stopRepeat = (e) => {
-    if (e) e.preventDefault();
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    if (aimWhileHeld) {
-      const st = aimStateRef.current;
-      if (e) {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          if (e.changedTouches[i].identifier === st.touchId) {
-            st.touchId = null;
-          }
-        }
-      } else {
-        st.touchId = null;
-      }
-    }
-  };
-  // Cleanup on unmount.
-  useEffect(() => () => stopRepeat(), []);
+function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 0, engineRef = null }) {
+  // Every ActionBtn is now aim-while-held: the button fires onPress on
+  // touchstart AND rotates yaw/pitch on drag, so a right-thumb drag off
+  // (or through) any button keeps the camera moving. Fire additionally
+  // auto-repeats via autoRepeatMs to sustain hold-to-spray.
+  const handlersRef = useRef(null);
+  if (!handlersRef.current) {
+    handlersRef.current = makeAimWhileHeld(engineRef, () => onPress(), { autoRepeatMs });
+  }
+  // Cleanup on unmount — clear any lingering auto-repeat interval.
+  useEffect(() => () => handlersRef.current?._cleanup?.(), []);
+  const h = handlersRef.current;
   return (
     <button
       type="button"
-      onTouchStart={startRepeat}
-      onTouchMove={onMove}
-      onTouchEnd={stopRepeat}
-      onTouchCancel={stopRepeat}
+      onTouchStart={h.onTouchStart}
+      onTouchMove={h.onTouchMove}
+      onTouchEnd={h.onTouchEnd}
+      onTouchCancel={h.onTouchCancel}
       className={`pointer-events-auto rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform ${big ? "w-20 h-20 text-lg" : "w-16 h-16 text-xs"}`}
       style={{ background: color, boxShadow: "0 4px 0 #000", touchAction: "none" }}
       data-testid={testid}
     >
       {label}
+    </button>
+  );
+}
+
+
+/* Generic aim-while-held button. Renders a plain <button> with custom
+   className/style/children, but touches on it fire `onTap` on touchstart
+   AND rotate the engine's yaw/pitch when the finger drags across / off
+   the button. Same handler contract as ActionBtn but without the fixed
+   ActionBtn shape — used by the ADS toggle + weapon switcher, which have
+   their own styling requirements. */
+function AimAwareButton({ engineRef, onTap, className, style, testid, ariaLabel, children }) {
+  const handlersRef = useRef(null);
+  if (!handlersRef.current) {
+    handlersRef.current = makeAimWhileHeld(engineRef, () => onTap && onTap());
+  }
+  useEffect(() => () => handlersRef.current?._cleanup?.(), []);
+  const h = handlersRef.current;
+  return (
+    <button
+      type="button"
+      onTouchStart={h.onTouchStart}
+      onTouchMove={h.onTouchMove}
+      onTouchEnd={h.onTouchEnd}
+      onTouchCancel={h.onTouchCancel}
+      className={className}
+      style={style}
+      data-testid={testid}
+      aria-label={ariaLabel}
+    >
+      {children}
     </button>
   );
 }

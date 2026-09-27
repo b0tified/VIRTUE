@@ -5816,15 +5816,19 @@ export class GameEngine {
     // Aim assist: only when gamepad connected OR touch mode active (set
     // externally by TouchControls or via setAimAssist()). Mobile gets a
     // strong console-style near-autolock; controller gets a gentle nudge.
+    // Slider at 100% (base >= 0.999) engages FULL LOCK-ON mode — the
+    // reticle snaps instantly to the nearest enemy and tracks them
+    // frame-by-frame (aimbot-style), matching what the user opted into.
     if (this.gamepadConnected || this.touchActive) {
       const base = this._aimAssistStrength ?? 0.0;
       if (base > 0) {
+        const fullLock = base >= 0.999;
         // Touch: 3.0x scaling (was 2.5x) cap at 2.5 — combined with the
         // higher lerp rate (28) inside applyAimAssist this yields a
         // console-style aggressive snap even when the user set the
         // strength slider low.
         const strength = this.touchActive ? Math.min(2.5, base * 3.0) : base;
-        this.applyAimAssist(dt, strength);
+        this.applyAimAssist(dt, strength, fullLock);
       }
     }
 
@@ -6719,7 +6723,7 @@ export class GameEngine {
      the old per-frame nearest-enemy scan (no sticky) so it stays a
      gentle nudge, not a lock.
   */
-  applyAimAssist(dt, intensity = 0.5) {
+  applyAimAssist(dt, intensity = 0.5, fullLock = false) {
     if (!intensity || intensity <= 0) return;
     const me = this.players?.get(this.youId);
     if (!me || !me.alive) return;
@@ -6728,10 +6732,11 @@ export class GameEngine {
     // Cone sizes / range. Touch gets a wide acquisition cone AND an
     // even wider tracking cone so a moving target under the reticle
     // stays sticky as they strafe past 90° of screen space; controller
-    // stays tight.
-    const ACQUIRE_CONE = this.touchActive ? 0.90 : 0.35;   // ~52° / ~20°
-    const TRACK_CONE   = this.touchActive ? 1.45 : 0.35;   // ~83° for sticky on touch
-    const MAX_RANGE    = this.touchActive ? 60 : 35;
+    // stays tight. FULL LOCK mode widens both cones to full 180° so
+    // any visible enemy anywhere gets acquired + tracked (aimbot).
+    const ACQUIRE_CONE = fullLock ? Math.PI : (this.touchActive ? 0.90 : 0.35);   // ~52° / ~20°
+    const TRACK_CONE   = fullLock ? Math.PI : (this.touchActive ? 1.45 : 0.35);   // ~83° for sticky on touch
+    const MAX_RANGE    = fullLock ? 200 : (this.touchActive ? 60 : 35);
 
     const cp = Math.cos(this.pitch);
     // Match Three.js camera forward exactly (rotation.y=yaw on a camera that
@@ -6825,7 +6830,9 @@ export class GameEngine {
     while (yd >  Math.PI) yd -= Math.PI * 2;
     while (yd < -Math.PI) yd += Math.PI * 2;
     const pd = desiredPitch - this.pitch;
-    const k = 1 - Math.exp(-lerpRate * dt);
+    // Full-lock: snap directly to the target every frame (k=1). No
+    // interpolation, no lag — reticle is glued to the enemy.
+    const k = fullLock ? 1 : (1 - Math.exp(-lerpRate * dt));
     this.yaw += yd * k;
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch + pd * k));
   }

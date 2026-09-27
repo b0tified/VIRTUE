@@ -335,6 +335,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Melee button removed from mobile HUD, ADS takes its slot** — The Melee button was removed per user request. ADS is now a first-class grid child in the former Melee position (top-right of the 2×2 action grid, directly above the Fire button). Standalone floating ADS button removed. Grid layout: Reload · ADS / Jump · Fire. `pressMelee` helper + `onMelee` prop removed from `TouchControls` (Game.jsx still passes it, harmlessly ignored).
 - Files changed: `/app/frontend/src/components/TouchControls.jsx`.
 
+### Iteration 35 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Aim-while-held on ALL touch buttons** — Extracted a reusable `makeAimWhileHeld(engineRef, onTap, {autoRepeatMs})` helper. Every touch button (Reload, ADS, Jump, Fire, weapon switcher) now uses it: touchstart fires the tap action, touchmove drags rotate the camera via the same sensitivity math the look-pad uses. Fire additionally auto-repeats. New `AimAwareButton` wrapper used by the ADS button + weapon switcher (custom styling, same touch semantics).
+- ✅ **100% aim assist = full lock-on** — When the aim-assist slider is at 100% (`_aimAssistStrength >= 0.999`), engine engages FULL LOCK: acquisition + tracking cones widen to the full sphere (π rad), max range extends to 200m, and the lerp `k` snaps to 1.0 each frame so `yaw`/`pitch` slam directly onto the target — the reticle glues to the nearest enemy and tracks them automatically. Slider tooltip updated to advertise the behaviour.
+- Files changed: `/app/frontend/src/components/TouchControls.jsx`, `/app/frontend/src/game/engine.js`, `/app/frontend/src/components/SettingsModal.jsx`.
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
