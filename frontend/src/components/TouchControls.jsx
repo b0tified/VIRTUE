@@ -17,7 +17,7 @@ function isTouchDevice() {
   );
 }
 
-export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon, onToggleScoreboard }) {
+export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWeapon, onToggleScoreboard }) {
   const [enabled, setEnabled] = useState(false);
   const [hudLayout, setHudLayout] = useState(() => settingsStore.get().hudLayout || settingsStore.DEFAULTS.hudLayout);
   const [adsOn, setAdsOn] = useState(false);
@@ -217,14 +217,9 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     onShoot?.();
   };
 
-  const pressMelee = () => {
-    const eng = engineRef.current;
-    if (eng) {
-      eng.pendingMelee = true;
-      eng.pendingMeleeAim = { yaw: eng.yaw, pitch: eng.pitch };
-    }
-    onMelee?.();
-  };
+  // pressMelee removed — melee button was removed from the mobile HUD
+  // per user request; the ADS button occupies that grid slot now. onMelee
+  // prop is kept in the signature for backward compat but unused.
 
   const pressJump = () => {
     const eng = engineRef.current;
@@ -283,7 +278,12 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
 
       {/* RIGHT: action buttons — wrapper is pointer-events-none so aim
           drags across the gaps between buttons still reach the look
-          pad behind. Only the buttons themselves capture touches. */}
+          pad behind. Only the buttons themselves capture touches.
+          Grid layout (top-left / top-right / bottom-left / bottom-right):
+             Reload  ·  ADS
+             Jump    ·  Fire
+          Melee removed per user request; ADS took its slot for easy
+          right-thumb reach right above the Fire button. */}
       <div
         className="pointer-events-none absolute grid grid-cols-2 gap-3 z-40"
         style={{
@@ -295,7 +295,30 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         }}
       >
         <ActionBtn label="Reload" onPress={() => onReload?.()} color="#FFD700" testid="touch-reload" />
-        <ActionBtn label="Melee"  onPress={pressMelee}        color="#9B59B6" testid="touch-melee" />
+        {/* ADS toggle — occupies the former Melee slot. Aim-down-sights is
+            only meaningful for primary + laser (secondary/katana has no
+            ADS), so we no-op when katana is equipped. Tap to toggle. */}
+        <button
+          type="button"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            const eng = engineRef.current;
+            if (!eng) return;
+            if (eng.currentWeapon === "secondary") return;
+            eng.setADS?.(!eng.ads);
+            setAdsOn(!!eng.ads);
+          }}
+          className="pointer-events-auto rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform w-16 h-16 text-xs"
+          style={{
+            background: adsOn ? "#00A9FF" : "#1e293b",
+            boxShadow: "0 4px 0 #000",
+            touchAction: "none",
+          }}
+          data-testid="touch-ads"
+          aria-label="Aim down sights"
+        >
+          ADS
+        </button>
         <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" />
         {/* Fire button: hold for auto-fire on AK-47 (engine cooldown gates
             shots to the weapon's RPM, so calling _tryShoot every 50ms is
@@ -314,40 +337,6 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
           aimWhileHeld
         />
       </div>
-
-      {/* ADS toggle — sits just LEFT of the fire cluster so a right-thumb
-          reach naturally lands on it. Aim-down-sights is only meaningful
-          for primary + laser (secondary/katana has no ADS), so we grey
-          out and no-op when katana is equipped. Tap to toggle. */}
-      <button
-        type="button"
-        onTouchStart={(e) => {
-          e.preventDefault();
-          const eng = engineRef.current;
-          if (!eng) return;
-          if (eng.currentWeapon === "secondary") return;
-          eng.setADS?.(!eng.ads);
-          setAdsOn(!!eng.ads);
-        }}
-        className="pointer-events-auto absolute z-40 rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform w-16 h-16 text-xs"
-        style={{
-          // Sit just ABOVE the action grid (grid is ~156px tall at
-          // scale=1: reload/melee row + gap + jump/fire row). This
-          // keeps ADS in easy right-thumb reach without overlapping
-          // the fire/melee/reload/jump buttons.
-          bottom: actL.y + 168 * actL.scale,
-          right: actL.x + 8 * actL.scale,
-          transform: `scale(${actL.scale})`,
-          transformOrigin: "bottom right",
-          opacity: actL.opacity,
-          background: adsOn ? "#00A9FF" : "#1e293b",
-          boxShadow: "0 4px 0 #000",
-        }}
-        data-testid="touch-ads"
-        aria-label="Aim down sights"
-      >
-        ADS
-      </button>
 
       {/* Weapon switcher (top-right above look pad) — wrapper is
           pointer-events-none so aim drags through this column still
