@@ -373,6 +373,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: BlitzReaper resolves to MASTER III lvl 46 with 372 matches, 5958/2650 K/D (2.25), 10 history entries with realistic placements + RP deltas + timestamps. Search + profile return identical avatar/tier/pts/level/banner values (RNG call-order match).
 - Files changed: `/app/backend/server.py` (public_profile bot fallback rewritten to full profile).
 
+### Iteration 40 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Custom bot names now surface in Quick Match + TDM (not just 12P FFA)** — Root cause: startup + party + offline-TDM pre-fill loops called `random.sample(DISGUISED_BOT_NAMES, N)` directly, bypassing the custom-name merge that only lived inside `_maintain_population`. Since Quick Match / TDM rooms are pre-filled once and stay static, custom names never appeared until a bot died mid-match. Fix: new `_pick_disguised_names(count, mode, exclude=None)` helper that returns unique names from the weighted pool (built-ins + custom×4). Wired into: casual quick-match startup pre-fill (`game_room`), TDM startup (`tdm_room` + `practice_tdm_room`), offline-TDM per-user rooms (`get_or_create_offline_tdm_room`), and party rooms (`create_party_room`). Verified via 200-round Monte Carlo: custom names appear ~77-85 hits vs ~23 for each built-in — the intended ~4× boost.
+- ✅ **Confirmed no "BOT" text in Friends search rows** — Current backend returns `rank_name` = tier name (e.g. MASTER), never "BOT". Frontend has no "BOT" strings in `FriendsModal.jsx`. Touched the file to trigger a webpack bundle rebuild so any stale browser cache clears on next load.
+- Files changed: `/app/backend/server.py` (`_pick_disguised_names` helper + 5 caller updates).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

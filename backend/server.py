@@ -937,6 +937,30 @@ _BOT_SKIN_RARITY_WEIGHTS_DIAMOND_MASTER = {"common": 1, "rare": 2, "epic": 5, "l
 _BOT_SKIN_RARITY_WEIGHTS_TOP = {"common": 0, "rare": 1, "epic": 3, "legendary": 8}
 
 
+def _pick_disguised_names(count: int, mode: str, exclude: Optional[set] = None) -> List[str]:
+    """Pick `count` unique bot names for a room of `mode`, weighting
+    admin-registered custom names 4x higher than built-in disguised
+    names so custom entries surface prominently even in initial pre-
+    fills (not just when _maintain_population refills after a death).
+    `exclude` lets callers avoid duplicates against players already in
+    the room. Falls back to whatever the pool holds if `count` exceeds
+    available uniques."""
+    ex = set(exclude or ())
+    custom_names = _custom_bot_names_for(mode=mode)
+    pool_weighted = list(DISGUISED_BOT_NAMES) + custom_names * 4
+    random.shuffle(pool_weighted)
+    seen = set(ex)
+    out: List[str] = []
+    for nm in pool_weighted:
+        if nm in seen:
+            continue
+        seen.add(nm)
+        out.append(nm)
+        if len(out) >= count:
+            break
+    return out
+
+
 def _build_bot_skin_pool(weights: dict) -> List[str]:
     pool: List[str] = []
     for _s in SKINS_CATALOG:
@@ -1159,8 +1183,10 @@ async def on_startup():
     # difficulty=0.9 — nerfed from 1.15 per user request. Sub-Platinum
     # players are the ones meeting casual bots (the ranked matchmaker
     # pulls Plat+ players away), so keep this forgiving. Ranked bots
-    # (below) stay at 1.9 for the real challenge.
-    for name in random.sample(DISGUISED_BOT_NAMES, NUM_BOTS):
+    # (below) stay at 1.9 for the real challenge. Uses the weighted
+    # helper so admin-registered custom names surface in the very
+    # first pre-fill — not just when a slot opens later.
+    for name in _pick_disguised_names(NUM_BOTS, mode="ffa"):
         game_room.spawn_bot(name, disguised=True, difficulty=0.9)
     # Shared ranked room: 4 disguised bots so the lobby always feels full
     # (was 1 — players reported "empty match"). difficulty=1.9 matches the
@@ -1182,13 +1208,14 @@ async def on_startup():
     # bots in/out 1-for-1 as humans arrive and depart. Disguised=True so
     # the lobby reads as a 4v4 of "real" people (DISGUISED_BOT_NAMES are
     # realistic handles; the BOT badge is suppressed in TDM scoreboard).
-    tdm_bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2)
+    # Weighted helper: custom admin names surface here on first spawn.
+    tdm_bot_names = _pick_disguised_names(TDM_TEAM_SIZE * 2, mode="tdm")
     for nm in tdm_bot_names:
         tdm_room.spawn_bot(nm, disguised=True, difficulty=1.45)
     # TDM practice room: same disguised pre-fill so practice mirrors the
     # quick-match feel exactly (a bored player solo-grinding bots still
     # sees 4v4 of "humans" in the scoreboard).
-    practice_tdm_bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2)
+    practice_tdm_bot_names = _pick_disguised_names(TDM_TEAM_SIZE * 2, mode="tdm")
     for nm in practice_tdm_bot_names:
         practice_tdm_room.spawn_bot(nm, disguised=True, difficulty=1.2)
 
@@ -6953,7 +6980,7 @@ async def get_or_create_offline_tdm_room(user_id: str) -> "GameRoom":
         return room
     room = GameRoom(is_ranked=False, match_duration=300.0, game_mode="tdm")
     room.is_offline = True
-    bot_names = random.sample(DISGUISED_BOT_NAMES, TDM_TEAM_SIZE * 2 - 1)
+    bot_names = _pick_disguised_names(TDM_TEAM_SIZE * 2 - 1, mode="tdm")
     for nm in bot_names:
         room.spawn_bot(nm, disguised=True, difficulty=1.2)
     OFFLINE_TDM_ROOMS[user_id] = room
@@ -10316,7 +10343,7 @@ async def get_or_create_party_room(party_id: str) -> "GameRoom":
     # FFA_LOBBY_SIZE within a few ticks even though bot_count=0 here.
     room.bots_enabled = bots_enabled
     if bot_count > 0:
-        for name in random.sample(DISGUISED_BOT_NAMES, bot_count):
+        for name in _pick_disguised_names(bot_count, mode=room_mode):
             # Party rooms are casual — match the nerfed casual bot
             # difficulty (0.9) so a small party doesn't get slammed
             # by fill bots harder than the actual quick-match ones.
