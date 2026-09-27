@@ -5684,11 +5684,26 @@ class GameRoom:
         # match name so we never repeat or accidentally swap names within
         # the room. Goonmaster / Ultimate lobbies (tier >= 8) pull from
         # the LIVE leaderboard-bot cache so re-rolls draw fresh top-50
-        # handles too, not just the initial spawn.
+        # handles too. Admin-registered custom names for mode="ranked"
+        # (filtered by tier) are also merged in weighted 4x so pinned
+        # ringers surface on every re-roll.
         if tier_idx >= 8 and LEADERBOARD_BOT_NAMES:
-            pool = list(LEADERBOARD_BOT_NAMES)
+            _base = list(LEADERBOARD_BOT_NAMES)
         else:
-            pool = list(TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES)
+            _base = list(TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES)
+        _cust = _custom_bot_names_for(mode="ranked", tier_idx=tier_idx)
+        if _cust:
+            _weighted = _base + _cust * 4
+            random.shuffle(_weighted)
+            _seen: set = set()
+            pool: List[str] = []
+            for _nm in _weighted:
+                if _nm in _seen:
+                    continue
+                _seen.add(_nm)
+                pool.append(_nm)
+        else:
+            pool = _base
         current_names = {b.username for b in bots}
         candidates = [n for n in pool if n not in current_names]
         if len(candidates) < len(bots):
@@ -7091,10 +7106,31 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_r
     # so the lobby handles match the same seeded top-50 names players
     # see on the public leaderboard — Ultimate Gooner rooms feel like
     # the actual top of the ladder instead of fallback placeholders.
+    # Admin-registered custom bot names for mode="ranked" (filtered
+    # by tier) are ALSO merged in — so an admin who pins a name to
+    # e.g. "Master + ranked" will see it show up in Master ranked
+    # lobbies. Weighted 4x like casual so admin adds surface visibly.
     if tier_idx >= 8 and LEADERBOARD_BOT_NAMES:
-        name_pool = list(LEADERBOARD_BOT_NAMES)
+        base_pool = list(LEADERBOARD_BOT_NAMES)
     else:
-        name_pool = TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES
+        base_pool = list(TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES)
+    _custom = _custom_bot_names_for(mode="ranked", tier_idx=tier_idx)
+    if _custom:
+        # Same dedupe-preserving-order pattern used by _pick_disguised_names:
+        # duplicate custom names 4x in the pool + shuffle, then take the
+        # first-seen occurrence of each unique name so custom names have
+        # a ~4x higher probability of landing near the front.
+        pool_weighted = base_pool + _custom * 4
+        random.shuffle(pool_weighted)
+        seen: set = set()
+        name_pool: List[str] = []
+        for nm in pool_weighted:
+            if nm in seen:
+                continue
+            seen.add(nm)
+            name_pool.append(nm)
+    else:
+        name_pool = base_pool
     chosen_names = random.sample(name_pool, k=min(bot_count, len(name_pool)))
     # If somehow the pool was smaller than bot_count (shouldn't happen for the
     # current sizes 1..3), pad with BOT_NAMES so the room still fills up.
@@ -7382,6 +7418,18 @@ async def matchmaker_loop():
                     else:
                         for idx, e in enumerate(BIGFFA_QUEUE):
                             personal_timeout = float(e.get("dispatch_after") or BIGFFA_BOT_FILL_SEC)
+                            # Solo-queue accelerant: if this entry is the
+                            # ONLY player in the BigFFA queue and has
+                            # waited ≥ 15s, dispatch them early. Prior
+                            # behavior held solo PC players up to 64s
+                            # waiting for humans that were never going
+                            # to arrive — felt like the queue was frozen
+                            # on PC. When any other real player joins,
+                            # this cap no longer applies (fall back to
+                            # the normal per-entry triangular sample).
+                            if len(BIGFFA_QUEUE) == 1 and (now - e["joined_at"]) >= 15.0:
+                                lead_idx = idx
+                                break
                             if (now - e["joined_at"]) >= personal_timeout:
                                 lead_idx = idx
                                 break

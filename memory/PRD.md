@@ -433,6 +433,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: RONIN_TEST spawned as SILVER 495; adding a pin at 2160 → sweep instantly updates to GRANDMASTER 2160 with inferno legendary skin.
 - Files changed: `/app/backend/server.py` (`_reapply_custom_bot_pins_to_live_rooms` helper + hooks in POST/PATCH custom-bot endpoints).
 
+### Iteration 49 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Custom bot names now surface in ranked lobbies** — Root cause: `get_or_create_ranked_bot_room` + `_reroll_ranked_bots` built their name pool from `TIERED_BOT_NAMES[tier_idx]` or `LEADERBOARD_BOT_NAMES` (tier ≥ 8) exclusively; admin-registered custom names for `mode="ranked"` were never merged. Fix: both spots now consult `_custom_bot_names_for(mode="ranked", tier_idx=tier_idx)` and merge them with the base pool using the same weight-4× + dedupe-preserving-order pattern used by casual `_pick_disguised_names`. Ranked-vs-bot re-rolls also draw fresh custom picks.
+- ✅ **BigFFA no longer feels frozen on solo PC** — Root cause: the per-entry `dispatch_after` is sampled from a triangular distribution (min 20s, mode 38s, max 64s). A PC user queueing alone could wait up to 64s with no visual dispatch signal — perceived as a freeze. Fix: matchmaker `lead_idx` search now dispatches an entry early when it's the ONLY player in the queue AND has waited ≥ 15s. The cap only applies while `len(BIGFFA_QUEUE) == 1`; once anyone else joins, normal per-entry timeout resumes so 12-player humans-only lobbies still bunch up.
+- 🧪 Verified: PC solo queue matched in 16s (was up to 64s). Ranked tier-5 lobby draws confirm custom name `RANKEDTEST` (weight 4×) appears in the pool alongside 9 built-in names with above-base frequency.
+- Files changed: `/app/backend/server.py` (`get_or_create_ranked_bot_room` + `_reroll_ranked_bots` custom-name merge; BigFFA solo-queue accelerant).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
