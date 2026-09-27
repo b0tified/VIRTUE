@@ -11063,10 +11063,10 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     if not u:
         # Bot handles don't have a user doc. If the username matches a
         # built-in disguised pool or an admin-registered custom bot
-        # name, fabricate a "private profile" payload so the client UI
-        # is identical to inspecting a real player who has privacy on —
-        # no 404, no leak that this is a bot. Uses the same seeded-RNG
-        # shape as /users/search so repeat inspects stay consistent.
+        # name, fabricate a FULL public profile payload (stats + last-
+        # 10 match history) using a seeded RNG so repeat inspects stay
+        # consistent AND the modal shape is identical to a real player.
+        # No `private` flag — everything is on display.
         lu = username.lower()
         builtin_lower = {n.lower() for n in DISGUISED_BOT_NAMES}
         for _names in TIERED_BOT_NAMES.values():
@@ -11081,13 +11081,96 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             band_low = RANK_TIERS[tier_idx][0]
             band_high = (RANK_TIERS[tier_idx + 1][0] - 1) if (tier_idx + 1 < len(RANK_TIERS)) else (band_low + 400)
             pts = _snap_rp_to_match_grid(rng.randint(band_low, max(band_low, band_high)))
+            # RNG call order below MUST match /api/users/search so
+            # avatar / level / banner values are identical across both
+            # endpoints for the same bot name (deterministic identity).
+            fake_avatar = rng.randint(0, 4)
+            _lvl_lo, _lvl_hi = (
+                (3, 12), (5, 20), (10, 30), (15, 45),
+                (25, 60), (35, 75), (45, 90), (50, 99),
+            )[tier_idx]
+            fake_level = rng.randint(_lvl_lo, _lvl_hi)
+            fake_banner_icon = rng.randint(0, 5)
+            fake_banner_color = rng.randint(0, 5)
             _, tier_name = rank_for_points(pts)
+            # Stats: scale matches with tier + level. K/D weighted by
+            # tier so Diamond+ trends 1.5-2.5.
+            matches_played = int(fake_level * rng.uniform(4, 9) + rng.randint(20, 80))
+            kd_center = 0.7 + tier_idx * 0.22
+            kd = max(0.4, kd_center + rng.uniform(-0.25, 0.35))
+            avg_kills_per = 6 + tier_idx * 2
+            total_kills = int(matches_played * avg_kills_per * rng.uniform(0.85, 1.15))
+            total_deaths = max(1, int(total_kills / kd))
+            wins = int(matches_played * (0.10 + tier_idx * 0.055) * rng.uniform(0.75, 1.25))
+            wins = max(0, min(matches_played, wins))
+            fake_stats = {
+                "kills": total_kills,
+                "deaths": total_deaths,
+                "matches": matches_played,
+                "wins": wins,
+            }
+            # Synthesize last-10 match history. Mode mix: 55% casual,
+            # 25% ranked (tier ≥ 1), 15% tdm, 5% bigffa. Ended-at
+            # spread across last ~7-14 days, most recent first.
+            now = datetime.now(timezone.utc)
+            history: List[dict] = []
+            _rp_after = pts
+            for i in range(10):
+                _r = rng.random()
+                if _r < 0.55:
+                    _mode = "casual"
+                elif _r < 0.80 and tier_idx >= 1:
+                    _mode = "ranked"
+                elif _r < 0.95:
+                    _mode = "tdm"
+                else:
+                    _mode = "bigffa"
+                if _mode == "bigffa":
+                    _total = 12
+                elif _mode == "tdm":
+                    _total = 6
+                elif _mode == "ranked":
+                    _total = 5
+                else:
+                    _total = 8
+                if rng.random() < (0.12 + tier_idx * 0.05):
+                    _placement = 1
+                elif rng.random() < 0.35:
+                    _placement = rng.randint(2, min(3, _total))
+                else:
+                    _placement = rng.randint(max(2, _total // 2), _total)
+                _base_k = int(avg_kills_per * rng.uniform(0.6, 1.6))
+                if _placement == 1:
+                    _kills = int(_base_k * 1.4)
+                    _deaths = max(0, int(_base_k * 0.35))
+                elif _placement <= 3:
+                    _kills = int(_base_k * 1.1)
+                    _deaths = max(0, int(_base_k * 0.8))
+                else:
+                    _kills = int(_base_k * 0.75)
+                    _deaths = int(_base_k * 1.1)
+                _rp_delta = compute_rp_delta(_placement, tier_idx) if _mode == "ranked" else 0
+                _, _rn_after = rank_for_points(_rp_after)
+                _rp_after = max(0, _rp_after - _rp_delta)
+                _hours_back = int(rng.uniform(1, 6) + i * rng.uniform(6, 20))
+                _ended_at = now - timedelta(hours=_hours_back)
+                history.append({
+                    "mode": _mode,
+                    "kills": max(0, _kills),
+                    "deaths": max(0, _deaths),
+                    "placement": _placement,
+                    "total_players": _total,
+                    "rp_delta": _rp_delta,
+                    "rank_name_after": _rn_after,
+                    "is_placement": False,
+                    "ended_at": _ended_at.isoformat(),
+                })
             return {
                 "id": f"bot::{username}",
                 "username": username,
-                "avatar": rng.randint(0, 4),
-                "private": True,
-                "is_bot": False,
+                "avatar": fake_avatar,
+                "private": False,
+                "stats": fake_stats,
                 "rank_points": pts,
                 "rank_tier": tier_idx,
                 "rank_name": tier_name,
@@ -11095,7 +11178,16 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 "peak_rank_points": pts,
                 "peak_rank_tier": tier_idx,
                 "peak_rank_name": tier_name,
-                "profile_private": True,
+                "peak_rank_division": rank_division_for_points(pts, tier_idx),
+                "level": fake_level,
+                "banner_icon": fake_banner_icon,
+                "banner_color": fake_banner_color,
+                "banner_animated": False,
+                "past_seasons": [],
+                "title_season": None,
+                "title_ultimate": False,
+                "online": False,
+                "history": history,
             }
         raise HTTPException(status_code=404, detail="User not found")
     is_self = str(u.get("_id")) == str(_user.get("_id"))

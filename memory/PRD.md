@@ -366,6 +366,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Custom bot names appear ~4x more often in matches** — `_maintain_population` now weights admin-registered custom names by inserting each 4× into the pre-shuffle pool. A dedupe-preserving-order filter after the shuffle picks the earliest occurrence, so custom names have ~4× the probability of landing in any given match compared to a built-in name. Bots spawned with duplicate names still avoided by the `seen` set.
 - Files changed: `/app/backend/server.py` (users/search bot metadata, public_profile bot fallback, _maintain_population weighted pool), `/app/frontend/src/components/FriendsModal.jsx` (removed BOT badge + gated buttons; ADD now swallows on is_bot).
 
+### Iteration 39 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Bot profiles get synthesized last-10 match history** — `public_profile` bot fallback now returns a full non-private payload (no more "profile is private" banner). Uses the same seeded RNG as `/users/search`, with call order aligned so avatar / level / banner values are IDENTICAL across both endpoints for the same bot name. Adds:
+  - `stats`: matches / kills / deaths / wins scaled to tier + level (Bronze ~0.7 K/D, Ultimate ~2.5 K/D, matches 20-1000 range).
+  - `history`: 10 matches. Mode mix 55% casual / 25% ranked (only tier ≥ 1) / 15% tdm / 5% bigffa. Placement biased around mid-pack with tier-scaled 1st-place chance. Kills/deaths biased by placement. `rp_delta` uses `compute_rp_delta(placement, tier_idx)` for ranked matches so numbers look native. `rank_name_after` walks backwards from current RP. `ended_at` spread across last ~7-14 days, most recent first.
+- 🧪 Verified: BlitzReaper resolves to MASTER III lvl 46 with 372 matches, 5958/2650 K/D (2.25), 10 history entries with realistic placements + RP deltas + timestamps. Search + profile return identical avatar/tier/pts/level/banner values (RNG call-order match).
+- Files changed: `/app/backend/server.py` (public_profile bot fallback rewritten to full profile).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
