@@ -361,6 +361,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - Applied in `spawn_bot` (casual/practice/TDM disguises) AND in the ranked-room re-roll (`_reroll_ranked_bots`), so a Diamond ranked lobby now visually reads as a whale lobby.
 - Files changed: `/app/backend/server.py` (BOT_SKIN_POOL split into 3 pools, `pick_bot_skin`, spawn_bot re-roll, ranked-room re-roll).
 
+### Iteration 38 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Bot rows in Friends search now indistinguishable from real players** — `/api/users/search`'s bot entries carry deterministic-per-name fake metadata (seeded RNG): rank tier weighted toward Silver/Gold/Platinum (Ultimate excluded), rank points snapped to the match grid, tier-appropriate level, random avatar + banner icon/color. FriendsModal no longer renders any BOT badge, no "encountered in matches" side text, no disabled buttons. Inspect + ADD are always live: ADD swallows the 404 that would come from friending a nonexistent user and shows the same "Friend request sent to X" toast, and `/api/users/{username}/profile` was extended to return a fabricated "private profile" for known bot handles (built-in + custom pools) with the same seeded RNG so the modal shows a plausible player identical to a real player who has privacy on.
+- ✅ **Custom bot names appear ~4x more often in matches** — `_maintain_population` now weights admin-registered custom names by inserting each 4× into the pre-shuffle pool. A dedupe-preserving-order filter after the shuffle picks the earliest occurrence, so custom names have ~4× the probability of landing in any given match compared to a built-in name. Bots spawned with duplicate names still avoided by the `seen` set.
+- Files changed: `/app/backend/server.py` (users/search bot metadata, public_profile bot fallback, _maintain_population weighted pool), `/app/frontend/src/components/FriendsModal.jsx` (removed BOT badge + gated buttons; ADD now swallows on is_bot).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

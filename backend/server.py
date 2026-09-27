@@ -4374,13 +4374,23 @@ class GameRoom:
                 return
             deficit = target_total - n
             in_use = {p.username for p in self.players.values()}
-            # Base pool = built-in disguised names + any admin-registered
-            # custom names that opted into THIS mode (or opted into every
-            # mode via an empty modes list). Rank filter applies later
-            # only to smurf spawns since regular fill has no tier target.
-            base_pool = list(DISGUISED_BOT_NAMES) + _custom_bot_names_for(mode=self.game_mode)
-            pool = [nm for nm in base_pool if nm not in in_use]
-            random.shuffle(pool)
+            # Base pool = built-in disguised names + admin-registered
+            # custom names for THIS mode. Custom names are duplicated
+            # 4x before the shuffle so they have 4 chances to land near
+            # the front of the pool — combined with the dedupe filter
+            # below, this makes custom names ~4x more likely to appear
+            # in any given match than a single built-in name. Admins
+            # add names to SEE them, not to sit unused behind the 15
+            # built-ins.
+            custom_names = _custom_bot_names_for(mode=self.game_mode)
+            pool_weighted = list(DISGUISED_BOT_NAMES) + custom_names * 4
+            random.shuffle(pool_weighted)
+            seen = set(in_use)
+            pool: List[str] = []
+            for nm in pool_weighted:
+                if nm not in seen:
+                    seen.add(nm)
+                    pool.append(nm)
             # Difficulty inherited from the room's seed bots.
             if self.game_mode == "tdm":
                 diff = 1.2 if getattr(self, "is_practice", False) else 1.45
@@ -8972,18 +8982,45 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
             bot_names.append(nm)
             seen.add(nm.lower())
     for nm in bot_names[: max(0, limit)]:
+        # Fabricate plausible player-looking metadata deterministically
+        # from the name so repeat searches stay stable (same name → same
+        # rank/avatar/level). Bots in the search list should be
+        # indistinguishable from real players — no BOT badge, no "off"
+        # numbers. Uses a stable seeded RNG so we don't need to persist
+        # anything.
+        seed = sum(ord(c) for c in nm) * 7919 + len(nm) * 131
+        rng = random.Random(seed)
+        # Rank tier 0-7 (skip Ultimate at 8 — reserved for top-50 real
+        # players; a random search result showing Ultimate would feel
+        # fake). Weighted toward Silver/Gold/Platinum so most bot rows
+        # look like mid-ladder players.
+        tier_weights = [3, 6, 7, 7, 5, 3, 2, 1]  # Bronze..Goonmaster
+        tier_idx = rng.choices(range(len(tier_weights)), weights=tier_weights)[0]
+        band_low = RANK_TIERS[tier_idx][0]
+        band_high = (RANK_TIERS[tier_idx + 1][0] - 1) if (tier_idx + 1 < len(RANK_TIERS)) else (band_low + 400)
+        pts = _snap_rp_to_match_grid(rng.randint(band_low, max(band_low, band_high)))
+        # Level tracks tier loosely — Bronze 3-12, Silver 5-20, Gold
+        # 10-30, Platinum 15-45, Diamond 25-60, Master+ 35-90.
+        _lvl_lo, _lvl_hi = (
+            (3, 12), (5, 20), (10, 30), (15, 45),
+            (25, 60), (35, 75), (45, 90), (50, 99),
+        )[tier_idx]
+        _, tier_name = rank_for_points(pts)
         rows.append({
             "id": f"bot::{nm}",
             "username": nm,
-            "avatar": 0,
-            "rank_points": 0,
-            "rank_tier": 0,
-            "rank_name": "BOT",
-            "rank_division": 0,
-            "level": 1,
-            "banner_icon": 0,
-            "banner_color": 0,
+            "avatar": rng.randint(0, 4),
+            "rank_points": pts,
+            "rank_tier": tier_idx,
+            "rank_name": tier_name,
+            "rank_division": rank_division_for_points(pts, tier_idx),
+            "level": rng.randint(_lvl_lo, _lvl_hi),
+            "banner_icon": rng.randint(0, 5),
+            "banner_color": rng.randint(0, 5),
             "banner_animated": False,
+            # Bots are never actually online (no WS presence), but the
+            # search list occasionally showing an offline entry is
+            # normal so this is fine as-is.
             "online": False,
             "in_match": False,
             "match_kind": None,
@@ -8992,6 +9029,10 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
             "queue_kind": None,
             "last_seen_at": None,
             "leaderboard_rank": None,
+            # `is_bot` retained on the wire so the frontend can silently
+            # short-circuit friend requests + profile inspects to a fake
+            # "success" toast (real requests would 404). The frontend
+            # does NOT render any visual BOT indicator.
             "is_bot": True,
         })
     return rows[: limit * 2]
@@ -11020,6 +11061,42 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     """
     u = await _find_user_by_username(username)
     if not u:
+        # Bot handles don't have a user doc. If the username matches a
+        # built-in disguised pool or an admin-registered custom bot
+        # name, fabricate a "private profile" payload so the client UI
+        # is identical to inspecting a real player who has privacy on —
+        # no 404, no leak that this is a bot. Uses the same seeded-RNG
+        # shape as /users/search so repeat inspects stay consistent.
+        lu = username.lower()
+        builtin_lower = {n.lower() for n in DISGUISED_BOT_NAMES}
+        for _names in TIERED_BOT_NAMES.values():
+            for _n in _names:
+                builtin_lower.add(_n.lower())
+        custom_lower = {n.lower() for n in _all_custom_bot_names()}
+        if lu in builtin_lower or lu in custom_lower:
+            seed = sum(ord(c) for c in username) * 7919 + len(username) * 131
+            rng = random.Random(seed)
+            tier_weights = [3, 6, 7, 7, 5, 3, 2, 1]
+            tier_idx = rng.choices(range(len(tier_weights)), weights=tier_weights)[0]
+            band_low = RANK_TIERS[tier_idx][0]
+            band_high = (RANK_TIERS[tier_idx + 1][0] - 1) if (tier_idx + 1 < len(RANK_TIERS)) else (band_low + 400)
+            pts = _snap_rp_to_match_grid(rng.randint(band_low, max(band_low, band_high)))
+            _, tier_name = rank_for_points(pts)
+            return {
+                "id": f"bot::{username}",
+                "username": username,
+                "avatar": rng.randint(0, 4),
+                "private": True,
+                "is_bot": False,
+                "rank_points": pts,
+                "rank_tier": tier_idx,
+                "rank_name": tier_name,
+                "rank_division": rank_division_for_points(pts, tier_idx),
+                "peak_rank_points": pts,
+                "peak_rank_tier": tier_idx,
+                "peak_rank_name": tier_name,
+                "profile_private": True,
+            }
         raise HTTPException(status_code=404, detail="User not found")
     is_self = str(u.get("_id")) == str(_user.get("_id"))
     is_bot = bool(u.get("is_bot", False)) or bool(u.get("is_seeded", False))
