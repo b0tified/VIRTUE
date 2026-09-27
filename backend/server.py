@@ -9080,12 +9080,19 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
         band_low = RANK_TIERS[tier_idx][0]
         band_high = (RANK_TIERS[tier_idx + 1][0] - 1) if (tier_idx + 1 < len(RANK_TIERS)) else (band_low + 400)
         pts = _snap_rp_to_match_grid(rng.randint(band_low, max(band_low, band_high)))
+        # Custom bot rank override — if the admin has pinned this
+        # handle to a specific RP, snap the search-result tier + pts
+        # to the override so the banner reads exactly what was set.
+        _override = _custom_bot_rank_override(nm)
+        if _override is not None:
+            pts = _snap_rp_to_match_grid(int(_override))
+            tier_idx, _ = rank_for_points(pts)
         # Level tracks tier loosely — Bronze 3-12, Silver 5-20, Gold
         # 10-30, Platinum 15-45, Diamond 25-60, Master+ 35-90.
         _lvl_lo, _lvl_hi = (
             (3, 12), (5, 20), (10, 30), (15, 45),
             (25, 60), (35, 75), (45, 90), (50, 99),
-        )[tier_idx]
+        )[min(tier_idx, 7)]
         _, tier_name = rank_for_points(pts)
         rows.append({
             "id": f"bot::{nm}",
@@ -9795,6 +9802,12 @@ class CustomBotNameIn(BaseModel):
     # Which rank tier indices (0..len(RANK_TIERS)-1) this name should
     # spawn at. Empty list = every rank tier.
     ranks: List[int] = Field(default_factory=list)
+    # Optional rank override. When set, the bot's PROFILE + BANNER
+    # (rendered from /users/search and /users/{username}/profile) uses
+    # THIS RP value instead of the name-seeded random one — admins can
+    # pin a custom bot to a specific rank like "Ronin sits at
+    # Grandmaster 2100 forever". Null = seeded RNG (original behaviour).
+    rank_points: Optional[int] = Field(default=None, ge=0, le=10000)
 
 
 async def _reload_custom_bot_names_cache() -> None:
@@ -9804,13 +9817,18 @@ async def _reload_custom_bot_names_cache() -> None:
     global CUSTOM_BOT_NAMES_CACHE
     rows: List[dict] = []
     try:
-        cursor = db.custom_bot_names.find({}, {"_id": 1, "name": 1, "modes": 1, "ranks": 1, "created_at": 1})
+        cursor = db.custom_bot_names.find({}, {
+            "_id": 1, "name": 1, "modes": 1, "ranks": 1,
+            "rank_points": 1, "created_at": 1,
+        })
         async for r in cursor:
+            rp_override = r.get("rank_points")
             rows.append({
                 "id": str(r.get("_id")),
                 "name": str(r.get("name") or "").strip(),
                 "modes": [str(m) for m in (r.get("modes") or []) if str(m) in GAME_MODES_ALLOWED],
                 "ranks": [int(t) for t in (r.get("ranks") or []) if isinstance(t, int) and 0 <= t < len(RANK_TIERS)],
+                "rank_points": (int(rp_override) if isinstance(rp_override, (int, float)) else None),
                 "created_at": r.get("created_at").isoformat() if isinstance(r.get("created_at"), datetime) else None,
             })
     except Exception as e:
@@ -9840,6 +9858,21 @@ def _all_custom_bot_names() -> List[str]:
     """Every custom name (used by the friend-search endpoint so admins'
     custom names surface even when the mode/tier isn't known)."""
     return [r.get("name") for r in CUSTOM_BOT_NAMES_CACHE if r.get("name")]
+
+
+def _custom_bot_rank_override(username: str) -> Optional[int]:
+    """If this username is a custom bot with an explicit `rank_points`
+    override, return that value; else None. Used by /users/search and
+    /users/{u}/profile to render admin-pinned ranks on bot banners.
+    Case-insensitive match on the name."""
+    lu = (username or "").lower()
+    for r in CUSTOM_BOT_NAMES_CACHE:
+        if str(r.get("name") or "").lower() == lu:
+            rp = r.get("rank_points")
+            if isinstance(rp, int):
+                return rp
+    return None
+
 
 
 @api.post("/admin/bot_names")
@@ -9879,6 +9912,9 @@ async def admin_create_bot_name(payload: CustomBotNameIn, user: dict = Depends(g
         "name_lower": lname,
         "modes": payload.modes,
         "ranks": payload.ranks,
+        # Optional rank override — pins the bot's PROFILE + BANNER to
+        # this RP value. When null the seeded RNG picks a value.
+        "rank_points": (int(payload.rank_points) if isinstance(payload.rank_points, int) else None),
         "created_by": user.get("username", ""),
         "created_at": datetime.now(timezone.utc),
         # Flag so the UI can tell admins if a name overlaps with the
@@ -9887,8 +9923,8 @@ async def admin_create_bot_name(payload: CustomBotNameIn, user: dict = Depends(g
     }
     res = await db.custom_bot_names.insert_one(doc)
     logger.info(
-        "Admin %s registered custom bot name %s modes=%s ranks=%s",
-        user.get("username"), name, payload.modes, payload.ranks,
+        "Admin %s registered custom bot name %s modes=%s ranks=%s rp=%s",
+        user.get("username"), name, payload.modes, payload.ranks, payload.rank_points,
     )
     await _reload_custom_bot_names_cache()
     return {
@@ -9897,6 +9933,7 @@ async def admin_create_bot_name(payload: CustomBotNameIn, user: dict = Depends(g
         "name": name,
         "modes": payload.modes,
         "ranks": payload.ranks,
+        "rank_points": payload.rank_points,
         "shadows_builtin": doc["shadows_builtin"],
     }
 
@@ -9908,11 +9945,13 @@ async def admin_list_bot_names(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required.")
     rows: List[dict] = []
     async for r in db.custom_bot_names.find({}).sort("created_at", -1):
+        rp = r.get("rank_points")
         rows.append({
             "id": str(r.get("_id")),
             "name": r.get("name", ""),
             "modes": [str(m) for m in (r.get("modes") or [])],
             "ranks": [int(t) for t in (r.get("ranks") or [])],
+            "rank_points": (int(rp) if isinstance(rp, (int, float)) else None),
             "shadows_builtin": bool(r.get("shadows_builtin", False)),
             "created_by": r.get("created_by", ""),
             "created_at": r.get("created_at").isoformat() if isinstance(r.get("created_at"), datetime) else None,
@@ -9939,10 +9978,14 @@ async def admin_delete_bot_name(bot_name_id: str, user: dict = Depends(get_curre
 
 class CustomBotNamePatchIn(BaseModel):
     """Partial update — any field left None stays as-is. Same validation
-    rules as create."""
+    rules as create. `rank_points` accepts an int to pin the bot's
+    banner rank, or `-1` as a sentinel meaning "clear the override →
+    fall back to seeded RNG"."""
     name: Optional[str] = Field(default=None, min_length=2, max_length=24)
     modes: Optional[List[str]] = None
     ranks: Optional[List[int]] = None
+    # -1 = clear override (nullable in Mongo). 0..10000 = pin to that RP.
+    rank_points: Optional[int] = Field(default=None, ge=-1, le=10000)
 
 
 @api.patch("/admin/bot_names/{bot_name_id}")
@@ -9997,14 +10040,23 @@ async def admin_edit_bot_name(
         if bad_ranks:
             raise HTTPException(status_code=400, detail=f"Invalid rank indices: {bad_ranks}. Must be 0-{len(RANK_TIERS)-1}.")
         update_doc["ranks"] = [int(t) for t in payload.ranks]
+    if payload.rank_points is not None:
+        # -1 sentinel clears the override → banner falls back to the
+        # seeded RNG. Any 0..10000 pins the bot to that RP value.
+        if payload.rank_points == -1:
+            update_doc["rank_points"] = None
+        else:
+            update_doc["rank_points"] = int(payload.rank_points)
     if not update_doc:
         # Idempotent no-op — client sent empty patch. Return current state.
+        _rp = existing.get("rank_points")
         return {
             "ok": True,
             "id": bot_name_id,
             "name": existing.get("name", ""),
             "modes": list(existing.get("modes") or []),
             "ranks": list(existing.get("ranks") or []),
+            "rank_points": (int(_rp) if isinstance(_rp, (int, float)) else None),
             "shadows_builtin": bool(existing.get("shadows_builtin", False)),
         }
     await db.custom_bot_names.update_one({"_id": obj_id}, {"$set": update_doc})
@@ -10014,12 +10066,14 @@ async def admin_edit_bot_name(
     )
     await _reload_custom_bot_names_cache()
     updated = await db.custom_bot_names.find_one({"_id": obj_id})
+    _rp = updated.get("rank_points")
     return {
         "ok": True,
         "id": bot_name_id,
         "name": updated.get("name", ""),
         "modes": list(updated.get("modes") or []),
         "ranks": list(updated.get("ranks") or []),
+        "rank_points": (int(_rp) if isinstance(_rp, (int, float)) else None),
         "shadows_builtin": bool(updated.get("shadows_builtin", False)),
     }
 
@@ -11331,6 +11385,13 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             band_low = RANK_TIERS[tier_idx][0]
             band_high = (RANK_TIERS[tier_idx + 1][0] - 1) if (tier_idx + 1 < len(RANK_TIERS)) else (band_low + 400)
             pts = _snap_rp_to_match_grid(rng.randint(band_low, max(band_low, band_high)))
+            # Admin rank override: pin banner + profile to the admin-set
+            # RP for this custom bot handle. Applied before RNG-derived
+            # level/stats so the tier drives the rest of the profile.
+            _override = _custom_bot_rank_override(username)
+            if _override is not None:
+                pts = _snap_rp_to_match_grid(int(_override))
+                tier_idx, _ = rank_for_points(pts)
             # RNG call order below MUST match /api/users/search so
             # avatar / level / banner values are identical across both
             # endpoints for the same bot name (deterministic identity).
@@ -11338,7 +11399,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             _lvl_lo, _lvl_hi = (
                 (3, 12), (5, 20), (10, 30), (15, 45),
                 (25, 60), (35, 75), (45, 90), (50, 99),
-            )[tier_idx]
+            )[min(tier_idx, 7)]
             fake_level = rng.randint(_lvl_lo, _lvl_hi)
             fake_banner_icon = rng.randint(0, 5)
             fake_banner_color = rng.randint(0, 5)

@@ -405,6 +405,18 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: PATCH sets seed_target_rp + rank_points to 960 (Platinum) and 2460 (Goonmaster); cache log line confirms refresh triggered.
 - Files changed: `/app/backend/server.py` (`admin_edit_leaderboard_bot` cache-refresh hook), `/app/frontend/src/pages/AdminReports.jsx` (tier picker + corrected labels + floors constant).
 
+### Iteration 45 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Custom bot names now support a pinned banner rank** — Every custom bot handle can carry an optional `rank_points` override. When set, `/api/users/search` AND `/api/users/{username}/profile` snap the bot's tier + name + RP + inferred level onto that override instead of using the name-seeded RNG. Admins can pin, e.g., `RONIN` to GRANDMASTER 2160 RP forever.
+- Backend:
+  - `CustomBotNameIn` + `CustomBotNamePatchIn` gained `rank_points: Optional[int]` (0-10000). PATCH accepts `-1` as a sentinel that clears the override → banner falls back to RNG.
+  - `custom_bot_names` docs store `rank_points` (nullable). Cache snapshot returns it; new `_custom_bot_rank_override(name)` helper does the case-insensitive lookup used by both search + profile.
+  - `/users/search` bot rows and `/users/{u}/profile` bot fallback both call the helper and snap `pts + tier_idx` if an override exists. `_lvl_lo/_hi` tuple access clamped with `min(tier_idx, 7)` so Goonmaster overrides don't IndexError.
+- Frontend:
+  - `CustomBotNameRow` edit form gained a "Banner rank" section: an `<select>` with `Auto (random)` + all 9 tiers, plus a numeric RP field that appears when a tier is picked. Save sends `rank_points` (-1 for Auto). Save always includes the field so admins can toggle it back to Auto.
+  - Display row now shows a pinned-rank chip (📌 tier · RP) when an override is active.
+- 🧪 Verified: create with `rank_points: 2160` → search + profile both show GRANDMASTER 2160 RP lvl 72. PATCH `{rank_points: -1}` clears; next search shows RNG-derived rank (GRANDMASTER 2220 by coincidence for this seed).
+- Files changed: `/app/backend/server.py` (models, cache, helper, /users/search + /users/{u}/profile override wiring), `/app/frontend/src/pages/AdminReports.jsx` (`CustomBotNameRow` banner-rank picker + pinned-rank display chip).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

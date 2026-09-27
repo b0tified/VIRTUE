@@ -2352,12 +2352,20 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
   const [name, setName] = useState(row.name);
   const [modes, setModes] = useState(() => new Set(row.modes || []));
   const [ranks, setRanks] = useState(() => new Set(row.ranks || []));
+  // Banner rank override — null = use seeded RNG (bot gets a random
+  // plausible tier when players inspect it). Any 0..10000 pins the
+  // banner + profile to that RP value. The UI represents "no override"
+  // by an "AUTO" option in the tier picker.
+  const [bannerRp, setBannerRp] = useState(
+    Number.isFinite(row.rank_points) ? row.rank_points : null,
+  );
   const [busy, setBusy] = useState(false);
 
   const openEdit = () => {
     setName(row.name);
     setModes(new Set(row.modes || []));
     setRanks(new Set(row.ranks || []));
+    setBannerRp(Number.isFinite(row.rank_points) ? row.rank_points : null);
     setEditing(true);
   };
   const cancel = () => setEditing(false);
@@ -2385,11 +2393,15 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
     }
     setBusy(true);
     try {
-      await api.patch(`/admin/bot_names/${row.id}`, {
+      const patch = {
         name: trimmed,
         modes: Array.from(modes),
         ranks: Array.from(ranks),
-      });
+        // -1 sentinel = clear override (backend converts to null in
+        // Mongo). Numeric value = pin banner to that RP.
+        rank_points: bannerRp == null ? -1 : bannerRp,
+      };
+      await api.patch(`/admin/bot_names/${row.id}`, patch);
       setEditing(false);
       onEdited?.(trimmed);
       await onSaved?.();
@@ -2468,6 +2480,59 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
             ))}
           </div>
         </div>
+        {/* Banner rank override — pins what other players see on this
+            bot's profile card + friend-search row + inspect modal.
+            "AUTO" leaves it up to the seeded RNG (default). */}
+        <div>
+          <div className="text-[10px] font-anton uppercase tracking-widest text-neutral-500 mb-1">
+            Banner rank (profile + friends search)
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={bannerRp == null ? "auto" : (() => {
+                // Snap current RP to closest tier for display in the picker.
+                let ti = 0;
+                for (let i = 0; i < RANK_TIER_FLOORS.length; i++) {
+                  if (bannerRp >= RANK_TIER_FLOORS[i]) ti = i;
+                }
+                return String(ti);
+              })()}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "auto") {
+                  setBannerRp(null);
+                } else {
+                  // Snap to floor+60 (mid-first-division) for the
+                  // picked tier — matches AccountRow / LeaderboardBot
+                  // rank-editor conventions.
+                  setBannerRp(RANK_TIER_FLOORS[parseInt(v, 10)] + 60);
+                }
+              }}
+              className="border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-xs bg-white"
+              data-testid={`admin-custom-bot-names-edit-banner-tier-${idx}`}
+            >
+              <option value="auto">Auto (random)</option>
+              {RANK_TIER_LABELS.map((label, tIdx) => (
+                <option key={label} value={tIdx}>{label}</option>
+              ))}
+            </select>
+            {bannerRp != null && (
+              <label className="flex items-center gap-1 text-[10px] font-anton uppercase tracking-widest text-neutral-600">
+                RP:
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={15}
+                  value={bannerRp}
+                  onChange={(e) => setBannerRp(parseInt(e.target.value, 10) || 0)}
+                  className="w-24 border-2 border-black px-2 py-1 font-anton tracking-widest text-xs tabular-nums"
+                  data-testid={`admin-custom-bot-names-edit-banner-rp-${idx}`}
+                />
+              </label>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -2509,6 +2574,25 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
           {row.created_by && (
             <span className="text-[9px] font-anton text-neutral-500">by {row.created_by}</span>
           )}
+          {Number.isFinite(row.rank_points) && (() => {
+            // Show a pinned-rank chip so admins can spot which entries
+            // have a banner override without clicking edit. Derive the
+            // tier label from the RP using the same floor grid the
+            // picker uses.
+            let ti = 0;
+            for (let i = 0; i < RANK_TIER_FLOORS.length; i++) {
+              if (row.rank_points >= RANK_TIER_FLOORS[i]) ti = i;
+            }
+            return (
+              <span
+                className="text-[9px] font-anton uppercase tracking-widest px-1.5 py-0.5 border border-black bg-[#FFB000] text-black"
+                title={`Banner pinned to ${row.rank_points} RP`}
+                data-testid={`admin-custom-bot-names-banner-chip-${idx}`}
+              >
+                📌 {RANK_TIER_LABELS[ti] || `T${ti}`} · {row.rank_points}
+              </span>
+            );
+          })()}
         </div>
       </div>
       <button
