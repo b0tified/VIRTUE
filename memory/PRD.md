@@ -398,6 +398,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified via curl: create → PATCH full (name+ranks) → PATCH partial (modes only) → invalid mode returns 400 → delete cleanup. All idempotent.
 - Files changed: `/app/backend/server.py` (`CustomBotNamePatchIn` model + `admin_edit_bot_name` endpoint), `/app/frontend/src/pages/AdminReports.jsx` (new `CustomBotNameRow` component + `CustomBotNamesCard` now delegates row rendering to it).
 
+### Iteration 44 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Edit a leaderboard bot's rank inline** — `LeaderboardBotRow` edit panel gained a Rank Tier `<select>` (Bronze → Goonmaster, 9 tiers) alongside the existing Target RP input. Changing the tier snaps the RP input to `floor + 60` for the chosen tier (matches AccountRow rank editor). The RP field remains free-form so admins can still fine-tune within the tier.
+- ✅ **Cache refresh on leaderboard-bot RP edit** — Backend `PATCH /admin/leaderboard_bots/{u}` now also refreshes the `LEADERBOARD_BOT_NAMES` cache when `rank_points` changes so Goonmaster ranked-vs-bot rooms reflect the new top-K ordering immediately.
+- ✅ **Fixed rank tier labels drift** — Old `RANK_TIER_LABELS` in AdminReports had the wrong tier names (missing EMERALD, had a phantom "Ultimate"). Now matches backend `RANK_TIERS` exactly: Bronze, Silver, Gold, Platinum, Emerald, Diamond, Master, Grandmaster, Goonmaster. Added `RANK_TIER_FLOORS = [0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400]` for the tier picker.
+- 🧪 Verified: PATCH sets seed_target_rp + rank_points to 960 (Platinum) and 2460 (Goonmaster); cache log line confirms refresh triggered.
+- Files changed: `/app/backend/server.py` (`admin_edit_leaderboard_bot` cache-refresh hook), `/app/frontend/src/pages/AdminReports.jsx` (tier picker + corrected labels + floors constant).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

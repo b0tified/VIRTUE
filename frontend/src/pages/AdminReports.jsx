@@ -2069,6 +2069,37 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) 
           <div className="flex items-end gap-3 flex-wrap">
             <label className="flex-1 min-w-[160px]">
               <div className="font-anton uppercase tracking-widest text-xs mb-1 text-neutral-700">
+                Rank Tier
+              </div>
+              <select
+                value={(() => {
+                  // Derive the tier for the current draft RP so the
+                  // picker reflects what the RP would render as on the
+                  // bot's banner. Uses the same floor grid as the backend.
+                  const n = parseInt(draftRp, 10) || 0;
+                  let idx = 0;
+                  for (let i = 0; i < RANK_TIER_FLOORS.length; i++) {
+                    if (n >= RANK_TIER_FLOORS[i]) idx = i;
+                  }
+                  return idx;
+                })()}
+                onChange={(e) => {
+                  // Snap the RP field to the middle of the first
+                  // division of the picked tier (+60 offset matches
+                  // the AccountRow rank editor for consistency).
+                  const t = parseInt(e.target.value, 10);
+                  setDraftRp(RANK_TIER_FLOORS[t] + 60);
+                }}
+                className="w-full border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-sm bg-white"
+                data-testid={`${testid}-edit-tier-select`}
+              >
+                {RANK_TIER_LABELS.map((label, i) => (
+                  <option key={label} value={i}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex-1 min-w-[160px]">
+              <div className="font-anton uppercase tracking-widest text-xs mb-1 text-neutral-700">
                 Target RP (0-10000)
               </div>
               <input
@@ -2114,10 +2145,18 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) 
    Names are also surfaced by the /users/search endpoint so players can
    discover them via the Friends → SEARCH tab (bot rows are read-only —
    no ADD button; the FriendsModal hides it via is_bot). */
+// Rank tier labels — MUST match the backend `RANK_TIERS` order in
+// `/app/backend/_lib/ranks.py`. Indices 0-8:
+//   0 Bronze · 1 Silver · 2 Gold · 3 Platinum · 4 Emerald
+//   5 Diamond · 6 Master · 7 Grandmaster · 8 Goonmaster
 const RANK_TIER_LABELS = [
-  "Bronze", "Silver", "Gold", "Platinum", "Diamond",
-  "Master", "Grandmaster", "Goonmaster", "Ultimate",
+  "Bronze", "Silver", "Gold", "Platinum", "Emerald",
+  "Diamond", "Master", "Grandmaster", "Goonmaster",
 ];
+// RP floors for each tier (300 RP band each; Goonmaster is open-top).
+// Used by the rank-tier picker to snap the RP input to a plausible
+// middle-of-tier value the moment an admin selects a tier.
+const RANK_TIER_FLOORS = [0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400];
 const GAME_MODE_OPTIONS = [
   { value: "ffa",    label: "Casual FFA" },
   { value: "tdm",    label: "Team DM" },

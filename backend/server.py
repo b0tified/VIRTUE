@@ -9513,6 +9513,13 @@ async def admin_edit_leaderboard_bot(
         "Admin %s edited leaderboard bot %s: %s",
         user.get("username"), username, updates,
     )
+    # RP edits reshuffle the top-K leaderboard cache — the Goonmaster
+    # ranked room name pool must reflect the new order right away.
+    if "rank_points" in updates:
+        try:
+            await _reload_leaderboard_bot_names()
+        except Exception as e:
+            logger.warning("leaderboard-bot cache refresh failed post-edit: %s", e)
     return {
         "ok": True,
         "username": fresh.get("username", ""),
