@@ -918,6 +918,23 @@ SKINS_CATALOG: List[dict] = [
 ]
 SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 
+# Weighted skin pool for bots. Bots draw from EVERY skin in the catalog
+# (including legendaries + pass-tier skins) so lobbies show off the full
+# cosmetic library — but rarity weights keep the visual mix believable:
+# commons appear often, legendaries stay eye-catching. Weights:
+#   common    → 6x
+#   rare      → 4x
+#   epic      → 2x
+#   legendary → 1x
+# Recomputed once at import time; catalog is immutable at runtime.
+_BOT_SKIN_RARITY_WEIGHTS = {"common": 6, "rare": 4, "epic": 2, "legendary": 1}
+BOT_SKIN_POOL: List[str] = []
+for _s in SKINS_CATALOG:
+    _w = _BOT_SKIN_RARITY_WEIGHTS.get(_s.get("rarity") or "common", 3)
+    BOT_SKIN_POOL.extend([_s["id"]] * _w)
+if not BOT_SKIN_POOL:  # defensive: never leave the pool empty
+    BOT_SKIN_POOL = ["default"]
+
 
 def skin_for_user(user: dict) -> dict:
     """Resolve the currently equipped skin definition for `user`.
@@ -3760,12 +3777,13 @@ class Player:
             # like established players, not fresh smurfs. Picked once at
             # spawn time and stays stable for the match.
             self.level = random.randint(5, 11)
-            # Bots pick a random non-default skin to add visual variety
-            # to lobbies; biased toward the cheaper tiers so legendary
-            # skins still feel rare among bots.
-            self.selected_skin = random.choice([
-                "default", "azure", "neon", "crimson", "verdant", "ghost",
-            ])
+            # Bots roll from the full skin catalog (BOT_SKIN_POOL is
+            # rarity-weighted so commons appear ~6x, rares ~4x, epics
+            # ~2x, legendaries ~1x). Result: bot lobbies now show off
+            # premium/animated skins — Void Walker, Golden Apex,
+            # Phoenix Rebirth, Cosmic Drift etc. — without those
+            # cosmetics feeling ubiquitous.
+            self.selected_skin = random.choice(BOT_SKIN_POOL)
         else:
             self.user_id = str(user["_id"])
             self.username = user.get("username", user["email"].split("@")[0])

@@ -352,6 +352,10 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified via curl: create + list + duplicate-rejection (409) + invalid-mode (422) + delete round-trip; `/users/search?q=blitz` returns both a real user `BlitzReaper860` AND the built-in bot `BlitzReaper` with `is_bot: true`.
 - Files changed: `/app/backend/server.py` (spawn_bot smurf level, _maintain_population pool, users/search, custom_bot_names endpoints, startup index/cache warm), `/app/frontend/src/components/FriendsModal.jsx` (is_bot rendering), `/app/frontend/src/pages/AdminReports.jsx` (CustomBotNamesCard).
 
+### Iteration 37 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Bots roll from the full skin catalog** — Previously bots picked from a hardcoded pool of 6 basic skins. Now they draw from a rarity-weighted `BOT_SKIN_POOL` built at import time from every entry in `SKINS_CATALOG` (30 unique skins). Weights: common=6, rare=4, epic=2, legendary=1. Sample of 500 draws: 83 common / 167 rare / 173 epic / 77 legendary. Result: bot lobbies now show off animated/premium skins like Void Walker, Golden Apex, Phoenix Rebirth, Cosmic Drift, Meteor Ascendant — without cheapening their rarity.
+- Files changed: `/app/backend/server.py` (BOT_SKIN_POOL + spawn logic).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
