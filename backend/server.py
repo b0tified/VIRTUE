@@ -921,19 +921,49 @@ SKINS_BY_ID: Dict[str, dict] = {s["id"]: s for s in SKINS_CATALOG}
 # Weighted skin pool for bots. Bots draw from EVERY skin in the catalog
 # (including legendaries + pass-tier skins) so lobbies show off the full
 # cosmetic library — but rarity weights keep the visual mix believable:
-# commons appear often, legendaries stay eye-catching. Weights:
+# commons appear often, legendaries stay eye-catching. Base weights:
 #   common    → 6x
 #   rare      → 4x
 #   epic      → 2x
 #   legendary → 1x
-# Recomputed once at import time; catalog is immutable at runtime.
-_BOT_SKIN_RARITY_WEIGHTS = {"common": 6, "rare": 4, "epic": 2, "legendary": 1}
-BOT_SKIN_POOL: List[str] = []
-for _s in SKINS_CATALOG:
-    _w = _BOT_SKIN_RARITY_WEIGHTS.get(_s.get("rarity") or "common", 3)
-    BOT_SKIN_POOL.extend([_s["id"]] * _w)
-if not BOT_SKIN_POOL:  # defensive: never leave the pool empty
-    BOT_SKIN_POOL = ["default"]
+# High-rank bots (Diamond and above) get a rank-correlated pool that
+# flips the weights toward legendaries — matches how real whales tend
+# to be seen wearing premium skins at high ranks. Recomputed once at
+# import time; catalog is immutable at runtime.
+_BOT_SKIN_RARITY_WEIGHTS_DEFAULT = {"common": 6, "rare": 4, "epic": 2, "legendary": 1}
+# Diamond (tier 4) + Master (5): epic-heavy, legendaries visible.
+_BOT_SKIN_RARITY_WEIGHTS_DIAMOND_MASTER = {"common": 1, "rare": 2, "epic": 5, "legendary": 4}
+# Grandmaster (6) + Goonmaster (7) + Ultimate (8): whale look.
+_BOT_SKIN_RARITY_WEIGHTS_TOP = {"common": 0, "rare": 1, "epic": 3, "legendary": 8}
+
+
+def _build_bot_skin_pool(weights: dict) -> List[str]:
+    pool: List[str] = []
+    for _s in SKINS_CATALOG:
+        w = int(weights.get(_s.get("rarity") or "common", 3))
+        if w > 0:
+            pool.extend([_s["id"]] * w)
+    return pool if pool else ["default"]
+
+
+BOT_SKIN_POOL: List[str] = _build_bot_skin_pool(_BOT_SKIN_RARITY_WEIGHTS_DEFAULT)
+BOT_SKIN_POOL_DIAMOND_MASTER: List[str] = _build_bot_skin_pool(_BOT_SKIN_RARITY_WEIGHTS_DIAMOND_MASTER)
+BOT_SKIN_POOL_TOP: List[str] = _build_bot_skin_pool(_BOT_SKIN_RARITY_WEIGHTS_TOP)
+
+
+def pick_bot_skin(tier_idx: Optional[int] = None) -> str:
+    """Pick a skin id for a bot, biased by the tier the bot is disguised
+    as (or None for a generic low-rank bot). Diamond/Master lean toward
+    epics + legendaries; Grandmaster+ heavily favours legendaries so
+    top-tier bots read like whales."""
+    if tier_idx is None:
+        return random.choice(BOT_SKIN_POOL)
+    ti = int(tier_idx)
+    if ti >= 6:
+        return random.choice(BOT_SKIN_POOL_TOP)
+    if ti >= 4:
+        return random.choice(BOT_SKIN_POOL_DIAMOND_MASTER)
+    return random.choice(BOT_SKIN_POOL)
 
 
 def skin_for_user(user: dict) -> dict:
@@ -4232,6 +4262,12 @@ class GameRoom:
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name
             bot.rank_tier = t_idx
+            # Re-roll the bot's skin using the disguise tier so high-
+            # ranked bots (Diamond+) lean toward legendaries — matches
+            # how real whales visually present at the top of the
+            # ladder. Player.__init__ picked from the generic weighted
+            # pool; overwriting here keeps disguise + skin correlated.
+            bot.selected_skin = pick_bot_skin(t_idx)
         # Reposition the bot to a spawn from THIS room's arena — avoid
         # placing it right on top of an existing player/bot.
         bx, bz = random_spawn(self.arena, occupants=list(self.players.values()))
@@ -5587,6 +5623,10 @@ class GameRoom:
             bot.disguise_rank_points = pts
             bot.disguise_rank_name = t_name
             bot.rank_tier = t_idx
+            # Ranked-room re-roll: pick a skin aligned to the (possibly
+            # updated) disguise tier so Diamond+ ranked-vs-bot lobbies
+            # visually read as endgame whales.
+            bot.selected_skin = pick_bot_skin(t_idx)
             # Higher displayed level for disguised bots — scales with the
             # pretend tier so a "Goonmaster" bot doesn't read as a level
             # 8 rookie. Rough shape: Bronze ~10-20, Diamond ~35-70,

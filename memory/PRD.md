@@ -353,8 +353,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - Files changed: `/app/backend/server.py` (spawn_bot smurf level, _maintain_population pool, users/search, custom_bot_names endpoints, startup index/cache warm), `/app/frontend/src/components/FriendsModal.jsx` (is_bot rendering), `/app/frontend/src/pages/AdminReports.jsx` (CustomBotNamesCard).
 
 ### Iteration 37 — **THIS SESSION (2026-02-27, fork)**
-- ✅ **Bots roll from the full skin catalog** — Previously bots picked from a hardcoded pool of 6 basic skins. Now they draw from a rarity-weighted `BOT_SKIN_POOL` built at import time from every entry in `SKINS_CATALOG` (30 unique skins). Weights: common=6, rare=4, epic=2, legendary=1. Sample of 500 draws: 83 common / 167 rare / 173 epic / 77 legendary. Result: bot lobbies now show off animated/premium skins like Void Walker, Golden Apex, Phoenix Rebirth, Cosmic Drift, Meteor Ascendant — without cheapening their rarity.
-- Files changed: `/app/backend/server.py` (BOT_SKIN_POOL + spawn logic).
+- ✅ **Bots roll from the full skin catalog** — Previously bots picked from a hardcoded pool of 6 basic skins. Now they draw from a rarity-weighted `BOT_SKIN_POOL` built at import time from every entry in `SKINS_CATALOG` (30 unique skins). Weights: common=6, rare=4, epic=2, legendary=1. Sample of 500 draws: 83 common / 167 rare / 173 epic / 77 legendary.
+- ✅ **Rank-correlated skin pools** — Introduced `pick_bot_skin(tier_idx)`. Three weight tables + three pools:
+  - Bronze / Silver / Gold / Platinum (t<4): base pool (common 6, rare 4, epic 2, legendary 1).
+  - Diamond / Master (t=4,5): epic-heavy — common 1, rare 2, epic 5, legendary 4. Bots read as endgame players wearing polished gear.
+  - Grandmaster / Goonmaster / Ultimate (t≥6): whale pool — common 0, rare 1, epic 3, legendary 8. ~67% of draws are legendaries.
+  - Applied in `spawn_bot` (casual/practice/TDM disguises) AND in the ranked-room re-roll (`_reroll_ranked_bots`), so a Diamond ranked lobby now visually reads as a whale lobby.
+- Files changed: `/app/backend/server.py` (BOT_SKIN_POOL split into 3 pools, `pick_bot_skin`, spawn_bot re-roll, ranked-room re-roll).
 
 
 ### P1
