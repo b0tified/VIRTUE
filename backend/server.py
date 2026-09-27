@@ -8131,10 +8131,25 @@ async def queue_ranked_join(
             m = MATCHED_USERS.get(mid)
             if m and (now_ts - float(m.get("matched_at", 0.0))) > 60.0:
                 MATCHED_USERS.pop(mid, None)
+            # Casual/bigffa dispatchers also populate MATCHED_USERS
+            # (without a `tier` field). A leftover casual/bigffa entry
+            # from a prior match must NOT block a ranked join — clear
+            # it so the queue join proceeds normally. Ranked entries
+            # (which carry `tier`) are preserved for the idempotency
+            # short-circuit right below.
+            elif m and ("tier" not in m or m.get("casual") or m.get("bigffa")):
+                MATCHED_USERS.pop(mid, None)
         # If any of the resolved member ids is already matched, surface that.
         for mid in member_ids:
             if mid in MATCHED_USERS:
                 m = MATCHED_USERS[mid]
+                # Only ranked entries have `tier`; the sweep above
+                # already cleared casual/bigffa residue, but guard
+                # here too so a malformed entry can never 500 this
+                # endpoint (which would visually freeze the queue
+                # toast for the whole party).
+                if "tier" not in m:
+                    continue
                 return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
         # If anyone is already queued, return that state (idempotent).
         for q in RANKED_QUEUE.values():
@@ -8182,6 +8197,16 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
         m = MATCHED_USERS.get(user_id)
         if m and (now_ts - float(m.get("matched_at", 0.0))) > 60.0:
             MATCHED_USERS.pop(user_id, None)
+            m = None
+        # Only surface a "matched" response when the entry actually
+        # belongs to a RANKED match — casual + bigffa dispatchers also
+        # populate MATCHED_USERS (without a `tier` field), so a player
+        # who finishes a casual/bigffa match and then queues ranked
+        # would otherwise hit `m["tier"]` on the ranked poll → KeyError
+        # → 500 → client's ranked-queue poll loop breaks → queue timer
+        # visually freezes for everyone on the same party. Skip past
+        # non-ranked residue so the queue polling stays healthy.
+        if m and ("tier" not in m or m.get("casual") or m.get("bigffa")):
             m = None
         if m:
             return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill}

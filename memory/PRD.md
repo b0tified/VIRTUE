@@ -449,6 +449,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 7/7 regression tests in `tests/test_spawn_immunity_forfeit.py` pass (bubble granted on spawn, movement forfeits in BigFFA, idle jitter <0.02 preserved, shoot / laser-start / melee all end the bubble, bots unaffected). No regressions in bigffa / tdm / iteration21 / ak_hitbox / lag_compensation suites.
 - Files changed: `/app/backend/server.py` (`handle_message` — input/shoot/laser_firing/melee branches).
 
+### Iteration 51 — **THIS SESSION (2026-02-27, fork)**
+- 🐛 **Ranked queue timer "freezes" — root cause found + fixed** — Backend logs showed a `KeyError: 'tier'` at `queue_ranked_status` line 8187 every time it fired. Root cause: casual + bigffa match dispatchers populate `MATCHED_USERS[uid]` with a `casual: True` or `bigffa: True` marker and **no** `tier` field. Both `POST /api/queue/ranked` and `GET /api/queue/ranked` then unconditionally read `m["tier"]` on any residual match entry → KeyError → 500 → the client's ranked-queue poll loop broke → the queue toast timer visually froze for the whole party. Trigger flow: play a casual quickmatch or BigFFA → return to lobby → click RANKED → poll blows up.
+- Fix (server.py `queue_ranked_status` GET + `queue_ranked_join` POST): both endpoints now (a) auto-clear casual/bigffa residue from MATCHED_USERS on entry so a ranked join isn't blocked by a stale non-ranked flag, and (b) defensively skip any match entry that lacks a `tier` key before dereferencing `m["tier"]`.
+- 🧪 Verified via curl on the running backend: `GET /queue/ranked` returns 200 cleanly, `POST /queue/ranked` returns 200 (or a normal 4xx guard like "level 5 required"), no `KeyError` in `backend.err.log` after the fix. Existing spawn-immunity / bigffa / iteration21 suites (27 tests) still pass.
+- Files changed: `/app/backend/server.py` (`queue_ranked_join` casual/bigffa residue sweep + `tier` guard; `queue_ranked_status` `tier` guard).
+
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
