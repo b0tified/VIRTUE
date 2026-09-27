@@ -9930,6 +9930,93 @@ async def admin_delete_bot_name(bot_name_id: str, user: dict = Depends(get_curre
     return {"ok": True, "id": bot_name_id}
 
 
+class CustomBotNamePatchIn(BaseModel):
+    """Partial update — any field left None stays as-is. Same validation
+    rules as create."""
+    name: Optional[str] = Field(default=None, min_length=2, max_length=24)
+    modes: Optional[List[str]] = None
+    ranks: Optional[List[int]] = None
+
+
+@api.patch("/admin/bot_names/{bot_name_id}")
+async def admin_edit_bot_name(
+    bot_name_id: str,
+    payload: CustomBotNamePatchIn,
+    user: dict = Depends(get_current_user),
+):
+    """Edit a custom bot name (rename, retarget modes, retarget ranks).
+    Admin-only. Any field left null in the payload stays untouched.
+    Case-insensitive name uniqueness enforced against other rows via
+    the `name_lower` index.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    try:
+        obj_id = ObjectId(bot_name_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id.")
+    existing = await db.custom_bot_names.find_one({"_id": obj_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Custom bot name not found.")
+    update_doc: Dict[str, Any] = {}
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty.")
+        lname = new_name.lower()
+        # Case-insensitive uniqueness among other rows.
+        clash = await db.custom_bot_names.find_one(
+            {"name_lower": lname, "_id": {"$ne": obj_id}},
+        )
+        if clash:
+            raise HTTPException(status_code=409, detail=f"Custom bot name '{new_name}' already registered.")
+        # Refresh shadows_builtin (does the new name overlap the built-in pool?)
+        builtin_all = set()
+        for nm in DISGUISED_BOT_NAMES:
+            builtin_all.add(nm.lower())
+        for names in TIERED_BOT_NAMES.values():
+            for nm in names:
+                builtin_all.add(nm.lower())
+        update_doc["name"] = new_name
+        update_doc["name_lower"] = lname
+        update_doc["shadows_builtin"] = lname in builtin_all
+    if payload.modes is not None:
+        bad_modes = [m for m in payload.modes if m not in GAME_MODES_ALLOWED]
+        if bad_modes:
+            raise HTTPException(status_code=400, detail=f"Invalid modes: {bad_modes}. Allowed: {sorted(GAME_MODES_ALLOWED)}")
+        update_doc["modes"] = list(payload.modes)
+    if payload.ranks is not None:
+        bad_ranks = [t for t in payload.ranks if not (isinstance(t, int) and 0 <= t < len(RANK_TIERS))]
+        if bad_ranks:
+            raise HTTPException(status_code=400, detail=f"Invalid rank indices: {bad_ranks}. Must be 0-{len(RANK_TIERS)-1}.")
+        update_doc["ranks"] = [int(t) for t in payload.ranks]
+    if not update_doc:
+        # Idempotent no-op — client sent empty patch. Return current state.
+        return {
+            "ok": True,
+            "id": bot_name_id,
+            "name": existing.get("name", ""),
+            "modes": list(existing.get("modes") or []),
+            "ranks": list(existing.get("ranks") or []),
+            "shadows_builtin": bool(existing.get("shadows_builtin", False)),
+        }
+    await db.custom_bot_names.update_one({"_id": obj_id}, {"$set": update_doc})
+    logger.info(
+        "Admin %s edited custom bot name id=%s changes=%s",
+        user.get("username"), bot_name_id, list(update_doc.keys()),
+    )
+    await _reload_custom_bot_names_cache()
+    updated = await db.custom_bot_names.find_one({"_id": obj_id})
+    return {
+        "ok": True,
+        "id": bot_name_id,
+        "name": updated.get("name", ""),
+        "modes": list(updated.get("modes") or []),
+        "ranks": list(updated.get("ranks") or []),
+        "shadows_builtin": bool(updated.get("shadows_builtin", False)),
+    }
+
+
 
 @api.get("/admin/live-stats")
 async def admin_live_stats(user: dict = Depends(get_current_user)):

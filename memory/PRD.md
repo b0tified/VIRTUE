@@ -392,6 +392,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: cache reports 20/60 entries after startup: `GoonSaintNyx828 3795 RP`, `GoonWraithZ9 3780 RP`, `K1ngslayer.gg 3750 RP`, `TheLastGoon 3720 RP`, ... — exactly what the public leaderboard shows.
 - Files changed: `/app/backend/server.py` (LEADERBOARD_BOT_NAMES cache + `_reload_leaderboard_bot_names` helper + startup warm + ranked-room spawn/reroll hooks + rename/rank edit refresh triggers).
 
+### Iteration 43 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Custom bot names are now editable** — New endpoint `PATCH /admin/bot_names/{id}` with partial `CustomBotNamePatchIn` payload (`name`, `modes`, `ranks` all optional; null fields untouched). Same validation as create — 2-24 chars, mode whitelist, rank tier bounds, case-insensitive uniqueness against other rows. `shadows_builtin` re-derived on rename. Refreshes the in-memory cache. Empty payload = idempotent no-op.
+- ✅ **AdminReports UI: inline edit on each custom bot row** — Row now has an Edit (blue pencil) button next to Delete. Clicking Edit opens the same 3-part form used for create (name input + mode chips + rank tier chips) with the row's current values pre-selected. Save calls PATCH and refreshes the list; Cancel restores. Chip toggles work in place.
+- 🧪 Verified via curl: create → PATCH full (name+ranks) → PATCH partial (modes only) → invalid mode returns 400 → delete cleanup. All idempotent.
+- Files changed: `/app/backend/server.py` (`CustomBotNamePatchIn` model + `admin_edit_bot_name` endpoint), `/app/frontend/src/pages/AdminReports.jsx` (new `CustomBotNameRow` component + `CustomBotNamesCard` now delegates row rendering to it).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
