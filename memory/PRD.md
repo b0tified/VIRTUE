@@ -423,6 +423,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
   - The "server confirms in queue" branch now REFRESHES `bigffaQueueState` on every successful poll (previously it only reset the miss counter and never touched state, leaving the queue-size chip stale). The `estimated_wait_seconds` pill keeps its locked join-time value because the backend recomputes ETA every poll based on remaining `dispatch_after` (would visually count down otherwise).
 - Files changed: `/app/frontend/src/context/QueueContext.jsx` (BigFFA poll miss threshold + live state refresh).
 
+### Iteration 47 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Pinned custom-bot rank now shows accurately in-game** — Previously the admin's pinned `rank_points` on a custom bot only affected the Friends search row + Inspect modal. When the same bot spawned into a live match, `spawn_bot` derived a random RP from the tier band, ignoring the pin. Fix: in the disguise branch of `spawn_bot`, check `_custom_bot_rank_override(name)` FIRST. If set, use it verbatim (no ±20 jitter, no tier-band clamp needed — the RP was admin-chosen). Downstream `rank_for_points` → `bot.disguise_rank_points`, `bot.disguise_rank_name`, `bot.rank_tier`, and `pick_bot_skin(t_idx)` all read from the pinned value so the in-game scoreboard, kill feed, banner, AND skin correlation reflect exactly what was pinned.
+- 🧪 Verified: RONIN_PINNED at 2160 RP spawns with `disguise_rank_points=2160`, `disguise_rank_name=GRANDMASTER`, `rank_tier=7`, skin=`stardust` (epic — from the rank-correlated whale pool).
+- Files changed: `/app/backend/server.py` (spawn_bot disguise branch now checks the pin before deriving RP).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

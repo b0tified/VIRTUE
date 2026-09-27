@@ -4283,7 +4283,15 @@ class GameRoom:
             # scoreboard consistently shows the phone chip beside each bot.
             bot.disguise_platform = "mobile" if mobile_mode else random.choice(["pc", "mobile", "pc", "pc"])
             bot.avatar = random.randint(0, 4)
-            if disguise_tier_idx is None:
+            # Custom-bot rank pin — if this handle is a custom bot with
+            # an admin-set rank_points, use it verbatim so the in-game
+            # scoreboard / kill feed / banner shows exactly the rank
+            # the admin pinned. Overrides tier-aligned + exact-RP paths
+            # (and skips the ±20 jitter, since pinned means pinned).
+            _custom_rp = _custom_bot_rank_override(name)
+            if _custom_rp is not None:
+                pts = int(_custom_rp)
+            elif disguise_tier_idx is None:
                 # Casual / generic disguise — keep the original low-rank look so
                 # quick-match bots blend in with new players.
                 pts = random.randint(0, 850)
