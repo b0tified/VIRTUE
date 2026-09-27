@@ -299,7 +299,10 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         <ActionBtn label="Jump"   onPress={pressJump}         color="#0055FF" testid="touch-jump" />
         {/* Fire button: hold for auto-fire on AK-47 (engine cooldown gates
             shots to the weapon's RPM, so calling _tryShoot every 50ms is
-            safe — the function bails when the cooldown timer hasn't elapsed). */}
+            safe — the function bails when the cooldown timer hasn't elapsed).
+            aimWhileHeld=true means dragging off the button (or in place)
+            also rotates yaw/pitch, so the player can fire + aim with a
+            single thumb — CoDM / PUBG Mobile style. */}
         <ActionBtn
           label="Fire"
           onPress={pressShoot}
@@ -307,6 +310,8 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
           big
           autoRepeatMs={50}
           testid="touch-fire"
+          engineRef={engineRef}
+          aimWhileHeld
         />
       </div>
 
@@ -410,17 +415,49 @@ function Knob({ dx, dy }) {
   );
 }
 
-function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 0 }) {
+function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 0, engineRef = null, aimWhileHeld = false }) {
   // Auto-repeat handle (for the Fire button). When the touch is held, we
   // fire `onPress` every `autoRepeatMs` ms; engine-side cooldown gates the
   // actual shot rate so this is safe.
   const intervalRef = useRef(null);
+  // Aim-while-held state: track the touch that started ON the button and
+  // feed yaw/pitch deltas to the engine as it moves. Lets the player fire
+  // and simultaneously drag-aim without lifting their thumb off the FIRE
+  // button — same gesture Call of Duty Mobile / PUBG Mobile use.
+  const aimStateRef = useRef({ touchId: null, lastX: 0, lastY: 0 });
   const startRepeat = (e) => {
     e.preventDefault();
     onPress();
     if (autoRepeatMs > 0) {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(() => onPress(), autoRepeatMs);
+    }
+    if (aimWhileHeld && engineRef?.current) {
+      const t = e.changedTouches[0];
+      aimStateRef.current.touchId = t.identifier;
+      aimStateRef.current.lastX = t.clientX;
+      aimStateRef.current.lastY = t.clientY;
+    }
+  };
+  const onMove = (e) => {
+    if (!aimWhileHeld) return;
+    const eng = engineRef?.current;
+    const st = aimStateRef.current;
+    if (!eng || st.touchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== st.touchId) continue;
+      e.preventDefault();
+      const dx = t.clientX - st.lastX;
+      const dy = t.clientY - st.lastY;
+      st.lastX = t.clientX;
+      st.lastY = t.clientY;
+      // Mirror the look-pad math so sensitivity feels identical whether
+      // the drag started on empty screen area or on the FIRE button.
+      const adsFactor = eng._adsSensFactor ? eng._adsSensFactor() : 1.0;
+      const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0) * adsFactor;
+      eng.yaw -= dx * sens;
+      eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
     }
   };
   const stopRepeat = (e) => {
@@ -429,6 +466,18 @@ function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    if (aimWhileHeld) {
+      const st = aimStateRef.current;
+      if (e) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === st.touchId) {
+            st.touchId = null;
+          }
+        }
+      } else {
+        st.touchId = null;
+      }
+    }
   };
   // Cleanup on unmount.
   useEffect(() => () => stopRepeat(), []);
@@ -436,10 +485,11 @@ function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 
     <button
       type="button"
       onTouchStart={startRepeat}
+      onTouchMove={onMove}
       onTouchEnd={stopRepeat}
       onTouchCancel={stopRepeat}
       className={`pointer-events-auto rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform ${big ? "w-20 h-20 text-lg" : "w-16 h-16 text-xs"}`}
-      style={{ background: color, boxShadow: "0 4px 0 #000" }}
+      style={{ background: color, boxShadow: "0 4px 0 #000", touchAction: "none" }}
       data-testid={testid}
     >
       {label}
