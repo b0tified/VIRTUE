@@ -439,6 +439,16 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: PC solo queue matched in 16s (was up to 64s). Ranked tier-5 lobby draws confirm custom name `RANKEDTEST` (weight 4×) appears in the pool alongside 9 built-in names with above-base frequency.
 - Files changed: `/app/backend/server.py` (`get_or_create_ranked_bot_room` + `_reroll_ranked_bots` custom-name merge; BigFFA solo-queue accelerant).
 
+### Iteration 50 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Spawn immunity: 3s bubble for real players in EVERY mode, ends on move OR any offensive action** — Every real player already got a 3-second `invuln_until` on spawn/respawn/match_start; the drop-on-move rule previously exempted BigFFA (the 12-player deathmatch), and the drop-on-action path was missing entirely. Fixes:
+  - Removed the `is_bigffa` exemption in `handle_message("input")` — real-player movement (`dist > 0.02`) now burns the bubble uniformly in FFA, Ranked, BigFFA, TDM, Party and Practice.
+  - `handle_message("shoot")` now zeros `invuln_until` for real players the moment they take a shot.
+  - `handle_message("input")` with `laser_firing: True` zeros `invuln_until` for real players the moment the beam starts (missing before).
+  - `handle_message("melee")` now zeros `invuln_until` for real players on melee.
+  - Every drop-branch is gated on `not player.is_bot`, so bot invuln bookkeeping (existing move-forfeit at line 6017-6021 + shoot-forfeit at line 6084-6085) is untouched — bots keep their pre-existing behavior.
+- 🧪 7/7 regression tests in `tests/test_spawn_immunity_forfeit.py` pass (bubble granted on spawn, movement forfeits in BigFFA, idle jitter <0.02 preserved, shoot / laser-start / melee all end the bubble, bots unaffected). No regressions in bigffa / tdm / iteration21 / ak_hitbox / lag_compensation suites.
+- Files changed: `/app/backend/server.py` (`handle_message` — input/shoot/laser_firing/melee branches).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

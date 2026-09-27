@@ -5491,14 +5491,11 @@ class GameRoom:
                 # actually moves. Any non-zero delta (`dist > 0.02`
                 # ignores idle joystick jitter) burns the 3s bubble so
                 # players can't push into fights invulnerable. Applies
-                # to every mode EXCEPT `bigffa` — the 12-player deathmatch
-                # gives real players the full 3s regardless of movement
-                # so a fresh spawn isn't a free frag in a crowded lobby.
-                if (
-                    dist > 0.02
-                    and player.invuln_until > time.time()
-                    and not getattr(self, "is_bigffa", False)
-                ):
+                # uniformly across every mode (FFA, ranked, BigFFA, TDM,
+                # party, practice) — a real player's spawn shield ends
+                # on first movement OR first offensive action, whichever
+                # comes first (or the full 3s if they stay still).
+                if dist > 0.02 and player.invuln_until > time.time():
                     player.invuln_until = 0.0
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
@@ -5538,6 +5535,10 @@ class GameRoom:
                     and player.weapon == "laser"
                     and not player.laser_overheated
                 )
+                # Firing the laser is an offensive action → forfeit any
+                # remaining spawn-immunity for real players immediately.
+                if player.laser_firing and not player.is_bot and player.invuln_until > time.time():
+                    player.invuln_until = 0.0
         elif mtype == "shoot":
             now_ms = int(time.time() * 1000)
             if not player.alive:
@@ -5589,6 +5590,10 @@ class GameRoom:
                 return
             player.last_shot_ms = now_ms
             player.ammo[weapon] = max(0, player.ammo.get(weapon, 0) - 1)
+            # Firing forfeits any remaining spawn-immunity for real
+            # players (bots keep their existing invuln bookkeeping).
+            if not player.is_bot and player.invuln_until > time.time():
+                player.invuln_until = 0.0
             if "yaw" in msg:
                 player.yaw = float(msg["yaw"])
             if "pitch" in msg:
@@ -5639,6 +5644,10 @@ class GameRoom:
             if now_ms - player.last_melee_ms < MELEE_COOLDOWN_MS:
                 return
             player.last_melee_ms = now_ms
+            # Meleeing is an offensive action → forfeit any remaining
+            # spawn-immunity for real players.
+            if not player.is_bot and player.invuln_until > time.time():
+                player.invuln_until = 0.0
             if "yaw" in msg:
                 player.yaw = float(msg["yaw"])
             if "pitch" in msg:
