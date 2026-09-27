@@ -519,44 +519,69 @@ function SearchPanel({ onChange, onInspect }) {
         )}
         {results.map((u, i) => {
           const rankColor = RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
+          const isBot = !!u.is_bot;
           return (
             <div key={u.id} className="px-2 py-2 flex items-center gap-3" data-testid={`friends-search-row-${i}`}>
               <Avatar idx={u.avatar} size={36} online={u.online} testid={`search-avatar-${i}`} />
               <div className="flex-1 min-w-0">
-                <div className="font-anton uppercase text-sm truncate">{u.username}</div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <AnimatedRankIcon
-                    tier={u.rank_tier ?? 0}
-                    division={u.rank_division ?? 0}
-                    size={20}
-                    testid={`search-rank-icon-${i}`}
-                  />
-                  <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A" }}>
-                    {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
-                  </span>
-                  {Number.isFinite(u.leaderboard_rank) && u.leaderboard_rank >= 1 && u.leaderboard_rank <= 50 && (
+                <div className="font-anton uppercase text-sm truncate flex items-center gap-1.5">
+                  {u.username}
+                  {isBot && (
                     <span
-                      className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black bg-[#FFD700] text-[#0A0A0A] tabular-nums"
-                      data-testid={`search-leaderboard-rank-${i}`}
-                      title={`#${u.leaderboard_rank} on the current-season leaderboard`}
+                      className="font-anton uppercase tracking-widest text-[9px] px-1 py-0 border border-black bg-[#9B59B6] text-white"
+                      data-testid={`friends-search-bot-tag-${i}`}
+                      title="This is an AI bot name, not a real player"
                     >
-                      #{u.leaderboard_rank}
+                      BOT
                     </span>
                   )}
-                  <span className="text-[10px] font-anton text-neutral-500">{u.rank_points} RP</span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {!isBot && (
+                    <>
+                      <AnimatedRankIcon
+                        tier={u.rank_tier ?? 0}
+                        division={u.rank_division ?? 0}
+                        size={20}
+                        testid={`search-rank-icon-${i}`}
+                      />
+                      <span className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black" style={{ background: rankColor, color: (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A" }}>
+                        {u.rank_name}{divisionRoman(u.rank_division) ? ` ${divisionRoman(u.rank_division)}` : ""}
+                      </span>
+                      {Number.isFinite(u.leaderboard_rank) && u.leaderboard_rank >= 1 && u.leaderboard_rank <= 50 && (
+                        <span
+                          className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black bg-[#FFD700] text-[#0A0A0A] tabular-nums"
+                          data-testid={`search-leaderboard-rank-${i}`}
+                          title={`#${u.leaderboard_rank} on the current-season leaderboard`}
+                        >
+                          #{u.leaderboard_rank}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-anton text-neutral-500">{u.rank_points} RP</span>
+                    </>
+                  )}
+                  {isBot && (
+                    <span className="text-[10px] font-anton text-neutral-500">
+                      Encountered in matches
+                    </span>
+                  )}
                 </div>
               </div>
-              <button
-                onClick={() => onInspect?.(u.username)}
-                className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
-                data-testid={`friends-search-inspect-${i}`}
-                title="View profile"
-              >
-                <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /></span>
-              </button>
-              <button onClick={() => sendRequest(u.username)} className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`friends-search-add-${i}`}>
-                <span className="flex items-center gap-1"><UserPlus size={14} strokeWidth={3} /> ADD</span>
-              </button>
+              {!isBot && (
+                <>
+                  <button
+                    onClick={() => onInspect?.(u.username)}
+                    className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
+                    data-testid={`friends-search-inspect-${i}`}
+                    title="View profile"
+                  >
+                    <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /></span>
+                  </button>
+                  <button onClick={() => sendRequest(u.username)} className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs" data-testid={`friends-search-add-${i}`}>
+                    <span className="flex items-center gap-1"><UserPlus size={14} strokeWidth={3} /> ADD</span>
+                  </button>
+                </>
+              )}
             </div>
           );
         })}

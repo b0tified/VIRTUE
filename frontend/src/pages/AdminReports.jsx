@@ -287,6 +287,12 @@ export default function AdminReports() {
         <RedeemCodesCard setToast={setToast} />
       </div>
 
+      {/* Custom bot names — admin-registered handles that seed into
+          disguised bot pools with per-mode and per-rank filters. */}
+      <div className="max-w-6xl mx-auto mt-6">
+        <CustomBotNamesCard setToast={setToast} />
+      </div>
+
       {/* Season-pass nuke button — wipes everyone's pass progression
           (season_xp + claimed_season_tiers) without touching RP or
           cosmetics. Used when the live pass needs to be reset early
@@ -1994,6 +2000,239 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) 
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* CustomBotNamesCard — admin form + list for registering additional bot
+   handles that show up in disguised-bot pools. Each entry can optionally
+   restrict which game modes and rank tiers it spawns in (empty = all).
+   Names are also surfaced by the /users/search endpoint so players can
+   discover them via the Friends → SEARCH tab (bot rows are read-only —
+   no ADD button; the FriendsModal hides it via is_bot). */
+const RANK_TIER_LABELS = [
+  "Bronze", "Silver", "Gold", "Platinum", "Diamond",
+  "Master", "Grandmaster", "Goonmaster", "Ultimate",
+];
+const GAME_MODE_OPTIONS = [
+  { value: "ffa",    label: "Casual FFA" },
+  { value: "tdm",    label: "Team DM" },
+  { value: "ranked", label: "Ranked" },
+  { value: "bigffa", label: "12P FFA" },
+];
+
+function CustomBotNamesCard({ setToast }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  // Form state — name, selected modes (Set of strings), selected rank
+  // indices (Set of ints). Empty sets mean "all modes"/"all ranks".
+  const [name, setName] = useState("");
+  const [modes, setModes] = useState(() => new Set());
+  const [ranks, setRanks] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const { data } = await api.get("/admin/bot_names");
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setErr(e.response?.data?.detail || e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleMode = (m) => {
+    setModes((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m); else next.add(m);
+      return next;
+    });
+  };
+  const toggleRank = (r) => {
+    setRanks((prev) => {
+      const next = new Set(prev);
+      if (next.has(r)) next.delete(r); else next.add(r);
+      return next;
+    });
+  };
+
+  const create = async (e) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      setToast?.({ kind: "err", msg: "Bot name must be at least 2 characters." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post("/admin/bot_names", {
+        name: trimmed,
+        modes: Array.from(modes),
+        ranks: Array.from(ranks),
+      });
+      setToast?.({ kind: "ok", msg: `Registered bot name "${trimmed}"` });
+      setName("");
+      setModes(new Set());
+      setRanks(new Set());
+      await load();
+    } catch (e2) {
+      setToast?.({ kind: "err", msg: e2.response?.data?.detail || e2.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id, nm) => {
+    if (!window.confirm(`Remove custom bot name "${nm}"?`)) return;
+    try {
+      await api.delete(`/admin/bot_names/${id}`);
+      setToast?.({ kind: "ok", msg: `Removed "${nm}"` });
+      await load();
+    } catch (e2) {
+      setToast?.({ kind: "err", msg: e2.response?.data?.detail || e2.message });
+    }
+  };
+
+  return (
+    <div className="border-4 border-black bg-white p-4" data-testid="admin-custom-bot-names-card">
+      <div className="flex items-center gap-2 mb-3">
+        <Bot size={18} strokeWidth={3} className="text-[#9B59B6]" />
+        <h2 className="font-anton uppercase tracking-widest text-lg">Custom Bot Names</h2>
+        <span className="text-[10px] font-anton uppercase text-neutral-500">
+          Seeded into disguised bot pools + searchable in friends
+        </span>
+      </div>
+
+      <form onSubmit={create} className="space-y-2 border-b-2 border-black/10 pb-3 mb-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Bot handle (e.g. shadowspecter)"
+            className="flex-1 px-3 py-2 border-2 border-black outline-none font-anton uppercase tracking-widest text-sm"
+            maxLength={24}
+            minLength={2}
+            data-testid="admin-custom-bot-names-input"
+          />
+          <button
+            type="submit"
+            disabled={busy || name.trim().length < 2}
+            className="btn-pow bg-[#9B59B6] text-white [&]:px-3 [&]:py-2 [&]:text-xs disabled:opacity-50"
+            data-testid="admin-custom-bot-names-add"
+          >
+            <span className="flex items-center gap-1"><Plus size={14} strokeWidth={3} /> ADD</span>
+          </button>
+        </div>
+        <div>
+          <div className="text-[10px] font-anton uppercase tracking-widest text-neutral-500 mb-1">
+            Modes (empty = all)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {GAME_MODE_OPTIONS.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => toggleMode(m.value)}
+                className={`font-anton uppercase tracking-widest text-[10px] px-2 py-1 border-2 ${modes.has(m.value) ? "border-black bg-[#9B59B6] text-white" : "border-black bg-white text-black"}`}
+                data-testid={`admin-custom-bot-names-mode-${m.value}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-anton uppercase tracking-widest text-neutral-500 mb-1">
+            Rank tiers (empty = all)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {RANK_TIER_LABELS.map((label, idx) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => toggleRank(idx)}
+                className={`font-anton uppercase tracking-widest text-[10px] px-2 py-1 border-2 ${ranks.has(idx) ? "border-black bg-[#00A9FF] text-white" : "border-black bg-white text-black"}`}
+                data-testid={`admin-custom-bot-names-rank-${idx}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </form>
+
+      {loading && (
+        <div className="text-center py-3 text-neutral-500 font-anton uppercase text-xs">Loading…</div>
+      )}
+      {err && (
+        <div className="text-center py-3 text-[#E62429] font-anton uppercase text-xs">{err}</div>
+      )}
+      {!loading && !err && rows.length === 0 && (
+        <div className="text-center py-3 text-neutral-400 font-anton uppercase text-xs" data-testid="admin-custom-bot-names-empty">
+          No custom bot names yet.
+        </div>
+      )}
+      {!loading && !err && rows.length > 0 && (
+        <div className="divide-y-2 divide-black/10" data-testid="admin-custom-bot-names-list">
+          {rows.map((r, i) => (
+            <div key={r.id} className="py-2 flex items-center gap-3" data-testid={`admin-custom-bot-names-row-${i}`}>
+              <div className="flex-1 min-w-0">
+                <div className="font-anton uppercase text-sm truncate flex items-center gap-1.5">
+                  {r.name}
+                  {r.shadows_builtin && (
+                    <span className="text-[9px] font-anton uppercase px-1 py-0 border border-black bg-[#FFB000] text-black" title="A built-in bot pool already has this name; yours will oversample it.">
+                      DUPLICATE
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  {(r.modes && r.modes.length > 0) ? (
+                    r.modes.map((m) => (
+                      <span key={m} className="text-[9px] font-anton uppercase tracking-widest px-1.5 py-0.5 border border-black bg-[#9B59B6] text-white">
+                        {(GAME_MODE_OPTIONS.find((x) => x.value === m) || {}).label || m}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[9px] font-anton uppercase tracking-widest px-1.5 py-0.5 border border-black bg-white text-black">
+                      ALL MODES
+                    </span>
+                  )}
+                  {(r.ranks && r.ranks.length > 0) ? (
+                    r.ranks.map((t) => (
+                      <span key={t} className="text-[9px] font-anton uppercase tracking-widest px-1.5 py-0.5 border border-black bg-[#00A9FF] text-white">
+                        {RANK_TIER_LABELS[t] || `T${t}`}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[9px] font-anton uppercase tracking-widest px-1.5 py-0.5 border border-black bg-white text-black">
+                      ALL RANKS
+                    </span>
+                  )}
+                  {r.created_by && (
+                    <span className="text-[9px] font-anton text-neutral-500">by {r.created_by}</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => remove(r.id, r.name)}
+                className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs"
+                data-testid={`admin-custom-bot-names-delete-${i}`}
+                title="Remove"
+              >
+                <Trash2 size={14} strokeWidth={3} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

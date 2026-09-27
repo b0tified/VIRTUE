@@ -340,6 +340,18 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **100% aim assist = full lock-on** — When the aim-assist slider is at 100% (`_aimAssistStrength >= 0.999`), engine engages FULL LOCK: acquisition + tracking cones widen to the full sphere (π rad), max range extends to 200m, and the lerp `k` snaps to 1.0 each frame so `yaw`/`pitch` slam directly onto the target — the reticle glues to the nearest enemy and tracks them automatically. Slider tooltip updated to advertise the behaviour.
 - Files changed: `/app/frontend/src/components/TouchControls.jsx`, `/app/frontend/src/game/engine.js`, `/app/frontend/src/components/SettingsModal.jsx`.
 
+### Iteration 36 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Casual smurf bots now spawn at level 9-35** — In `_maintain_population`, the smurf branch (Diamond II disguise, elite AI) now overrides the base bot level 5-11 with a random 9-35 so their banner reads like an established account. Real players see a plausible mid-game handle, not a fresh account.
+- ✅ **All disguised bot names searchable in Friends** — `/api/users/search` now merges matching names from `DISGUISED_BOT_NAMES`, all `TIERED_BOT_NAMES` tier pools, and admin-registered custom names into the search results. Bot rows carry `is_bot: True` with synthetic `bot::<name>` ids (no real DB row). `FriendsModal.jsx` renders bot rows with a purple BOT badge and hides the Inspect + ADD buttons since you can't friend a bot.
+- ✅ **Admin panel: custom bot names with mode + rank filters** — New `custom_bot_names` collection + admin endpoints:
+  - `POST /admin/bot_names {name, modes[], ranks[]}` — 2-24 char handle, empty modes/ranks means "all". Validates against `GAME_MODES_ALLOWED = {ffa,tdm,ranked,bigffa}` and `0 ≤ rank < len(RANK_TIERS)`. Case-insensitive dedupe via `name_lower` unique index. Flags `shadows_builtin` if a name collides with the built-in pools.
+  - `GET /admin/bot_names` — list all rows (admin-only)
+  - `DELETE /admin/bot_names/{id}` — remove
+  - In-memory `CUSTOM_BOT_NAMES_CACHE` reloaded on startup + on every mutation so bot spawning stays hot-path fast. `_maintain_population` merges `_custom_bot_names_for(mode=self.game_mode)` into the base disguised pool. `/users/search` uses `_all_custom_bot_names()`.
+- ✅ **AdminReports UI: Custom Bot Names card** — Below the Redeem Codes card. Input (name), togglable chips for modes (Casual FFA / Team DM / Ranked / 12P FFA) and rank tiers (Bronze → Ultimate). List view shows each row's mode + rank chips (or "ALL MODES" / "ALL RANKS" pill), a DUPLICATE warning tag if the name shadows a built-in, creator, and delete button.
+- 🧪 Verified via curl: create + list + duplicate-rejection (409) + invalid-mode (422) + delete round-trip; `/users/search?q=blitz` returns both a real user `BlitzReaper860` AND the built-in bot `BlitzReaper` with `is_bot: true`.
+- Files changed: `/app/backend/server.py` (spawn_bot smurf level, _maintain_population pool, users/search, custom_bot_names endpoints, startup index/cache warm), `/app/frontend/src/components/FriendsModal.jsx` (is_bot rendering), `/app/frontend/src/pages/AdminReports.jsx` (CustomBotNamesCard).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

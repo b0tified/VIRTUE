@@ -1065,6 +1065,15 @@ async def on_startup():
         [("user_id", 1), ("post_id", 1)], unique=True
     )
     await db.news_post_likes.create_index("post_id")
+    # Custom bot names index — case-insensitive uniqueness enforced via a
+    # normalised `name_lower` field so admins can't register duplicates.
+    await db.custom_bot_names.create_index("name_lower", unique=True)
+    # Warm the in-memory cache once at boot; bot spawning helpers read
+    # from it directly to avoid DB hits.
+    try:
+        await _reload_custom_bot_names_cache()
+    except Exception as e:
+        logger.warning("initial custom bot names cache warm failed: %s", e)
 
     # One-time migration: backfill `expires_at` on legacy admin-created
     # redeem codes that pre-date the expiry/cap feature. Default cutoff
@@ -4311,7 +4320,12 @@ class GameRoom:
                 return
             deficit = target_total - n
             in_use = {p.username for p in self.players.values()}
-            pool = [nm for nm in DISGUISED_BOT_NAMES if nm not in in_use]
+            # Base pool = built-in disguised names + any admin-registered
+            # custom names that opted into THIS mode (or opted into every
+            # mode via an empty modes list). Rank filter applies later
+            # only to smurf spawns since regular fill has no tier target.
+            base_pool = list(DISGUISED_BOT_NAMES) + _custom_bot_names_for(mode=self.game_mode)
+            pool = [nm for nm in base_pool if nm not in in_use]
             random.shuffle(pool)
             # Difficulty inherited from the room's seed bots.
             if self.game_mode == "tdm":
@@ -4341,16 +4355,25 @@ class GameRoom:
                 )
                 if is_smurf:
                     # Anchor RP inside Diamond II (1600 mid-band).
-                    self.spawn_bot(
+                    smurf_bot = self.spawn_bot(
                         name,
                         disguised=True,
                         difficulty=_get_casual_elite_bot_diff(),
                         disguise_tier_idx=5,
                         disguise_rank_points=random.randint(1550, 1690),
                     )
+                    # Override level: smurfs are Diamond-tier disguised
+                    # players, so their banner should read like an
+                    # established account. 9-35 keeps them plausible
+                    # (above the RANKED_MIN_LEVEL floor without being
+                    # obviously seeded high-level ringers).
+                    if smurf_bot is not None:
+                        smurf_bot.level = random.randint(9, 35)
                     logger.info(
-                        "Auto-balance (%s): spawned SMURF bot %s (Diamond+ disguise, diff=%.2f) total=%d→%d",
-                        self.game_mode, name, _get_casual_elite_bot_diff(), n, n + 1,
+                        "Auto-balance (%s): spawned SMURF bot %s (Diamond+ disguise, diff=%.2f, lvl=%d) total=%d→%d",
+                        self.game_mode, name, _get_casual_elite_bot_diff(),
+                        getattr(smurf_bot, "level", 0) if smurf_bot else 0,
+                        n, n + 1,
                     )
                 else:
                     self.spawn_bot(name, disguised=True, difficulty=diff)
@@ -8853,7 +8876,12 @@ async def whispers_unread(user: dict = Depends(get_current_user)):
 
 @api.get("/users/search")
 async def users_search(q: str, user: dict = Depends(get_current_user), limit: int = 10):
-    """Username prefix search (case-insensitive) for the Friends modal."""
+    """Username prefix search (case-insensitive) for the Friends modal.
+    Returns real users FIRST, then also surfaces any bot handles that
+    match — built-in disguised pool + all tiered pools + admin-added
+    custom names. Bot rows carry `is_bot: True` and no real id so the
+    UI can hide the ADD FRIEND button (you can't friend a bot).
+    """
     q = (q or "").strip()
     if len(q) < 2:
         return []
@@ -8862,10 +8890,53 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
         {"username": {"$regex": f"^{q}", "$options": "i"}, "_id": {"$ne": user["_id"]}},
         {"_id": 1, "username": 1, "avatar": 1, "rank_points": 1},
     ).limit(limit)
-    rows = []
+    rows: List[dict] = []
     async for u in cursor:
         rows.append(_friend_card(u))
-    return rows
+    # Merge bot names — case-insensitive prefix match against every
+    # source pool. Deduped so a name that appears in both DISGUISED and
+    # a tiered pool doesn't render twice. Bots always show as offline
+    # since they only live inside GameRooms, not the presence registry.
+    lq = q.lower()
+    seen = {r["username"].lower() for r in rows}
+    bot_names: List[str] = []
+    for nm in DISGUISED_BOT_NAMES:
+        if nm.lower().startswith(lq) and nm.lower() not in seen:
+            bot_names.append(nm)
+            seen.add(nm.lower())
+    for tier_idx, names in TIERED_BOT_NAMES.items():
+        for nm in names:
+            if nm.lower().startswith(lq) and nm.lower() not in seen:
+                bot_names.append(nm)
+                seen.add(nm.lower())
+    for nm in _all_custom_bot_names():
+        if nm.lower().startswith(lq) and nm.lower() not in seen:
+            bot_names.append(nm)
+            seen.add(nm.lower())
+    for nm in bot_names[: max(0, limit)]:
+        rows.append({
+            "id": f"bot::{nm}",
+            "username": nm,
+            "avatar": 0,
+            "rank_points": 0,
+            "rank_tier": 0,
+            "rank_name": "BOT",
+            "rank_division": 0,
+            "level": 1,
+            "banner_icon": 0,
+            "banner_color": 0,
+            "banner_animated": False,
+            "online": False,
+            "in_match": False,
+            "match_kind": None,
+            "in_queue": False,
+            "queue_tier": None,
+            "queue_kind": None,
+            "last_seen_at": None,
+            "leaderboard_rank": None,
+            "is_bot": True,
+        })
+    return rows[: limit * 2]
 
 
 # ─── Player reports ─────────────────────────────────────────────────────
@@ -9439,6 +9510,170 @@ async def admin_set_smurf_ratio(payload: SmurfRatioIn, user: dict = Depends(get_
         "ratio": _get_casual_elite_bot_ratio(),
         "diff": _get_casual_elite_bot_diff(),
     }
+
+
+# ─── Admin: Custom bot names ───────────────────────────────────────────
+# Admins can register additional bot handles that will be sprinkled into
+# the disguised-bot pool for specific modes (ffa / tdm / ranked / bigffa)
+# and/or rank tiers (0-8). Empty modes list = "all modes"; empty ranks
+# list = "all ranks". Cached in-memory (CUSTOM_BOT_NAMES_CACHE) so bot
+# spawning doesn't hit the DB on every fill — the cache is refreshed on
+# mutation and on startup (see admin_reload_custom_bot_names). Bot
+# spawning helpers merge the cache into the base DISGUISED_BOT_NAMES /
+# TIERED_BOT_NAMES pools before random.sample'ing.
+CUSTOM_BOT_NAMES_CACHE: List[dict] = []
+GAME_MODES_ALLOWED = {"ffa", "tdm", "ranked", "bigffa"}
+
+
+class CustomBotNameIn(BaseModel):
+    name: str = Field(min_length=2, max_length=24)
+    # Which game modes this name is allowed to appear in. Empty list =
+    # every mode. Any modes outside GAME_MODES_ALLOWED are rejected.
+    modes: List[str] = Field(default_factory=list)
+    # Which rank tier indices (0..len(RANK_TIERS)-1) this name should
+    # spawn at. Empty list = every rank tier.
+    ranks: List[int] = Field(default_factory=list)
+
+
+async def _reload_custom_bot_names_cache() -> None:
+    """Refresh the in-memory cache from Mongo. Called on startup and
+    after any admin mutation. Kept simple — one collection scan; the
+    cache is small (dozens of names typical) so latency is trivial."""
+    global CUSTOM_BOT_NAMES_CACHE
+    rows: List[dict] = []
+    try:
+        cursor = db.custom_bot_names.find({}, {"_id": 1, "name": 1, "modes": 1, "ranks": 1, "created_at": 1})
+        async for r in cursor:
+            rows.append({
+                "id": str(r.get("_id")),
+                "name": str(r.get("name") or "").strip(),
+                "modes": [str(m) for m in (r.get("modes") or []) if str(m) in GAME_MODES_ALLOWED],
+                "ranks": [int(t) for t in (r.get("ranks") or []) if isinstance(t, int) and 0 <= t < len(RANK_TIERS)],
+                "created_at": r.get("created_at").isoformat() if isinstance(r.get("created_at"), datetime) else None,
+            })
+    except Exception as e:
+        logger.error("Failed to reload custom bot names cache: %s", e)
+    CUSTOM_BOT_NAMES_CACHE = rows
+
+
+def _custom_bot_names_for(mode: Optional[str] = None, tier_idx: Optional[int] = None) -> List[str]:
+    """Return the subset of admin-added custom bot names that match the
+    given mode + tier_idx. Empty filters on a row mean "all". Passing
+    None for a parameter means "don't filter by this dimension"."""
+    out: List[str] = []
+    for r in CUSTOM_BOT_NAMES_CACHE:
+        modes = r.get("modes") or []
+        ranks = r.get("ranks") or []
+        if mode is not None and modes and mode not in modes:
+            continue
+        if tier_idx is not None and ranks and int(tier_idx) not in ranks:
+            continue
+        nm = r.get("name")
+        if nm:
+            out.append(nm)
+    return out
+
+
+def _all_custom_bot_names() -> List[str]:
+    """Every custom name (used by the friend-search endpoint so admins'
+    custom names surface even when the mode/tier isn't known)."""
+    return [r.get("name") for r in CUSTOM_BOT_NAMES_CACHE if r.get("name")]
+
+
+@api.post("/admin/bot_names")
+async def admin_create_bot_name(payload: CustomBotNameIn, user: dict = Depends(get_current_user)):
+    """Register a custom bot handle with optional mode + rank filters.
+    Admin-only. Rejects duplicates (case-insensitive) against BOTH the
+    built-in name pools and other custom entries."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty.")
+    # Reject modes outside the whitelist so we don't cache garbage.
+    bad_modes = [m for m in payload.modes if m not in GAME_MODES_ALLOWED]
+    if bad_modes:
+        raise HTTPException(status_code=400, detail=f"Invalid modes: {bad_modes}. Allowed: {sorted(GAME_MODES_ALLOWED)}")
+    # Rank indices must be in [0, len(RANK_TIERS))
+    bad_ranks = [t for t in payload.ranks if not (isinstance(t, int) and 0 <= t < len(RANK_TIERS))]
+    if bad_ranks:
+        raise HTTPException(status_code=400, detail=f"Invalid rank indices: {bad_ranks}. Must be 0-{len(RANK_TIERS)-1}.")
+    lname = name.lower()
+    # Check built-in pools (informational — duplicates aren't strictly
+    # broken, they just mean the name is oversampled — but admins
+    # probably want to know if they're re-adding something).
+    builtin_all = set()
+    for nm in DISGUISED_BOT_NAMES:
+        builtin_all.add(nm.lower())
+    for names in TIERED_BOT_NAMES.values():
+        for nm in names:
+            builtin_all.add(nm.lower())
+    # Check custom pool for collision.
+    existing = await db.custom_bot_names.find_one({"name_lower": lname})
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Custom bot name '{name}' already registered.")
+    doc = {
+        "name": name,
+        "name_lower": lname,
+        "modes": payload.modes,
+        "ranks": payload.ranks,
+        "created_by": user.get("username", ""),
+        "created_at": datetime.now(timezone.utc),
+        # Flag so the UI can tell admins if a name overlaps with the
+        # built-in disguise pool.
+        "shadows_builtin": lname in builtin_all,
+    }
+    res = await db.custom_bot_names.insert_one(doc)
+    logger.info(
+        "Admin %s registered custom bot name %s modes=%s ranks=%s",
+        user.get("username"), name, payload.modes, payload.ranks,
+    )
+    await _reload_custom_bot_names_cache()
+    return {
+        "ok": True,
+        "id": str(res.inserted_id),
+        "name": name,
+        "modes": payload.modes,
+        "ranks": payload.ranks,
+        "shadows_builtin": doc["shadows_builtin"],
+    }
+
+
+@api.get("/admin/bot_names")
+async def admin_list_bot_names(user: dict = Depends(get_current_user)):
+    """List all admin-added bot names. Admin-only."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    rows: List[dict] = []
+    async for r in db.custom_bot_names.find({}).sort("created_at", -1):
+        rows.append({
+            "id": str(r.get("_id")),
+            "name": r.get("name", ""),
+            "modes": [str(m) for m in (r.get("modes") or [])],
+            "ranks": [int(t) for t in (r.get("ranks") or [])],
+            "shadows_builtin": bool(r.get("shadows_builtin", False)),
+            "created_by": r.get("created_by", ""),
+            "created_at": r.get("created_at").isoformat() if isinstance(r.get("created_at"), datetime) else None,
+        })
+    return rows
+
+
+@api.delete("/admin/bot_names/{bot_name_id}")
+async def admin_delete_bot_name(bot_name_id: str, user: dict = Depends(get_current_user)):
+    """Remove a custom bot name. Admin-only. Idempotent (missing → 404)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    try:
+        obj_id = ObjectId(bot_name_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id.")
+    res = await db.custom_bot_names.delete_one({"_id": obj_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Custom bot name not found.")
+    await _reload_custom_bot_names_cache()
+    logger.info("Admin %s deleted custom bot name id=%s", user.get("username"), bot_name_id)
+    return {"ok": True, "id": bot_name_id}
+
 
 
 @api.get("/admin/live-stats")
