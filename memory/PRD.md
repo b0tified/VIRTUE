@@ -428,6 +428,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: RONIN_PINNED at 2160 RP spawns with `disguise_rank_points=2160`, `disguise_rank_name=GRANDMASTER`, `rank_tier=7`, skin=`stardust` (epic — from the rank-correlated whale pool).
 - Files changed: `/app/backend/server.py` (spawn_bot disguise branch now checks the pin before deriving RP).
 
+### Iteration 48 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Pinned rank now takes effect on live bots immediately** — Previously `spawn_bot` respected the pin so the correct rank showed on NEW bots, but existing disguised bots already in a match kept their pre-pin RP until they died and respawned. Fix: new `_reapply_custom_bot_pins_to_live_rooms()` walks every live GameRoom (game_room, tdm_room, practice_tdm_room, bigffa_room, OFFLINE_ROOMS, RANKED_BOT_ROOMS, PARTY_ROOMS) and re-applies the pin to any disguised bot whose name matches a custom entry with `rank_points`. Also re-rolls their skin via `pick_bot_skin(t_idx)` so a bumped Bronze→Master bot visually upgrades to a whale skin in the same lobby. Called from POST + PATCH endpoints. Idempotent (skips bots already at target RP).
+- 🧪 Verified: RONIN_TEST spawned as SILVER 495; adding a pin at 2160 → sweep instantly updates to GRANDMASTER 2160 with inferno legendary skin.
+- Files changed: `/app/backend/server.py` (`_reapply_custom_bot_pins_to_live_rooms` helper + hooks in POST/PATCH custom-bot endpoints).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

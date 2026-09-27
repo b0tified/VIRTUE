@@ -9882,6 +9882,55 @@ def _custom_bot_rank_override(username: str) -> Optional[int]:
     return None
 
 
+def _reapply_custom_bot_pins_to_live_rooms() -> int:
+    """Walk every live GameRoom and re-apply the pinned custom-bot rank
+    to any disguised bot whose name matches a custom entry with a
+    `rank_points` override. Returns the count of bots updated. Called
+    right after admin POST/PATCH/DELETE of custom bot names so pins
+    take effect immediately without waiting for the bot to die + respawn.
+    """
+    # Build a fast case-insensitive lookup: name.lower() → override RP.
+    # Custom entries WITHOUT a pin are also collected so a cleared pin
+    # falls back to the seeded RNG on next respawn (nothing to do live —
+    # existing bots keep their current RP until they naturally respawn).
+    pins: Dict[str, int] = {}
+    for r in CUSTOM_BOT_NAMES_CACHE:
+        nm = str(r.get("name") or "").lower()
+        rp = r.get("rank_points")
+        if nm and isinstance(rp, int):
+            pins[nm] = int(rp)
+    if not pins:
+        return 0
+    changed = 0
+    rooms: List["GameRoom"] = [game_room, tdm_room, practice_tdm_room, bigffa_room]
+    rooms.extend(OFFLINE_ROOMS.values())
+    rooms.extend(RANKED_BOT_ROOMS.values())
+    rooms.extend(PARTY_ROOMS.values())
+    for room in rooms:
+        for p in list(room.players.values()):
+            if not getattr(p, "is_bot", False):
+                continue
+            if not getattr(p, "disguised", False):
+                continue
+            nm = (getattr(p, "username", "") or "").lower()
+            new_rp = pins.get(nm)
+            if new_rp is None:
+                continue
+            if int(getattr(p, "disguise_rank_points", -1) or -1) == new_rp:
+                continue  # already applied
+            t_idx, t_name = rank_for_points(new_rp)
+            p.disguise_rank_points = new_rp
+            p.disguise_rank_name = t_name
+            p.rank_tier = t_idx
+            # Skin follows the new tier so a bumped Bronze→Master bot
+            # also visually upgrades to a whale skin in the same lobby.
+            p.selected_skin = pick_bot_skin(t_idx)
+            changed += 1
+    if changed:
+        logger.info("Custom-bot pin sweep applied %d rank updates to live rooms", changed)
+    return changed
+
+
 
 @api.post("/admin/bot_names")
 async def admin_create_bot_name(payload: CustomBotNameIn, user: dict = Depends(get_current_user)):
@@ -9935,6 +9984,13 @@ async def admin_create_bot_name(payload: CustomBotNameIn, user: dict = Depends(g
         user.get("username"), name, payload.modes, payload.ranks, payload.rank_points,
     )
     await _reload_custom_bot_names_cache()
+    # Live-room sweep so a freshly pinned rank shows on any existing
+    # bot with this handle in the current match — no waiting for the
+    # bot to die + respawn.
+    try:
+        _reapply_custom_bot_pins_to_live_rooms()
+    except Exception as e:
+        logger.warning("custom-bot pin sweep failed post-create: %s", e)
     return {
         "ok": True,
         "id": str(res.inserted_id),
@@ -10073,6 +10129,12 @@ async def admin_edit_bot_name(
         user.get("username"), bot_name_id, list(update_doc.keys()),
     )
     await _reload_custom_bot_names_cache()
+    # Live-room sweep so the new rank shows on existing bots wearing
+    # this handle in an active match — no need to wait for respawn.
+    try:
+        _reapply_custom_bot_pins_to_live_rooms()
+    except Exception as e:
+        logger.warning("custom-bot pin sweep failed post-edit: %s", e)
     updated = await db.custom_bot_names.find_one({"_id": obj_id})
     _rp = updated.get("rank_points")
     return {
