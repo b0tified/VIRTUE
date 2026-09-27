@@ -961,6 +961,41 @@ def _pick_disguised_names(count: int, mode: str, exclude: Optional[set] = None) 
     return out
 
 
+# Leaderboard-bot name cache — synchronously readable snapshot of the
+# top seeded users (by RP desc). Populated at startup + refreshed on
+# any leaderboard-bot admin edit + on a lightweight 5-minute background
+# tick. Used to disguise Goonmaster / Ultimate-Gooner ranked bots as
+# the same handles players see on the public leaderboard, so a top-50
+# lobby feels like the actual top-50 rather than a bunch of fallback
+# handles.
+LEADERBOARD_BOT_NAMES: List[str] = []
+
+
+async def _reload_leaderboard_bot_names(limit: int = 60) -> None:
+    """Snapshot the top `limit` seeded users into LEADERBOARD_BOT_NAMES,
+    sorted by rank_points desc. Ranked-bot spawning reads this cache
+    synchronously so we can't afford a DB round-trip on every room
+    creation."""
+    global LEADERBOARD_BOT_NAMES
+    names: List[str] = []
+    try:
+        cursor = (
+            db.users
+            .find({"is_seeded": True}, {"username": 1, "rank_points": 1})
+            .sort("rank_points", -1)
+            .limit(int(limit))
+        )
+        async for u in cursor:
+            nm = (u.get("username") or "").strip()
+            if nm:
+                names.append(nm)
+    except Exception as e:
+        logger.error("Failed to reload leaderboard-bot names cache: %s", e)
+        return
+    LEADERBOARD_BOT_NAMES = names
+    logger.info("Leaderboard-bot name cache refreshed: %d entries", len(names))
+
+
 def _build_bot_skin_pool(weights: dict) -> List[str]:
     pool: List[str] = []
     for _s in SKINS_CATALOG:
@@ -1145,6 +1180,13 @@ async def on_startup():
         await _reload_custom_bot_names_cache()
     except Exception as e:
         logger.warning("initial custom bot names cache warm failed: %s", e)
+    # Warm the leaderboard-bot name cache so Goonmaster / Ultimate
+    # ranked rooms spawning right after boot already get the correct
+    # top-50 handles instead of the BOT_NAMES fallback.
+    try:
+        await _reload_leaderboard_bot_names()
+    except Exception as e:
+        logger.warning("initial leaderboard bot names cache warm failed: %s", e)
 
     # One-time migration: backfill `expires_at` on legacy admin-created
     # redeem codes that pre-date the expiry/cap feature. Default cutoff
@@ -5632,8 +5674,13 @@ class GameRoom:
         # Build the candidate name pool from the tier list (falls back to
         # BOT_NAMES). Exclude names currently in use AND each bot's prior
         # match name so we never repeat or accidentally swap names within
-        # the room.
-        pool = list(TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES)
+        # the room. Goonmaster / Ultimate lobbies (tier >= 8) pull from
+        # the LIVE leaderboard-bot cache so re-rolls draw fresh top-50
+        # handles too, not just the initial spawn.
+        if tier_idx >= 8 and LEADERBOARD_BOT_NAMES:
+            pool = list(LEADERBOARD_BOT_NAMES)
+        else:
+            pool = list(TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES)
         current_names = {b.username for b in bots}
         candidates = [n for n in pool if n not in current_names]
         if len(candidates) < len(bots):
@@ -7031,8 +7078,15 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_r
     ranked_difficulty = 1.9 + min(6, tier_idx) * 0.30
     # Tier-aligned name pool — higher tiers get longer / more "competitive"
     # handles (sponsor tags, TTV suffixes, etc.). Falls back to BOT_NAMES if
-    # the tier has no custom pool seeded.
-    name_pool = TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES
+    # the tier has no custom pool seeded. Goonmaster / Ultimate-Gooner
+    # lobbies (tier_idx >= 8) pull from the LIVE leaderboard-bot cache
+    # so the lobby handles match the same seeded top-50 names players
+    # see on the public leaderboard — Ultimate Gooner rooms feel like
+    # the actual top of the ladder instead of fallback placeholders.
+    if tier_idx >= 8 and LEADERBOARD_BOT_NAMES:
+        name_pool = list(LEADERBOARD_BOT_NAMES)
+    else:
+        name_pool = TIERED_BOT_NAMES.get(tier_idx) or BOT_NAMES
     chosen_names = random.sample(name_pool, k=min(bot_count, len(name_pool)))
     # If somehow the pool was smaller than bot_count (shouldn't happen for the
     # current sizes 1..3), pad with BOT_NAMES so the room still fills up.
@@ -9546,6 +9600,14 @@ async def admin_rename_user(
         {"$set": {"username": new_username}},
     )
     logger.info("Admin %s renamed %s → %s", user.get("username"), username, new_username)
+    # Renaming a seeded leaderboard bot must invalidate the top-K name
+    # cache so Goonmaster / Ultimate rooms don't keep serving the stale
+    # handle for the next 5 minutes.
+    if bool(target.get("is_seeded", False)):
+        try:
+            await _reload_leaderboard_bot_names()
+        except Exception as e:
+            logger.warning("leaderboard-bot cache refresh failed post-rename: %s", e)
     return {"ok": True, "old_username": username, "new_username": new_username}
 
 
@@ -9633,6 +9695,14 @@ async def admin_set_rank(
         user.get("username"), username, old_pts, new_pts, tier_name,
         payload.update_peak,
     )
+    # Rank changes on seeded users reshuffle the top-K leaderboard bots
+    # cache — a bumped seed might push into or out of the Goonmaster
+    # room name pool. Cheap to refresh (single query, ≤60 rows).
+    if bool(target.get("is_seeded", False)):
+        try:
+            await _reload_leaderboard_bot_names()
+        except Exception as e:
+            logger.warning("leaderboard-bot cache refresh failed post-rank-edit: %s", e)
     return {
         "ok": True,
         "username": username,

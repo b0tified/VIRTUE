@@ -384,6 +384,14 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified via curl: set to MASTER (1860 RP), set to Bronze (60 RP), invalid negative rejected 422.
 - Files changed: `/app/backend/server.py` (`AdminSetRankIn` + `admin_set_rank` endpoint), `/app/frontend/src/pages/AdminReports.jsx` (`AccountRow` gained rank state + `doRank` + inline UI + `onRankChanged` wiring).
 
+### Iteration 42 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Goonmaster / Ultimate Gooner ranked lobbies now show real leaderboard-bot handles** — Previously tier_idx=8 (Goonmaster) fell through to the `BOT_NAMES` fallback (BLAZE-7, VORTEX, etc.) because `TIERED_BOT_NAMES` only had keys 0-7. Now:
+  - New `LEADERBOARD_BOT_NAMES` in-memory cache holds the top-60 seeded users (by RP desc). Refreshed on startup, on admin rank edits of seeded users, and on admin renames of seeded users.
+  - `get_or_create_ranked_bot_room` uses the cache when `tier_idx >= 8`.
+  - `_reroll_ranked_bots` uses the cache when `tier_idx >= 8` so mid-match rerolls also draw from the live top-50.
+- 🧪 Verified: cache reports 20/60 entries after startup: `GoonSaintNyx828 3795 RP`, `GoonWraithZ9 3780 RP`, `K1ngslayer.gg 3750 RP`, `TheLastGoon 3720 RP`, ... — exactly what the public leaderboard shows.
+- Files changed: `/app/backend/server.py` (LEADERBOARD_BOT_NAMES cache + `_reload_leaderboard_bot_names` helper + startup warm + ranked-room spawn/reroll hooks + rename/rank edit refresh triggers).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
