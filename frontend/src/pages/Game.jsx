@@ -670,6 +670,17 @@ export default function Game() {
         sock.send({ type: "reload", weapon: w });
       }
       if (e.code === "Escape") {
+        // Spectator mode: no pause menu (the pause overlay is gated
+        // `!isSpectator`). Instead, ESC drops the user straight back
+        // to the lobby — same nav target as the corner LEAVE button
+        // — so spectators aren't stuck watching until the target
+        // dies / disconnects. Called unconditionally on ESC; a
+        // no-op if spectateTarget is somehow null.
+        if (isSpectator) {
+          try { document.exitPointerLock?.(); } catch {}
+          nav(`/lobby?spectate_ended=1&target=${encodeURIComponent(spectateTarget || "")}`, { replace: true });
+          return;
+        }
         // pointer lock auto-released by the browser. Surface a pause overlay
         // with a prominent LEAVE MATCH button — the tiny corner EXIT used to
         // get missed.
@@ -807,8 +818,28 @@ export default function Game() {
         }}
       />
       {isSpectator && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 bg-[#FFD700] text-black border-pow shadow-pow-sm px-4 py-1 font-anton uppercase tracking-widest text-sm" data-testid="spectate-banner">
-          SPECTATING · {spectateTarget}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2" data-testid="spectate-banner-wrap">
+          <div className="bg-[#FFD700] text-black border-pow shadow-pow-sm px-4 py-1 font-anton uppercase tracking-widest text-sm" data-testid="spectate-banner">
+            SPECTATING · {spectateTarget}
+          </div>
+          {/* Explicit LEAVE button — the pause menu (which normally
+              holds the exit) is gated `!isSpectator`, so without this
+              button spectators had no way to bail out short of typing
+              `/lobby` into the URL bar. Uses the same nav destination
+              as the pause-menu EXIT: back to the lobby with a
+              `spectate_ended=1` marker so the lobby can toast the
+              "you stopped spectating <target>" chip. */}
+          <button
+            onClick={() => {
+              try { document.exitPointerLock?.(); } catch {}
+              nav(`/lobby?spectate_ended=1&target=${encodeURIComponent(spectateTarget || "")}`, { replace: true });
+            }}
+            className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs"
+            data-testid="spectate-leave-button"
+            title="Stop spectating and return to lobby"
+          >
+            <span className="flex items-center gap-1"><LogOut size={12} strokeWidth={3} /> LEAVE</span>
+          </button>
         </div>
       )}
       {pointerLockBlocked && (

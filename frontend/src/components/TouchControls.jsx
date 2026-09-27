@@ -20,6 +20,7 @@ function isTouchDevice() {
 export default function TouchControls({ engineRef, onShoot, onMelee, onReload, onSwitchWeapon, onToggleScoreboard }) {
   const [enabled, setEnabled] = useState(false);
   const [hudLayout, setHudLayout] = useState(() => settingsStore.get().hudLayout || settingsStore.DEFAULTS.hudLayout);
+  const [adsOn, setAdsOn] = useState(false);
   const autoFireRef = useRef(!!settingsStore.get().touchAutoFire);
   const moveStickRef = useRef(null);
   const lookStickRef = useRef(null);
@@ -54,6 +55,7 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
     e.touchActive = true;
     // Movement update loop @ 60Hz to feed the engine
     let raf = 0;
+    let lastAds = false;
     const tick = () => {
       const eng = engineRef.current;
       if (eng) {
@@ -73,6 +75,14 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
           if (dirs[i]) eng.keys.add("Key" + k.toUpperCase());
           else eng.keys.delete("Key" + k.toUpperCase());
         });
+        // Sync ADS visual state — engine can auto-toggle ADS off
+        // (weapon switch, sniper reload) so the button lit-state must
+        // follow the actual engine.ads flag, not just user taps.
+        const nowAds = !!eng.ads;
+        if (nowAds !== lastAds) {
+          lastAds = nowAds;
+          setAdsOn(nowAds);
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -271,9 +281,11 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         <div className="absolute -top-6 left-0 right-0 text-center text-[10px] uppercase tracking-widest text-white/60">Move</div>
       </div>
 
-      {/* RIGHT: action buttons (sit above the look pad, in pointer-events-auto bubble) */}
+      {/* RIGHT: action buttons — wrapper is pointer-events-none so aim
+          drags across the gaps between buttons still reach the look
+          pad behind. Only the buttons themselves capture touches. */}
       <div
-        className="pointer-events-auto absolute grid grid-cols-2 gap-3 z-40"
+        className="pointer-events-none absolute grid grid-cols-2 gap-3 z-40"
         style={{
           bottom: actL.y,
           right: actL.x,
@@ -298,9 +310,45 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
         />
       </div>
 
-      {/* Weapon switcher (top-right above look pad) */}
+      {/* ADS toggle — sits just LEFT of the fire cluster so a right-thumb
+          reach naturally lands on it. Aim-down-sights is only meaningful
+          for primary + laser (secondary/katana has no ADS), so we grey
+          out and no-op when katana is equipped. Tap to toggle. */}
+      <button
+        type="button"
+        onTouchStart={(e) => {
+          e.preventDefault();
+          const eng = engineRef.current;
+          if (!eng) return;
+          if (eng.currentWeapon === "secondary") return;
+          eng.setADS?.(!eng.ads);
+          setAdsOn(!!eng.ads);
+        }}
+        className="pointer-events-auto absolute z-40 rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform w-16 h-16 text-xs"
+        style={{
+          // Sit just ABOVE the action grid (grid is ~156px tall at
+          // scale=1: reload/melee row + gap + jump/fire row). This
+          // keeps ADS in easy right-thumb reach without overlapping
+          // the fire/melee/reload/jump buttons.
+          bottom: actL.y + 168 * actL.scale,
+          right: actL.x + 8 * actL.scale,
+          transform: `scale(${actL.scale})`,
+          transformOrigin: "bottom right",
+          opacity: actL.opacity,
+          background: adsOn ? "#00A9FF" : "#1e293b",
+          boxShadow: "0 4px 0 #000",
+        }}
+        data-testid="touch-ads"
+        aria-label="Aim down sights"
+      >
+        ADS
+      </button>
+
+      {/* Weapon switcher (top-right above look pad) — wrapper is
+          pointer-events-none so aim drags through this column still
+          reach the look pad; each button is pointer-events-auto. */}
       <div
-        className="pointer-events-auto absolute flex flex-col gap-1 z-40"
+        className="pointer-events-none absolute flex flex-col gap-1 z-40"
         style={{
           top: wepL.y,
           right: wepL.x,
@@ -318,7 +366,7 @@ export default function TouchControls({ engineRef, onShoot, onMelee, onReload, o
             key={it.w}
             type="button"
             onTouchStart={(e) => { e.preventDefault(); onSwitchWeapon?.(it.w); }}
-            className="bg-black/60 border border-white/30 rounded px-2 py-1 text-[10px] font-anton uppercase tracking-widest text-white"
+            className="pointer-events-auto bg-black/60 border border-white/30 rounded px-2 py-1 text-[10px] font-anton uppercase tracking-widest text-white"
             data-testid={`touch-weapon-${it.w}`}
           >
             {it.k} · {it.label}
@@ -390,7 +438,7 @@ function ActionBtn({ label, onPress, color, big = false, testid, autoRepeatMs = 
       onTouchStart={startRepeat}
       onTouchEnd={stopRepeat}
       onTouchCancel={stopRepeat}
-      className={`rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform ${big ? "w-20 h-20 text-lg" : "w-16 h-16 text-xs"}`}
+      className={`pointer-events-auto rounded-full border-2 border-white text-white font-anton uppercase tracking-widest active:scale-95 transition-transform ${big ? "w-20 h-20 text-lg" : "w-16 h-16 text-xs"}`}
       style={{ background: color, boxShadow: "0 4px 0 #000" }}
       data-testid={testid}
     >

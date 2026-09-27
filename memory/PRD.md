@@ -328,6 +328,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: backend regression suite `tests/test_crashsite_map.py` (4 tests passing) — rotation order, map shape (≥25 obstacles / ≥8 spawns / ≥6 healthpacks), `get_map_by_id`, and `random_map()` distribution.
 - 🧪 Verified: frontend lint clean, lobby smoke screenshot loads without console errors, practice map selector screenshot shows all 4 maps + RANDOM.
 
+### Iteration 34 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Right-side aim drag on mobile now works everywhere** — `TouchControls.jsx` action-buttons wrapper and weapon-switcher wrapper were `pointer-events-auto`, which captured touch drags on the empty gaps between buttons (a ~140×140 region in the bottom-right). Fix: wrappers now `pointer-events-none`; only the child buttons themselves (`ActionBtn` + weapon buttons) explicitly opt into `pointer-events-auto`. Aim drags now pass through the gaps to the look-pad behind, so a right-thumb drag anywhere on the right side of the screen rotates the camera.
+- ✅ **ADS button added to mobile HUD** — new circular ADS button sits just above the fire cluster (bottom-right, ~168px above the grid). Tap toggles engine ADS on/off via `engine.setADS()`. Button turns blue when active, dark slate when off. Auto no-ops when the katana (secondary) is equipped (no ADS available). Visual state stays in sync with the engine's `ads` flag through the existing 60Hz raf loop, so weapon-switches and sniper-reload auto-disables reflect on the button.
+- Files changed: `/app/frontend/src/components/TouchControls.jsx`.
+
+
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).
 - Loadout selection in lobby (pick primary weapon before spawn).
@@ -2607,3 +2613,14 @@ Two quality-of-life changes shipped together.
   - `test_friend_card_shows_casual_queue_kind` — A befriends B, B joins Quick Match queue → A's `/friends` response shows B with `in_queue:true, queue_kind:"casual"`.
   - `test_friend_card_shows_bigffa_queue_kind` — same flow for BigFFA. Both cleanup queue state in a `try/finally`.
 - **Live status polling**: The 6s silent refresh in `FriendsModal` (from the earlier live-status fix) automatically picks up queue transitions — a friend clicking Quick Match now shows up as "IN QUEUE · QUICK" within one poll cycle.
+
+### 2026-02-27 (later³⁹) — Spectator: can now leave the game
+- **User request**: "You can't leave game when spectating."
+- **Root cause**: The pause overlay (`showPause && ...`) was gated `!isSpectator`, so pressing ESC in spectator mode did nothing (`setShowPause(true)` fired but the overlay was hidden by the gate). The only visible action was the corner EXIT button on the Hud, which is easy to miss and doesn't have a spectate-specific tooltip.
+- **Frontend fix** (`/app/frontend/src/pages/Game.jsx`):
+  - Spectate banner (`[data-testid="spectate-banner"]`) now sits inside a flex wrapper (`spectate-banner-wrap`) alongside a new prominent red LEAVE button (`[data-testid="spectate-leave-button"]`). Click → same nav target as the pause-menu EXIT: `/lobby?spectate_ended=1&target=<username>`, which the lobby already knows how to toast as "you stopped spectating <target>".
+  - ESC key handler in the game keydown listener now short-circuits when `isSpectator=true`: skips the pause overlay (which is gated off anyway) and navigates straight to the lobby with the same `spectate_ended=1` marker. Spectators now have three consistent ways to leave: corner EXIT, big red LEAVE button, ESC.
+- **Verified in preview** (Playwright, SPA-nav after auth to avoid the 8-13s boot splash):
+  - Banner + LEAVE button both render on `/spectate/anyplayer`. ✅
+  - Clicking LEAVE navigates to `/lobby?spectate_ended=1&target=anyplayer`. ✅
+  - Screenshot confirms banner + big red LEAVE button top-center alongside the corner EXIT — three visible exits, none blocking a real spectator from bailing.
