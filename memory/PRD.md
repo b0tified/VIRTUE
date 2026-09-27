@@ -378,6 +378,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Confirmed no "BOT" text in Friends search rows** — Current backend returns `rank_name` = tier name (e.g. MASTER), never "BOT". Frontend has no "BOT" strings in `FriendsModal.jsx`. Touched the file to trigger a webpack bundle rebuild so any stale browser cache clears on next load.
 - Files changed: `/app/backend/server.py` (`_pick_disguised_names` helper + 5 caller updates).
 
+### Iteration 41 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Admin: change a player's rank from moderation** — New endpoint `POST /admin/users/{username}/rank` with body `{rank_points: int (0-100000), update_peak: bool}`. Snaps to the match-grid, rederives `rank_tier` + `rank_name` from `RANK_TIERS`, and optionally raises `peak_rank_*` (never lowers). Guarded by admin role check.
+- ✅ **AdminReports account row: RANK edit control** — Blue `RANK` button next to the existing RENAME + RESET PW buttons. Opens an inline tier `<select>` (BRONZE → GOONMASTER, 9 tiers) plus a "Peak" checkbox and save/cancel buttons. Submits `floor_rp + 60` so the account lands in the middle of the picked tier's first division. Row RP + tier + name update inline on success; toast confirms.
+- 🧪 Verified via curl: set to MASTER (1860 RP), set to Bronze (60 RP), invalid negative rejected 422.
+- Files changed: `/app/backend/server.py` (`AdminSetRankIn` + `admin_set_rank` endpoint), `/app/frontend/src/pages/AdminReports.jsx` (`AccountRow` gained rank state + `doRank` + inline UI + `onRankChanged` wiring).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

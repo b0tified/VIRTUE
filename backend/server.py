@@ -9584,6 +9584,65 @@ async def admin_set_password(
     return {"ok": True, "username": username}
 
 
+class AdminSetRankIn(BaseModel):
+    # rank_points: -inf..(current cap). Backend clamps to
+    # [0, RANK_CAP] on write. Setting to 0 puts the user at Bronze IV.
+    rank_points: int = Field(ge=0, le=100000)
+    # If true, also bump peak_rank_points to match (never lower it).
+    # Default false so admins can demote without wiping the trophy.
+    update_peak: bool = False
+
+
+@api.post("/admin/users/{username}/rank")
+async def admin_set_rank(
+    username: str,
+    payload: AdminSetRankIn,
+    user: dict = Depends(get_current_user),
+):
+    """Admin-only rank override. Sets the target's rank_points directly
+    and rederives tier + name from the RP grid. Optionally raises peak
+    so a promotion also updates the trophy pill on their banner. Never
+    touches match history so the moderation trail on their profile
+    stays honest — this only edits the current-season number.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    target = await db.users.find_one({"username": username})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    new_pts = int(payload.rank_points)
+    # Snap to the same match-grid the ranked matchmaker uses so admin-
+    # set values line up with what natural ranked play produces.
+    new_pts = _snap_rp_to_match_grid(new_pts)
+    tier_idx, tier_name = rank_for_points(new_pts)
+    update_doc: Dict[str, Any] = {
+        "rank_points": new_pts,
+        "rank_tier": tier_idx,
+        "rank_name": tier_name,
+    }
+    old_pts = int(target.get("rank_points", 0))
+    old_peak = int(target.get("peak_rank_points", 0))
+    if payload.update_peak and new_pts > old_peak:
+        p_idx, p_name = rank_for_points(new_pts)
+        update_doc["peak_rank_points"] = new_pts
+        update_doc["peak_rank_tier"] = p_idx
+        update_doc["peak_rank_name"] = p_name
+    await db.users.update_one({"_id": target["_id"]}, {"$set": update_doc})
+    logger.info(
+        "Admin %s set %s rank_points %d → %d (tier=%s, update_peak=%s)",
+        user.get("username"), username, old_pts, new_pts, tier_name,
+        payload.update_peak,
+    )
+    return {
+        "ok": True,
+        "username": username,
+        "rank_points": new_pts,
+        "rank_tier": tier_idx,
+        "rank_name": tier_name,
+        "peak_updated": bool(payload.update_peak and new_pts > old_peak),
+    }
+
+
 @api.get("/admin/settings/smurf")
 async def admin_get_smurf_ratio(user: dict = Depends(get_current_user)):
     """Return the current casual smurf-bot ratio + difficulty.

@@ -1519,6 +1519,15 @@ function AccountsPanel({ onChanged, onToast }) {
               onPassReset={() => {
                 onToast?.({ kind: "ok", text: `Password reset for ${r.username}` });
               }}
+              onRankChanged={(data) => {
+                patchRow(r.id, {
+                  rank_points: data.rank_points,
+                  rank_tier: data.rank_tier,
+                  rank_name: data.rank_name,
+                });
+                onToast?.({ kind: "ok", text: `${r.username} rank → ${data.rank_name}` });
+                onChanged?.();
+              }}
               onError={(msg) => onToast?.({ kind: "err", text: msg })}
             />
           ))}
@@ -1532,10 +1541,13 @@ function AccountsPanel({ onChanged, onToast }) {
    inline actions: rename (pencil → text input → save/cancel) and
    password reset (key → password input → save/cancel). Actions collapse
    back to their icons on save/cancel so the row stays compact. */
-function AccountRow({ row, testid, onRenamed, onPassReset, onError }) {
+function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChanged }) {
   // `null` = idle (icon showing). String = active edit input value.
   const [renameVal, setRenameVal] = useState(null);
   const [passVal, setPassVal] = useState(null);
+  // Rank edit state — a tier index (0..8). null = form closed.
+  const [rankTier, setRankTier] = useState(null);
+  const [rankUpdatePeak, setRankUpdatePeak] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const doRename = async () => {
@@ -1569,6 +1581,33 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError }) {
       setPassVal(null);
     } catch (e) {
       onError?.(e?.response?.data?.detail || "Password reset failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Rank change: takes a tier index (0..8), snaps to the tier's floor
+  // RP + a small offset (60 into the band so the account lands cleanly
+  // in the middle of the tier's first division). Optionally raises
+  // peak so the trophy pill updates too.
+  const doRank = async () => {
+    if (rankTier == null) return;
+    // Tier floor RP mirrors the backend's RANK_TIERS floors: Bronze 0,
+    // Silver 300, Gold 600, Platinum 900, Emerald 1200, Diamond 1500,
+    // Master 1800, Grandmaster 2100, Goonmaster 2400.
+    const FLOORS = [0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400];
+    const rp = FLOORS[rankTier] + 60;
+    setBusy(true);
+    try {
+      const { data } = await api.post(
+        `/admin/users/${encodeURIComponent(row.username)}/rank`,
+        { rank_points: rp, update_peak: rankUpdatePeak },
+      );
+      onRankChanged?.(data);
+      setRankTier(null);
+      setRankUpdatePeak(false);
+    } catch (e) {
+      onError?.(e?.response?.data?.detail || "Rank change failed.");
     } finally {
       setBusy(false);
     }
@@ -1676,6 +1715,68 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError }) {
             disabled={busy}
             className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
             data-testid={`${testid}-pass-cancel`}
+          >
+            <X size={12} strokeWidth={3} />
+          </button>
+        </div>
+      )}
+
+      {/* Rank change controls — pick a tier + optional peak-update
+          toggle. Backend snaps RP to the match-grid so the resulting
+          rank is always at the middle of the tier's first division. */}
+      {rankTier === null ? (
+        <button
+          onClick={() => setRankTier(row.rank_tier ?? 0)}
+          disabled={busy}
+          className="btn-pow bg-[#00A9FF] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+          data-testid={`${testid}-rank-open`}
+          title="Change rank"
+        >
+          <span className="flex items-center gap-1"><Trophy size={12} strokeWidth={3} /> RANK</span>
+        </button>
+      ) : (
+        <div className="flex items-center gap-1">
+          <select
+            value={rankTier}
+            onChange={(e) => setRankTier(parseInt(e.target.value, 10))}
+            className="border-2 border-black px-2 py-1 font-anton uppercase tracking-widest text-xs bg-white"
+            data-testid={`${testid}-rank-select`}
+            autoFocus
+            disabled={busy}
+          >
+            <option value={0}>BRONZE</option>
+            <option value={1}>SILVER</option>
+            <option value={2}>GOLD</option>
+            <option value={3}>PLATINUM</option>
+            <option value={4}>EMERALD</option>
+            <option value={5}>DIAMOND</option>
+            <option value={6}>MASTER</option>
+            <option value={7}>GRANDMASTER</option>
+            <option value={8}>GOONMASTER</option>
+          </select>
+          <label className="flex items-center gap-1 text-[10px] font-anton uppercase tracking-widest text-neutral-600">
+            <input
+              type="checkbox"
+              checked={rankUpdatePeak}
+              onChange={(e) => setRankUpdatePeak(e.target.checked)}
+              data-testid={`${testid}-rank-peak-toggle`}
+              disabled={busy}
+            />
+            Peak
+          </label>
+          <button
+            onClick={doRank}
+            disabled={busy}
+            className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-rank-save`}
+          >
+            {busy ? <Loader2 size={12} strokeWidth={3} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+          </button>
+          <button
+            onClick={() => { setRankTier(null); setRankUpdatePeak(false); }}
+            disabled={busy}
+            className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
+            data-testid={`${testid}-rank-cancel`}
           >
             <X size={12} strokeWidth={3} />
           </button>
