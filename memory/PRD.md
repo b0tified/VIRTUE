@@ -417,6 +417,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified: create with `rank_points: 2160` → search + profile both show GRANDMASTER 2160 RP lvl 72. PATCH `{rank_points: -1}` clears; next search shows RNG-derived rank (GRANDMASTER 2220 by coincidence for this seed).
 - Files changed: `/app/backend/server.py` (models, cache, helper, /users/search + /users/{u}/profile override wiring), `/app/frontend/src/pages/AdminReports.jsx` (`CustomBotNameRow` banner-rank picker + pinned-rank display chip).
 
+### Iteration 46 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **BigFFA queue box no longer disappears mid-queue** — Root cause: the QueueContext poll's "miss counter" was set to 10 consecutive `in_queue: false` responses (~10 seconds) before clearing `bigffaQueueState`. Any transient server hiccup — a matchmaker cycle where the user was momentarily between "in BIGFFA_QUEUE" and "matched: true", a deployment restart tick, or a DB read stutter — could accumulate 10 misses fast and blank the queue toast while the player was still legitimately queueing. Fix:
+  - Bumped miss threshold `10 → 30` (~30s of consecutive "not in queue" before auto-clearing) so real hiccups clear only if the server truly forgot us.
+  - The "server confirms in queue" branch now REFRESHES `bigffaQueueState` on every successful poll (previously it only reset the miss counter and never touched state, leaving the queue-size chip stale). The `estimated_wait_seconds` pill keeps its locked join-time value because the backend recomputes ETA every poll based on remaining `dispatch_after` (would visually count down otherwise).
+- Files changed: `/app/frontend/src/context/QueueContext.jsx` (BigFFA poll miss threshold + live state refresh).
+
 
 ### P1
 - Live spectator camera for queued players (watch ongoing matches while waiting).

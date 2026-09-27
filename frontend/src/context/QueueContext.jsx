@@ -616,8 +616,16 @@ export function QueueProvider({ children }) {
               }
             }, 1000);
           } else if (!s.in_queue) {
+            // Server reports we're no longer in queue AND not matched.
+            // This can happen during a matchmaker cycle (server briefly
+            // between "still in queue" and "matched: true"), during
+            // deployment restarts, or on transient DB reads. We used
+            // to give up after 10 misses (~10s) but that was too
+            // eager — the queue box would vanish while the player was
+            // still legitimately queueing. Bumped to 30 (~30s) so
+            // real hiccups clear only if the server truly forgot us.
             bigffaMissesRef.current += 1;
-            if (bigffaMissesRef.current >= 10) {
+            if (bigffaMissesRef.current >= 30) {
               bigffaCancelGuardUntilRef.current = Date.now() + 6000;
               stopBigffa();
               bigffaJoinedAtRef.current = 0;
@@ -627,7 +635,26 @@ export function QueueProvider({ children }) {
               bigffaLockedEtaRef.current = null;
             }
           } else {
+            // Server confirms we're still in queue — reset the miss
+            // counter AND refresh the client-side queue state so the
+            // ETA / queue_size chips reflect the live number even if
+            // 12 other players joined behind us since we opened the
+            // box. Without this the box shows the join-time ETA
+            // forever until match.
             bigffaMissesRef.current = 0;
+            setBigffaQueueState({
+              in_queue: true,
+              matched: false,
+              queue_size: Number.isFinite(s.queue_size) ? s.queue_size : undefined,
+              // Preserve the locked ETA — the visual countdown is
+              // driven by `bigffaWaitSec`, and this pill just shows
+              // the initial estimate. Overwriting with server's fresh
+              // estimated_wait_seconds would confuse players
+              // (backend recomputes it every poll based on remaining
+              // dispatch_after which shrinks toward 0).
+              estimated_wait_seconds: bigffaLockedEtaRef.current
+                ?? (Number.isFinite(s.estimated_wait_seconds) ? s.estimated_wait_seconds : undefined),
+            });
           }
         } catch {
           bigffaMissesRef.current += 1;
