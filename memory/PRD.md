@@ -497,6 +497,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified via direct websocket test (bypassing the matchmaker entirely): `?mode=casual&mode_pref=ffa` → welcome carries `game_mode: ffa`; same URL with `mode_pref=tdm` → `game_mode: tdm`. Full 51-test suite still green.
 - Files changed: `/app/backend/server.py` (WS handler `mode_pref` query param + updated casual routing precedence); `/app/frontend/src/pages/Game.jsx` (WS extra params forward `mode_pref` for casual mode).
 
+### Iteration 56 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Rank crest redesign — Marvel Rivals-style chevron ladder** — Replaced the lucide-icon set (Shield, Award, Star, Trophy, Sparkles, Gem, Sword, Skull, Flame) with 9 hand-drawn SVG crests in `/app/frontend/src/components/RankCrestIcons.jsx`. Design ramps from a single V chevron (Bronze) → full crown-with-tail-flourish (Goonmaster, playing the role of the reference art's "Champion"). Each icon is drop-in compatible with the lucide-react API so `<Icon size strokeWidth color />` still works everywhere in the codebase — the `AnimatedRankIcon` wrapper, scoreboard, PlayerCard, HUD, RankUpOverlay, MatchResultOverlay, PartyPanel, Profile, Leaderboard, FriendsModal, and every other consumer swap in transparently.
+- 🎨 **Palette updated to match the reference art** — Bronze orange, Silver cool gray, Gold bright yellow, Platinum mint, Emerald bright green, Diamond cornflower blue, Master lime green, Grandmaster purple, Goonmaster magenta. Updated the canonical `RANK_COLORS` in `rankIcons.js` plus 8 hardcoded copies scattered across components (Hud, FriendsModal, PublicProfileModal, MatchResultOverlay, QueueOverlay, PartyPanel, Profile, Leaderboard) in one sweep so nothing drifts. `rankTextColorFor` still returns gold on Goonmaster for readable label text.
+- Files changed: new `/app/frontend/src/components/RankCrestIcons.jsx`; `/app/frontend/src/game/rankIcons.js` (icon set + palette); 8 components / pages (sed-replaced hardcoded palette).
+
+
 
 
 

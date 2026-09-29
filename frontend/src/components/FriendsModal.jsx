@@ -20,7 +20,7 @@ const TABS = [
   { id: "search",   label: "ADD" },
 ];
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#A3E4B8", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
 // Format a unix timestamp (seconds) as a short relative-time string.
 // Used to show "LAST SEEN 5m AGO" / "2H AGO" / "3D AGO" / "JUST NOW" on offline friends.

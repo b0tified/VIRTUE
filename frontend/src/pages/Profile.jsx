@@ -38,7 +38,7 @@ function isAvatarUnlocked(idx, level, peakTier) {
   return false;
 }
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#A3E4B8", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
 /* Turn any axios/FastAPI error into a readable, alert()-safe string.
    Handles three shapes:

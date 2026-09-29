@@ -17,7 +17,7 @@ import { Avatar } from "@/components/PlayerCard";
 import { divisionRoman } from "@/game/rankIcons";
 import { useQueue } from "@/context/QueueContext";
 
-const RANK_COLORS = ["#CD7F32", "#C0C0C0", "#FFD700", "#5BC0EB", "#2ECC71", "#9D4EDD", "#E63946", "#06D6A0", "#000000"];
+const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#A3E4B8", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
 export default function PartyPanel({ party, myId, refresh, className = "" }) {
   const navigate = useNavigate();

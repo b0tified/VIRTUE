@@ -3,18 +3,23 @@
 // Platinum and Diamond as a stepping-stone tier. Each main tier (except
 // Goonmaster) is split into 3 sub-divisions (III → II → I, lowest → highest
 // within the tier) — see `rankDivisionForPoints`.
-import { Shield, Award, Star, Gem, Trophy, Sword, Skull, Flame, Sparkles } from "lucide-react";
+//
+// Icon set: custom chevron-based crests inspired by the Marvel Rivals
+// rank ladder (Bronze single chevron → Goonmaster full crown-with-tail).
+// See RankCrestIcons.jsx for the SVGs. Each crest is drop-in compatible
+// with the previous lucide-react API (size/strokeWidth/color/style).
+import { RANK_CREST_COMPONENTS } from "@/components/RankCrestIcons";
 
 export const RANK_COLORS = [
-  "#CD7F32", // Bronze
-  "#C0C0C0", // Silver
-  "#FFD700", // Gold
-  "#5BC0EB", // Platinum
-  "#2ECC71", // Emerald (new — bright green)
-  "#9D4EDD", // Diamond
-  "#E63946", // Master
-  "#06D6A0", // Grandmaster
-  "#000000", // Goonmaster
+  "#E67E22", // Bronze — warm orange (matches reference art)
+  "#B8C4CC", // Silver — cool gray
+  "#F1C40F", // Gold — bright yellow-gold
+  "#A3E4B8", // Platinum — mint green
+  "#2ECC71", // Emerald — bright green
+  "#4A90E2", // Diamond — cornflower blue
+  "#7BE04C", // Master — lime green
+  "#8E44FF", // Grandmaster — purple
+  "#D959D9", // Goonmaster — magenta (reference art's "Champion")
 ];
 
 export const RANK_NAMES = [
@@ -29,11 +34,7 @@ export const RANK_NAMES = [
 // division). Emerald slot (index 4) at 1200 RP.
 const RANK_THRESHOLDS = [0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400];
 
-export const RANK_ICONS = [
-  Shield, Award, Star, Trophy,
-  Sparkles,           // Emerald — twinkly sparkles
-  Gem, Sword, Skull, Flame,
-];
+export const RANK_ICONS = RANK_CREST_COMPONENTS;
 
 export function rankIconFor(tier) {
   const i = Math.max(0, Math.min(RANK_ICONS.length - 1, Number.isFinite(tier) ? tier : 0));
