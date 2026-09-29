@@ -502,6 +502,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🎨 **Palette updated to match the reference art** — Bronze orange, Silver cool gray, Gold bright yellow, Platinum mint, Emerald bright green, Diamond cornflower blue, Master lime green, Grandmaster purple, Goonmaster magenta. Updated the canonical `RANK_COLORS` in `rankIcons.js` plus 8 hardcoded copies scattered across components (Hud, FriendsModal, PublicProfileModal, MatchResultOverlay, QueueOverlay, PartyPanel, Profile, Leaderboard) in one sweep so nothing drifts. `rankTextColorFor` still returns gold on Goonmaster for readable label text.
 - Files changed: new `/app/frontend/src/components/RankCrestIcons.jsx`; `/app/frontend/src/game/rankIcons.js` (icon set + palette); 8 components / pages (sed-replaced hardcoded palette).
 
+### Iteration 57 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **SHOW TIERS button restored on mobile** — the button was previously desktop-only (`!hidden sm:!inline-block`). Now shown on every viewport with a compact size scale (`text-xs px-2 py-1` on mobile → full `sm:text-sm px-3 py-1.5` on desktop). Still hidden on mobile-landscape (`[@media(max-height:500px)]:!hidden`) so it doesn't crowd the fold when the lobby is squeezed into a short viewport.
+- ✅ **Tiers modal updated to new crests + palette** — Lobby's local `RANK_TIERS` array had a stale hardcoded copy of the OLD palette (Diamond=#9D4EDD purple, Master=#E63946 red, Goonmaster=#000000 black). Updated to match the Iteration 56 reference-art palette (Diamond=cornflower blue, Master=lime green, Goonmaster=magenta, etc.) so the tier-row backgrounds and the local `RankBadge` pill line up with everywhere else. The `AnimatedRankIcon` calls inside the modal already picked up the new chevron crests from Iteration 56 — no change needed there.
+- Files changed: `/app/frontend/src/pages/Lobby.jsx` (SHOW TIERS button className + local `RANK_TIERS` palette).
+
 
 
 

@@ -970,10 +970,10 @@ export default function Lobby() {
             )}
             <button
               onClick={() => setShowTiers(true)}
-              className="btn-pow bg-white text-black !hidden sm:!inline-block [@media(max-height:500px)]:!hidden"
+              className="btn-pow bg-white text-black inline-flex items-center justify-center [@media(max-height:500px)]:!hidden !text-xs sm:!text-sm !px-2 sm:!px-3 !py-1 sm:!py-1.5"
               data-testid="show-tiers-button"
             >
-              <span className="flex items-center gap-2"><Award size={16} strokeWidth={3} /> SHOW TIERS</span>
+              <span className="flex items-center gap-1.5 sm:gap-2"><Award size={14} strokeWidth={3} /> SHOW TIERS</span>
             </button>
           </div>
 
@@ -1663,16 +1663,16 @@ function fmtMS(totalSec) {
 }
 
 const RANK_TIERS = [
-  { name: "BRONZE", min: 0, color: "#CD7F32" },
-  { name: "SILVER", min: 300, color: "#C0C0C0" },
-  { name: "GOLD", min: 600, color: "#FFD700" },
-  { name: "PLATINUM", min: 900, color: "#5BC0EB" },
+  { name: "BRONZE", min: 0, color: "#E67E22" },
+  { name: "SILVER", min: 300, color: "#B8C4CC" },
+  { name: "GOLD", min: 600, color: "#F1C40F" },
+  { name: "PLATINUM", min: 900, color: "#A3E4B8" },
   // Every tier is 300 RP wide (100 per division: III / II / I).
   { name: "EMERALD", min: 1200, color: "#2ECC71" },
-  { name: "DIAMOND", min: 1500, color: "#9D4EDD" },
-  { name: "MASTER", min: 1800, color: "#E63946" },
-  { name: "GRANDMASTER", min: 2100, color: "#06D6A0" },
-  { name: "GOONMASTER", min: 2400, color: "#000000" },
+  { name: "DIAMOND", min: 1500, color: "#4A90E2" },
+  { name: "MASTER", min: 1800, color: "#7BE04C" },
+  { name: "GRANDMASTER", min: 2100, color: "#8E44FF" },
+  { name: "GOONMASTER", min: 2400, color: "#D959D9" },
 ];
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);
