@@ -520,6 +520,14 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Playwright screenshot on 844×500 confirmed the tier modal now shows crisp black-outlined chevrons on the Bronze / Silver / Emerald / Diamond backgrounds — internal seams (double chevron, inner V, wings) all clearly visible.
 - Files changed: `/app/frontend/src/components/RankCrestIcons.jsx` (`_svgProps` stroke color + strokeWidth + vector-effect).
 
+### Iteration 60 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Rank crest outlines toned down — tonal blend instead of hard black** — Feedback: previous hard-black outlines were too stark, made the crests look like black skeletons instead of tinted metal. Fix in `RankCrestIcons.jsx`:
+  - Stroke changed from `#000` (solid black) → `rgba(0,0,0,0.4)` — semi-transparent black blends with the fill to produce a natural darker-shade outline (Bronze orange → darker orange, Emerald green → deeper green, etc.).
+  - Default `strokeWidth` reduced from 1.5 → 1 so the tonal outline stays subtle. `AnimatedRankIcon` still passes `strokeWidth={3}` for the pill.
+  - `vector-effect: non-scaling-stroke` preserved so outline thickness stays legible from 16px chips to 128px celebrations.
+- 🧪 Playwright screenshot on 844×500 confirmed each crest now clearly shows the design (double chevron, wings, internal V) while feeling tonally cohesive with the tier row background rather than fighting it.
+- Files changed: `/app/frontend/src/components/RankCrestIcons.jsx` (`_svgProps` stroke color + default strokeWidth).
+
 
 
 

@@ -19,14 +19,16 @@ import React from "react";
 
 // Shared props helper — folds the lucide-compat API into <svg> attrs.
 // Comic-book pow styling: fill uses the caller's color prop (drives the
-// per-tier palette), stroke is HARD BLACK with a chunky width so the
-// crest silhouette stays legible against any tinted tier-row background
-// (Bronze on orange, Diamond on blue, etc.). Callers can still pass
-// `strokeWidth` to override; the default is much thicker than the
-// lucide default so the internal seams don't disappear.
+// per-tier palette). Stroke is a semi-transparent black so it reads as
+// a darker shade of the fill color rather than a hard cartoon outline —
+// gives just enough definition to see the internal seams (double
+// chevron, wings, crown spikes) without turning every crest into a
+// black skeleton. Callers can still pass `strokeWidth`; the default is
+// tuned so the tonal outline stays crisp at 16px scoreboard chips and
+// 128px celebration overlays.
 function _svgProps({
   size = 24,
-  strokeWidth = 1.5,
+  strokeWidth = 1,
   color = "currentColor",
   className = "",
   style = null,
@@ -37,7 +39,9 @@ function _svgProps({
     height: size,
     viewBox: "0 0 24 24",
     fill: color,
-    stroke: "#000",
+    // Translucent black — blends with the fill to produce a darker
+    // tonal outline that matches whatever tier color is in play.
+    stroke: "rgba(0,0,0,0.4)",
     strokeWidth,
     strokeLinecap: "round",
     strokeLinejoin: "round",
