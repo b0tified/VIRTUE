@@ -5495,7 +5495,19 @@ class GameRoom:
                 # party, practice) — a real player's spawn shield ends
                 # on first movement OR first offensive action, whichever
                 # comes first (or the full 3s if they stay still).
-                if dist > 0.02 and player.invuln_until > time.time():
+                #
+                # CRITICAL: only forfeit when the input's dist looks like
+                # ONE tick's worth of intentional movement (≤ max_delta).
+                # Any dist > max_delta is a client catching up to a
+                # server-driven position change — the classic case is
+                # the moment right AFTER respawn, when the client's next
+                # input frame is still sending its DEATH-location
+                # position before it's applied the server's state
+                # snap to the new spawn. Without this gate the very
+                # first post-respawn input tick zeroed invuln_until
+                # instantly, making the 3s spawn shield a no-op in
+                # practice (users reported "spawn immunity doesn't work").
+                if 0.02 < dist <= max_delta and player.invuln_until > time.time():
                     player.invuln_until = 0.0
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
@@ -12024,7 +12036,16 @@ async def ws_game(
         u_id = str(user["_id"])
         matched = MATCHED_USERS.get(u_id, {})
         if matched.get("casual"):
-            wants_tdm = bool(tdm) or bool(matched.get("tdm"))
+            # The matchmaker's decision is authoritative — if it says
+            # `tdm: False` (e.g. the caller queued with mode_pref="ffa"),
+            # ignore any residual `?tdm=1` URL param a stale client bundle
+            # might append. Only fall back to the URL param when the
+            # matched entry doesn't explicitly carry a `tdm` field
+            # (legacy matches before the mode-pref feature shipped).
+            if "tdm" in matched:
+                wants_tdm = bool(matched.get("tdm"))
+            else:
+                wants_tdm = bool(tdm)
             # Consume the matched flag now that we've used it. The next
             # queue cycle starts from a clean slate; if the player drops
             # mid-match they'll requeue normally on return to lobby.

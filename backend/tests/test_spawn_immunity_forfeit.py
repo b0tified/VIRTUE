@@ -86,10 +86,11 @@ async def test_invuln_ends_on_movement_in_bigffa():
     await _add_and_start(room, p)
     assert p.invuln_until > time.time()
 
-    # Simulate a real movement input (delta > 0.02).
+    # Simulate a real movement input (delta > 0.02 and <= max_delta).
+    # ~0.4 units per 50ms tick is a realistic sprint delta (8u/s).
     await room.handle_message(p, {
         "type": "input",
-        "x": 1.5, "z": 0.0,
+        "x": p.x + 0.4, "z": p.z + 0.0,
         "yaw": 0.0, "pitch": 0.0,
     })
     assert p.invuln_until == 0.0, "BigFFA move should burn spawn immunity"
@@ -190,3 +191,43 @@ async def test_invuln_bots_unchanged_by_new_rules():
     if not bot.is_bot and bot.invuln_until > time.time():
         bot.invuln_until = 0.0  # would have fired for a real player
     assert bot.invuln_until == original, "Bot invuln must be untouched by the new drop-on-action guards"
+
+
+
+@pytest.mark.asyncio
+async def test_invuln_survives_respawn_stale_input():
+    """The real "spawn immunity doesn't work" bug: when a player
+    respawns, the server picks a new random spawn location and sets
+    `invuln_until = now + 3.0`. The client is still sending inputs
+    with its OLD (death) x/z until it receives the state broadcast
+    + snaps position. That first stale input arrives with a huge
+    delta (dist >> max_delta) — if we naively forfeited invuln on
+    any dist > 0.02, the 3s bubble popped on tick 1 and the player
+    got instakilled the moment they respawned.
+
+    Guard: only forfeit when the client's raw delta is within one
+    tick's worth of realistic movement (`dist <= max_delta`).
+    Anything larger is a rubber-band / catch-up sync — the server
+    clamps position but MUST NOT count it as intentional movement.
+    """
+    room = srv.GameRoom(is_ranked=False)
+    p = _make_real_player("respawnee", SpyWS())
+    await _add_and_start(room, p)
+    # Simulate the "player just respawned" state: server has already
+    # picked a new random spawn (say x=45, z=20) and set a fresh 3s
+    # bubble. Client's next input still reports the old death spot
+    # (say x=10, z=30) because the state broadcast hasn't landed yet.
+    p.x, p.z = 45.0, 20.0
+    p.invuln_until = time.time() + 3.0
+    original_until = p.invuln_until
+
+    await room.handle_message(p, {
+        "type": "input",
+        "x": 10.0,   # stale death-location catch-up (dist ~36 >> max_delta 1.2)
+        "z": 30.0,
+        "yaw": 0.0, "pitch": 0.0,
+    })
+    assert p.invuln_until == original_until, (
+        "stale post-respawn input must NOT burn the 3s spawn shield "
+        f"(was {original_until}, became {p.invuln_until})"
+    )

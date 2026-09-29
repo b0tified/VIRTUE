@@ -477,6 +477,13 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 8 new regression tests in `tests/test_quickmatch_mode_pref.py` (truth table, pair resolution, bot-fill resolution, Pydantic model default, matchmaker skip on incompatible pair). Full suite 62/62 green.
 - Files changed: `/app/backend/server.py` (`QueueFlagsIn`, `_casual_mode_prefs_compatible`, `_resolve_casual_match_mode`, casual queue POST, matchmaker pair-find + bot-fill); `/app/frontend/src/game/settings.js` (new default); `/app/frontend/src/context/QueueContext.jsx` (forward mode_pref in POST); `/app/frontend/src/pages/Lobby.jsx` (segmented control UI + subscribe-driven state).
 
+### Iteration 54 — **THIS SESSION (2026-02-27, fork)**
+- 🐛 **"Spawn immunity doesn't work" — root cause found + fixed** — The 3s spawn bubble was being burned instantly on the very first input tick right after respawn. Root cause: the movement-forfeit check used the RAW client→server delta (`dist = hypot(x - player.x, z - player.z)`) with a simple `dist > 0.02` threshold. Right after `_respawn_player` picks a new random spawn location (say `x=45`) and stamps `invuln_until = now+3`, the client is still sending inputs with the OLD (death) position (say `x=10`) until it receives the state broadcast + snaps to the new spawn. That first stale input has `dist ~35 >> 0.02` → the guard zeroed `invuln_until` on tick 1, and the player took full damage from the bots that were already shooting.
+- Fix: gate the forfeit on `0.02 < dist <= max_delta` (1.2 units). Anything larger is a client rubber-band / stale sync catch-up (server clamps position but MUST NOT count it as intentional movement). Idle jitter still passes through (dist < 0.02) and real single-tick movement still forfeits (0.02 < dist ≤ 1.2 covers sprint = 0.4/tick).
+- 🐛 **"FFA-only put me in TDM" — hardened the routing** — WS handler previously did `wants_tdm = bool(tdm) or bool(matched.get("tdm"))`. That OR meant a residual `?tdm=1` in the URL from an older client bundle could override a matchmaker-decided FFA match. Fix: when `matched` explicitly carries a `tdm` key, that value is authoritative (URL param ignored). Legacy pre-mode-pref matches (no `tdm` key on the entry) still fall back to the URL param.
+- 🧪 8/8 spawn-immunity tests pass including the new `test_invuln_survives_respawn_stale_input` covering the stale-input case. Full 51-test regression suite green (spawn-immunity + quickmatch-mode-pref + mobile-ranked + bigffa + tdm + iteration21).
+- Files changed: `/app/backend/server.py` (`handle_message` input gate `dist <= max_delta`; WS handler casual `wants_tdm` derivation).
+
 
 
 
