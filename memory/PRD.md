@@ -533,6 +533,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Playwright screenshot confirmed the Ultimate Gooner row now shows the animated flame crest between Grandmaster III and the base rules footer.
 - Files changed: `/app/frontend/src/pages/Lobby.jsx` (replaced static `<Flame>` with `<UltimateGoonerCrest paused={false}>`).
 
+### Iteration 62 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Rank crests now animate on mobile** — Both `AnimatedRankIcon` and `UltimateGoonerCrest` previously auto-paused their motion on touch devices via `detectIsMobile()`. That killed the pulse / halo / orbit / flame-flicker across the lobby rank pill, tiers modal, PlayerCard peak crest, and party rows on every phone. Changed both components' default from `paused=null (auto-pause on mobile)` → `paused=false (motion ON everywhere)`. Callers can still opt out explicitly (screenshots / PDFs). `prefers-reduced-motion` still honored via CSS.
+- Removed the now-unused `detectIsMobile` imports from both files.
+- 🧪 Frontend compiles cleanly. Screenshots at 844×500 (mobile-landscape) confirm the tier modal crests visibly pulse and orbit again.
+- Files changed: `/app/frontend/src/components/AnimatedRankIcon.jsx` (paused default + drop useIsMobile import); `/app/frontend/src/components/UltimateGoonerCrest.jsx` (same).
+
 
 
 
