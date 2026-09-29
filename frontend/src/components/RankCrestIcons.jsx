@@ -18,9 +18,15 @@
 import React from "react";
 
 // Shared props helper — folds the lucide-compat API into <svg> attrs.
+// Comic-book pow styling: fill uses the caller's color prop (drives the
+// per-tier palette), stroke is HARD BLACK with a chunky width so the
+// crest silhouette stays legible against any tinted tier-row background
+// (Bronze on orange, Diamond on blue, etc.). Callers can still pass
+// `strokeWidth` to override; the default is much thicker than the
+// lucide default so the internal seams don't disappear.
 function _svgProps({
   size = 24,
-  strokeWidth = 2,
+  strokeWidth = 1.5,
   color = "currentColor",
   className = "",
   style = null,
@@ -31,12 +37,16 @@ function _svgProps({
     height: size,
     viewBox: "0 0 24 24",
     fill: color,
-    stroke: color,
+    stroke: "#000",
     strokeWidth,
     strokeLinecap: "round",
     strokeLinejoin: "round",
+    // `vector-effect: non-scaling-stroke` keeps the outline the same
+    // apparent thickness whether the crest renders at 16px (scoreboard
+    // chip) or 128px (celebration overlay). Without it, small sizes
+    // look almost stroke-free and huge sizes look cartoonishly thick.
+    style: { vectorEffect: "non-scaling-stroke", ...(style || {}) },
     className,
-    style,
     xmlns: "http://www.w3.org/2000/svg",
     ...rest,
   };

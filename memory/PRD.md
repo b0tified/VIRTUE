@@ -507,6 +507,19 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - ✅ **Tiers modal updated to new crests + palette** — Lobby's local `RANK_TIERS` array had a stale hardcoded copy of the OLD palette (Diamond=#9D4EDD purple, Master=#E63946 red, Goonmaster=#000000 black). Updated to match the Iteration 56 reference-art palette (Diamond=cornflower blue, Master=lime green, Goonmaster=magenta, etc.) so the tier-row backgrounds and the local `RankBadge` pill line up with everywhere else. The `AnimatedRankIcon` calls inside the modal already picked up the new chevron crests from Iteration 56 — no change needed there.
 - Files changed: `/app/frontend/src/pages/Lobby.jsx` (SHOW TIERS button className + local `RANK_TIERS` palette).
 
+### Iteration 58 — **THIS SESSION (2026-02-27, fork)**
+- 🐛 **SHOW TIERS button still hidden on mobile — real fix** — Prior iteration removed the `!hidden sm:!inline-block` gate but kept a `[@media(max-height:500px)]:!hidden` guard. VIRTUE mobile is force-locked to landscape via `OrientationLock` (rotate-device overlay), so every phone loads at ~390px height → the height gate was ALWAYS active → button never rendered. Removed the height gate entirely; the button now shows on every phone/desktop viewport.
+- 🧪 Verified via mobile-landscape Playwright screenshot (844×390): button rendered next to the BRONZE rank pill, and clicking it opens the tiers modal with the new chevron crest icons + updated palette (Bronze orange, Silver cool gray, YOU highlight on current division).
+- Files changed: `/app/frontend/src/pages/Lobby.jsx` (removed `[@media(max-height:500px)]:!hidden` from the SHOW TIERS button).
+
+### Iteration 59 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Rank crest outlines thickened — designs now legible on tinted backgrounds** — Previous crests painted stroke = fill color, so the shape blended into the tier-row background (Bronze crest on Bronze orange → invisible seams). Fixed in `RankCrestIcons.jsx`:
+  - Stroke is now hard-coded `#000` (black comic-book outline) so the crest silhouette pops on any tinted background.
+  - Default `strokeWidth` bumped from 2 → 1.5 (viewBox units); `AnimatedRankIcon` already passes `strokeWidth={3}` for the pill so the outline reads chunky and comic-book at any size.
+  - Added `vector-effect: non-scaling-stroke` so the outline stays the same apparent thickness whether the crest renders at 16px (scoreboard chip) or 128px (celebration).
+- 🧪 Playwright screenshot on 844×500 confirmed the tier modal now shows crisp black-outlined chevrons on the Bronze / Silver / Emerald / Diamond backgrounds — internal seams (double chevron, inner V, wings) all clearly visible.
+- Files changed: `/app/frontend/src/components/RankCrestIcons.jsx` (`_svgProps` stroke color + strokeWidth + vector-effect).
+
 
 
 

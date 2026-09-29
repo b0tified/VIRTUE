@@ -970,7 +970,7 @@ export default function Lobby() {
             )}
             <button
               onClick={() => setShowTiers(true)}
-              className="btn-pow bg-white text-black inline-flex items-center justify-center [@media(max-height:500px)]:!hidden !text-xs sm:!text-sm !px-2 sm:!px-3 !py-1 sm:!py-1.5"
+              className="btn-pow bg-white text-black inline-flex items-center justify-center !text-xs sm:!text-sm !px-2 sm:!px-3 !py-1 sm:!py-1.5"
               data-testid="show-tiers-button"
             >
               <span className="flex items-center gap-1.5 sm:gap-2"><Award size={14} strokeWidth={3} /> SHOW TIERS</span>
