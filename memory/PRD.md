@@ -528,6 +528,11 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Playwright screenshot on 844×500 confirmed each crest now clearly shows the design (double chevron, wings, internal V) while feeling tonally cohesive with the tier row background rather than fighting it.
 - Files changed: `/app/frontend/src/components/RankCrestIcons.jsx` (`_svgProps` stroke color + default strokeWidth).
 
+### Iteration 61 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Ultimate Gooner (top-50) row now uses the animated flame crest** — The tiers modal was rendering a static red-and-black lucide `Flame` for the Ultimate Gooner row. Swapped it for the existing full-fat `UltimateGoonerCrest` component (halo pulse + rotating rays + orbiting spark trails + flickering flame + gold sheen sweep). Passed `paused={false}` so the animation runs even on mobile (the crest normally auto-pauses on touch devices for perf, but a single row in the tier modal is trivial).
+- 🧪 Playwright screenshot confirmed the Ultimate Gooner row now shows the animated flame crest between Grandmaster III and the base rules footer.
+- Files changed: `/app/frontend/src/pages/Lobby.jsx` (replaced static `<Flame>` with `<UltimateGoonerCrest paused={false}>`).
+
 
 
 

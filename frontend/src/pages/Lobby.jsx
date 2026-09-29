@@ -1340,11 +1340,9 @@ export default function Lobby() {
                     className="col-span-7 font-display text-2xl py-3 px-3 flex items-center gap-3"
                     style={{ background: "#FFD700", color: "#0A0A0A" }}
                   >
-                    <Flame
-                      size={38}
-                      strokeWidth={3}
-                      color="#0A0A0A"
-                      fill="#B80020"
+                    <UltimateGoonerCrest
+                      size={44}
+                      paused={false}
                       data-testid="tier-ultimate-icon"
                     />
                     <span>ULTIMATE GOONER</span>
