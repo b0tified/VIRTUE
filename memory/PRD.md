@@ -455,6 +455,14 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Verified via curl on the running backend: `GET /queue/ranked` returns 200 cleanly, `POST /queue/ranked` returns 200 (or a normal 4xx guard like "level 5 required"), no `KeyError` in `backend.err.log` after the fix. Existing spawn-immunity / bigffa / iteration21 suites (27 tests) still pass.
 - Files changed: `/app/backend/server.py` (`queue_ranked_join` casual/bigffa residue sweep + `tier` guard; `queue_ranked_status` `tier` guard).
 
+### Iteration 52 — **THIS SESSION (2026-02-27, fork)**
+- 🐛 **Mobile-ranked "match freezes at start, HUD still updates, can hear/see damage" — fixed** — Symptom: bots move + shoot server-side (damage arrows fire, audio plays), but the local mobile player can't move or shoot because `_matchStarted` stays false forever. Root cause: `match_go` and `match_countdown` are one-shot events; if the mobile WS buffers or drops one (iOS Safari throttles WS briefly on tab focus + orientation changes), the client had no other channel telling it the match had actually started — state broadcasts never carried `match_started`.
+- Fix (both sides):
+  - Server (`GameRoom.tick` state broadcast): `top_full` now carries `match_started` + `countdown_until`. State-delta only sends these when they change, so the wire cost is ~5 bytes on transitions and 0 bytes otherwise. Keyframes (~1Hz) re-assert both unconditionally → any missed one-shot heals within ≤1s.
+  - Client (`engine.js applyServerState state`): when a state frame carries `match_started`, apply the transition (`false → true` unfreezes, `true → false` re-arms). `countdown_until` is likewise re-applied so a dropped `match_countdown` still surfaces the 3-2-1 timer.
+- 🧪 3 new regression tests in `tests/test_mobile_ranked_freeze_selfheal.py`: state broadcast carries `match_started` after `_begin_match_now`; delta transitions surface the flip; `countdown_until` is present in the state top-level. Full suite 54/54 green (spawn-immunity + bigffa + tdm + iteration21 + ak_hitbox + lag-comp + freeze-selfheal).
+- Files changed: `/app/backend/server.py` (`GameRoom.tick` state broadcast top-level); `/app/frontend/src/game/engine.js` (state message handler self-heal branch).
+
 
 
 ### P1

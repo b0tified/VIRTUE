@@ -6278,6 +6278,17 @@ class GameRoom:
             "in_queue": in_queue,
             "real_count": real_count,
             "min_real_players": RANKED_MIN_REAL_PLAYERS,
+            # Pre-match freeze snapshot piggy-backed on every state
+            # broadcast. `match_go` + `match_countdown` are one-shot
+            # events; if a mobile client drops one (iOS Safari
+            # briefly buffers WS on tab focus + re-orientation), the
+            # client used to stay locked in the pre-match freeze
+            # forever because nothing else on the wire told it the
+            # match had actually started. Now every keyframe (~1Hz)
+            # re-asserts the truth so the client self-heals within
+            # a second at worst.
+            "match_started": bool(self.match_started),
+            "countdown_until": self.countdown_until,
             # TDM-only fields. Frontend ignores when game_mode is "ffa".
             "game_mode": self.game_mode,
             "team_scores": dict(self.team_scores) if self.game_mode == "tdm" else None,

@@ -5201,6 +5201,29 @@ export class GameEngine {
       if (msg.game_mode !== undefined) this._gameMode = msg.game_mode || "ffa";
       if (msg.team_scores !== undefined) this._teamScores = msg.team_scores || null;
       if (msg.tdm_kill_target !== undefined) this._tdmKillTarget = msg.tdm_kill_target || null;
+      // Pre-match freeze self-heal. `match_go` / `match_countdown` are
+      // one-shot events; if the mobile client drops one (iOS Safari
+      // briefly buffers WS on tab focus + orientation changes) the
+      // player used to stay locked in the pre-match freeze forever —
+      // bots kept moving + shooting server-side and damage arrows
+      // still fired on the HUD, but our movement + shoot were blocked
+      // because `_matchStarted` was still false. State broadcasts now
+      // re-assert the truth every keyframe (~1Hz), so a missed event
+      // heals within a second at worst.
+      if (msg.match_started !== undefined) {
+        const newStarted = msg.match_started === true;
+        if (newStarted && this._matchStarted === false) {
+          this._matchStarted = true;
+          this._countdownUntil = null;
+        } else if (!newStarted && this._matchStarted !== false) {
+          this._matchStarted = false;
+        }
+      }
+      if (msg.countdown_until !== undefined) {
+        // null/0 both mean "no active countdown". Positive value is a
+        // fresh countdown the client hasn't heard about yet.
+        this._countdownUntil = msg.countdown_until || null;
+      }
       // Pre-scan: capture the local player's team BEFORE iterating remote
       // players so `_tdmTeamKeyFor` / `_applyTeamSkin` resolve correctly on
       // the very first frame (otherwise teammates render as enemies until
