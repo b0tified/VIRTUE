@@ -538,6 +538,20 @@ export default function Game() {
           return flags;
         } catch { return {}; }
       })();
+      // Casual quick-match mode preference — forwarded as a WS URL
+      // param so the router honours it even if MATCHED_USERS was
+      // cleared out from under us (e.g. reconnect after a transient
+      // WS drop, race with the pop after the initial connect). The
+      // matchmaker's decision on MATCHED_USERS[uid].tdm remains the
+      // primary signal; `mode_pref` is only used as a fallback when
+      // that entry is missing. Ranked / party / spectate / offline /
+      // practice / bigffa ignore this param.
+      const casualModePref = (() => {
+        try {
+          const p = (settingsStore.get().quickMatchModePref || "both").toLowerCase();
+          return p === "ffa" || p === "tdm" ? p : null;
+        } catch { return null; }
+      })();
       const extra =
         mode === "party" && partyId
           ? { party_id: partyId, ...(wantsTdm ? { tdm: 1 } : {}), ...(forceMap ? { force_map: forceMap } : {}), ...platformFlags }
@@ -548,6 +562,7 @@ export default function Game() {
               ...(forceMap ? { force_map: forceMap } : {}),
               ...soloMap,
               ...platformFlags,
+              ...(mode === "casual" && casualModePref ? { mode_pref: casualModePref } : {}),
             };
       sock.connect(accessToken, mode, Object.keys(extra || {}).length ? extra : null);
     }

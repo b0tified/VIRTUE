@@ -484,6 +484,19 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 8/8 spawn-immunity tests pass including the new `test_invuln_survives_respawn_stale_input` covering the stale-input case. Full 51-test regression suite green (spawn-immunity + quickmatch-mode-pref + mobile-ranked + bigffa + tdm + iteration21).
 - Files changed: `/app/backend/server.py` (`handle_message` input gate `dist <= max_delta`; WS handler casual `wants_tdm` derivation).
 
+### Iteration 55 — **THIS SESSION (2026-02-27, fork)**
+- 🐛 **Quick Match toggles "still random" — hardened with a WS URL fallback** — After Iteration 54 the matchmaker + WS handler were verified end-to-end via curl+websocket (FFA-only → `game_mode: ffa`, TDM-only → `game_mode: tdm`). User still reported randomness, so we removed every remaining hole where the pref could be lost.
+- Fix (belt-and-suspenders across the whole stack):
+  - Client (`Game.jsx`): forward `mode_pref` (from settingsStore, if set to "ffa" or "tdm") as a WS URL query param on the casual WS connect. Party/ranked/spectate/practice/offline/bigffa ignore it.
+  - Server (`ws_game`): accept a `mode_pref: Optional[str]` query param. Precedence for `wants_tdm`:
+    1. `MATCHED_USERS[uid].tdm` if the matched entry carries `tdm` (authoritative — set by the matchmaker based on the caller's queue-time preference).
+    2. URL `mode_pref` if the matched entry is missing OR lacks the `tdm` key (covers reconnect races, direct dev connects, legacy pre-mode-pref matches).
+    3. URL `tdm=1` (legacy flag).
+    4. Random 50/50 roll.
+- Added structured logging on every casual WS connect showing `matched`, `tdm_url`, `mode_pref`, `wants_tdm` and the chosen room — makes future "wrong mode" reports trivially debuggable.
+- 🧪 Verified via direct websocket test (bypassing the matchmaker entirely): `?mode=casual&mode_pref=ffa` → welcome carries `game_mode: ffa`; same URL with `mode_pref=tdm` → `game_mode: tdm`. Full 51-test suite still green.
+- Files changed: `/app/backend/server.py` (WS handler `mode_pref` query param + updated casual routing precedence); `/app/frontend/src/pages/Game.jsx` (WS extra params forward `mode_pref` for casual mode).
+
 
 
 

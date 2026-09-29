@@ -11879,6 +11879,12 @@ async def ws_game(
     # tags them with the phone icon on the scoreboard.
     mobile: Optional[int] = Query(default=0),
     mobile_only: Optional[int] = Query(default=0),
+    # Casual quick-match mode preference forwarded from the client as a
+    # WS URL fallback. Primary signal is still MATCHED_USERS[uid].tdm
+    # from the matchmaker; this param only kicks in when the matched
+    # entry is missing (reconnect race, direct dev connect, etc.).
+    # Accepted values: "ffa" | "tdm" (anything else is ignored).
+    mode_pref: Optional[str] = Query(default=None),
 ):
     auth_token = token
     if not auth_token:
@@ -12035,6 +12041,13 @@ async def ws_game(
         # bypass the queue (e.g. mid-development test flows).
         u_id = str(user["_id"])
         matched = MATCHED_USERS.get(u_id, {})
+        # Normalise the URL-level fallback pref first — used both as a
+        # tie-breaker within the matched branch AND as a hard override
+        # when there's no matched entry at all (direct dev connect,
+        # reconnect after MATCHED_USERS was popped, etc.).
+        _url_pref = (mode_pref or "").lower() if mode_pref else ""
+        if _url_pref not in ("ffa", "tdm"):
+            _url_pref = ""
         if matched.get("casual"):
             # The matchmaker's decision is authoritative — if it says
             # `tdm: False` (e.g. the caller queued with mode_pref="ffa"),
@@ -12044,6 +12057,8 @@ async def ws_game(
             # (legacy matches before the mode-pref feature shipped).
             if "tdm" in matched:
                 wants_tdm = bool(matched.get("tdm"))
+            elif _url_pref:
+                wants_tdm = _url_pref == "tdm"
             else:
                 wants_tdm = bool(tdm)
             # Consume the matched flag now that we've used it. The next
@@ -12051,9 +12066,21 @@ async def ws_game(
             # mid-match they'll requeue normally on return to lobby.
             async with QUEUE_LOCK:
                 MATCHED_USERS.pop(u_id, None)
+        elif _url_pref:
+            # No matched entry (direct WS connect / reconnect after the
+            # matched pop). Honour the client's explicit mode_pref so a
+            # user who picked FFA-only in the lobby never gets a random
+            # TDM roll in this edge case.
+            wants_tdm = _url_pref == "tdm"
         else:
             wants_tdm = bool(tdm) or (random.random() < TDM_QUICK_MATCH_ROLL)
         room = tdm_room if wants_tdm else game_room
+        logger.info(
+            "Casual WS connect user=%s username=%s matched=%s tdm_url=%s mode_pref=%s wants_tdm=%s -> room=%s",
+            u_id, user.get("username", "?"),
+            {k: matched.get(k) for k in ("casual", "tdm", "vs_bot")} if matched else None,
+            bool(tdm), _url_pref or None, wants_tdm, "tdm_room" if wants_tdm else "game_room",
+        )
     await websocket.accept()
     u_id_str = str(user["_id"])
     ONLINE_USERS[u_id_str] = ONLINE_USERS.get(u_id_str, 0) + 1
