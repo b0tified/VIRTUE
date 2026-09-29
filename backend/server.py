@@ -6356,6 +6356,21 @@ class GameRoom:
                 if self._last_sent_top.get(k) != v:
                     top_diff[k] = v
                     self._last_sent_top[k] = v
+            # Belt-and-suspenders: `match_started` and `countdown_until`
+            # ALWAYS ride the delta, even if unchanged. Reason: the
+            # server drops broadcasts for ~13s per round (10s
+            # intermission + 3s pre-match freeze) during which the
+            # server-side value flips False → True. If the client
+            # dropped the one-shot `match_go` event during the freeze,
+            # the FIRST post-freeze delta would otherwise omit
+            # `match_started` (cached True from before intermission →
+            # current True after `_begin_match_now`, no change on the
+            # wire), leaving the client stuck at `_matchStarted=false`
+            # until the next keyframe (up to 1s later). Broadcasting
+            # both fields every tick costs ~10 extra bytes at 20Hz and
+            # gives instant self-heal.
+            top_diff["match_started"] = top_full["match_started"]
+            top_diff["countdown_until"] = top_full["countdown_until"]
 
             state = {"type": "state_delta", "players": delta_players, **top_diff}
             if removed_ids:
@@ -8407,8 +8422,21 @@ async def queue_casual_state(user: dict = Depends(get_current_user)):
     a `matched: true` flag with `vs_bot` so the client knows whether
     to route into the shared casual room or a private bot room."""
     user_id = str(user["_id"])
+    now_ts = time.time()
     async with QUEUE_LOCK:
+        # Stale-flag sweep — mirrors /queue/ranked GET. Without this,
+        # a MATCHED_USERS entry left over from a previous session (user
+        # closed tab mid-match, WS never consumed it, ack never fired)
+        # would keep returning `matched: true` on every poll. Then the
+        # background poll in QueueContext auto-fires the match-found
+        # overlay on login → user sees the queue toast pop up even
+        # though they never clicked Quick Match. 60s is generous enough
+        # to preserve legitimate party-follower auto-matches (which
+        # resolve in <5s) while purging anything older.
         match = MATCHED_USERS.get(user_id)
+        if match and match.get("casual") and (now_ts - float(match.get("matched_at", 0.0))) > 60.0:
+            MATCHED_USERS.pop(user_id, None)
+            match = None
         if match and match.get("casual"):
             return {
                 "in_queue": False,
@@ -8543,8 +8571,15 @@ async def queue_bigffa_state(user: dict = Depends(get_current_user)):
     `bigffa: true` marker so the client routes to /play?mode=bigffa
     instead of the casual room."""
     user_id = str(user["_id"])
+    now_ts = time.time()
     async with QUEUE_LOCK:
+        # Same 60s stale-sweep as /queue/ranked and /queue/casual GETs.
+        # Prevents a leftover MATCHED_USERS bigffa entry (tab closed
+        # mid-match) from firing the match-found overlay on next login.
         match = MATCHED_USERS.get(user_id)
+        if match and match.get("bigffa") and (now_ts - float(match.get("matched_at", 0.0))) > 60.0:
+            MATCHED_USERS.pop(user_id, None)
+            match = None
         if match and match.get("bigffa"):
             return {
                 "in_queue": False,

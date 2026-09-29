@@ -539,6 +539,12 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 Frontend compiles cleanly. Screenshots at 844×500 (mobile-landscape) confirm the tier modal crests visibly pulse and orbit again.
 - Files changed: `/app/frontend/src/components/AnimatedRankIcon.jsx` (paused default + drop useIsMobile import); `/app/frontend/src/components/UltimateGoonerCrest.jsx` (same).
 
+### Iteration 63 — **THIS SESSION (2026-02-27, fork)**
+- 🐛 **FFA Quick Match freeze on mobile — belt-and-suspenders self-heal** — Same freeze pattern as the earlier ranked bug reappeared on Quick Match FFA (bots move + shoot, HUD updates, but the local player can't move/shoot because `_matchStarted` stays false). TDM worked because — well, both work for most players; the freeze is a rare-but-real race when the mobile WS drops `match_go`. Investigation showed the SERVER-side self-heal (Iteration 52) works correctly in isolation (verified by 4 new tests in `test_ffa_freeze_selfheal.py`), but relied on the keyframe cadence (~1s) to re-assert `match_started` in unchanged deltas.
+- Fix: state broadcast top-level diff now ALWAYS carries `match_started` and `countdown_until` — even when unchanged — so a mobile client that dropped `match_go` self-heals on the very next tick (~50ms) instead of waiting up to 1s. Wire cost is ~10 extra bytes per state message at 20Hz.
+- 🧪 4 new FFA-specific regression tests: state broadcast carries `match_started=True` after `_begin_match_now`; state after intermission still carries it; delta ALWAYS carries `match_started` + `countdown_until`; first post-freeze frame is a keyframe. Full 51-test suite green.
+- Files changed: `/app/backend/server.py` (`GameRoom.tick` state broadcast — force-include `match_started` + `countdown_until` in every top_diff).
+
 
 
 
@@ -2833,3 +2839,20 @@ Two quality-of-life changes shipped together.
   - Banner + LEAVE button both render on `/spectate/anyplayer`. ✅
   - Clicking LEAVE navigates to `/lobby?spectate_ended=1&target=anyplayer`. ✅
   - Screenshot confirms banner + big red LEAVE button top-center alongside the corner EXIT — three visible exits, none blocking a real spectator from bailing.
+
+### 2026-02-27 (later⁴⁰) — Quick Match queue phantom-popup on login FIXED
+- **User report**: "The quick match queue pops up even when not queuing and pops up when I log in."
+- **Root cause**: A stale `MATCHED_USERS[uid]` entry (casual or bigffa) survived across sessions when the WS game endpoint never got a chance to consume it (tab closed mid-3-2-1 countdown, connection dropped before ack, etc.). On next login the `QueueProvider` background poll fires immediately on mount, hits GET `/queue/casual`, sees `matched: true`, and instantly triggers the match-found overlay + 3-2-1 countdown + `nav("/play")` — even though the user never clicked Quick Match. `/queue/ranked` GET already had a 60s stale-sweep; casual and bigffa did not.
+- **Backend fix** (`/app/backend/server.py`):
+  - `queue_casual_state` (GET `/queue/casual`): sweep `MATCHED_USERS[uid]` if it's a casual entry older than 60s.
+  - `queue_bigffa_state` (GET `/queue/bigffa`): mirror sweep for bigffa entries.
+  - Same 60s window as ranked so legit party-follower auto-matches (resolve in <5s) still work.
+- **Client belt-and-braces guard** (`/app/frontend/src/context/QueueContext.jsx`):
+  - Ranked + casual bg-poll effects: track a `firstTick` and `sawInQueue` flag. On the very first poll after mount, suppress `matched:true` responses that arrived with no prior `in_queue:true` observation. Legit party-follower flows always transition idle → in_queue → matched across ≥2 poll ticks, so this doesn't break them; but a stale `MATCHED_USERS` entry within the 60s window is now silently ignored on load.
+- **Verified** (`test_queue_stale_matched_sweep.py`, 5/5 passing):
+  - Stale casual entry (>60s) → swept, GET returns `matched:false`.
+  - Fresh casual entry (<60s) → still surfaces `matched:true` for legit followers.
+  - Stale bigffa entry (>60s) → swept.
+  - Fresh bigffa entry (<60s) → still surfaces.
+  - Ranked entry doesn't leak into casual GET (or vice versa).
+  - Existing `test_casual_queue.py::test_casual_matched_payload_includes_tdm_flag` updated to add `matched_at` (real matchmaker always stamps it; test was one of the only sites that didn't).

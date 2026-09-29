@@ -124,6 +124,10 @@ def test_casual_matched_payload_includes_tdm_flag(monkeypatch):
     server.MATCHED_USERS["frank"] = {
         "casual": True, "match_id": "m1", "tdm": True,
         "vs_bot": False, "room_key": None,
+        # Real matchmaker always stamps matched_at; the GET handler
+        # now sweeps entries older than 60s to prevent stale matched
+        # residue from popping a phantom match on next login.
+        "matched_at": time.time(),
     }
     # Build a minimal "user" shape that the dependency expects.
     user_doc = {"_id": "frank", "username": "frank"}

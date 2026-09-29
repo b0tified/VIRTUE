@@ -285,6 +285,13 @@ export function QueueProvider({ children }) {
     // Don't background-poll while in a match — would re-fire the
     // match-found flow on top of live gameplay.
     if (inMatchRoute) return;
+    // First-tick guard — see the identical rationale in the casual bg
+    // poll below. TL;DR: on mount, ignore a bare `matched:true` from
+    // the server (likely a stale MATCHED_USERS residue) unless we've
+    // first observed an `in_queue:true` tick. Legitimate party-follower
+    // matches always transition idle → in_queue → matched over ≥2 ticks.
+    let firstTick = true;
+    let sawInQueue = false;
     const tick = async () => {
       if (pollIdRef.current || matchTimerRef.current) return;
       // Respect the cancel guard — cancelRanked bumped this to
@@ -296,6 +303,16 @@ export function QueueProvider({ children }) {
         // Double-check the guard AFTER the async fetch — if the user
         // cancelled while we were awaiting, the response is stale.
         if (Date.now() < cancelGuardUntilRef.current) return;
+        const isFirst = firstTick;
+        firstTick = false;
+        if (s && s.in_queue) sawInQueue = true;
+        // Suppress a "matched on first tick" bombshell — if the very
+        // first poll after login shows matched with no prior in_queue
+        // observation, treat it as stale residue and skip. The server
+        // also stale-sweeps entries >60s old, this is a belt-and-braces
+        // guard for entries within that window.
+        if (isFirst && s && s.matched && !s.in_queue) return;
+        if (s && s.matched && !sawInQueue) return;
         if (s && (s.in_queue || s.matched)) {
           // Follower detection: the bg poll only enters this branch
           // when THIS client didn't press the ranked button but the
@@ -485,6 +502,18 @@ export function QueueProvider({ children }) {
   const casualBgPollRef = useRef(null);
   useEffect(() => {
     if (inMatchRoute) return;
+    // First-tick guard — root cause of the "queue toast pops up when I
+    // log in" bug. On mount, the very first bg tick fires immediately.
+    // If the server has a stale MATCHED_USERS entry (user closed tab
+    // mid-match, ws never consumed it, ack never fired) it returns
+    // matched:true and the client would instantly show the 3-2-1
+    // overlay + nav to /play. The server-side 60s stale-sweep handles
+    // most of this, but for entries within the 60s window we still
+    // don't want to auto-enter a match unless we've observed the user
+    // is legitimately mid-queue (in_queue:true on a prior tick, i.e.
+    // party-follower flow).
+    let firstTick = true;
+    let sawInQueue = false;
     const tick = async () => {
       // Skip while the active poll is already running (leader path,
       // or follower who already discovered the queue) so we don't
@@ -494,6 +523,12 @@ export function QueueProvider({ children }) {
       try {
         const { data: s } = await api.get("/queue/casual");
         if (Date.now() < casualCancelGuardUntilRef.current) return;
+        const isFirst = firstTick;
+        firstTick = false;
+        if (s && s.in_queue) sawInQueue = true;
+        // Suppress stale matched on first tick with no prior in_queue.
+        if (isFirst && s && s.matched && !s.in_queue) return;
+        if (s && s.matched && !sawInQueue) return;
         // If matched, `wait_seconds` from the server is "time since
         // match" not "time since join" — so we bind joinTimestamp to
         // now for the local timer (short-lived, only used for the
