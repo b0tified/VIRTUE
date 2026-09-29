@@ -80,6 +80,11 @@ const DEFAULTS = Object.freeze({
   // toggle is hidden from the Settings UI on desktop devices (where
   // it has no effect). Default off so cross-play stays the norm.
   mobileOnlyMatchmaking: false,
+  // Quick-Match mode preference — casual queue only. "both" (default)
+  // rolls FFA/TDM per match server-side; "ffa" and "tdm" pin the
+  // caller so the matchmaker only pairs / bot-fills into that mode.
+  // Set from the lobby's Quick-Match mode picker.
+  quickMatchModePref: "both",
   // V-Sync — when true, the engine renders on a setTimeout loop instead of
   // requestAnimationFrame so it can tick faster than the display refresh.
   // Mostly reduces input latency on high-refresh monitors.

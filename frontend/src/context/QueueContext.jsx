@@ -26,6 +26,15 @@ function _platformFlags() {
   return { is_mobile: mobile, mobile_only: mobile && pref };
 }
 
+/** Read the Quick-Match mode preference from localStorage. Returns
+ *  "ffa" | "tdm" | "both" — the casual queue POST forwards it so the
+ *  matchmaker pairs / bot-fills into the caller's picked mode. Any
+ *  garbage value defaults to "both" (server also revalidates). */
+function _quickMatchModePref() {
+  const p = (settingsStore.get().quickMatchModePref || "both").toLowerCase();
+  return p === "ffa" || p === "tdm" ? p : "both";
+}
+
 const QueueContext = createContext(null);
 
 export function QueueProvider({ children }) {
@@ -430,7 +439,10 @@ export function QueueProvider({ children }) {
     }
     casualJoiningRef.current = true;
     try {
-      const { data } = await api.post("/queue/casual", _platformFlags());
+      const { data } = await api.post("/queue/casual", {
+        ..._platformFlags(),
+        mode_pref: _quickMatchModePref(),
+      });
       // Leader path — kick the shared active-poll setup.
       beginCasualActivePoll({
         in_queue: true,

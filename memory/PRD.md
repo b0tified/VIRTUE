@@ -463,6 +463,21 @@ Tested: 8/8 new backend pytest cases pass (`/app/backend/tests/test_placement_we
 - 🧪 3 new regression tests in `tests/test_mobile_ranked_freeze_selfheal.py`: state broadcast carries `match_started` after `_begin_match_now`; delta transitions surface the flip; `countdown_until` is present in the state top-level. Full suite 54/54 green (spawn-immunity + bigffa + tdm + iteration21 + ak_hitbox + lag-comp + freeze-selfheal).
 - Files changed: `/app/backend/server.py` (`GameRoom.tick` state broadcast top-level); `/app/frontend/src/game/engine.js` (state message handler self-heal branch).
 
+### Iteration 53 — **THIS SESSION (2026-02-27, fork)**
+- ✅ **Quick Match mode picker (FFA / TDM / Both)** — Added a 3-way segmented control right above the lobby's Quick Match button so players can pin their casual matches to FFA-only, TDM-only, or leave the classic 50/50 roll ("Both", default).
+- Backend (`server.py`):
+  - `QueueFlagsIn` Pydantic model now carries `mode_pref: "ffa" | "tdm" | "both"` (default `"both"`). Server double-validates + normalises garbage input.
+  - `/api/queue/casual` POST stamps `mode_pref` on the queue entry.
+  - Matchmaker head-to-head pair scan now consults `_casual_mode_prefs_compatible` alongside `_platforms_compatible`. Truth table: `both↔anything`, `ffa↔ffa`, `tdm↔tdm` = compatible; `ffa↔tdm` = incompatible (skipped, so an FFA-only player never lands in a TDM lobby).
+  - `_resolve_casual_match_mode` picks TDM vs FFA per match: pinned side wins (both-vs-both → 50/50 roll). Bot-fill honours the caller's exact preference so a solo FFA-only player always bot-fills into FFA.
+- Frontend:
+  - New `quickMatchModePref` in `settingsStore` (default `"both"`).
+  - `QueueContext.joinCasual` reads the setting and forwards it in the POST body.
+  - `Lobby.jsx` renders the segmented control (comic-book pow styling matching the existing buttons — red pip = active). Disabled while a queue is live so a mid-queue swap can't corrupt state. `data-testid`s: `lobby-quickmatch-mode-picker`, `lobby-quickmatch-mode-{ffa,tdm,both}`.
+- 🧪 8 new regression tests in `tests/test_quickmatch_mode_pref.py` (truth table, pair resolution, bot-fill resolution, Pydantic model default, matchmaker skip on incompatible pair). Full suite 62/62 green.
+- Files changed: `/app/backend/server.py` (`QueueFlagsIn`, `_casual_mode_prefs_compatible`, `_resolve_casual_match_mode`, casual queue POST, matchmaker pair-find + bot-fill); `/app/frontend/src/game/settings.js` (new default); `/app/frontend/src/context/QueueContext.jsx` (forward mode_pref in POST); `/app/frontend/src/pages/Lobby.jsx` (segmented control UI + subscribe-driven state).
+
+
 
 
 ### P1

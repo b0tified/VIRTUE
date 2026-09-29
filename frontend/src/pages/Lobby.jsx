@@ -102,6 +102,19 @@ export default function Lobby() {
   // it doesn't nag users who've made an informed choice; toggling
   // Mobile Only ON also hides it because the condition no longer holds.
   const [mobileOnlyPref, setMobileOnlyPref] = useState(() => !!settingsStore.get().mobileOnlyMatchmaking);
+  // Quick-Match mode preference — "ffa" | "tdm" | "both". Rendered as a
+  // 3-way segmented control above the Quick Match button. Persisted via
+  // settingsStore + forwarded to the casual queue POST so the server-
+  // side matchmaker pairs / bot-fills into the picked mode.
+  const [qmModePref, setQmModePref] = useState(() => {
+    const p = (settingsStore.get().quickMatchModePref || "both").toLowerCase();
+    return p === "ffa" || p === "tdm" ? p : "both";
+  });
+  const setQuickMatchModePref = useCallback((next) => {
+    const norm = next === "ffa" || next === "tdm" ? next : "both";
+    setQmModePref(norm);
+    try { settingsStore.set({ quickMatchModePref: norm }); } catch {}
+  }, []);
   const [crossplayDismissed, setCrossplayDismissed] = useState(() => {
     try { return sessionStorage.getItem("virtue_crossplay_dismissed") === "1"; } catch { return false; }
   });
@@ -109,7 +122,11 @@ export default function Lobby() {
     // Track the mobile-only setting via the store's subscribe fanout so
     // flipping the toggle inside the Settings modal instantly hides the
     // banner without a re-mount.
-    const unsub = settingsStore.subscribe((s) => setMobileOnlyPref(!!s.mobileOnlyMatchmaking));
+    const unsub = settingsStore.subscribe((s) => {
+      setMobileOnlyPref(!!s.mobileOnlyMatchmaking);
+      const p = (s.quickMatchModePref || "both").toLowerCase();
+      setQmModePref(p === "ffa" || p === "tdm" ? p : "both");
+    });
     return () => { try { unsub(); } catch {} };
   }, []);
   const showCrossplayBanner =
@@ -1041,6 +1058,44 @@ export default function Lobby() {
                 {casualInQueue ? `MATCHING...` : "QUICK MATCH"}
               </span>
             </button>
+            {/* Quick-Match mode picker — 3-way segmented control so
+                players can pin FFA-only, TDM-only, or leave the classic
+                50/50 roll. Preference persists via settingsStore and is
+                forwarded to /queue/casual. Disabled while a queue is
+                already active so a mid-queue swap can't corrupt state. */}
+            <div
+              className="flex items-stretch gap-1 w-full rounded-md border-2 border-black bg-white/90 p-1"
+              data-testid="lobby-quickmatch-mode-picker"
+              aria-label="Quick Match mode"
+            >
+              {[
+                { key: "both", label: "BOTH", title: "FFA or TDM — server rolls per match" },
+                { key: "ffa",  label: "FFA",  title: "Free-for-all only" },
+                { key: "tdm",  label: "TDM",  title: "Team Deathmatch only" },
+              ].map(({ key, label, title }) => {
+                const active = qmModePref === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={casualInQueue}
+                    onClick={() => setQuickMatchModePref(key)}
+                    title={title}
+                    data-testid={`lobby-quickmatch-mode-${key}`}
+                    aria-pressed={active}
+                    className={
+                      "flex-1 rounded-sm border-2 border-black px-2 py-1 text-xs font-black uppercase tracking-wide transition-colors " +
+                      (active
+                        ? "bg-[#E62429] text-white shadow-[2px_2px_0_#000]"
+                        : "bg-white text-black hover:bg-[#F5D400] hover:text-black") +
+                      " disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
               disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue || bigffaInQueue}

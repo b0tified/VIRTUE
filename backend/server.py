@@ -7264,6 +7264,47 @@ class QueueFlagsIn(BaseModel):
     that don't send a body."""
     is_mobile: bool = False
     mobile_only: bool = False
+    # Quick-Match mode preference — casual queue only. "both" (default)
+    # keeps the classic 50/50 TDM roll; "ffa" and "tdm" pin the caller
+    # to that mode. Head-to-head matchmaking only pairs entries whose
+    # preferences agree (both="wildcard", specific+specific must match).
+    # Bot-fill honours the caller's exact preference. Ranked + BigFFA
+    # ignore this field.
+    mode_pref: str = "both"
+
+
+def _casual_mode_prefs_compatible(a: dict, b: dict) -> bool:
+    """Two casual queue entries can be paired iff their `mode_pref`
+    values are compatible: anything pairs with `both`; `ffa` pairs
+    only with `ffa` or `both`; `tdm` pairs only with `tdm` or `both`.
+    Missing key defaults to `both` for legacy entries."""
+    pa = (a.get("mode_pref") or "both").lower()
+    pb = (b.get("mode_pref") or "both").lower()
+    if pa == "both" or pb == "both":
+        return True
+    return pa == pb
+
+
+def _resolve_casual_match_mode(a: dict, b: Optional[dict] = None) -> bool:
+    """Decide TDM (True) vs FFA (False) for a casual match.
+      * Solo bot-fill (b is None): honour `a.mode_pref` — "ffa" → False,
+        "tdm" → True, "both" → 50/50 roll.
+      * Head-to-head pair: if either side pins a specific mode, use it
+        (guaranteed compatible by `_casual_mode_prefs_compatible`);
+        both `both` → 50/50 roll."""
+    pa = (a.get("mode_pref") or "both").lower()
+    if b is None:
+        if pa == "ffa":
+            return False
+        if pa == "tdm":
+            return True
+        return random.random() < TDM_QUICK_MATCH_ROLL
+    pb = (b.get("mode_pref") or "both").lower()
+    if pa == "ffa" or pb == "ffa":
+        return False
+    if pa == "tdm" or pb == "tdm":
+        return True
+    return random.random() < TDM_QUICK_MATCH_ROLL
 MATCHED_USERS: Dict[str, dict] = {}  # user_id -> {match_id, tier}
 
 # Rolling window (last 10) of how long each match took to fill, per tier.
@@ -7369,7 +7410,10 @@ async def matchmaker_loop():
                     pair = None
                     for i in range(len(CASUAL_QUEUE)):
                         for j in range(i + 1, len(CASUAL_QUEUE)):
-                            if _platforms_compatible(CASUAL_QUEUE[i], CASUAL_QUEUE[j]):
+                            if (
+                                _platforms_compatible(CASUAL_QUEUE[i], CASUAL_QUEUE[j])
+                                and _casual_mode_prefs_compatible(CASUAL_QUEUE[i], CASUAL_QUEUE[j])
+                            ):
                                 pair = (i, j)
                                 break
                         if pair:
@@ -7382,15 +7426,18 @@ async def matchmaker_loop():
                     mid = uuid.uuid4().hex[:10]
                     a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
                     b_uids = b.get("user_ids") or ([b["user_id"]] if b.get("user_id") else [])
-                    # Roll FFA vs TDM ONCE per match so both paired
-                    # players land in the same shared room.
-                    match_tdm = random.random() < TDM_QUICK_MATCH_ROLL
+                    # Choose FFA vs TDM ONCE per match so both paired
+                    # players land in the same shared room. Honours
+                    # each side's mode_pref (both/both → 50/50 roll).
+                    match_tdm = _resolve_casual_match_mode(a, b)
                     for uid in a_uids + b_uids:
                         MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "tdm": match_tdm}
                     logger.info(
-                        "Casual matched entryA=%s vs entryB=%s mid=%s tdm=%s",
+                        "Casual matched entryA=%s (pref=%s) vs entryB=%s (pref=%s) mid=%s tdm=%s",
                         ",".join(a.get("usernames") or [a.get("username", "?")]),
+                        a.get("mode_pref", "both"),
                         ",".join(b.get("usernames") or [b.get("username", "?")]),
+                        b.get("mode_pref", "both"),
                         mid, match_tdm,
                     )
                 while CASUAL_QUEUE and (now - CASUAL_QUEUE[0]["joined_at"]) >= CASUAL_BOT_FILL_SEC:
@@ -7398,14 +7445,16 @@ async def matchmaker_loop():
                     mid = uuid.uuid4().hex[:10]
                     a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
                     shared_key = a_uids[0] if a_uids else None
-                    # Solo bot-fill also rolls TDM/FFA so the bot room
-                    # variety matches the head-to-head experience.
-                    bot_tdm = random.random() < TDM_QUICK_MATCH_ROLL
+                    # Solo bot-fill honours mode_pref: ffa/tdm forces
+                    # that mode; both rolls 50/50 so the bot room feels
+                    # exactly like head-to-head casual.
+                    bot_tdm = _resolve_casual_match_mode(a, None)
                     for uid in a_uids:
                         MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "vs_bot": True, "room_key": shared_key, "tdm": bot_tdm}
                     logger.info(
-                        "Casual bot-filled entry=%s (%d users) after %ds queue tdm=%s",
+                        "Casual bot-filled entry=%s (pref=%s, %d users) after %ds queue tdm=%s",
                         ",".join(a.get("usernames") or [a.get("username", "?")]),
+                        a.get("mode_pref", "both"),
                         len(a_uids), int(CASUAL_BOT_FILL_SEC), bot_tdm,
                     )
                 # BigFFA queue — everyone lands in the shared `bigffa_room`.
@@ -8320,6 +8369,14 @@ async def queue_casual_join(
             # Platform flags — see `_platforms_compatible`.
             "is_mobile": bool(payload.is_mobile) if payload else False,
             "mobile_only": bool(payload.mobile_only) if payload else False,
+            # Quick-Match mode preference — "ffa", "tdm" or "both"
+            # (default). Only pairs with compatible entries; see
+            # `_casual_mode_prefs_compatible` for the truth table.
+            "mode_pref": (
+                (payload.mode_pref or "both").lower()
+                if payload and payload.mode_pref in ("ffa", "tdm", "both")
+                else "both"
+            ),
         })
     return {
         "ok": True,
