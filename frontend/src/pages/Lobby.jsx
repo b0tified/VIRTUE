@@ -148,7 +148,7 @@ export default function Lobby() {
   };
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
-  const RANKED_MIN_LEVEL = 5;
+  const RANKED_MIN_LEVEL = 2;
   // Mirrors RANKED_LEAVE_RP_LOSS in server.py — for the tooltip copy.
   const RANKED_LEAVE_RP_LOSS = 30;
   const userLevel = user?.level ?? 1;

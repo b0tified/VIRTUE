@@ -8101,7 +8101,7 @@ async def season_status():
     return season_payload(doc)
 
 
-RANKED_MIN_LEVEL = 5
+RANKED_MIN_LEVEL = 2
 
 
 async def _party_for_user(user_id: str) -> Optional[dict]:
