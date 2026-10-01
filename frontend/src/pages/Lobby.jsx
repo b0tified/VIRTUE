@@ -1664,7 +1664,7 @@ const RANK_TIERS = [
   { name: "BRONZE", min: 0, color: "#E67E22" },
   { name: "SILVER", min: 300, color: "#B8C4CC" },
   { name: "GOLD", min: 600, color: "#F1C40F" },
-  { name: "PLATINUM", min: 900, color: "#A3E4B8" },
+  { name: "PLATINUM", min: 900, color: "#8FD3F4" },
   // Every tier is 300 RP wide (100 per division: III / II / I).
   { name: "EMERALD", min: 1200, color: "#2ECC71" },
   { name: "DIAMOND", min: 1500, color: "#4A90E2" },

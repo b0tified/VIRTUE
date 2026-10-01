@@ -14,7 +14,7 @@ export const RANK_COLORS = [
   "#E67E22", // Bronze — warm orange (matches reference art)
   "#B8C4CC", // Silver — cool gray
   "#F1C40F", // Gold — bright yellow-gold
-  "#A3E4B8", // Platinum — mint green
+  "#8FD3F4", // Platinum — light sky blue
   "#2ECC71", // Emerald — bright green
   "#4A90E2", // Diamond — cornflower blue
   "#7BE04C", // Master — lime green

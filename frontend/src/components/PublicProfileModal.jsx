@@ -11,7 +11,7 @@ import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
 import { useAuth } from "@/context/AuthContext";
 import { ReportPlayerModal } from "@/components/Hud";
 
-const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#A3E4B8", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
+const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
 const MODE_META = {
   ranked:  { label: "RANKED",  color: "#0055FF", Icon: Trophy },
