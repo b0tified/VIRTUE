@@ -4296,9 +4296,16 @@ class GameRoom:
             if _custom_rp is not None:
                 pts = int(_custom_rp)
             elif disguise_tier_idx is None:
-                # Casual / generic disguise — keep the original low-rank look so
-                # quick-match bots blend in with new players.
-                pts = random.randint(0, 850)
+                # Casual / generic disguise. Triangular(0, 2200, 400)
+                # keeps most Quick Match bots in Bronze-Silver (mode
+                # near 400 RP) so lobbies still blend in with new
+                # players, but ~11% of bots roll Diamond+ and ~33% roll
+                # Platinum+. Those higher-rank bots pick up advanced
+                # movement in `_update_bots` (strafe/cover/lead/juke)
+                # so their displayed rank matches how they actually
+                # play — user feedback: "higher rank bots should play
+                # like higher rank".
+                pts = int(random.triangular(0, 2200, 400))
             elif disguise_rank_points is not None:
                 # Player's exact-RP disguise. Each bot picks a value within
                 # ±20 of the queueing player so the lobby looks like a
@@ -5790,6 +5797,21 @@ class GameRoom:
             # `spawn_bot`; for undisguised ranked bots it defaults to
             # 0 so this whole block is a no-op there.
             elite = smart and int(getattr(bot, "rank_tier", 0) or 0) >= 5
+            # ────────────────────────────────────────────────────────────
+            # Rank-driven MOVEMENT smarts (per user: "higher rank bots
+            # should play better movement such as strafing and cover").
+            # Decoupled from `smart` / `self.is_ranked` so a disguised
+            # Platinum/Diamond bot in Quick Match plays how its banner
+            # promises. We only unlock movement behaviours here — aim,
+            # fire-rate, damage all stay difficulty-gated so Quick Match
+            # bots don't suddenly aimbot. `mv_smart` turns on strafe +
+            # juke breaks (Platinum tier 3+); `mv_elite` adds cover-
+            # seeking + lead prediction + opportunistic jumps (Diamond
+            # tier 5+).
+            # ────────────────────────────────────────────────────────────
+            rank_tier = int(getattr(bot, "rank_tier", 0) or 0)
+            mv_smart = smart or rank_tier >= 3
+            mv_elite = elite or rank_tier >= 5
 
             # --- Target selection ---------------------------------------------------
             # Smart bots lock onto a target for 1.5s before re-evaluating,
@@ -5889,21 +5911,25 @@ class GameRoom:
 
             # --- Aim (with optional lead) -------------------------------------------
             tx, tz, ty = target.x, target.z, target.y - 0.2
-            # Smart bots lead the target based on its velocity over the
-            # last frame interval. Bullets are effectively instant so the
-            # lead is small but enough to punish strafing players.
-            # Bumped lead constant 0.12→0.18 and cap 1.5→2.0 — high-tier
-            # bots now lead by ~270ms of motion (was ~180ms), making it
-            # very hard to dodge with sustained strafe.
-            if smart and bot.bot_target_prev_pos and bot.bot_target_prev_ts > 0:
+            # Lead the target based on its velocity over the last frame
+            # interval. Bullets are effectively instant so the lead is
+            # small but enough to punish strafing players. Enabled for
+            # any bot with `mv_smart` (ranked smart OR Platinum+ disguise
+            # in Quick Match) so high-rank Quick Match bots don't miss
+            # strafing targets.
+            if mv_smart and bot.bot_target_prev_pos and bot.bot_target_prev_ts > 0:
                 ddt = max(0.05, now_s - bot.bot_target_prev_ts)
                 vx_t = (target.x - bot.bot_target_prev_pos[0]) / ddt
                 vz_t = (target.z - bot.bot_target_prev_pos[2]) / ddt
-                # Elite (Diamond+) bots lead ~50% further, punishing
-                # sustained strafing much harder without giving them
-                # extra damage or hitscan tightness.
-                lead_scale = 0.27 if elite else 0.18
-                lead_t = lead_scale * min(2.0, (difficulty - 1.4))
+                # Elite (Diamond+ by rank OR difficulty) bots lead ~50%
+                # further, punishing sustained strafing much harder
+                # without giving them extra damage or hitscan tightness.
+                lead_scale = 0.27 if mv_elite else 0.18
+                # Clamp difficulty contribution so lead doesn't go
+                # negative for low-difficulty Quick Match bots that
+                # earned mv_smart via rank alone (difficulty 0.9-1.2).
+                _diff_term = max(0.1, min(2.0, (difficulty - 0.8)))
+                lead_t = lead_scale * _diff_term
                 tx = target.x + vx_t * lead_t
                 tz = target.z + vz_t * lead_t
             bot.bot_target_prev_pos = (target.x, target.y, target.z)
@@ -5920,18 +5946,21 @@ class GameRoom:
 
             # --- Movement -----------------------------------------------------------
             bot.bot_strafe_t += dt
-            move_speed = (5.0 if smart else 4.0) * dt
+            move_speed = (5.0 if mv_smart else 4.0) * dt
             mx_, mz_ = 0.0, 0.0
-            # Cover-seeking: smart bots head behind the nearest obstacle to
-            # break LOS when they're hurt or just took damage. They peek out
-            # to shoot, then duck back. Falls back to the normal range
-            # control when no cover is found.
+            # Cover-seeking: higher-rank bots (mv_elite = Diamond+ by
+            # rank OR ranked elite by difficulty) head behind the
+            # nearest obstacle to break LOS when they're hurt or just
+            # took damage. They peek out to shoot, then duck back.
+            # Falls back to the normal range control when no cover is
+            # found. Decoupled from `smart` so a disguised Diamond bot
+            # in Quick Match plays cover like a real Diamond.
             seeking_cover = False
             # Elite (Diamond+) bots start looking for cover at a
             # higher HP threshold (65 vs 45) — they preserve HP more
             # strategically instead of trading shots to the death.
-            cover_hp = 65 if elite else 45
-            if smart and (bot.hp < cover_hp or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
+            cover_hp = 65 if mv_elite else 45
+            if mv_elite and (bot.hp < cover_hp or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
                 best_cov = None
                 best_cov_d = 1e9
                 for ob in self.arena["obstacles"]:
@@ -5961,7 +5990,7 @@ class GameRoom:
                         seeking_cover = True
             # Smart bots prefer mid-close range (10-14m) for the AK; old
             # value 14 made them too easy to long-poke from corners.
-            desired = 12.0 if smart else 14.0
+            desired = 12.0 if mv_smart else 14.0
             if not seeking_cover:
                 if dist > desired + 2:
                     if dist > 0.01:
@@ -5969,25 +5998,30 @@ class GameRoom:
                 elif dist < desired - 4:
                     if dist > 0.01:
                         mx_, mz_ = -dx / dist, -dz / dist
-            # Strafe — smart bots strafe faster and less predictably.
-            # Buffed: cover-aware ranked bots strafe harder (1.2 amp / 2.6 hz)
-            # so they're never sitting ducks even while peeking from cover.
-            strafe_freq = 2.6 if smart else 1.4
-            strafe_amp  = 1.15 if smart else 0.7
-            # Dodge-on-damage: if a smart bot just took damage in the
+            # Strafe — higher-rank bots strafe faster and less
+            # predictably. Buffed: cover-aware ranked/high-rank bots
+            # strafe harder (1.2 amp / 2.6 hz) so they're never sitting
+            # ducks even while peeking from cover. `mv_smart` covers
+            # both ranked smart difficulty AND Quick Match bots
+            # disguised as Platinum or higher.
+            strafe_freq = 2.6 if mv_smart else 1.4
+            strafe_amp  = 1.15 if mv_smart else 0.7
+            # Dodge-on-damage: if a smart/high-rank bot just took damage in the
             # last ~250ms, briefly multiply strafe amplitude so it lunges
             # out of the line of fire instead of trading shots in place.
-            if smart and bot.last_damage_at and (now_s - bot.last_damage_at) < 0.25:
+            if mv_smart and bot.last_damage_at and (now_s - bot.last_damage_at) < 0.25:
                 strafe_amp *= 2.2
             # While actively repositioning to cover, dampen the strafe so the
             # bot actually reaches its cover point instead of oscillating.
             if seeking_cover:
                 strafe_amp *= 0.35
-            # Human-like juke: every 1.5-3s ranked smart bots flip strafe
-            # phase by a random offset so the side-to-side pattern doesn't
-            # read as a pure sine wave. Real players don't strafe in a
-            # metronome — they fake one way then snap the other.
-            if smart and self.is_ranked:
+            # Human-like juke: every 1.5-3s high-rank smart bots flip
+            # strafe phase by a random offset so the side-to-side
+            # pattern doesn't read as a pure sine wave. Real players
+            # don't strafe in a metronome — they fake one way then
+            # snap the other. Decoupled from `self.is_ranked` so Quick
+            # Match Diamond bots juke too.
+            if mv_smart:
                 if now_ms >= bot._juke_next_ms:
                     bot._juke_phase += random.uniform(math.pi * 0.6, math.pi * 1.4)
                     bot._juke_next_ms = now_ms + random.randint(1500, 3000)
@@ -6045,13 +6079,15 @@ class GameRoom:
                 if bot.invuln_until > now_s and move_speed > 0:
                     bot.invuln_until = 0.0
 
-            # --- Human-like jumping (ranked smart bots only) ----------------------
+            # --- Human-like jumping (high-rank / ranked smart bots) -----------
             # Players bunny-hop and juke-jump constantly in 1v1s — make
-            # ranked bots do the same. Jump arc duration ~650ms, peak
+            # high-rank bots do the same. Jump arc duration ~650ms, peak
             # height ~1.2m. Cadence: every 1-3s when LOS is hot, longer
             # when out of range. A reactive jump also triggers when the
-            # bot takes a hit (to dodge follow-up rounds).
-            if smart and self.is_ranked and bot.alive:
+            # bot takes a hit (to dodge follow-up rounds). Unlocked for
+            # Diamond+ disguised bots in Quick Match too — their rank
+            # banner implies "endgame player", so they should bunny-hop.
+            if mv_elite and bot.alive:
                 in_jump = bot._jump_start_ms > 0 and (now_ms - bot._jump_start_ms) < 650
                 if in_jump:
                     # Parabolic arc — sin gives a smooth up-and-down with no
