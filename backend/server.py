@@ -3872,10 +3872,14 @@ class Player:
             self.banner_icon = 0
             self.banner_color = 0
             self.banner_animated = False
-            # Bots show a random level 5-11 on their banner so they read
-            # like established players, not fresh smurfs. Picked once at
-            # spawn time and stays stable for the match.
-            self.level = random.randint(5, 11)
+            # Quick Match / casual bots show a random level 15-90 on
+            # their banner so they look like a wide spread of established
+            # players (fresh grinders alongside endgame whales), not a
+            # row of fresh accounts. Picked once at spawn time and stays
+            # stable for the match. Ranked bots override this via
+            # `_reroll_ranked_bots` with a tier-aligned narrower band so
+            # Diamond+ lobbies stay visually consistent with their tier.
+            self.level = random.randint(15, 90)
             # Bots roll from the full skin catalog (BOT_SKIN_POOL is
             # rarity-weighted so commons appear ~6x, rares ~4x, epics
             # ~2x, legendaries ~1x). Result: bot lobbies now show off
