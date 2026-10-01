@@ -5946,21 +5946,26 @@ class GameRoom:
 
             # --- Movement -----------------------------------------------------------
             bot.bot_strafe_t += dt
-            move_speed = (5.0 if mv_smart else 4.0) * dt
+            # Base move speed. Smart/high-rank: 5.0. Diamond+ in RANKED
+            # mode get an extra 15% speed on top so endgame ranked
+            # lobbies feel distinctly more mobile than their Quick Match
+            # equivalents — matches player expectation that high-rank
+            # ranked = sweatiest fights in the game.
+            _apex_ranked = mv_elite and self.is_ranked
+            _base_mv = 5.75 if _apex_ranked else (5.0 if mv_smart else 4.0)
+            move_speed = _base_mv * dt
             mx_, mz_ = 0.0, 0.0
-            # Cover-seeking: higher-rank bots (mv_elite = Diamond+ by
-            # rank OR ranked elite by difficulty) head behind the
-            # nearest obstacle to break LOS when they're hurt or just
-            # took damage. They peek out to shoot, then duck back.
-            # Falls back to the normal range control when no cover is
-            # found. Decoupled from `smart` so a disguised Diamond bot
-            # in Quick Match plays cover like a real Diamond.
+            # Cover-seeking: any smart ranked bot OR any mv_elite (Diamond+
+            # by rank, in any mode) heads behind the nearest obstacle to
+            # break LOS when hurt or just took damage. They peek out to
+            # shoot, then duck back. Falls back to normal range control
+            # when no cover is found.
             seeking_cover = False
             # Elite (Diamond+) bots start looking for cover at a
             # higher HP threshold (65 vs 45) — they preserve HP more
             # strategically instead of trading shots to the death.
             cover_hp = 65 if mv_elite else 45
-            if mv_elite and (bot.hp < cover_hp or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
+            if (mv_elite or smart) and (bot.hp < cover_hp or (bot.last_damage_at and (now_s - bot.last_damage_at) < 0.6)):
                 best_cov = None
                 best_cov_d = 1e9
                 for ob in self.arena["obstacles"]:
@@ -6003,9 +6008,18 @@ class GameRoom:
             # strafe harder (1.2 amp / 2.6 hz) so they're never sitting
             # ducks even while peeking from cover. `mv_smart` covers
             # both ranked smart difficulty AND Quick Match bots
-            # disguised as Platinum or higher.
-            strafe_freq = 2.6 if mv_smart else 1.4
-            strafe_amp  = 1.15 if mv_smart else 0.7
+            # disguised as Platinum or higher. Apex (Diamond+ ranked)
+            # strafes even wider so endgame ranked fights read as
+            # frantic — amp +25%, freq +10%.
+            if _apex_ranked:
+                strafe_freq = 2.85
+                strafe_amp = 1.45
+            elif mv_smart:
+                strafe_freq = 2.6
+                strafe_amp = 1.15
+            else:
+                strafe_freq = 1.4
+                strafe_amp = 0.7
             # Dodge-on-damage: if a smart/high-rank bot just took damage in the
             # last ~250ms, briefly multiply strafe amplitude so it lunges
             # out of the line of fire instead of trading shots in place.
@@ -6081,13 +6095,15 @@ class GameRoom:
 
             # --- Human-like jumping (high-rank / ranked smart bots) -----------
             # Players bunny-hop and juke-jump constantly in 1v1s — make
-            # high-rank bots do the same. Jump arc duration ~650ms, peak
-            # height ~1.2m. Cadence: every 1-3s when LOS is hot, longer
-            # when out of range. A reactive jump also triggers when the
-            # bot takes a hit (to dodge follow-up rounds). Unlocked for
-            # Diamond+ disguised bots in Quick Match too — their rank
-            # banner implies "endgame player", so they should bunny-hop.
-            if mv_elite and bot.alive:
+            # smart ranked bots AND all Diamond+ bots do the same. Jump
+            # arc duration ~650ms, peak height ~1.2m. Cadence: every
+            # 1-3s when LOS is hot, longer when out of range. A reactive
+            # jump also triggers when the bot takes a hit (to dodge
+            # follow-up rounds). High-rank RANKED bots (Diamond+ in
+            # ranked mode specifically) get a tighter 600-1500ms cadence
+            # so endgame ranked fights feel visibly more frantic than
+            # Quick Match equivalents.
+            if (mv_elite or smart) and bot.alive:
                 in_jump = bot._jump_start_ms > 0 and (now_ms - bot._jump_start_ms) < 650
                 if in_jump:
                     # Parabolic arc — sin gives a smooth up-and-down with no
@@ -6109,7 +6125,12 @@ class GameRoom:
                     if just_hit or now_ms >= bot._jump_next_ms:
                         if just_hit or dist < 18.0:
                             bot._jump_start_ms = now_ms
-                            bot._jump_next_ms = now_ms + random.randint(900, 2400)
+                            if _apex_ranked:
+                                # Diamond+ in ranked mode — bunny-hop
+                                # noticeably faster than everyone else.
+                                bot._jump_next_ms = now_ms + random.randint(600, 1500)
+                            else:
+                                bot._jump_next_ms = now_ms + random.randint(900, 2400)
                         else:
                             # Out of effective range — just push the next
                             # window forward without jumping so we don't
