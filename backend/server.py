@@ -6595,24 +6595,38 @@ class GameRoom:
                     "placement_matches_total": PLACEMENT_MATCHES,
                 })
             # Append bot rows so the match-end overlay shows the full lobby
-            # in ranked mode too. Bots' RP is purely cosmetic for the
-            # scoreboard — they don't have a real account, but we compute
-            # a plausible delta from their disguised tier + placement so
-            # the scoreboard reads like a real ranked lobby (every line
-            # shows +N / -N, not just the player).
+            # in ranked mode too. Bots don't have real accounts, but we
+            # run them through the SAME performance-scaled RP delta
+            # formula a real player would get (base placement curve +
+            # perf term + Master/GM+ tax + −60/+35 clamp) so every
+            # scoreboard line shows a plausible +N / −N and a plausible
+            # `new_points`, not just the placement-curve base. Bots never
+            # go through placement matches, so we always run the
+            # non-placement branch.
             for p in all_participants:
                 if not p.is_bot:
                     continue
                 bot_placement = placement_of.get(p.id, total_with_bots)
                 bot_tier_idx = int(getattr(p, "rank_tier", 0) or 0)
                 bot_tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
-                # Include the disguised division so the end-match
-                # scoreboard renders "DIAMOND II" / "GOLD III" for bots
-                # instead of just "DIAMOND" / "GOLD" — matches the
-                # in-match leaderboard widget and real-player rows.
-                bot_disguise_rp = int(getattr(p, "disguise_rank_points", 0) or 0)
-                bot_tier_division = rank_division_for_points(bot_disguise_rp, bot_tier_idx)
-                bot_delta = compute_rp_delta(bot_placement, bot_tier_idx)
+                # Treat the disguised RP as the bot's "current" so the
+                # match-end row reads like a real account's: it already
+                # had `bot_cur` RP before the match, finished Nth place,
+                # and gained/lost `bot_delta` → `bot_new_points`.
+                bot_cur = int(getattr(p, "disguise_rank_points", 0) or 0)
+                bot_base_delta = compute_rp_delta(bot_placement, bot_tier_idx)
+                bot_raw_perf = p.kills * 3 - p.deaths * 5
+                if bot_tier_idx >= MASTERS_TIER_IDX + 1:
+                    bot_perf_delta = int(bot_raw_perf * 0.4) - 20
+                elif bot_tier_idx >= MASTERS_TIER_IDX:
+                    bot_perf_delta = int(bot_raw_perf * 0.55) - 15
+                else:
+                    bot_perf_delta = bot_raw_perf
+                bot_delta = max(-60, min(35, bot_base_delta + bot_perf_delta))
+                bot_new_points = max(0, bot_cur + bot_delta)
+                bot_new_tier_idx, bot_new_tier_name = rank_for_points(bot_new_points)
+                bot_new_division = rank_division_for_points(bot_new_points, bot_new_tier_idx)
+                bot_prev_division = rank_division_for_points(bot_cur, bot_tier_idx)
                 placements.append({
                     "id": p.id,
                     "user_id": "",
@@ -6620,15 +6634,15 @@ class GameRoom:
                     "kills": p.kills,
                     "deaths": p.deaths,
                     "delta": bot_delta,
-                    "base_delta": bot_delta,
-                    "new_points": 0,
-                    "rank_tier": bot_tier_idx,
-                    "rank_name": bot_tier_name,
-                    "rank_division": bot_tier_division,
+                    "base_delta": bot_base_delta,
+                    "new_points": bot_new_points,
+                    "rank_tier": bot_new_tier_idx,
+                    "rank_name": bot_new_tier_name,
+                    "rank_division": bot_new_division,
                     "prev_rank_tier": bot_tier_idx,
                     "prev_rank_name": bot_tier_name,
-                    "prev_rank_division": bot_tier_division,
-                    "rank_change": 0,
+                    "prev_rank_division": bot_prev_division,
+                    "rank_change": bot_new_tier_idx - bot_tier_idx,
                     "is_placement": False,
                     "placement_match_number": None,
                     "placement_matches_total": PLACEMENT_MATCHES,
