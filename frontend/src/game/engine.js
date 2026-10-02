@@ -802,23 +802,10 @@ export class GameEngine {
     this.scene.add(this._cityDecoGroup);
     this.obstacles.forEach((ob) => this._buildBuilding(ob));
 
-    // Center floating "VIRTUE" sign
-    const signCanvas = document.createElement("canvas");
-    signCanvas.width = 256; signCanvas.height = 96;
-    const sc = signCanvas.getContext("2d");
-    sc.fillStyle = "#FFD700"; sc.fillRect(0, 0, 256, 96);
-    sc.strokeStyle = "#0A0A0A"; sc.lineWidth = 8; sc.strokeRect(4, 4, 248, 88);
-    sc.font = "bold 64px Bangers, Anton, sans-serif";
-    sc.fillStyle = "#E62429"; sc.textAlign = "center"; sc.textBaseline = "middle";
-    sc.strokeStyle = "#0A0A0A"; sc.lineWidth = 4;
-    sc.strokeText("VIRTUE", 128, 50);
-    sc.fillText("VIRTUE", 128, 50);
-    const signTex = new THREE.CanvasTexture(signCanvas);
-    signTex.colorSpace = THREE.SRGBColorSpace;
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 3), new THREE.MeshBasicMaterial({ map: signTex, transparent: true, side: THREE.DoubleSide }));
-    sign.position.set(0, 11, 0);
-    this._cityDecoGroup.add(sign);
-    this._sign = sign;
+    // Floating "VIRTUE" center sign removed per user request — the
+    // billboard previously hovered over spawn on every outdoor map and
+    // read as debug HUD leftover. The rest of _cityDecoGroup (roads,
+    // sidewalks, props, decals, statue) still toggles with the map.
 
     // Sky dome — multi-stop atmospheric gradient (zenith blue → bright
     // mid-sky → soft horizon haze → warm low-light glow). Painted onto a
@@ -1313,9 +1300,9 @@ export class GameEngine {
     });
     this.obstacles = colored;
     // Toggle the city-decoration group (roads, driveways, sidewalks,
-    // hydrants, trees, benches, lampposts, VIRTUE sign, central statue,
-    // POW/BAM spawn decals) OFF when the map is a fully indoor arena
-    // like HOTEL — outdoor city dressing looks wrong on a marble lobby
+    // hydrants, trees, benches, lampposts, central statue, POW/BAM
+    // spawn decals) OFF when the map is a fully indoor arena like
+    // HOTEL — outdoor city dressing looks wrong on a marble lobby
     // floor. Restored for every other (outdoor) map.
     if (this._cityDecoGroup) {
       this._cityDecoGroup.visible = arena.map_id !== "hotel";
@@ -5946,11 +5933,7 @@ export class GameEngine {
       this._footAcc = 0;
     }
 
-    // Floating sign
-    if (this._sign) {
-      this._sign.position.y = 11 + Math.sin(performance.now() / 600) * 0.4;
-      this._sign.rotation.y = Math.sin(performance.now() / 1200) * 0.2;
-    }
+    // Floating sign animation removed with the sign itself.
 
     // Camera
     this.camera.position.copy(this.position);
