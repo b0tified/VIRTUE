@@ -112,8 +112,13 @@ export default function RankUpOverlay({ open, prevTier, newTier, rpDelta, newPoi
       data-phase={phase}
       data-kind={kind}
       style={{
+        // Fully opaque background — per user: "don't have it be transparent".
+        // Was a translucent radial-gradient (rgba(0,0,0,0.55→0.92)) which let
+        // the underlying lobby/scoreboard bleed through. Solid dark backdrop
+        // with a subtle radial accent keeps the comic-pop vignette feel
+        // without any see-through.
         background:
-          "radial-gradient(circle at 50% 40%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.92) 70%)",
+          `radial-gradient(circle at 50% 40%, #1a1a1a 0%, #050505 70%)`,
         animation: "rankup-fade-in 0.4s ease-out both",
       }}
     >

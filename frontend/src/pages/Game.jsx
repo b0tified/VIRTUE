@@ -13,7 +13,6 @@ import TouchControls from "@/components/TouchControls";
 import Chat from "@/components/Chat";
 import SettingsModal from "@/components/SettingsModal";
 import FriendsModal from "@/components/FriendsModal";
-import RankUpOverlay from "@/components/RankUpOverlay";
 import RespawnOverlay from "@/components/RespawnOverlay";
 import DeathOverlay from "@/components/DeathOverlay";
 import { useQueue } from "@/context/QueueContext";
@@ -99,7 +98,6 @@ export default function Game() {
   // row sets `reportTarget` which opens ReportPlayerModal.
   const [showReportPicker, setShowReportPicker] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
-  const [rankUp, setRankUp] = useState(null); // { prevTier, newTier, rpDelta, newPoints }
   // Timestamp of the last respawn — used to (re)trigger RespawnOverlay.
   const [respawnAt, setRespawnAt] = useState(null);
   // Timestamp of the last local death — used to (re)trigger DeathOverlay.
@@ -421,7 +419,12 @@ export default function Game() {
         }
         if (msg.type === "match_end") {
           setHud((h) => ({ ...h, matchEnd: msg }));
-          // Find this player's placement to drive the rank-up overlay.
+          // Find this player's placement so we can persist a pending
+          // rank-up overlay payload. Overlay no longer fires IN-GAME —
+          // it only plays once the player is back on /lobby so the
+          // celebration isn't competing with the match-end scoreboard.
+          // The lobby reads `virtue.pendingRankUp` from localStorage
+          // on mount and dispatches `virtue-rankup` 600ms later.
           const youId = engineRef.current?.youId;
           const mine = (msg.placements || []).find((p) => p.id === youId);
           if (mine) {
@@ -438,12 +441,9 @@ export default function Game() {
                 newPoints: mine.new_points ?? 0,
                 kind: tierChanged ? "tier" : "division",
               };
-              setRankUp(payload);
-              // Persist so the lobby can replay the overlay when the
-              // player returns. If they hit "Back to Lobby" before the
-              // in-match overlay finishes — or if the tab navigates
-              // away too fast — the celebration would otherwise vanish
-              // silently. Lobby reads + clears this key on mount.
+              // Stash for the lobby to replay on return. No in-game
+              // overlay — intentionally silent until the player is
+              // back in the main lobby.
               try {
                 localStorage.setItem("virtue.pendingRankUp", JSON.stringify(payload));
               } catch {}
@@ -1074,22 +1074,10 @@ export default function Game() {
         />
       )}
 
-      {/* Rank-up celebration — triggered by match_end when the local player
-          gained a tier OR a sub-division this match. Auto-dismisses after 6.5s. */}
-      <RankUpOverlay
-        open={!!rankUp}
-        prevTier={rankUp?.prevTier}
-        newTier={rankUp?.newTier}
-        rpDelta={rankUp?.rpDelta}
-        newPoints={rankUp?.newPoints}
-        kind={rankUp?.kind || "tier"}
-        onClose={() => {
-          setRankUp(null);
-          // Acknowledged in-match — drop the pending payload so the
-          // lobby doesn't replay the celebration on return.
-          try { localStorage.removeItem("virtue.pendingRankUp"); } catch {}
-        }}
-      />
+      {/* Rank-up celebration is NOT shown in-game. match_end stashes a
+          `virtue.pendingRankUp` payload in localStorage; the Lobby reads
+          and dispatches it 600ms after /lobby mount so the celebration
+          plays only when the player is back on the main lobby. */}
       {/* Comic-style respawn flash, plays for ~1.1s after each respawn. */}
       <RespawnOverlay trigger={respawnAt} />
       {/* Comic K.O. burst, plays for ~1.4s when the local player dies. */}
