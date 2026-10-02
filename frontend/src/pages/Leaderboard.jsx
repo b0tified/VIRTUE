@@ -402,7 +402,7 @@ function PlayerRow({ r, i, user, delta, onProfile, onSpectate, testidPrefix }) {
       }`}
       data-testid={`${testidPrefix}-row-${i}`}
       data-you={isYou ? "true" : "false"}
-      title={`View ${r.username}'s profile`}
+      aria-label={`View ${r.username}'s profile`}
     >
       <div className="col-span-1 font-display text-2xl flex items-center gap-1">
         {MedalEl ? (
@@ -448,7 +448,7 @@ function PlayerRow({ r, i, user, delta, onProfile, onSpectate, testidPrefix }) {
             onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onSpectate && onSpectate(); } }}
             className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex items-center gap-1 hover:translate-y-[-1px] transition-transform flex-shrink-0 cursor-pointer"
             data-testid={`${testidPrefix}-spectate-${i}`}
-            title={`Spectate ${r.username}`}
+            aria-label={`Spectate ${r.username}`}
           >
             <Eye size={11} strokeWidth={3} />
             SPECTATE

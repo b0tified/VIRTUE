@@ -175,7 +175,7 @@ export default function ShopModal({ open, onClose }) {
             <div
               className="ml-auto font-anton uppercase text-[10px] tracking-widest bg-[#06A35F] text-white border-2 border-black px-2 py-1 flex items-center gap-1"
               data-testid="shop-active-boost-chip"
-              title="Active XP Boost time remaining"
+              aria-label="Active XP Boost time remaining"
             >
               <Clock size={10} strokeWidth={3} />
               2X · {formatBoostRemaining(boostsData.active_seconds_remaining)}
@@ -277,7 +277,7 @@ export function SkinCard({ skin, coins, busy, onBuy, onEquip, onPreview }) {
           onClick={(e) => { e.stopPropagation(); onPreview?.(); }}
           className="absolute top-2 right-12 z-10 font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 bg-[#0055FF] text-white border-2 border-black flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           data-testid={`shop-skin-preview-${skin.id}`}
-          title={`Preview ${skin.name} in 3D`}
+          aria-label={`Preview ${skin.name} in 3D`}
         >
           <Eye size={11} strokeWidth={3} /> 3D
         </button>
@@ -455,7 +455,7 @@ export function SkinCard({ skin, coins, busy, onBuy, onEquip, onPreview }) {
             onClick={onBuy}
             className={`btn-pow [&]:px-3 [&]:py-1.5 [&]:text-xs ${canAfford ? "bg-[#FFD700] text-black" : "bg-neutral-200 text-neutral-500"}`}
             data-testid={`shop-skin-action-${skin.id}`}
-            title={canAfford ? "Buy this skin" : "Not enough coins"}
+            aria-label={canAfford ? "Buy this skin" : "Not enough coins"}
           >
             <span className="flex items-center gap-1">
               {!canAfford && <Lock size={11} strokeWidth={3} />}
@@ -615,7 +615,7 @@ export function BoostCard({ boost, coins, busy, onBuy }) {
               : "bg-neutral-300 text-neutral-500 cursor-not-allowed")
           }
           data-testid={`shop-boost-buy-${boost.id}`}
-          title={canAfford ? "Activate this boost" : "Not enough coins"}
+          aria-label={canAfford ? "Activate this boost" : "Not enough coins"}
         >
           {canAfford ? "BUY" : (<span className="flex items-center gap-1"><Lock size={11} strokeWidth={3} /> LOCKED</span>)}
         </button>

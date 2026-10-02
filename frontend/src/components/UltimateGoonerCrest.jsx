@@ -55,7 +55,7 @@ export default function UltimateGoonerCrest({
       style={{ width: size, height: size }}
       data-testid={testid}
       data-paused={paused ? "true" : "false"}
-      title={showRank ? `Ultimate Gooner — Rank #${rank}` : "Ultimate Gooner"}
+      aria-label={showRank ? `Ultimate Gooner — Rank #${rank}` : "Ultimate Gooner"}
     >
       {/* 1. Pulsing radial halo behind everything else. */}
       <span aria-hidden className="ug-crest-halo" />

@@ -851,7 +851,7 @@ export default function Game() {
             }}
             className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs"
             data-testid="spectate-leave-button"
-            title="Stop spectating and return to lobby"
+            aria-label="Stop spectating and return to lobby"
           >
             <span className="flex items-center gap-1"><LogOut size={12} strokeWidth={3} /> LEAVE</span>
           </button>
@@ -992,7 +992,7 @@ export default function Game() {
           }}
           className="absolute top-3 right-3 z-30 btn-pow bg-black text-white [&]:px-3 [&]:py-2 [&]:text-xs"
           data-testid="game-menu-button"
-          title="Menu (ESC)"
+          aria-label="Menu (ESC)"
         >
           <span className="flex items-center gap-1"><Menu size={16} strokeWidth={3} /></span>
         </button>
@@ -1020,7 +1020,7 @@ export default function Game() {
                 onClick={() => setShowReportPicker(false)}
                 className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1"
                 data-testid="report-picker-close-btn"
-                title="Close"
+                aria-label="Close"
               >
                 <XIcon size={14} strokeWidth={3} />
               </button>
@@ -1351,7 +1351,7 @@ export function PerfCounter() {
         <span
           className="px-1.5 py-0.5 rounded bg-[#FFB000] text-black tabular-nums font-bold"
           data-testid="perf-auto-perf-chip"
-          title="Auto Performance mode is active — the engine dropped resolution and fog to boost FPS."
+          aria-label="Auto Performance mode is active — the engine dropped resolution and fog to boost FPS."
         >
           AUTO PERF
         </span>

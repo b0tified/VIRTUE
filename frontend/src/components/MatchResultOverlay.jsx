@@ -385,7 +385,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                         <span
                           className="inline-block w-2 h-4 rounded-sm border border-black"
                           style={{ background: TEAM_COLORS[p.team] || "#666" }}
-                          title={TEAM_LABELS[p.team]}
+                          aria-label={TEAM_LABELS[p.team]}
                           data-testid={`match-end-team-tag-${i}`}
                         />
                       )}
@@ -394,7 +394,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                       {p.is_placement && (
                         <span
                           className="inline-flex items-center gap-1 bg-[#9B59B6] text-white border-pow-thin px-1 text-[9px]"
-                          title={`Placement ${p.placement_match_number}/${p.placement_matches_total}`}
+                          aria-label={`Placement ${p.placement_match_number}/${p.placement_matches_total}`}
                           data-testid={`placement-badge-${i}`}
                         >
                           <Star size={9} strokeWidth={3} /> P{p.placement_match_number}/{p.placement_matches_total}

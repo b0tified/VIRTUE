@@ -68,7 +68,7 @@ export default function InstallButton({ className = "", variant = "primary" }) {
         onClick={install}
         className={`btn-pow ${bg}`}
         data-testid="install-app-button"
-        title="Install VIRTUE as a desktop app"
+        aria-label="Install VIRTUE as a desktop app"
       >
         <span className="flex items-center gap-2">
           <Download size={18} strokeWidth={3} /> INSTALL APP

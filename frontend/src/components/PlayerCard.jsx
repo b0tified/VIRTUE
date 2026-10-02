@@ -124,7 +124,7 @@ export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, leaderboard
     <span
       className={`relative inline-flex items-center justify-center border-2 border-black shadow-pow-sm flex-shrink-0 ${animClass}`}
       style={{ width: size, height: size, background: ultimateCrest ? "#FFD700" : meta.bg }}
-      title={ultimateCrest ? `Ultimate Gooner — Rank #${leaderboardRank}` : meta.label}
+      aria-label={ultimateCrest ? `Ultimate Gooner — Rank #${leaderboardRank}` : meta.label}
       data-testid={testid}
       data-anim={ultimateCrest ? "ultimate" : (meta.anim || (isAnimatedPeakCrest ? "peakcrest" : undefined))}
     >
@@ -280,7 +280,7 @@ export default function PlayerCard({
               <span
                 className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border-2 border-black bg-[#FFD700] text-[#0A0A0A] flex-shrink-0"
                 data-testid={`${testid}-level`}
-                title={`Level ${level}`}
+                aria-label={`Level ${level}`}
               >
                 LV {level}
               </span>

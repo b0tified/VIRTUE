@@ -152,7 +152,7 @@ export default function AdminReports() {
             disabled={seedingBusy}
             className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs disabled:opacity-60 disabled:cursor-wait"
             data-testid="seed-leaderboard-btn"
-            title="Reset & seed 60 fake veteran accounts so the leaderboard isn't empty"
+            aria-label="Reset & seed 60 fake veteran accounts so the leaderboard isn't empty"
           >
             <span className="flex items-center gap-1.5">
               <Sprout size={14} strokeWidth={3} /> {seedingBusy ? "SEEDING…" : "SEED LEADERBOARD"}
@@ -829,7 +829,7 @@ function ReportRow({ report, banStatus, onBan, onClose }) {
           <span>{report.reporter_username || "?"}</span>
         </div>
         {report.note && (
-          <div className="text-xs text-neutral-700 truncate" title={report.note}>
+          <div className="text-xs text-neutral-700 truncate" aria-label={report.note}>
             “{report.note}”
           </div>
         )}
@@ -1251,7 +1251,7 @@ function RedeemCodesCard({ setToast }) {
                     disabled={deletingCode === c.code}
                     className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs disabled:opacity-60"
                     data-testid={`redeem-code-delete-${c.code}`}
-                    title="Delete this code"
+                    aria-label="Delete this code"
                   >
                     <Trash2 size={12} strokeWidth={3} />
                   </button>
@@ -1641,7 +1641,7 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChange
           disabled={busy}
           className="btn-pow bg-[#0055FF] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
           data-testid={`${testid}-rename-open`}
-          title="Change username"
+          aria-label="Change username"
         >
           <span className="flex items-center gap-1"><Pencil size={12} strokeWidth={3} /> RENAME</span>
         </button>
@@ -1684,7 +1684,7 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChange
           disabled={busy}
           className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
           data-testid={`${testid}-pass-open`}
-          title="Reset password"
+          aria-label="Reset password"
         >
           <span className="flex items-center gap-1"><KeyRound size={12} strokeWidth={3} /> RESET PW</span>
         </button>
@@ -1730,7 +1730,7 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChange
           disabled={busy}
           className="btn-pow bg-[#00A9FF] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
           data-testid={`${testid}-rank-open`}
-          title="Change rank"
+          aria-label="Change rank"
         >
           <span className="flex items-center gap-1"><Trophy size={12} strokeWidth={3} /> RANK</span>
         </button>
@@ -2004,7 +2004,7 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) 
             <button
               onClick={openEdit}
               className={`btn-pow ${editOpen ? "bg-[#FFB000] text-black" : "bg-white text-black"} [&]:px-2 [&]:py-1 [&]:text-xs`}
-              title="Edit avatar & RP"
+              aria-label="Edit avatar & RP"
               data-testid={`${testid}-edit-btn`}
             >
               <Palette size={12} strokeWidth={3} />
@@ -2012,7 +2012,7 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) 
             <button
               onClick={() => setRenameVal(row.username)}
               className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
-              title="Rename bot"
+              aria-label="Rename bot"
               data-testid={`${testid}-rename-btn`}
             >
               <Pencil size={12} strokeWidth={3} />
@@ -2057,7 +2057,7 @@ function LeaderboardBotRow({ row, rank, testid, onRenamed, onEdited, onError }) 
                   type="button"
                   onClick={() => setDraftAvatar(i)}
                   className={`p-1 transition-transform ${active ? "ring-2 ring-[#FFB000] translate-y-[-1px]" : "hover:translate-y-[-1px]"}`}
-                  title={`Avatar #${i}`}
+                  aria-label={`Avatar #${i}`}
                   data-testid={`${testid}-edit-avatar-${i}`}
                   aria-pressed={active}
                 >
@@ -2543,7 +2543,7 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
         <div className="font-anton uppercase text-sm truncate flex items-center gap-1.5">
           {row.name}
           {row.shadows_builtin && (
-            <span className="text-[9px] font-anton uppercase px-1 py-0 border border-black bg-[#FFB000] text-black" title="A built-in bot pool already has this name; yours will oversample it.">
+            <span className="text-[9px] font-anton uppercase px-1 py-0 border border-black bg-[#FFB000] text-black" aria-label="A built-in bot pool already has this name; yours will oversample it.">
               DUPLICATE
             </span>
           )}
@@ -2586,7 +2586,7 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
             return (
               <span
                 className="text-[9px] font-anton uppercase tracking-widest px-1.5 py-0.5 border border-black bg-[#FFB000] text-black"
-                title={`Banner pinned to ${row.rank_points} RP`}
+                aria-label={`Banner pinned to ${row.rank_points} RP`}
                 data-testid={`admin-custom-bot-names-banner-chip-${idx}`}
               >
                 📌 {RANK_TIER_LABELS[ti] || `T${ti}`} · {row.rank_points}
@@ -2599,7 +2599,7 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
         onClick={openEdit}
         className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-1 [&]:text-xs"
         data-testid={`admin-custom-bot-names-edit-${idx}`}
-        title="Edit"
+        aria-label="Edit"
       >
         <Pencil size={14} strokeWidth={3} />
       </button>
@@ -2607,7 +2607,7 @@ function CustomBotNameRow({ row, idx, onSaved, onError, onDeleted, onEdited }) {
         onClick={onDeleted}
         className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs"
         data-testid={`admin-custom-bot-names-delete-${idx}`}
-        title="Remove"
+        aria-label="Remove"
       >
         <Trash2 size={14} strokeWidth={3} />
       </button>

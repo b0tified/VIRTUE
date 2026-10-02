@@ -42,7 +42,7 @@ export default function QueueOverlay() {
               onClick={cancelRanked}
               className="font-anton hover:opacity-80 ml-1"
               data-testid="queue-cancel"
-              title="Leave queue"
+              aria-label="Leave queue"
             >
               <X size={16} strokeWidth={3} />
             </button>

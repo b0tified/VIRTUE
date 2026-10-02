@@ -24,7 +24,7 @@ export default function UltimateGoonerBadge({ rank, size = 22, "data-testid": te
       className="relative inline-flex items-center justify-center"
       style={{ width: size + 6, height: size + 6 }}
       data-testid={testid}
-      title={`Ultimate Gooner — Rank #${rank}`}
+      aria-label={`Ultimate Gooner — Rank #${rank}`}
     >
       {/* Warm halo behind the flame — sells the "top-tier prestige" look. */}
       <span

@@ -150,7 +150,7 @@ export default function WhisperToaster({ onOpenWhisper }) {
             <MessageCircle size={12} strokeWidth={3} className="text-[#0055FF]" />
             <span className="truncate">{toast.username}</span>
           </div>
-          <div className="text-sm text-neutral-700 truncate" title={toast.text}>
+          <div className="text-sm text-neutral-700 truncate" aria-label={toast.text}>
             {toast.text}
           </div>
         </button>

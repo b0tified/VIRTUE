@@ -67,7 +67,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
             <span
               className="font-anton uppercase text-[10px] tracking-widest px-2 py-1 border-2 border-white bg-[#E62429] text-white flex items-center gap-1"
               data-testid="public-profile-banned-pill"
-              title={
+              aria-label={
                 data.ban_status === "suspended" && data.ban_until
                   ? `Suspended until ${new Date(data.ban_until).toLocaleString()}`
                   : "Account banned"
@@ -85,7 +85,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
               onClick={() => setShowReport(true)}
               className="btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-1 [&]:text-xs flex items-center gap-1"
               data-testid="public-profile-report-btn"
-              title={`Report ${username}`}
+              aria-label={`Report ${username}`}
             >
               <Flag size={14} strokeWidth={3} /> REPORT
             </button>

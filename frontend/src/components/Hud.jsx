@@ -22,7 +22,7 @@ function WeaponIcon({ weapon }) {
     <span
       className="inline-flex items-center justify-center border-pow-thin"
       style={{ background: meta.color, color: "#0A0A0A", width: 22, height: 22 }}
-      title={meta.label}
+      aria-label={meta.label}
       data-testid={`kf-weapon-${weapon}`}
     >
       <I size={13} strokeWidth={3} />
@@ -40,7 +40,7 @@ function PlatformIcon({ platform }) {
     <span
       className="inline-flex items-center justify-center border-pow-thin bg-white text-black"
       style={{ width: 22, height: 22 }}
-      title={label}
+      aria-label={label}
       data-testid={`platform-${platform || "pc"}`}
     >
       <Icon size={13} strokeWidth={3} />

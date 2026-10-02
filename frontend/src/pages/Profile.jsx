@@ -573,7 +573,7 @@ function MatchScoreboardModal({ match, onClose, onPickPlayer }) {
                   className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] hover:text-black active:bg-[#FFD700] transition-colors" : ""}`}
                   onClick={clickable ? () => onPickPlayer?.(p.username, !!p.is_bot) : undefined}
                   role={clickable ? "button" : undefined}
-                  title={clickable ? `View ${p.username}'s profile` : undefined}
+                  aria-label={clickable ? `View ${p.username}'s profile` : undefined}
                   data-testid={`match-scoreboard-row-${g.key}-${i}`}
                 >
                   <div className="col-span-1 font-display text-lg">
@@ -624,7 +624,7 @@ function HistoryRow({ idx, m, onOpen }) {
         className={`grid grid-cols-12 px-4 py-2 border-t-2 border-black items-center text-sm md:text-base ${idx % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"} ${clickable ? "cursor-pointer hover:bg-[#FFE680] hover:text-black active:bg-[#FFD700] transition-colors" : ""}`}
         onClick={clickable ? () => onOpen?.(m) : undefined}
         role={clickable ? "button" : undefined}
-        title={clickable ? "Click to view match scoreboard" : undefined}
+        aria-label={clickable ? "Click to view match scoreboard" : undefined}
         data-testid={`profile-history-row-${idx}`}
       >
       <div className="col-span-6 md:col-span-2 flex items-center gap-2">
@@ -694,7 +694,7 @@ function HistoryRow({ idx, m, onOpen }) {
             onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
             className="btn-pow bg-black text-[#FFD700] [&]:px-2 [&]:py-1 [&]:text-[10px] font-anton uppercase tracking-widest"
             data-testid={`history-replay-toggle-${idx}`}
-            title={expanded ? "Hide killcam" : "Show killcam replays"}
+            aria-label={expanded ? "Hide killcam" : "Show killcam replays"}
           >
             REPLAYS {expanded ? "▲" : "▼"}
           </button>
@@ -958,7 +958,7 @@ function AvatarPicker({ avatarIdx, peakTier, peakDivision = 0, playerLevel, savi
                 data-testid={`avatar-option-${i}`}
                 aria-pressed={active}
                 aria-disabled={!unlocked}
-                title={unlocked ? (lockMeta?.label || (isPeak ? "Peak Rank Crest" : `Avatar ${i + 1}`)) : `Locked — ${sublabel}`}
+                aria-label={unlocked ? (lockMeta?.label || (isPeak ? "Peak Rank Crest" : `Avatar ${i + 1}`)) : `Locked — ${sublabel}`}
               >
                 <div className={`relative p-1 ${active ? "ring-4 ring-[#FFD700] rounded-sm" : ""}`}>
                   <Avatar idx={i} peakTier={peakTier} peakDivision={peakDivision} size={56} testid={`avatar-option-${i}-avatar`} />
@@ -1117,7 +1117,7 @@ function BannerCustomizer({ iconIdx, colorIdx, animated, animatedUnlocked, savin
                 onClick={() => !saving && onPickIcon(i)}
                 className={`w-14 h-14 border-2 border-black shadow-pow-sm flex items-center justify-center transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"}`}
                 style={{ background: active ? bannerColorMeta(colorIdx).bg : "#F4F4F5" }}
-                title={b.label}
+                aria-label={b.label}
                 data-testid={`banner-icon-${i}`}
                 aria-pressed={active}
               >
@@ -1146,7 +1146,7 @@ function BannerCustomizer({ iconIdx, colorIdx, animated, animatedUnlocked, savin
                 onClick={() => !saving && onPickColor(i)}
                 className={`w-14 h-14 border-2 border-black shadow-pow-sm flex items-center justify-center transition-transform ${active ? "translate-y-[-2px]" : "hover:translate-y-[-1px]"}`}
                 style={{ background: c.bg }}
-                title={c.name}
+                aria-label={c.name}
                 data-testid={`banner-color-${i}`}
                 aria-pressed={active}
               >
@@ -1319,7 +1319,7 @@ function TitleTile({ selected, disabled, onClick, label, sublabel, leaderboardRa
         <span
           className="absolute top-1.5 right-1.5 bg-[#FFD700] text-black font-anton text-[10px] tracking-wider px-1.5 py-0.5 border-2 border-black"
           data-testid={`${testid}-rank`}
-          title={`Season-end leaderboard placement: #${leaderboardRank}`}
+          aria-label={`Season-end leaderboard placement: #${leaderboardRank}`}
         >
           #{leaderboardRank}
         </span>

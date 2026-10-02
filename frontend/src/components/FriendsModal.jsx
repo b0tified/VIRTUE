@@ -289,7 +289,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
             <span
               className="font-anton uppercase text-[9px] px-1.5 py-0.5 bg-[#E62429] text-white border border-black tabular-nums"
               data-testid={`friend-unread-${idx}`}
-              title={`${unreadCount} new whisper${unreadCount === 1 ? "" : "s"}`}
+              aria-label={`${unreadCount} new whisper${unreadCount === 1 ? "" : "s"}`}
             >
               {unreadCount}
             </span>
@@ -319,7 +319,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
             <span
               className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black bg-[#FFD700] text-[#0A0A0A] tabular-nums"
               data-testid={`friend-leaderboard-rank-${idx}`}
-              title={`#${u.leaderboard_rank} on the current-season leaderboard`}
+              aria-label={`#${u.leaderboard_rank} on the current-season leaderboard`}
             >
               #{u.leaderboard_rank}
             </span>
@@ -392,7 +392,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
               onClick={() => onWhisper?.({ id: u.id, username: u.username, avatar: u.avatar })}
               className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs relative"
               data-testid={`friend-whisper-${idx}`}
-              title="Send a whisper"
+              aria-label="Send a whisper"
             >
               <span className="flex items-center gap-1">
                 <MessageCircle size={14} strokeWidth={3} />
@@ -419,7 +419,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
                 }}
                 className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-1.5 [&]:text-xs"
                 data-testid={`friend-invite-${idx}`}
-                title="Invite to party"
+                aria-label="Invite to party"
               >
                 <span className="flex items-center gap-1"><Send size={14} strokeWidth={3} /> INVITE</span>
               </button>
@@ -429,7 +429,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
                 onClick={() => nav(`/spectate/${encodeURIComponent(u.username)}`)}
                 className="btn-pow bg-[#FFD700] text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
                 data-testid={`friend-spectate-${idx}`}
-                title="Spectate match"
+                aria-label="Spectate match"
               >
                 <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /> SPECTATE</span>
               </button>
@@ -438,7 +438,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
               onClick={() => onInspect?.(u.username)}
               className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
               data-testid={`friend-inspect-${idx}`}
-              title="View profile"
+              aria-label="View profile"
             >
               <span className="flex items-center gap-1"><User size={14} strokeWidth={3} /></span>
             </button>
@@ -547,7 +547,7 @@ function SearchPanel({ onChange, onInspect }) {
                     <span
                       className="font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border border-black bg-[#FFD700] text-[#0A0A0A] tabular-nums"
                       data-testid={`search-leaderboard-rank-${i}`}
-                      title={`#${u.leaderboard_rank} on the current-season leaderboard`}
+                      aria-label={`#${u.leaderboard_rank} on the current-season leaderboard`}
                     >
                       #{u.leaderboard_rank}
                     </span>
@@ -559,7 +559,7 @@ function SearchPanel({ onChange, onInspect }) {
                 onClick={() => onInspect?.(u.username)}
                 className="btn-pow bg-white text-black [&]:px-3 [&]:py-1.5 [&]:text-xs"
                 data-testid={`friends-search-inspect-${i}`}
-                title="View profile"
+                aria-label="View profile"
               >
                 <span className="flex items-center gap-1"><Eye size={14} strokeWidth={3} /></span>
               </button>

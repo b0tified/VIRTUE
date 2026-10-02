@@ -115,7 +115,7 @@ export default function SettingsModal({ open, onClose }) {
             onClick={() => settingsStore.reset()}
             className="text-xs text-neutral-400 hover:text-white flex items-center gap-1"
             data-testid="settings-reset"
-            title="Restore defaults"
+            aria-label="Restore defaults"
           >
             <RotateCcw size={12} strokeWidth={3} /> Reset
           </button>

@@ -812,7 +812,7 @@ export default function Lobby() {
             className="border-pow shadow-pow-sm px-3 py-2 flex items-center gap-2 hover:translate-y-[-1px] transition-transform"
             style={{ background: "#FFD700", color: "#0A0A0A" }}
             data-testid="lobby-coins-badge"
-            title="Open Shop"
+            aria-label="Open Shop"
           >
             <Coins size={14} strokeWidth={3} />
             <span className="font-anton uppercase text-[10px] tracking-widest opacity-80 hidden sm:inline">Coins</span>
@@ -829,7 +829,7 @@ export default function Lobby() {
               className="border-pow shadow-pow-sm px-3 py-2 flex items-center gap-1.5 hover:translate-y-[-1px] transition-transform"
               style={{ background: "#06A35F", color: "#fff" }}
               data-testid="lobby-xp-boost-badge"
-              title={`${user?.xp_boost_multiplier || 2}x XP active — ${formatLobbyBoostRemaining(xpBoostLeft)} left`}
+              aria-label={`${user?.xp_boost_multiplier || 2}x XP active — ${formatLobbyBoostRemaining(xpBoostLeft)} left`}
             >
               <Zap size={14} strokeWidth={3} />
               <span className="font-anton uppercase text-[10px] tracking-widest opacity-90 hidden sm:inline">
@@ -848,7 +848,7 @@ export default function Lobby() {
             onClick={() => setShowProgression(true)}
             className="btn-pow bg-[#0055FF] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
             data-testid="lobby-progression-button"
-            title="Season Pass, Skin Shop, Challenges & Dailies"
+            aria-label="Season Pass, Skin Shop, Challenges & Dailies"
           >
             <span className="flex items-center gap-2"><Sparkles size={18} strokeWidth={3} /><span className="hidden sm:inline">PASS</span></span>
           </button>
@@ -856,7 +856,7 @@ export default function Lobby() {
             onClick={() => setShowFriends(true)}
             className="btn-pow bg-[#06A35F] text-white [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
             data-testid="lobby-friends-button"
-            title="Friends list"
+            aria-label="Friends list"
           >
             <span className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} /><span className="hidden sm:inline">FRIENDS</span></span>
           </button>
@@ -864,14 +864,14 @@ export default function Lobby() {
             onClick={() => nav("/news")}
             className="btn-pow bg-[#9B59B6] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3 relative"
             data-testid="lobby-news-button"
-            title="News & announcements"
+            aria-label="News & announcements"
           >
             <span className="flex items-center gap-2"><Megaphone size={18} strokeWidth={3} /><span className="hidden sm:inline">NEWS</span></span>
             {newsUnread > 0 && (
               <span
                 className="absolute -top-2 -right-2 min-w-[20px] h-[20px] px-1 bg-[#E62429] text-white border-2 border-black font-anton text-[10px] tabular-nums flex items-center justify-center"
                 data-testid="lobby-news-unread-badge"
-                title={`${newsUnread} unread`}
+                aria-label={`${newsUnread} unread`}
               >
                 {newsUnread > 99 ? "99+" : newsUnread}
               </span>
@@ -881,7 +881,7 @@ export default function Lobby() {
             onClick={() => setShowSettings(true)}
             className="btn-pow bg-white text-black [&]:px-3 [&]:py-2 sm:[&]:px-8 sm:[&]:py-3"
             data-testid="lobby-settings-button"
-            title="Audio, sensitivity, install, logout"
+            aria-label="Audio, sensitivity, install, logout"
           >
             <span className="flex items-center gap-2"><SettingsIcon size={18} strokeWidth={3} /></span>
           </button>
@@ -917,7 +917,7 @@ export default function Lobby() {
               }}
               className="btn-pow bg-[#222] text-white [&]:px-3 [&]:py-2 sm:[&]:px-6 sm:[&]:py-3"
               data-testid="lobby-exit-button"
-              title="Exit to desktop"
+              aria-label="Exit to desktop"
             >
               <span className="flex items-center gap-2"><LogOut size={18} strokeWidth={3} /><span className="hidden sm:inline">EXIT</span></span>
             </button>
@@ -955,7 +955,7 @@ export default function Lobby() {
               <div
                 className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white [@media(max-height:500px)]:hidden"
                 data-testid="placement-streak-badge"
-                title="Placement streak: performance-scaled RP anchors your first 5 ranked matches to your true skill."
+                aria-label="Placement streak: performance-scaled RP anchors your first 5 ranked matches to your true skill."
               >
                 <div className="px-2 sm:px-3 py-1.5 sm:py-2 flex items-center gap-1.5 sm:gap-2">
                   <Star size={14} strokeWidth={3} className="text-[#FFD700]" />
@@ -1016,7 +1016,6 @@ export default function Lobby() {
                     className="hover:opacity-70"
                     data-testid="lobby-crossplay-dismiss"
                     aria-label="Dismiss cross-play warning"
-                    title="Dismiss"
                   >
                     <X size={14} strokeWidth={3} />
                   </button>
@@ -1035,7 +1034,7 @@ export default function Lobby() {
                     onClick={enableMobileOnlyFromBanner}
                     className="btn-pow bg-black text-white [&]:px-2 [&]:py-1 [&]:text-xs"
                     data-testid="lobby-crossplay-enable-mobile-only"
-                    title="Turn on Mobile Only matchmaking"
+                    aria-label="Turn on Mobile Only matchmaking"
                   >
                     <span className="flex items-center gap-1"><Smartphone size={12} strokeWidth={3} /> MOBILE ONLY</span>
                   </button>
@@ -1047,7 +1046,7 @@ export default function Lobby() {
               disabled={casualInQueue || !!queueState || bigffaInQueue || (party && party.leader_id !== user?.id)}
               className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
-              title={
+              aria-label={
                 queueState && !casualInQueue ? "You're already in the ranked queue"
                 : bigffaInQueue ? "Cancel the 12P FFA queue to play Quick Match"
                 : undefined
@@ -1080,7 +1079,7 @@ export default function Lobby() {
                     type="button"
                     disabled={casualInQueue}
                     onClick={() => setQuickMatchModePref(key)}
-                    title={title}
+                    aria-label={title}
                     data-testid={`lobby-quickmatch-mode-${key}`}
                     aria-pressed={active}
                     className={
@@ -1101,7 +1100,7 @@ export default function Lobby() {
               disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue || bigffaInQueue}
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
-              title={
+              aria-label={
                 rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
                 : rankedBanned ? `Ranked locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
                 : casualInQueue ? "You're already in the Quick Match queue"
@@ -1148,7 +1147,7 @@ export default function Lobby() {
                 bigffaInQueue ? "bg-neutral-800 text-white" : "bg-[#FF7A00] text-black"
               }`}
               data-testid="lobby-bigffa-button"
-              title={
+              aria-label={
                 bigffaInQueue ? "Cancel 12P FFA queue"
                 : casualInQueue ? "Cancel Quick Match queue to play 12P FFA"
                 : queueState ? "Cancel Ranked queue to play 12P FFA"
@@ -1178,7 +1177,7 @@ export default function Lobby() {
               disabled={casualInQueue || !!queueState}
               className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-practice-button"
-              title={
+              aria-label={
                 casualInQueue ? "Cancel Quick Match queue to play Practice"
                 : queueState ? "Cancel Ranked queue to play Practice"
                 : undefined
@@ -1486,7 +1485,7 @@ export default function Lobby() {
                   ? `${foundRealPlayers} Player${foundRealPlayers === 1 ? "" : "s"} Found`
                   : "Searching for players"}
               </span>
-              <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" title="Cancel">
+              <button onClick={cancelQuickQueue} className="font-anton hover:opacity-80 ml-1" data-testid="quick-queue-cancel" aria-label="Cancel">
                 <X size={16} strokeWidth={3} />
               </button>
             </div>
@@ -1547,7 +1546,7 @@ export default function Lobby() {
                   onClick={() => queueCtx?.cancelBigffa?.()}
                   className="font-anton hover:opacity-80 ml-1"
                   data-testid="bigffa-queue-cancel"
-                  title="Cancel"
+                  aria-label="Cancel"
                 >
                   <X size={16} strokeWidth={3} />
                 </button>
@@ -1607,7 +1606,7 @@ export default function Lobby() {
             <div className="px-4 py-2 flex items-center gap-2 bg-[#FFD700] text-black">
               <WifiOff size={18} strokeWidth={3} />
               <span className="font-anton uppercase tracking-widest text-sm flex-1">Spectate Ended</span>
-              <button onClick={() => setSpectateEnded(false)} className="font-anton hover:opacity-80" data-testid="spectate-ended-toast-close" title="Dismiss">
+              <button onClick={() => setSpectateEnded(false)} className="font-anton hover:opacity-80" data-testid="spectate-ended-toast-close" aria-label="Dismiss">
                 <X size={16} strokeWidth={3} />
               </button>
             </div>
@@ -1627,7 +1626,7 @@ export default function Lobby() {
             <div className="px-4 py-2 flex items-center gap-2 bg-[#E62429] text-white">
               <WifiOff size={18} strokeWidth={3} />
               <span className="font-anton uppercase tracking-widest text-sm flex-1">Connection Lost</span>
-              <button onClick={() => setDisconnected(false)} className="font-anton hover:opacity-80" data-testid="disconnected-toast-close" title="Dismiss">
+              <button onClick={() => setDisconnected(false)} className="font-anton hover:opacity-80" data-testid="disconnected-toast-close" aria-label="Dismiss">
                 <X size={16} strokeWidth={3} />
               </button>
             </div>

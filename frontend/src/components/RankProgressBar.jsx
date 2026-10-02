@@ -93,7 +93,7 @@ export default function RankProgressBar({
       </div>
       <div
         className="relative h-3 sm:h-3.5 border-2 border-black bg-neutral-100 overflow-hidden"
-        title={`${into} / ${divisionWidth} RP to ${nextLabel}`}
+        aria-label={`${into} / ${divisionWidth} RP to ${nextLabel}`}
       >
         <div
           className="absolute inset-y-0 left-0 transition-[width] duration-500 ease-out"

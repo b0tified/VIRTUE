@@ -251,8 +251,7 @@ export default function LobbyCharacterDisplay({ skinId = "default", username = "
       onClick={onClick}
       className="relative w-full block group focus:outline-none"
       data-testid="lobby-character-display"
-      title="Open the shop to change your skin"
-      aria-label={`Your equipped skin${username ? ` for ${username}` : ""}`}
+      aria-label={`Open the shop to change your skin${username ? ` for ${username}` : ""}`}
     >
       <div
         ref={hostRef}

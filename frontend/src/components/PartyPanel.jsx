@@ -138,7 +138,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
         <button
           onClick={leave}
           className="font-anton text-[10px] uppercase tracking-widest px-2 py-1 border-2 border-white hover:bg-white hover:text-[#0055FF] transition-colors flex items-center gap-1"
-          title="Leave party"
+          aria-label="Leave party"
           data-testid="party-leave-button"
         >
           <LogOut size={11} strokeWidth={3} />
@@ -232,7 +232,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 disabled={busy || inCasualQueue}
                 className="btn-pow bg-[#0055FF] text-white w-full [&]:py-1.5 [&]:text-sm"
                 data-testid="party-ranked-button"
-                title={`Queues whole party at ${tier}`}
+                aria-label={`Queues whole party at ${tier}`}
               >
                 <span className="flex items-center justify-center gap-2">
                   <Shield size={14} strokeWidth={3} /> RANKED @ {tier}
@@ -261,7 +261,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 disabled={busy || inRankedQueue || inCasualQueue}
                 className="btn-pow bg-[#9D4EDD] text-white flex-1 [&]:py-1.5 [&]:text-sm"
                 data-testid="party-custom-lobby-button"
-                title="Start a private lobby with just your party (and optionally bots)"
+                aria-label="Start a private lobby with just your party (and optionally bots)"
               >
                 <span className="flex items-center justify-center gap-2">
                   <Users2 size={14} strokeWidth={3} /> CUSTOM LOBBY
@@ -276,7 +276,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                   (customBots ? "bg-[#06A35F] text-white" : "bg-white text-black")
                 }
                 data-testid="party-custom-lobby-bots-toggle"
-                title={customBots ? "Bots ON — private lobby will fill with AI opponents" : "Bots OFF — party members only"}
+                aria-label={customBots ? "Bots ON — private lobby will fill with AI opponents" : "Bots OFF — party members only"}
               >
                 <Bot size={12} strokeWidth={3} />
                 {customBots ? "BOTS ON" : "BOTS OFF"}

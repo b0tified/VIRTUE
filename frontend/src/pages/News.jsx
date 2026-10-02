@@ -218,7 +218,7 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
                 }`}
                 data-testid={`${testid}-like`}
                 data-liked={post.liked_by_me ? "true" : "false"}
-                title={post.liked_by_me ? "Remove like" : "Like this post"}
+                aria-label={post.liked_by_me ? "Remove like" : "Like this post"}
               >
                 <ThumbsUp
                   size={12}
@@ -250,7 +250,7 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
                   disabled={editBusy}
                   className="btn-pow bg-[#06A35F] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
                   data-testid={`${testid}-likes-save`}
-                  title="Save"
+                  aria-label="Save"
                 >
                   {editBusy ? (
                     <Loader2 size={12} strokeWidth={3} className="animate-spin" />
@@ -263,7 +263,7 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
                   disabled={editBusy}
                   className="btn-pow bg-white text-black [&]:px-2 [&]:py-1 [&]:text-xs"
                   data-testid={`${testid}-likes-cancel`}
-                  title="Cancel"
+                  aria-label="Cancel"
                 >
                   <X size={12} strokeWidth={3} />
                 </button>
@@ -274,7 +274,7 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
                 onClick={() => setEditVal(String(post.likes || 0))}
                 className="btn-pow bg-neutral-900 text-white [&]:px-2 [&]:py-1 [&]:text-xs"
                 data-testid={`${testid}-likes-edit`}
-                title="Edit like count (admin)"
+                aria-label="Edit like count (admin)"
               >
                 <Pencil size={12} strokeWidth={3} />
               </button>
@@ -284,7 +284,7 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
                 onClick={onDelete}
                 className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
                 data-testid={`${testid}-delete`}
-                title="Delete post"
+                aria-label="Delete post"
               >
                 <span className="flex items-center gap-1"><Trash2 size={12} strokeWidth={3} /> DELETE</span>
               </button>
