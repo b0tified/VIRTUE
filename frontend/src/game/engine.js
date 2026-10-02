@@ -3025,26 +3025,47 @@ export class GameEngine {
     const root = new THREE.Group();
 
     // ===== AK-47 =====
+    // Comic-pop palette tuned to match the user's reference image:
+    //   • Wood (stock / handguards / grip / magazine): warm orange-brown
+    //     0x9b6b3f — rich but readable in-game, not the muddy walnut
+    //     we had before (0x6b4226). The magazine and grip are now
+    //     wood-colored too, matching the reference exactly (the old
+    //     ones were nearly-black 0x3a2510 which read as polymer).
+    //   • Receiver / metal body: medium gunmetal 0x3b3b3b with cel
+    //     outline for the classic comic silhouette.
+    //   • Barrel / muzzle / sights: dark steel 0x1a1a1a.
+    const WOOD      = 0x9b6b3f;
+    const WOOD_SHAD = 0x7a4e24;
+    const METAL     = 0x3b3b3b;
+    const STEEL     = 0x1a1a1a;
     const ak = new THREE.Group();
     // Wood stock (rear, slanted down)
-    const stock = this._outlined(new THREE.BoxGeometry(0.13, 0.16, 0.5), 0x6b4226);
+    const stock = this._outlined(new THREE.BoxGeometry(0.13, 0.16, 0.5), WOOD);
     stock.position.set(0, -0.04, 0.18);
     stock.rotation.x = 0.08;
     ak.add(stock);
-    // Receiver (dark steel)
-    const receiver = this._outlined(new THREE.BoxGeometry(0.16, 0.16, 0.5), 0x2a2a2a);
+    // Receiver (gunmetal body)
+    const receiver = this._outlined(new THREE.BoxGeometry(0.16, 0.16, 0.5), METAL);
     receiver.position.set(0, 0.0, -0.24);
     ak.add(receiver);
-    // Gas tube on top
-    const gasTube = this._outlined(new THREE.BoxGeometry(0.1, 0.06, 0.5), 0x6b4226);
+    // Upper wooden handguard (sits above the gas tube, reference clearly
+    // shows a wood piece on top of the barrel with vent slots — the old
+    // 0x6b4226 wood was fine, bumped to the brighter wood tone).
+    const gasTube = this._outlined(new THREE.BoxGeometry(0.1, 0.06, 0.5), WOOD);
     gasTube.position.set(0, 0.13, -0.24);
     ak.add(gasTube);
-    // Front handguard (wood)
-    const handGuard = this._outlined(new THREE.BoxGeometry(0.14, 0.13, 0.32), 0x6b4226);
+    // Vent slots on the upper handguard (reference shows ~3 cutouts).
+    for (const z of [-0.42, -0.24, -0.06]) {
+      const vent = this._outlined(new THREE.BoxGeometry(0.08, 0.012, 0.06), STEEL, 1.1);
+      vent.position.set(0, 0.158, z);
+      ak.add(vent);
+    }
+    // Front (lower) wooden handguard
+    const handGuard = this._outlined(new THREE.BoxGeometry(0.14, 0.13, 0.32), WOOD);
     handGuard.position.set(0, -0.02, -0.55);
     ak.add(handGuard);
     // Long barrel
-    const barrel = this._outlined(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 14), 0x111111, 1.08);
+    const barrel = this._outlined(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 14), STEEL, 1.08);
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, 0.03, -0.95);
     ak.add(barrel);
@@ -3053,22 +3074,23 @@ export class GameEngine {
     muzzle.rotation.x = Math.PI / 2;
     muzzle.position.set(0, 0.03, -1.25);
     ak.add(muzzle);
-    // Banana magazine (curved → approximate w/ two angled boxes).
-    // Grouped so it can be animated separately during reload.
+    // Banana magazine — pronounced curve, WOOD color (per reference the
+    // mag reads as the same wood as the stock, not dark polymer). Three
+    // segments at increasing angles sell the iconic curve.
     const akMag = new THREE.Group();
-    const magTop = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.16), 0x3a2510);
+    const magTop = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.16), WOOD);
     magTop.position.set(0, -0.18, -0.18);
     akMag.add(magTop);
-    const magBot = this._outlined(new THREE.BoxGeometry(0.1, 0.18, 0.14), 0x3a2510);
-    magBot.position.set(0, -0.34, -0.08);
-    magBot.rotation.x = -0.5;
+    const magBot = this._outlined(new THREE.BoxGeometry(0.1, 0.20, 0.16), WOOD);
+    magBot.position.set(0, -0.34, -0.09);
+    magBot.rotation.x = -0.55;
     akMag.add(magBot);
     ak.add(akMag);
     this._akMagGroup = akMag;
     this._akMagBaseY = 0;
     this._akMagBaseZ = 0;
-    // Grip (angled)
-    const grip = this._outlined(new THREE.BoxGeometry(0.1, 0.22, 0.13), 0x3a2510);
+    // Grip (angled) — WOOD color per reference, not dark polymer.
+    const grip = this._outlined(new THREE.BoxGeometry(0.1, 0.22, 0.13), WOOD);
     grip.position.set(0, -0.18, 0.02);
     grip.rotation.x = -0.32;
     ak.add(grip);
@@ -3099,7 +3121,7 @@ export class GameEngine {
     selector.position.set(0.09, 0.0, -0.08);
     ak.add(selector);
     // Stock comb — small raised cheekpiece on top of the stock.
-    const comb = this._outlined(new THREE.BoxGeometry(0.10, 0.04, 0.32), 0x563517, 1.06);
+    const comb = this._outlined(new THREE.BoxGeometry(0.10, 0.04, 0.32), WOOD_SHAD, 1.06);
     comb.position.set(0, 0.06, 0.20);
     comb.rotation.x = 0.08;
     ak.add(comb);
@@ -3136,18 +3158,18 @@ export class GameEngine {
     rsNotch.position.set(0, 0.205, -0.05);
     ak.add(rsNotch);
     // Magazine extra curve — third segment to sell the banana shape.
-    const magTip = this._outlined(new THREE.BoxGeometry(0.1, 0.08, 0.10), 0x3a2510);
-    magTip.position.set(0, -0.42, 0.02);
-    magTip.rotation.x = -0.85;
+    const magTip = this._outlined(new THREE.BoxGeometry(0.1, 0.09, 0.11), WOOD);
+    magTip.position.set(0, -0.44, 0.03);
+    magTip.rotation.x = -0.95;
     akMag.add(magTip);
     // Mag rib detail — three horizontal lines down the side.
     for (const y of [-0.15, -0.22, -0.30]) {
-      const mr = this._outlined(new THREE.BoxGeometry(0.105, 0.008, 0.01), 0x261406, 1.08);
+      const mr = this._outlined(new THREE.BoxGeometry(0.105, 0.008, 0.01), WOOD_SHAD, 1.08);
       mr.position.set(0, y, -0.12);
       akMag.add(mr);
     }
     // Pistol-grip checkering — vertical groove on the back of the grip.
-    const gripGroove = this._outlined(new THREE.BoxGeometry(0.005, 0.20, 0.012), 0x1a0a02, 1.12);
+    const gripGroove = this._outlined(new THREE.BoxGeometry(0.005, 0.20, 0.012), WOOD_SHAD, 1.12);
     gripGroove.position.set(0, -0.18, 0.075);
     gripGroove.rotation.x = -0.32;
     ak.add(gripGroove);
