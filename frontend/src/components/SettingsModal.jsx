@@ -1315,8 +1315,13 @@ function LobbyVariantPicker({ value, onChange, user }) {
   // but the AUTO option will pick the right variant regardless.
   const options = [
     { id: "auto",    label: "Auto" },
-    { id: "default", label: "Season 1", requires: 1 },
-    { id: "meteor",  label: "Season 2", requires: 2 },
+    // Season 1 (`default`) button removed per user request — Auto still
+    // falls back to it if the user is Season 1 and no other variant is
+    // selected, so the asset itself stays reachable; only the explicit
+    // button is hidden. Season 2 (`meteor`) is being surfaced as the
+    // generic "Classic" lobby backdrop (user: "change season 2 button
+    // to say classic") and unlocks for everyone (no past-season gate).
+    { id: "meteor",  label: "Classic" },
   ];
   return (
     <div className="mt-3" data-testid="settings-lobby-variant-picker">
@@ -1325,7 +1330,10 @@ function LobbyVariantPicker({ value, onChange, user }) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {options.map(({ id, label, requires }) => {
-          const unlocked = id === "auto" || isAdmin || (requires && finished.has(requires));
+          // Classic (meteor) is now unlocked for everyone — the
+          // past-season gate was removed with the Season 1 / Season 2
+          // naming. Auto is always unlocked. Admins unlock everything.
+          const unlocked = !requires || id === "auto" || isAdmin || finished.has(requires);
           const active = value === id;
           return (
             <button
