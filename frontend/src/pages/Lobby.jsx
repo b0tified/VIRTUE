@@ -302,25 +302,23 @@ export default function Lobby() {
   // Live-subscribe to the lobby-animated-background toggle so flipping
   // the setting in the modal swaps the backdrop instantly without a
   // page reload.
-  //
-  // MOBILE PERF: on touch / narrow devices we hard-force the animated
-  // backdrop OFF regardless of the user's saved preference. The active
-  // castle/meteor/snow backdrops each stack ~30 CSS filter-blur +
-  // drop-shadow keyframe animations (stars twinkling, torches
-  // flickering, window flames, drifting fog blobs) — every frame
-  // triggers a full composite + repaint that saturates mobile GPUs,
-  // making button taps feel sluggish and locking the main thread. The
-  // calm subset (sky + moon + silhouette, no filters) is visually
-  // identical at a glance and costs virtually nothing.
-  const isMobile = useIsMobile();
+  // User-controlled toggle: `settings.lobbyAnimatedBackground` enables
+  // the full parallax backdrop (meteor crater pulse, drifting embers,
+  // flickering torches, fog blobs). Previously we hard-forced it OFF on
+  // mobile for a perf buffer, but that made the Settings toggle appear
+  // broken on touch devices (flip did nothing visible). Now we respect
+  // the user's choice universally — mobile users who dislike the
+  // animation can still turn it off from Settings, and desktop users
+  // keep the animation by default. Default remains `true` from
+  // settings.js so first-run desktop still looks lively.
   const [animatedBg, setAnimatedBg] = useState(() =>
-    !detectIsMobile() && settingsStore.get().lobbyAnimatedBackground !== false,
+    settingsStore.get().lobbyAnimatedBackground !== false,
   );
   useEffect(() => {
-    const onChange = () => setAnimatedBg(!isMobile && settingsStore.get().lobbyAnimatedBackground !== false);
+    const onChange = () => setAnimatedBg(settingsStore.get().lobbyAnimatedBackground !== false);
     window.addEventListener("virtue-settings-changed", onChange);
     return () => window.removeEventListener("virtue-settings-changed", onChange);
-  }, [isMobile]);
+  }, []);
 
   // Subscribe to the global `virtue-rankup` event so any rank-up (e.g. after
   // a WARPSPEED redeem from the Account settings) plays the celebration
