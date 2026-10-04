@@ -250,14 +250,14 @@ export class GameEngine {
     this._fpsFrames = 0;
     this._fpsLastT = performance.now();
     this.fps = 0;
-    // Auto Performance mode watchdog. Only ever engages in BigFFA
-    // (`this._matchMode === "bigffa"`) because that's the only mode
-    // that ships 12 players + heavy bullet-FX to weaker GPUs; other
-    // modes render at 60+ FPS on the same hardware. When engaged we
-    // drop pixelRatio to 0.6x, tighten the fog envelope, disable
-    // shadow map casts, and reduce max muzzle-flash sprites. When the
-    // FPS recovers (sustained > 68) we back out. Hysteresis via
-    // separate below/above dwell counters prevents flapping.
+    // Auto Performance mode watchdog. Runs in every match mode —
+    // previously BigFFA-only, but Quick Match TDM / FFA / Ranked can
+    // all dip under 60fps on weaker GPUs when muzzle-flash + shadow
+    // stacks pile up. When engaged we drop pixelRatio to 0.6x,
+    // tighten the fog envelope, disable shadow map casts, and reduce
+    // max muzzle-flash sprites. When the FPS recovers (sustained
+    // > 68) we back out. Hysteresis via separate below/above dwell
+    // counters prevents flapping.
     this._autoPerfActive = false;
     // Rolling last-N FPS samples (each ~500ms via the fps counter
     // window). N=6 = 3s of history, enough to smooth over one-frame
@@ -6999,12 +6999,16 @@ export class GameEngine {
 
   /* Auto Performance watchdog — invoked once per ~500ms FPS window.
 
-     Behaviour is a strict subset of "engage when the user's session
-     is actually struggling AND we're in the mode that matters":
+     Previously scoped only to BigFFA (12P FFA) where perf headroom
+     was tightest. User asked to enable in all modes — a Quick Match
+     TDM on an iPad / low-end laptop can also drop below 60fps when
+     too many muzzle flashes stack up. Now runs in every mode.
 
-     1. Only runs in BigFFA (12P FFA). Every other mode is a no-op.
-     2. Off if the user's `autoPerfPref` is "off". Force-on if "on".
-     3. In "auto" mode:
+     Behaviour is a strict subset of "engage when the user's session
+     is actually struggling":
+
+     1. Off if the user's `autoPerfPref` is "off". Force-on if "on".
+     2. In "auto" mode:
         - Track a rolling window of the last 6 samples (~3s).
         - ENGAGE when the AVERAGE of the last 6 samples drops below
           60 fps, i.e. sustained 3-second dip — not a one-frame hitch.
@@ -7012,23 +7016,15 @@ export class GameEngine {
           average > 68 fps. The wider gap between engage-60 and
           disengage-68 gives hysteresis so the mode doesn't flap on
           borderline hardware.
-     4. Engage/disengage are cheap idempotent renderer tweaks — no
+     3. Engage/disengage are cheap idempotent renderer tweaks — no
         scene rebuilds, no shader recompiles — so mid-match flips
         are visually smooth (users just see a brief pixel-density
         change).
 
-     The FIRST 6 samples after entering BigFFA are skipped so a slow
+     The FIRST 6 samples after match entry are skipped so a slow
      warmup (asset decode, first-frame shader compile spikes) doesn't
      trigger an immediate false-positive engage. */
   _autoPerfTick() {
-    if (this._matchMode !== "bigffa") {
-      // Wrong mode: make sure we're not stuck in engaged state from
-      // a previous BigFFA session (e.g. player exited to lobby and
-      // rejoined into casual on same engine instance — unlikely but
-      // defensive).
-      if (this._autoPerfActive) this._autoPerfDisengage();
-      return;
-    }
     if (this._autoPerfPref === "off") {
       if (this._autoPerfActive) this._autoPerfDisengage();
       return;
@@ -7161,7 +7157,7 @@ export class GameEngine {
       if (this._autoPerfPref === "off" && this._autoPerfActive) {
         this._autoPerfDisengage();
       }
-      if (this._autoPerfPref === "on" && this._matchMode === "bigffa" && !this._autoPerfActive) {
+      if (this._autoPerfPref === "on" && !this._autoPerfActive) {
         this._autoPerfEngage();
       }
     }

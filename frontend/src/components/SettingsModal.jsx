@@ -729,16 +729,15 @@ export default function SettingsModal({ open, onClose }) {
               testid="settings-disable-vsync"
             />
             {/* Auto Performance mode — three-way segmented control.
-                Only takes effect inside BigFFA (12P FFA), which is
-                the only mode heavy enough to drop weaker GPUs below
-                60 FPS. AUTO engages when the rolling 3s FPS drops
-                under 60; ON force-engages the moment BigFFA starts;
+                Now runs in every match mode (was BigFFA-only before).
+                AUTO engages when the rolling 3s FPS drops under 60;
+                ON force-engages the moment any match starts;
                 OFF disables the watchdog entirely. */}
             <div className="flex items-center justify-between gap-4 py-2" data-testid="settings-auto-perf-row">
               <div className="flex-1 min-w-0">
-                <div className="font-anton uppercase tracking-widest text-sm">Auto Performance (12P FFA)</div>
+                <div className="font-anton uppercase tracking-widest text-sm">Auto Performance</div>
                 <div className="text-neutral-500 text-xs mt-0.5">
-                  Only in 12P FFA. AUTO drops resolution + fog only if your FPS falls under 60 for a few seconds. ON forces it every match. OFF keeps full quality.
+                  AUTO drops resolution + fog only if your FPS falls under 60 for a few seconds in any mode. ON forces it every match. OFF keeps full quality.
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0" role="radiogroup" aria-label="Auto Performance mode">
