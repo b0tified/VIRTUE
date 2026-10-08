@@ -215,6 +215,13 @@ export default function AdminReports() {
         <LeaderboardBotsPanel onToast={setToast} />
       </div>
 
+      {/* Recent activity: two parallel feeds (newest signups + latest
+          online). Lets the admin eyeball signup spikes and see who's
+          currently playing without digging through the account search. */}
+      <div className="max-w-6xl mx-auto mb-6">
+        <RecentActivityPanel />
+      </div>
+
       {/* Live player activity + mode popularity — polls every 5s. */}
       <div className="max-w-6xl mx-auto mb-6">
         <LivePlayerStats />
@@ -1784,6 +1791,173 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChange
       )}
     </div>
   );
+}
+
+
+/* RecentActivityPanel — two parallel feeds for the Moderation tab:
+   • Recent Signups: newest real accounts (created_at desc).
+   • Recently Online: real accounts with the latest last_seen_at.
+
+   Both poll /api/admin/users/recent on mount + every 30s so an admin
+   can leave the page open and watch signups roll in during a spike.
+   Rows stay compact (one line each) so 10 items fit without scrolling
+   on a laptop viewport. */
+function RecentActivityPanel() {
+  const [data, setData] = useState({ recent_signups: [], recently_online: [] });
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const { data: res } = await api.get("/admin/users/recent", { params: { limit: 10 } });
+      setData(res || { recent_signups: [], recently_online: [] });
+      setErr(null);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || "Failed to load recent activity.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="recent-activity-panel">
+      <RecentFeed
+        title="Recent Signups"
+        subtitle="Newest accounts (last 10)"
+        icon={<Sprout size={18} strokeWidth={3} />}
+        rows={data.recent_signups}
+        loading={loading}
+        err={err}
+        timeField="created_at"
+        testid="recent-signups"
+      />
+      <RecentFeed
+        title="Recently Online"
+        subtitle="Latest active accounts"
+        icon={<Activity size={18} strokeWidth={3} />}
+        rows={data.recently_online}
+        loading={loading}
+        err={err}
+        timeField="last_seen_at"
+        testid="recently-online"
+      />
+    </div>
+  );
+}
+
+/* Single-column list shared by both Signups + Online. `timeField` picks
+   which timestamp to render as "Nm ago": "created_at" (ISO string) or
+   "last_seen_at" (unix seconds). An online green dot overrides the
+   relative-time chip when `online:true` so the Online column clearly
+   separates currently-connected rows from "closed tab 2 minutes ago". */
+function RecentFeed({ title, subtitle, icon, rows, loading, err, timeField, testid }) {
+  return (
+    <div className="card-pow p-0 overflow-hidden" data-testid={testid}>
+      <div className="bg-black text-white px-4 py-3 flex items-center gap-2">
+        <span className="text-white">{icon}</span>
+        <div className="min-w-0">
+          <div className="font-anton uppercase tracking-widest text-sm leading-none" data-testid={`${testid}-title`}>
+            {title}
+          </div>
+          <div className="font-body text-[11px] text-neutral-400 mt-0.5">{subtitle}</div>
+        </div>
+      </div>
+      <div className="divide-y-2 divide-black bg-white" data-testid={`${testid}-list`}>
+        {loading && (
+          <div className="px-4 py-6 text-center font-body text-sm text-neutral-500" data-testid={`${testid}-loading`}>
+            <Loader2 size={18} className="inline animate-spin mr-2" /> Loading…
+          </div>
+        )}
+        {!loading && err && (
+          <div className="px-4 py-6 text-center font-body text-sm text-[#E62429]" data-testid={`${testid}-error`}>
+            {err}
+          </div>
+        )}
+        {!loading && !err && rows.length === 0 && (
+          <div className="px-4 py-6 text-center font-body text-sm text-neutral-500" data-testid={`${testid}-empty`}>
+            No activity yet.
+          </div>
+        )}
+        {!loading && !err && rows.map((r) => (
+          <RecentFeedRow key={r.id} row={r} timeField={timeField} testid={`${testid}-row-${r.username}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecentFeedRow({ row, timeField, testid }) {
+  const stamp = timeField === "created_at"
+    ? (row.created_at ? new Date(row.created_at).getTime() : null)
+    : (row.last_seen_at ? row.last_seen_at * 1000 : null);
+  const ago = stamp ? formatRelativeTime(stamp) : "—";
+  const banned = row.ban_status && row.ban_status !== "active";
+  return (
+    <div
+      className="w-full flex items-center gap-3 px-3 py-2.5"
+      data-testid={testid}
+    >
+      <Avatar idx={row.avatar || 0} size={32} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-anton uppercase tracking-widest text-sm truncate" data-testid={`${testid}-username`}>
+            {row.username}
+          </span>
+          {row.role === "admin" && (
+            <span className="font-anton uppercase tracking-widest text-[9px] px-1.5 py-0.5 bg-[#FFD700] text-black border-2 border-black">
+              ADMIN
+            </span>
+          )}
+          {banned && (
+            <span className="font-anton uppercase tracking-widest text-[9px] px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black">
+              {row.ban_status}
+            </span>
+          )}
+        </div>
+        <div className="font-body text-[11px] text-neutral-500 flex items-center gap-2 mt-0.5 truncate">
+          <span>LV {row.level}</span>
+          <span>·</span>
+          <span className="tabular-nums">{row.rank_points} RP</span>
+          {row.email && <><span>·</span><span className="truncate">{row.email}</span></>}
+        </div>
+      </div>
+      <div className="flex-shrink-0 text-right">
+        {row.online ? (
+          <span className="font-anton uppercase tracking-widest text-[10px] text-[#06A35F] flex items-center gap-1 justify-end" data-testid={`${testid}-online`}>
+            <span className="w-2 h-2 rounded-full bg-[#06A35F] animate-pulse" />
+            Online
+          </span>
+        ) : (
+          <span className="font-body text-[11px] text-neutral-500 tabular-nums" data-testid={`${testid}-ago`}>
+            {ago}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* epoch-ms → "2m ago" / "3h ago" / "4d ago" / "Jan 12" for recent feeds. */
+function formatRelativeTime(ms) {
+  if (!ms) return "—";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "just now";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 

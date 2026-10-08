@@ -9741,6 +9741,93 @@ class AdminRenameUserIn(BaseModel):
     new_username: str = Field(min_length=2, max_length=20)
 
 
+@api.get("/admin/users/recent")
+async def admin_users_recent(
+    user: dict = Depends(get_current_user),
+    limit: int = 10,
+):
+    """Return two lists for the Moderation dashboard:
+      - `recent_signups`:  the N newest real accounts by `created_at`
+        (desc). Lets admins eyeball sudden signup surges / spam waves.
+      - `recently_online`: the N real accounts with the most recent
+        `last_seen_at` stamp (desc). Includes everyone currently
+        connected (shown as `online: true`) plus anyone who closed
+        the tab within the last few minutes — the dashboard renders
+        a "last seen Nm ago" chip for offline rows.
+
+    Seeded leaderboard bots are excluded from both — they have no
+    real session so including them would just pin their fake
+    `created_at` dates to the top forever.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    limit = max(1, min(50, int(limit)))
+    projection = {
+        "username": 1, "email": 1, "role": 1, "level": 1,
+        "rank_points": 1, "created_at": 1, "last_seen_at": 1,
+        "ban": 1, "avatar": 1,
+    }
+    # Recent signups — newest real account first. The `is_seeded`
+    # filter is required because the auto-seed job backdates
+    # `created_at` across days/weeks (10882), and leaving those in
+    # would pollute the top of the list with filler usernames.
+    signup_rows: List[dict] = []
+    async for u in db.users.find(
+        {"is_seeded": {"$ne": True}}, projection
+    ).sort("created_at", -1).limit(limit):
+        uid = str(u["_id"])
+        signup_rows.append({
+            "id": uid,
+            "username": u.get("username", ""),
+            "email": u.get("email", ""),
+            "role": u.get("role", "user"),
+            "level": int(u.get("level", 1) or 1),
+            "rank_points": int(u.get("rank_points", 0) or 0),
+            "avatar": int(u.get("avatar", 0) or 0),
+            "created_at": (
+                u["created_at"].isoformat()
+                if isinstance(u.get("created_at"), datetime)
+                else u.get("created_at")
+            ),
+            "last_seen_at": (
+                float(u["last_seen_at"]) if u.get("last_seen_at") else None
+            ),
+            "online": is_online(uid),
+            "ban_status": (u.get("ban") or {}).get("status", "active"),
+        })
+    # Recently online — ignore rows with no `last_seen_at` (an account
+    # that never connected would otherwise float to the bottom with a
+    # null and confuse the sort). Still a `find+sort` on an indexed
+    # field — not expensive at admin-dashboard call cadence.
+    online_rows: List[dict] = []
+    async for u in db.users.find(
+        {"is_seeded": {"$ne": True}, "last_seen_at": {"$ne": None, "$exists": True}},
+        projection,
+    ).sort("last_seen_at", -1).limit(limit):
+        uid = str(u["_id"])
+        online_rows.append({
+            "id": uid,
+            "username": u.get("username", ""),
+            "email": u.get("email", ""),
+            "role": u.get("role", "user"),
+            "level": int(u.get("level", 1) or 1),
+            "rank_points": int(u.get("rank_points", 0) or 0),
+            "avatar": int(u.get("avatar", 0) or 0),
+            "last_seen_at": float(u["last_seen_at"]),
+            "created_at": (
+                u["created_at"].isoformat()
+                if isinstance(u.get("created_at"), datetime)
+                else u.get("created_at")
+            ),
+            "online": is_online(uid),
+            "ban_status": (u.get("ban") or {}).get("status", "active"),
+        })
+    return {
+        "recent_signups": signup_rows,
+        "recently_online": online_rows,
+    }
+
+
 class AdminLeaderboardBotEditIn(BaseModel):
     """Admin-only edits for a seeded leaderboard bot. All fields are
     optional so callers can PATCH just one field at a time (e.g. only
