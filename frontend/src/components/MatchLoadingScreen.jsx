@@ -173,7 +173,14 @@ export default function MatchLoadingScreen() {
 
   return (
     <div
-      className="fixed inset-0 z-[9000] overflow-hidden flex items-center justify-center"
+      // Mobile fit: title + mode chip + map preview + status row stack
+      // was taller than a portrait iPhone viewport, cropping the bottom
+      // status chip. Switched from overflow-hidden/items-center to
+      // overflow-y-auto/items-start on mobile so the full stack is
+      // reachable via scroll. Decorative conic burst stays position:
+      // absolute so it still fills the whole screen regardless of the
+      // scroll container.
+      className="fixed inset-0 z-[9000] overflow-y-auto flex items-start sm:items-center justify-center"
       data-testid="match-loading-screen"
       data-phase={phase}
     >
@@ -199,9 +206,9 @@ export default function MatchLoadingScreen() {
           WebkitMaskImage: "radial-gradient(circle at 50% 50%, transparent 12%, black 30%, transparent 70%)",
         }}
       />
-      <div className="relative flex flex-col items-center justify-center gap-5 px-4 text-center">
+      <div className="relative flex flex-col items-center justify-center gap-3 sm:gap-5 px-4 py-10 sm:py-6 text-center min-h-full">
         <div
-          className="font-display text-pow-shadow-lg flex items-center gap-3 leading-none text-4xl sm:text-6xl"
+          className="font-display text-pow-shadow-lg flex items-center gap-2 sm:gap-3 leading-none text-3xl sm:text-6xl"
           style={{
             color: "#FFFFFF",
             textShadow: `0 0 18px ${meta.accent}99, 5px 5px 0 #0A0A0A, -1px -1px 0 #0A0A0A`,
@@ -209,9 +216,9 @@ export default function MatchLoadingScreen() {
           }}
           data-testid="match-loading-title"
         >
-          <Zap size={32} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
+          <Zap size={24} strokeWidth={4} className="text-[#FFD700] sm:w-8 sm:h-8" fill="#FFD700" />
           {meta.title}
-          <Zap size={32} strokeWidth={4} className="text-[#FFD700]" fill="#FFD700" />
+          <Zap size={24} strokeWidth={4} className="text-[#FFD700] sm:w-8 sm:h-8" fill="#FFD700" />
         </div>
 
         {/* Mode subtitle — FFA vs TDM. Locked-in label after welcome,
@@ -240,7 +247,7 @@ export default function MatchLoadingScreen() {
             data-testid="match-loading-map"
             key={showMap.map_id /* re-mount on map swap so the pop-in re-fires */}
           >
-            <MapPreview map={showMap} size={260} />
+            <MapPreview map={showMap} size={220} />
             <div className="flex items-center gap-2 font-anton uppercase tracking-widest text-white/60 text-[10px]">
               <span>MAP</span>
               <span

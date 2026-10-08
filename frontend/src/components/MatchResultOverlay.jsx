@@ -129,7 +129,14 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
 
   return (
     <div
-      className="absolute inset-0 z-50 overflow-hidden flex items-center justify-center px-4 py-6 pointer-events-auto"
+      // Mobile fit: content stack (hero + TDM band + stat tiles + "Back
+      // to Lobby" button) overflows a portrait iPhone viewport. Was
+      // `overflow-hidden` which clipped the bottom button off-screen.
+      // Now scrolls vertically with top-aligned content on mobile
+      // (items-start) and keeps the centered feel on tablet/desktop
+      // (sm:items-center). pb-10 reserves safe-area so the lobby
+      // button never kisses the bottom edge.
+      className="absolute inset-0 z-50 overflow-y-auto flex items-start sm:items-center justify-center px-4 pt-4 pb-10 sm:py-6 pointer-events-auto"
       data-testid="match-end-overlay"
       data-result={outcome}
       data-game-mode={isTdm ? "tdm" : "ffa"}
