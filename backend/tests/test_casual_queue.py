@@ -112,10 +112,13 @@ def test_remove_user_from_casual_queue_yanks_entry():
     assert server.CASUAL_QUEUE[0]["user_id"] == "eve"
 
 
-def test_casual_bot_fill_seconds_is_ten():
-    """The product spec is 10s for casual bot-fill — guard against
-    accidental regressions to ranked-tier values (60-300s)."""
-    assert server.CASUAL_BOT_FILL_SEC == 10.0
+def test_casual_bot_fill_seconds_is_six():
+    """Casual bot-fill is tuned to 6s so a solo queuer lands in-game
+    before the 11s mark (6s wait + ~3s match-found countdown).
+    Guards against accidental regressions back to the ranked-tier
+    values (60-300s) OR to the pre-tuning 10s that routinely crested
+    past 11s total time-to-match."""
+    assert server.CASUAL_BOT_FILL_SEC == 6.0
 
 
 def test_casual_matched_payload_includes_tdm_flag(monkeypatch):

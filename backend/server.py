@@ -7300,11 +7300,21 @@ QUEUE_LOCK = asyncio.Lock()
 RANKED_QUEUE: Dict[int, List[dict]] = {i: [] for i in range(len(RANK_TIERS))}
 # Casual matchmaking — a single FIFO queue (no tiers) so quick-match
 # operates like ranked but without rank gating. Bot-fill timer is short
-# (10s) so the player is never left waiting long; matchmaker pairs head-
-# to-head when two entries are present. Mirrors RANKED_QUEUE's shape:
-# each entry is `{user_id?, user_ids?, username?, usernames?, joined_at, is_party?}`.
+# Casual Quick Match queue. Players are paired head-to-head when two
+# entries are present (checked every matchmaker tick), otherwise bot-
+# filled after CASUAL_BOT_FILL_SEC seconds so the queue feels snappy.
+#
+# Previously 10s — a solo-queuer would wait 10s then eat another ~2s of
+# "Match Found!" overlay before entering the match, cresting past the
+# 11s mark. User asked for Quick Match to find a game before 11s more
+# often. Dropped to 6s so solo bot-fill now lands at ~8s total
+# (6s wait + 1-2s overlay); two humans joining within 6s still pair up
+# head-to-head so the human-vs-human path isn't impacted. The
+# bot_fill_seconds field in the GET /queue/casual response automatically
+# surfaces this to the client's countdown overlay — no frontend change
+# required.
 CASUAL_QUEUE: List[dict] = []
-CASUAL_BOT_FILL_SEC = 10.0
+CASUAL_BOT_FILL_SEC = 6.0
 
 # BigFFA queue — same pattern as CASUAL_QUEUE but drops the whole cohort
 # into the shared `bigffa_room` at once. We hold queued players up to
