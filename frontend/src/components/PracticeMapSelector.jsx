@@ -32,14 +32,14 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
       onClick={onClose}
     >
       <div
-        className="card-pow bg-white max-w-3xl w-full p-0 overflow-hidden flex flex-col max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)]"
+        className="card-pow bg-white max-w-5xl w-full p-0 overflow-hidden flex flex-col max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — pinned. */}
-        <div className="bg-[#9B59B6] text-white px-5 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="bg-[#9B59B6] text-white px-5 py-3 [@media(max-height:500px)]:py-1.5 flex items-center justify-between flex-shrink-0">
           <div>
-            <div className="font-display text-2xl sm:text-3xl text-[#FFD700] leading-none">SELECT MAP</div>
-            <div className="font-anton uppercase tracking-widest text-xs opacity-90 mt-1">{modeLabel}</div>
+            <div className="font-display text-2xl sm:text-3xl [@media(max-height:500px)]:text-xl text-[#FFD700] leading-none">SELECT MAP</div>
+            <div className="font-anton uppercase tracking-widest text-xs opacity-90 mt-1 [@media(max-height:500px)]:hidden">{modeLabel}</div>
           </div>
           <button
             type="button"
@@ -57,13 +57,14 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
             visible on short viewports (notably mobile landscape, where
             the orientation lock keeps the screen height ~360-414px). */}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
+          <div className="[@media(max-height:500px)]:grid [@media(max-height:500px)]:grid-cols-2">
           {/* Training-type toggle (Practice Range vs Offline vs AI).
               First row so the player picks their training flavour
               before format + map — the chosen value drives the
               subtitle copy in the modal header. */}
-          <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
-            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2">Training Type</div>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="px-4 pt-3 pb-2 border-b-2 border-black/10 [@media(max-height:500px)]:pt-2 [@media(max-height:500px)]:pb-1">
+            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2 [@media(max-height:500px)]:hidden">Training Type</div>
+            <div className="grid grid-cols-2 gap-3 [@media(max-height:500px)]:gap-2">
               <ModeCard
                 testid="practice-type-card-range"
                 active={trainingMode === "practice"}
@@ -84,9 +85,9 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
           </div>
           {/* Game-mode toggle (FFA vs TDM) — placed above the map cards so
               the user picks their format first, then their arena. */}
-          <div className="px-4 pt-4 pb-2 border-b-2 border-black/10">
-            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2">Game Mode</div>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="px-4 pt-3 pb-2 border-b-2 border-black/10 [@media(max-height:500px)]:pt-2 [@media(max-height:500px)]:pb-1">
+            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2 [@media(max-height:500px)]:hidden">Game Mode</div>
+            <div className="grid grid-cols-2 gap-3 [@media(max-height:500px)]:gap-2">
               <ModeCard
                 testid="practice-mode-card-ffa"
                 active={gameMode === "ffa"}
@@ -106,8 +107,9 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
             </div>
           </div>
 
+          </div>
           {/* Map grid */}
-          <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-3 sm:p-4 [@media(max-height:500px)]:py-2 grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3" data-testid="practice-map-grid">
           {/* Random option */}
           <MapCard
             isRandom
@@ -129,7 +131,7 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
 
         {/* Footer / confirm — pinned at the bottom so the START button is
             never clipped on short viewports (mobile landscape esp.). */}
-        <div className="bg-[#FFD700] px-5 py-3 flex items-center justify-between border-t-4 border-black flex-shrink-0 gap-2">
+        <div className="bg-[#FFD700] px-5 py-3 [@media(max-height:500px)]:py-1.5 flex items-center justify-between border-t-4 border-black flex-shrink-0 gap-2">
           <div className="font-anton uppercase tracking-widest text-xs">
             {picked
               ? <>SELECTED: <span className="text-[#E62429]">{MAPS_META.find((mp) => mp.map_id === picked)?.name}</span></>
@@ -165,11 +167,11 @@ function ModeCard({ active, onClick, title, subtitle, accent, testid }) {
       type="button"
       onClick={onClick}
       data-testid={testid}
-      className={`border-2 border-black p-3 text-left transition-transform active:translate-y-px ${active ? "text-white" : "bg-white hover:bg-neutral-100"}`}
+      className={`border-2 border-black p-3 [@media(max-height:500px)]:p-1.5 text-left transition-transform active:translate-y-px ${active ? "text-white" : "bg-white hover:bg-neutral-100"}`}
       style={active ? { background: accent, boxShadow: `4px 4px 0 0 #000` } : { boxShadow: `2px 2px 0 0 #00000022` }}
     >
-      <div className={`font-display text-lg leading-none ${active ? "" : ""}`}>{title}</div>
-      <div className={`font-anton uppercase tracking-widest text-[10px] mt-1 ${active ? "opacity-90" : "opacity-60"}`}>{subtitle}</div>
+      <div className={`font-display text-lg [@media(max-height:500px)]:text-xs leading-none ${active ? "" : ""}`}>{title}</div>
+      <div className={`font-anton uppercase tracking-widest text-[10px] mt-1 [@media(max-height:500px)]:hidden ${active ? "opacity-90" : "opacity-60"}`}>{subtitle}</div>
     </button>
   );
 }
@@ -180,20 +182,20 @@ function MapCard({ map, isRandom, selected, onClick, testid }) {
       type="button"
       onClick={onClick}
       data-testid={testid}
-      className={`relative border-pow-thick p-2 bg-white text-left transition-all ${
+      className={`relative border-pow-thick p-1 sm:p-1.5 bg-white text-left transition-all ${
         selected ? "ring-4 ring-[#E62429] translate-y-[-2px]" : "hover:translate-y-[-1px]"
       }`}
     >
       {isRandom ? (
         <div className="aspect-square w-full bg-[#0A0A0A] border-2 border-black flex items-center justify-center">
-          <Shuffle size={48} strokeWidth={3} className="text-[#FFD700]" />
+          <Shuffle size={28} strokeWidth={3} className="text-[#FFD700]" />
         </div>
       ) : (
         <div className="aspect-square w-full overflow-hidden">
           <MapPreview map={map} fill />
         </div>
       )}
-      <div className="font-anton uppercase tracking-widest text-xs mt-2 text-center text-black">
+      <div className="font-anton uppercase tracking-wider text-[9px] sm:text-[11px] mt-1 text-center text-black leading-tight truncate">
         {isRandom ? "RANDOM" : map.name}
       </div>
       {selected && (

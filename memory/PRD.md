@@ -2868,3 +2868,6 @@ Two quality-of-life changes shipped together.
 - Fix: `online_peak_loop` samples every 5s; all-time peak persisted in db.meta `_id: peak_online`; 24h peak from db.online_samples (TTL 25h, written per-minute + on each new 24h high). Loaded at startup.
 - Logged-out visitors (login/register/forgot screens) ping POST /api/presence/guest {guest_id} (localStorage `virtue_guest_id`); counted in real online + peaks only (not public displayed count). Guest entry dropped when that device logs in.
 - Moderation Live Stats: "On Login Screens" + "Peak 24h" tiles; Real Online subtitle shows "N on login". Verified via curl across 2 backend restarts + screenshot.
+
+## 2026-06 — Practice Map Selector Fit
+- All 7 maps were already in the selector but the 2nd row (Crashsite, Tundra, Royal Guard, Silent Town) sat below the fold on desktop/phone. Selector now uses an 8-column single row (4 cols on narrow), wider modal (max-w-5xl), and a compact short-viewport layout (toggles on one row). Verified all cards visible at 1920x800 and 844x390.
