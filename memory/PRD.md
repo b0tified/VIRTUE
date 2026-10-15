@@ -2874,3 +2874,5 @@ Two quality-of-life changes shipped together.
 
 ## 2026-06 — Building Facade Stretch Fix
 - engine.js `_buildBuilding` addFace: facade texture now tiles (RepeatWrapping, reps = round(faceWidth / max(3, height))) so long faces like the Crossfire center 20m corridor walls keep normal window proportions instead of one stretched 2x2 window grid. Applies to all maps' building faces.
+
+## 2026-06 — Winter lobby: removed floating comic words, added SVG comic Christmas tree (twinkling lights + pulsing star, static in non-animated mode) at bottom-center.

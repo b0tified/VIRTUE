@@ -26,6 +26,7 @@ export default function LobbyBackgroundSnow({ animated = true }) {
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
           <div className="lobby-bg-blob blob-snow-cyan" style={{ top: "30%", left: "30%" }} />
         </div>
+        <ChristmasTree animated={false} />
       </>
     );
   }
@@ -76,14 +77,7 @@ export default function LobbyBackgroundSnow({ animated = true }) {
         <div className="lobby-snow-flake flake-front" style={{ left: "88%", animationDelay: "3.6s", animationDuration: "4.7s" }} />
       </div>
 
-      {/* Floating comic words — winter-themed callouts. */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <span className="lobby-bg-word word-cyan  lobby-bg-word-wobble" style={{ top: "8%",  left: "6%",  animationDelay: "0.0s" }}>FROST!</span>
-        <span className="lobby-bg-word word-gold  lobby-bg-word-wobble" style={{ top: "72%", left: "10%", animationDelay: "0.6s" }}>CHILL!</span>
-        <span className="lobby-bg-word word-cyan  lobby-bg-word-wobble" style={{ top: "18%", left: "74%", animationDelay: "1.2s" }}>BLIZZARD!</span>
-        <span className="lobby-bg-word word-red   lobby-bg-word-wobble" style={{ top: "62%", left: "78%", animationDelay: "1.8s" }}>ICE!</span>
-        <span className="lobby-bg-word word-gold  lobby-bg-word-wobble" style={{ top: "40%", left: "44%", animationDelay: "2.4s" }}>FLURRY!</span>
-      </div>
+      <ChristmasTree animated />
 
       {/* Drifting frost blobs — cyan + pale-blue palette. */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -98,5 +92,52 @@ export default function LobbyBackgroundSnow({ animated = true }) {
         <div className="lobby-snow-shimmer" />
       </div>
     </>
+  );
+}
+
+const LIGHTS = [
+  [100, 92, "#E62429"], [84, 128, "#FFD700"], [118, 140, "#2ECCFF"], [70, 176, "#FFD700"],
+  [104, 186, "#E62429"], [136, 170, "#7CFF6B"], [58, 226, "#2ECCFF"], [92, 236, "#FFD700"],
+  [128, 226, "#E62429"], [154, 240, "#7CFF6B"], [46, 280, "#E62429"], [80, 292, "#7CFF6B"],
+  [116, 288, "#2ECCFF"], [150, 296, "#FFD700"], [168, 280, "#E62429"],
+];
+
+function ChristmasTree({ animated }) {
+  return (
+    <div
+      className="absolute bottom-0 left-[46%] -translate-x-1/2 pointer-events-none w-[36vmin] min-w-[140px] max-w-[340px]"
+      aria-hidden
+      data-testid="lobby-snow-christmas-tree"
+    >
+      <svg viewBox="0 0 200 340" className="w-full h-auto drop-shadow-[6px_6px_0_rgba(0,0,0,0.35)]">
+        <ellipse cx="100" cy="332" rx="96" ry="10" fill="#FFFFFF" stroke="#0A0A0A" strokeWidth="4" />
+        <rect x="86" y="290" width="28" height="40" fill="#7A4A23" stroke="#0A0A0A" strokeWidth="5" />
+        <polygon points="100,150 192,314 8,314" fill="#1E8C3A" stroke="#0A0A0A" strokeWidth="6" strokeLinejoin="round" />
+        <polygon points="100,96 172,236 28,236" fill="#24A346" stroke="#0A0A0A" strokeWidth="6" strokeLinejoin="round" />
+        <polygon points="100,46 150,160 50,160" fill="#2DBF55" stroke="#0A0A0A" strokeWidth="6" strokeLinejoin="round" />
+        <path d="M60 150 Q100 170 142 146 M40 226 Q100 252 162 222 M22 304 Q100 330 180 300" fill="none" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" opacity="0.85" />
+        {LIGHTS.map(([x, y, c], i) => (
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r="6"
+            fill={c}
+            stroke="#0A0A0A"
+            strokeWidth="2.5"
+            className={animated ? "lobby-tree-light" : undefined}
+            style={animated ? { animationDelay: `${(i % 5) * 0.35}s` } : undefined}
+          />
+        ))}
+        <polygon
+          points="100,10 109,34 134,34 114,49 121,73 100,58 79,73 86,49 66,34 91,34"
+          fill="#FFD700"
+          stroke="#0A0A0A"
+          strokeWidth="4"
+          strokeLinejoin="round"
+          className={animated ? "lobby-tree-star" : undefined}
+        />
+      </svg>
+    </div>
   );
 }
