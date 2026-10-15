@@ -239,11 +239,16 @@ export default function Lobby() {
   // early as a preview.
   const isAdmin = user?.role === "admin";
   // Auto resolves to the admin-configured default from the server.
-  const [autoVariant, setAutoVariant] = useState("default");
+  // Cached so returning to the lobby doesn't flash the fallback before the fetch resolves.
+  const [autoVariant, setAutoVariant] = useState(() => localStorage.getItem("virtue_lobby_default_bg") || "default");
   useEffect(() => {
     let alive = true;
     const load = () => api.get("/lobby/default_bg")
-      .then(({ data }) => { if (alive && data?.variant) setAutoVariant(data.variant); })
+      .then(({ data }) => {
+        if (!alive || !data?.variant) return;
+        localStorage.setItem("virtue_lobby_default_bg", data.variant);
+        setAutoVariant(data.variant);
+      })
       .catch(() => {});
     load();
     const id = setInterval(load, 30000);
@@ -262,7 +267,7 @@ export default function Lobby() {
   //   S1 → default, S2 → meteor, S3+ → snow.
   const canUseVariant = (v) => {
     if (v === "auto") return true;
-    if (isAdmin) return true;
+    if (isAdmin || !user) return true;
     return v === "meteor";
   };
   const effectiveVariant = (pickedVariant !== "auto" && canUseVariant(pickedVariant))

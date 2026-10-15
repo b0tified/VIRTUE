@@ -1832,6 +1832,7 @@ function DefaultLobbyScreenPanel({ onToast }) {
     try {
       const { data } = await api.post("/admin/lobby/default_bg", { variant: id });
       setCurrent(data.variant);
+      localStorage.setItem("virtue_lobby_default_bg", data.variant);
       window.dispatchEvent(new Event("virtue-lobby-default-changed"));
       onToast?.({ kind: "ok", text: "Default lobby screen updated." });
     } catch (e) {

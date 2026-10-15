@@ -2880,3 +2880,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Winter tree v2: 5 scalloped bough tiers w/ needle gradient + shading + snow dusting, glossy ornaments, glowing twinkle lights, gold bead garland, 5 3D wrapped presents w/ ribbons & bows.
 
 ## 2026-06 — New "Autumn" lobby (variant `fall`, LobbyBackgroundFall.jsx): sunset sky, hills, comic autumn trees, leaf pile, 16 falling/swaying maple+oak leaves (static scatter when animation off). Added to LOBBY_SCREENS + backend LOBBY_BG_VARIANTS; admin-selectable and settable as default in Moderation.
+
+## 2026-06 — Fixed Stormy Forest flash when returning to lobby: autoVariant cached in localStorage `virtue_lobby_default_bg` (updated on fetch + admin save); explicit picks trusted while user loads.
