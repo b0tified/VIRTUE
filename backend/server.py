@@ -10236,7 +10236,7 @@ async def admin_set_smurf_ratio(payload: SmurfRatioIn, user: dict = Depends(get_
     }
 
 
-LOBBY_BG_VARIANTS = ("default", "meteor", "castle", "snow", "comic")
+LOBBY_BG_VARIANTS = ("default", "meteor", "castle", "snow", "fall", "comic")
 
 
 async def _get_default_lobby_bg() -> str:

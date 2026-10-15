@@ -13,6 +13,7 @@ import PartyPanel from "@/components/PartyPanel";
 import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
+import LobbyBackgroundFall from "@/components/LobbyBackgroundFall";
 import LobbyBackgroundCastle from "@/components/LobbyBackgroundCastle";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
@@ -271,6 +272,7 @@ export default function Lobby() {
   const showMeteorBg = effectiveVariant === "meteor";
   const showCastleBg = effectiveVariant === "castle";
   const showComicBg  = effectiveVariant === "comic";
+  const showFallBg   = effectiveVariant === "fall";
   const usesSynthMusic = effectiveVariant !== "default";
 
   // Initialise audio mute states + volumes from settings/localStorage so the
@@ -742,6 +744,11 @@ export default function Lobby() {
         <>
           <span className="hidden" data-testid="lobby-bg-castle" data-active="true" />
           <LobbyBackgroundCastle animated={animatedBg} />
+        </>
+      ) : showFallBg ? (
+        <>
+          <span className="hidden" data-testid="lobby-bg-fall" data-active="true" />
+          <LobbyBackgroundFall animated={animatedBg} />
         </>
       ) : showComicBg ? (
         <>

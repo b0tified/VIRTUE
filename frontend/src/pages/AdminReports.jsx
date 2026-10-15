@@ -1848,7 +1848,7 @@ function DefaultLobbyScreenPanel({ onToast }) {
         <span>Default Lobby Screen</span>
       </div>
       <div className="text-xs text-neutral-600 mb-3">Shown to every player whose Lobby Background is set to Auto.</div>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {LOBBY_SCREENS.map(({ id, label }) => {
           const active = current === id;
           return (

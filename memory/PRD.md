@@ -2878,3 +2878,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Winter lobby: removed floating comic words, added SVG comic Christmas tree (twinkling lights + pulsing star, static in non-animated mode) at bottom-center.
 
 ## 2026-06 — Winter tree v2: 5 scalloped bough tiers w/ needle gradient + shading + snow dusting, glossy ornaments, glowing twinkle lights, gold bead garland, 5 3D wrapped presents w/ ribbons & bows.
+
+## 2026-06 — New "Autumn" lobby (variant `fall`, LobbyBackgroundFall.jsx): sunset sky, hills, comic autumn trees, leaf pile, 16 falling/swaying maple+oak leaves (static scatter when animation off). Added to LOBBY_SCREENS + backend LOBBY_BG_VARIANTS; admin-selectable and settable as default in Moderation.
