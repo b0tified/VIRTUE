@@ -1972,7 +1972,7 @@ html.virtue-no-ui-blur .hud-panel {
 }
 
 .lobby-tree-light { animation: lobby-tree-twinkle 1.8s ease-in-out infinite; }
-.lobby-tree-star { transform-origin: 100px 42px; animation: lobby-tree-star-pulse 2.4s ease-in-out infinite; }
+.lobby-tree-star { transform-origin: 140px 38px; animation: lobby-tree-star-pulse 2.4s ease-in-out infinite; }
 @keyframes lobby-tree-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 @keyframes lobby-tree-star-pulse { 0%, 100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.12); filter: brightness(1.3); } }
 @media (prefers-reduced-motion: reduce) { .lobby-tree-light, .lobby-tree-star { animation: none; } }

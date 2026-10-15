@@ -2876,3 +2876,5 @@ Two quality-of-life changes shipped together.
 - engine.js `_buildBuilding` addFace: facade texture now tiles (RepeatWrapping, reps = round(faceWidth / max(3, height))) so long faces like the Crossfire center 20m corridor walls keep normal window proportions instead of one stretched 2x2 window grid. Applies to all maps' building faces.
 
 ## 2026-06 — Winter lobby: removed floating comic words, added SVG comic Christmas tree (twinkling lights + pulsing star, static in non-animated mode) at bottom-center.
+
+## 2026-06 — Winter tree v2: 5 scalloped bough tiers w/ needle gradient + shading + snow dusting, glossy ornaments, glowing twinkle lights, gold bead garland, 5 3D wrapped presents w/ ribbons & bows.
