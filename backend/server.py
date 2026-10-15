@@ -3683,6 +3683,21 @@ def weapon_cfg(name: str) -> dict:
     return WEAPON_CONFIGS.get(name, WEAPON_CONFIGS["ak47"])
 
 
+def pick_bot_weapon(rank_tier: int, difficulty: float) -> str:
+    """Bot loadout roll. Sniper odds climb with displayed rank (or ranked
+    difficulty for undisguised bots); laser is a flat minority pick."""
+    tier = max(int(rank_tier or 0), int(max(0.0, difficulty - 1.0) * 2.5))
+    tier = max(0, min(7, tier))
+    sniper_p = min(0.45, 0.06 + 0.055 * tier)
+    laser_p = 0.15
+    r = random.random()
+    if r < sniper_p:
+        return "sniper"
+    if r < sniper_p + laser_p:
+        return "laser"
+    return "ak47"
+
+
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
     # High tiers (Master / Grandmaster / Goonmaster, 5-7): random 30-180s
     # per join — the ladder gets slower to climb but never stalls out for
@@ -4361,6 +4376,7 @@ class GameRoom:
             # ladder. Player.__init__ picked from the generic weighted
             # pool; overwriting here keeps disguise + skin correlated.
             bot.selected_skin = pick_bot_skin(t_idx)
+        bot.weapon = pick_bot_weapon(getattr(bot, "rank_tier", 0) or 0, bot.difficulty)
         # Reposition the bot to a spawn from THIS room's arena — avoid
         # placing it right on top of an existing player/bot.
         bx, bz = random_spawn(self.arena, occupants=list(self.players.values()))
@@ -5334,9 +5350,17 @@ class GameRoom:
         # Close-range aim assist. Snaps to nearest enemy within 15m + ~25°
         # cone. Beam events still report the snapped yaw/pitch so the beam
         # visually goes where it actually hits.
-        aim = self._laser_autoaim_lock(shooter)
-        beam_yaw = aim[0] if aim else shooter.yaw
-        beam_pitch = aim[1] if aim else shooter.pitch
+        if shooter.is_bot:
+            diff = float(getattr(shooter, "difficulty", 1.0))
+            noise = BOT_AIM_NOISE * 0.8 / max(0.5, diff)
+            beam_yaw = shooter.yaw + random.uniform(-noise, noise)
+            beam_pitch = shooter.pitch + random.uniform(-noise * 0.6, noise * 0.6)
+            if not (diff >= 1.5 and self.is_ranked):
+                damage_this_tick = max(1, int(round(dps * dt * min(1.0, 0.5 + 0.2 * diff))))
+        else:
+            aim = self._laser_autoaim_lock(shooter)
+            beam_yaw = aim[0] if aim else shooter.yaw
+            beam_pitch = aim[1] if aim else shooter.pitch
         # Raycast (no spread). Lag-compensated for real-player beams so
         # tracking moving targets through latency still registers.
         at_time = None
@@ -5789,6 +5813,8 @@ class GameRoom:
             # Practice dummies are stationary targets — no movement.
             if getattr(bot, "is_dummy", False):
                 continue
+            # Re-armed each tick by fire control below; stops beams with no target.
+            bot.laser_firing = False
             difficulty = float(getattr(bot, "difficulty", 1.0))
             smart = difficulty >= 1.5  # ranked-only AI enhancements
             # High-tier smart bots (disguised as DIAMOND or above,
@@ -6164,7 +6190,22 @@ class GameRoom:
                 # so a good bot's edge is smarter positioning, not raw
                 # DPS the player can never match.
                 effective_cd = max(effective_cd, float(SHOT_COOLDOWN_MS))
-            in_burst_cooldown = smart and now_ms < bot.bot_burst_cooldown_until
+            bot_weapon = getattr(bot, "weapon", "ak47")
+            if bot_weapon == "laser":
+                # Laser bots hold the beam inside its effective range; smart bots
+                # release early (~80% heat) instead of eating a forced overheat.
+                want = dist <= 30.0 and not bot.laser_overheated and self._has_los(bot, target)
+                if want and smart and bot.laser_heat >= 0.8:
+                    bot._laser_vent_until = now_ms + 900
+                if now_ms < getattr(bot, "_laser_vent_until", 0):
+                    want = False
+                if want and bot.invuln_until > now_s:
+                    bot.invuln_until = 0.0
+                bot.laser_firing = bool(want)
+                continue
+            if bot_weapon == "sniper":
+                effective_cd = max(effective_cd, max(1000.0, 1700.0 - 180.0 * difficulty))
+            in_burst_cooldown = smart and bot_weapon != "sniper" and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
                     # Firing forfeits spawn immunity on all bots (all modes).
@@ -6183,6 +6224,8 @@ class GameRoom:
                     # 60% → 45% of base noise.
                     if smart and L < 0.05:
                         noise *= 0.45
+                    if bot_weapon == "sniper":
+                        noise *= 0.75
                     # Ranked headshot bias — at high diff, ~30% of shots
                     # explicitly aim at the target's head height instead
                     # of chest. Nerfed by reducing the probability slope
@@ -6205,7 +6248,10 @@ class GameRoom:
                     # bot is a credible threat without being aimbot.
                     if smart and self.is_ranked:
                         bot._apply_weapon_mults = True
-                        dmg = int(weapon_cfg("ak47")["damage"])
+                        dmg = int(weapon_cfg(bot_weapon)["damage"])
+                    elif bot_weapon == "sniper":
+                        bot._apply_weapon_mults = False
+                        dmg = int(weapon_cfg("sniper")["damage"] * min(1.0, 0.5 + 0.2 * difficulty))
                     else:
                         bot._apply_weapon_mults = False
                         dmg = int(BOT_SHOT_DAMAGE * (0.7 + 0.4 * difficulty))
@@ -6310,7 +6356,7 @@ class GameRoom:
                     if new_hp != p.hp:
                         p.hp = new_hp
             # Laser beam tick — apply continuous damage + heat ramp, or cool off.
-            if p.alive and not p.is_bot:
+            if p.alive and (not p.is_bot or p.weapon == "laser"):
                 if p.laser_firing and p.weapon == "laser" and not p.laser_overheated:
                     await self._apply_laser_beam(p, dt)
                     if p.laser_heat >= 1.0:

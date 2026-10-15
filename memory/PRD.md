@@ -2882,3 +2882,9 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — New "Autumn" lobby (variant `fall`, LobbyBackgroundFall.jsx): sunset sky, hills, comic autumn trees, leaf pile, 16 falling/swaying maple+oak leaves (static scatter when animation off). Added to LOBBY_SCREENS + backend LOBBY_BG_VARIANTS; admin-selectable and settable as default in Moderation.
 
 ## 2026-06 — Fixed Stormy Forest flash when returning to lobby: autoVariant cached in localStorage `virtue_lobby_default_bg` (updated on fetch + admin save); explicit picks trusted while user loads.
+
+## 2026-06 — Bot weapon variety
+- `pick_bot_weapon(rank_tier, difficulty)` at spawn: sniper 6% (Bronze) -> ~45% (top tiers), laser 15% flat, else AK.
+- Sniper bots: slower cadence (max(1000, 1700-180*diff) ms), tighter aim (x0.75 noise), casual dmg 50*min(1,0.5+0.2d), ranked smart full 50 + head/legs mults.
+- Laser bots: hold beam within 30m w/ LOS via existing laser tick (now runs for laser bots); bots aim with noise (no autolock); casual dps scaled; smart bots vent at 80% heat.
+- Tests: tests/test_bot_weapons.py (4 pass). Note: ~16 older source-grep tests in bot suites were already stale/failing (tier constants, peak seeding) — unrelated.

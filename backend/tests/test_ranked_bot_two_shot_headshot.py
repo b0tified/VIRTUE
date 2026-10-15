@@ -40,7 +40,7 @@ def test_fire_control_sets_flag_only_for_ranked_smart_bots():
     # The combined assignment ("smart and self.is_ranked" → cfg-damage)
     assert "if smart and self.is_ranked:" in src
     assert "bot._apply_weapon_mults = True" in src
-    assert "weapon_cfg(\"ak47\")[\"damage\"]" in src
+    assert "weapon_cfg(bot_weapon)[\"damage\"]" in src
     # Non-ranked branch must explicitly reset the flag so a bot doesn't
     # carry over a True from a prior tick after a context switch.
     assert "bot._apply_weapon_mults = False" in src
