@@ -2927,6 +2927,56 @@ export class GameEngine {
     return tex;
   }
 
+  _glintTexture() {
+    if (this._glintTex) return this._glintTex;
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const ctx = c.getContext("2d");
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.2, "rgba(200,240,255,0.8)");
+    g.addColorStop(1, "rgba(120,200,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.fillRect(0, 61, 128, 6);
+    ctx.fillRect(61, 0, 6, 128);
+    this._glintTex = new THREE.CanvasTexture(c);
+    return this._glintTex;
+  }
+
+  _setRemoteWeapon(entry, weapon) {
+    const guns = entry.heldGuns;
+    if (!guns) return;
+    const w = weapon === "sniper" || weapon === "laser" || weapon === "katana" ? weapon : "ak47";
+    if (entry.heldWeapon === w) return;
+    entry.heldWeapon = w;
+    guns.ak47.visible = w === "ak47";
+    guns.sniper.visible = w === "sniper";
+    guns.laser.visible = w === "laser";
+    if (entry.remoteMuzzleFlash) entry.remoteMuzzleFlash.position.z = w === "sniper" ? 1.22 : w === "laser" ? 0.6 : 0.62;
+  }
+
+  // Lens flash on a remote sniper whose aim line points at the local player.
+  _updateSniperGlint(entry, now) {
+    const glint = entry.heldGuns?.glint;
+    if (!glint) return;
+    let target = 0;
+    if (entry.heldWeapon === "sniper" && entry.prevAlive !== false && entry.mesh.visible !== false) {
+      const yaw = (entry.targetYaw ?? entry.mesh.rotation.y) - Math.PI;
+      const dx = this.position.x - entry.mesh.position.x;
+      const dz = this.position.z - entry.mesh.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 6) {
+        const dot = (dx * -Math.sin(yaw) + dz * -Math.cos(yaw)) / d;
+        if (dot > 0.985) target = 0.65 + 0.35 * Math.sin((now || performance.now()) * 0.012);
+      }
+    }
+    const m = glint.material;
+    m.opacity += (target - m.opacity) * 0.25;
+    glint.visible = m.opacity > 0.03;
+  }
+
   _makeBuildingFaceTexture(ob, night = false) {
     const c = document.createElement("canvas");
     c.width = 256; c.height = 256;
@@ -4130,23 +4180,73 @@ export class GameEngine {
     group.add(leftArm);
     group.add(rightArm);
 
-    // ----- Held gun on right arm -----
+    // ----- Held guns on right arm (one visible at a time, see _setRemoteWeapon) -----
     const heldGun = new THREE.Group();
+    const gunAk = new THREE.Group();
     const gunBody = push(new THREE.BoxGeometry(0.16, 0.14, 0.42), 0x0a0a0a, 1.06);
     gunBody.position.set(0, -0.82, 0.15);
-    heldGun.add(gunBody);
+    gunAk.add(gunBody);
+    const gunStock = push(new THREE.BoxGeometry(0.12, 0.12, 0.2), 0xb5713a, 1.06);
+    gunStock.position.set(0, -0.84, -0.12);
+    gunAk.add(gunStock);
     const gunBarrel = push(new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8), 0x0a0a0a, 1.1);
     gunBarrel.rotation.x = Math.PI / 2;
     gunBarrel.position.set(0, -0.82, 0.45);
-    heldGun.add(gunBarrel);
-    const gunMag = push(new THREE.BoxGeometry(0.1, 0.12, 0.1), skin.accent, 1.06);
-    gunMag.position.set(0, -0.93, 0.08);
-    heldGun.add(gunMag);
-    // Muzzle flash — small warm sphere at the barrel tip, opacity 0 by
-    // default. Lit up briefly by `_flashRemoteMuzzle` when the server
-    // reports a `shot` event for this player so third-person shooters
-    // read as visibly firing (previously other players' shots produced
-    // only a tracer with no local shooter feedback on the model).
+    gunAk.add(gunBarrel);
+    const gunMag = push(new THREE.BoxGeometry(0.1, 0.16, 0.1), 0xb5713a, 1.06);
+    gunMag.position.set(0, -0.95, 0.1);
+    gunMag.rotation.x = 0.25;
+    gunAk.add(gunMag);
+    heldGun.add(gunAk);
+
+    const gunSniper = new THREE.Group();
+    const snBody = push(new THREE.BoxGeometry(0.14, 0.14, 0.62), 0x2f3b2a, 1.06);
+    snBody.position.set(0, -0.82, 0.2);
+    gunSniper.add(snBody);
+    const snStock = push(new THREE.BoxGeometry(0.12, 0.18, 0.26), 0x3d2a17, 1.06);
+    snStock.position.set(0, -0.86, -0.2);
+    gunSniper.add(snStock);
+    const snBarrel = push(new THREE.CylinderGeometry(0.03, 0.035, 0.7, 8), 0x0a0a0a, 1.1);
+    snBarrel.rotation.x = Math.PI / 2;
+    snBarrel.position.set(0, -0.8, 0.85);
+    gunSniper.add(snBarrel);
+    const snScope = push(new THREE.CylinderGeometry(0.055, 0.055, 0.34, 10), 0x0a0a0a, 1.1);
+    snScope.rotation.x = Math.PI / 2;
+    snScope.position.set(0, -0.66, 0.22);
+    gunSniper.add(snScope);
+    const snLens = new THREE.Mesh(new THREE.CircleGeometry(0.05, 12), new THREE.MeshBasicMaterial({ color: 0x66d9ff }));
+    snLens.position.set(0, -0.66, 0.395);
+    gunSniper.add(snLens);
+    const glint = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this._glintTexture(), color: 0xffffff, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    glint.position.set(0, -0.66, 0.42);
+    glint.scale.setScalar(1.4);
+    glint.visible = false;
+    gunSniper.add(glint);
+    heldGun.add(gunSniper);
+
+    const gunLaser = new THREE.Group();
+    const lzBody = push(new THREE.BoxGeometry(0.18, 0.18, 0.44), 0xe8e8f0, 1.06);
+    lzBody.position.set(0, -0.82, 0.16);
+    gunLaser.add(lzBody);
+    const lzCore = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.05, 0.3), new THREE.MeshBasicMaterial({ color: 0x00e5ff }));
+    lzCore.position.set(0, -0.78, 0.16);
+    gunLaser.add(lzCore);
+    const lzEmitter = push(new THREE.CylinderGeometry(0.07, 0.05, 0.16, 10), 0x0a0a0a, 1.1);
+    lzEmitter.rotation.x = Math.PI / 2;
+    lzEmitter.position.set(0, -0.82, 0.46);
+    gunLaser.add(lzEmitter);
+    const lzTip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), new THREE.MeshBasicMaterial({ color: 0x7ff6ff }));
+    lzTip.position.set(0, -0.82, 0.55);
+    gunLaser.add(lzTip);
+    heldGun.add(gunLaser);
+
+    gunSniper.visible = false;
+    gunLaser.visible = false;
+    const heldGuns = { ak47: gunAk, sniper: gunSniper, laser: gunLaser, glint };
+    // Muzzle flash — lit briefly by the `shot` event handler for this player.
     const remoteMuzzleFlash = new THREE.Mesh(
       new THREE.SphereGeometry(0.11, 10, 8),
       new THREE.MeshBasicMaterial({
@@ -4794,7 +4894,7 @@ export class GameEngine {
       group.add(aura);
     }
 
-    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, remoteMuzzleFlash };
+    return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, heldGuns, remoteMuzzleFlash };
   }
 
   _addRemotePlayer(state) {
@@ -4812,7 +4912,7 @@ export class GameEngine {
     // friend-vs-foe reads at a glance even mid-firefight. Local player and
     // FFA mode keep their cosmetic skin untouched.
     const skin = this._applyTeamSkin(state, baseSkin);
-    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, remoteMuzzleFlash } = this._buildHumanoid(skin);
+    const { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, heldGuns, remoteMuzzleFlash } = this._buildHumanoid(skin);
     group.position.set(state.x, 0, state.z);
     // Humanoid rig's face + gun barrel point local +Z, but the game's
     // yaw convention has forward = (-sin(yaw), -cos(yaw)) = local -Z.
@@ -4867,6 +4967,8 @@ export class GameEngine {
       leftArm, rightArm, leftLeg, rightLeg, torso,
       // Held weapon prop + its muzzle flash — animated on remote-shoot.
       heldGun,
+      heldGuns,
+      heldWeapon: "ak47",
       remoteMuzzleFlash,
       // Firing-animation timer (ms remaining). Ticks down each frame;
       // while positive the right arm gets a recoil kickback and the
@@ -5451,6 +5553,7 @@ export class GameEngine {
         entry.targetZ = p.z;
         entry.targetY = meshLift;
         entry.targetYaw = (p.yaw || 0) + Math.PI;
+        this._setRemoteWeapon(entry, p.weapon);
 
         // Death animation trigger
         if (entry.prevAlive && !p.alive) {
@@ -6358,6 +6461,7 @@ export class GameEngine {
         // doesn't leave a permanent faint glow on the barrel.
         entry.remoteMuzzleFlash.visible = m.opacity > 0.02;
       }
+      this._updateSniperGlint(entry, performance.now());
 
       // ─────────────────────────────────────────────────────────────
       // DEATH ANIMATION — 4-phase KO (recoil → buckle → topple → land)

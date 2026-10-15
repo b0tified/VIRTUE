@@ -1276,6 +1276,10 @@ async def on_startup():
     asyncio.create_task(seeded_climb_loop())
     asyncio.create_task(synthetic_online_loop())
     try:
+        await _load_bot_loadout()
+    except Exception as e:
+        logger.warning("bot loadout load failed: %s", e)
+    try:
         await _load_peak_online()
     except Exception as e:
         logger.warning("peak online load failed: %s", e)
@@ -3683,13 +3687,18 @@ def weapon_cfg(name: str) -> dict:
     return WEAPON_CONFIGS.get(name, WEAPON_CONFIGS["ak47"])
 
 
+# Admin-tunable (Moderation → Bot Loadout); persisted in db.app_settings `_id: bot_loadout`.
+BOT_LOADOUT: Dict[str, float] = {"sniper_low": 6.0, "sniper_high": 45.0, "laser": 15.0}
+
+
 def pick_bot_weapon(rank_tier: int, difficulty: float) -> str:
-    """Bot loadout roll. Sniper odds climb with displayed rank (or ranked
-    difficulty for undisguised bots); laser is a flat minority pick."""
+    """Bot loadout roll. Sniper odds climb linearly from `sniper_low` (Bronze)
+    to `sniper_high` (top tier); laser is a flat pick."""
     tier = max(int(rank_tier or 0), int(max(0.0, difficulty - 1.0) * 2.5))
     tier = max(0, min(7, tier))
-    sniper_p = min(0.45, 0.06 + 0.055 * tier)
-    laser_p = 0.15
+    lo, hi = BOT_LOADOUT["sniper_low"] / 100.0, BOT_LOADOUT["sniper_high"] / 100.0
+    sniper_p = lo + (hi - lo) * tier / 7.0
+    laser_p = min(BOT_LOADOUT["laser"] / 100.0, max(0.0, 1.0 - sniper_p))
     r = random.random()
     if r < sniper_p:
         return "sniper"
@@ -6205,6 +6214,14 @@ class GameRoom:
                 continue
             if bot_weapon == "sniper":
                 effective_cd = max(effective_cd, max(1000.0, 1700.0 - 180.0 * difficulty))
+                # Must hold aim on the same target briefly before the first shot
+                # (clients show a scope glint during this window).
+                if getattr(bot, "_snipe_target", None) != target.id or not self._has_los(bot, target):
+                    bot._snipe_target = target.id if self._has_los(bot, target) else None
+                    bot._snipe_since = now_ms
+                    continue
+                if now_ms - getattr(bot, "_snipe_since", now_ms) < 750:
+                    continue
             in_burst_cooldown = smart and bot_weapon != "sniper" and now_ms < bot.bot_burst_cooldown_until
             if not in_burst_cooldown and now_ms - bot.last_shot_ms >= effective_cd:
                 if self._has_los(bot, target):
@@ -10280,6 +10297,38 @@ async def admin_set_smurf_ratio(payload: SmurfRatioIn, user: dict = Depends(get_
         "ratio": _get_casual_elite_bot_ratio(),
         "diff": _get_casual_elite_bot_diff(),
     }
+
+
+class BotLoadoutIn(BaseModel):
+    sniper_low: float = Field(ge=0, le=100)
+    sniper_high: float = Field(ge=0, le=100)
+    laser: float = Field(ge=0, le=100)
+
+
+async def _load_bot_loadout() -> None:
+    doc = await db.app_settings.find_one({"_id": "bot_loadout"})
+    if doc:
+        for k in BOT_LOADOUT:
+            if k in doc:
+                BOT_LOADOUT[k] = float(doc[k])
+
+
+@api.get("/admin/bot_loadout")
+async def admin_get_bot_loadout(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return dict(BOT_LOADOUT)
+
+
+@api.post("/admin/bot_loadout")
+async def admin_set_bot_loadout(payload: BotLoadoutIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if max(payload.sniper_low, payload.sniper_high) + payload.laser > 100:
+        raise HTTPException(status_code=400, detail="Sniper + laser chance can't exceed 100%.")
+    BOT_LOADOUT.update(payload.model_dump())
+    await db.app_settings.update_one({"_id": "bot_loadout"}, {"$set": dict(BOT_LOADOUT)}, upsert=True)
+    return dict(BOT_LOADOUT)
 
 
 LOBBY_BG_VARIANTS = ("default", "meteor", "castle", "snow", "fall", "comic")

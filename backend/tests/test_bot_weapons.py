@@ -57,3 +57,16 @@ def test_sniper_bot_fires_sniper_shots():
 def test_laser_bot_holds_beam():
     _, victim, shooter, room = _duel("laser")
     assert shooter.laser_heat > 0.0 or shooter.laser_overheated
+
+
+def test_bot_loadout_overrides_are_respected():
+    saved = dict(srv.BOT_LOADOUT)
+    try:
+        srv.BOT_LOADOUT.update({"sniper_low": 0.0, "sniper_high": 0.0, "laser": 0.0})
+        assert {srv.pick_bot_weapon(7, 3.0) for _ in range(300)} == {"ak47"}
+        srv.BOT_LOADOUT.update({"sniper_low": 100.0, "sniper_high": 100.0, "laser": 0.0})
+        assert {srv.pick_bot_weapon(0, 1.0) for _ in range(300)} == {"sniper"}
+        srv.BOT_LOADOUT.update({"sniper_low": 0.0, "sniper_high": 0.0, "laser": 100.0})
+        assert {srv.pick_bot_weapon(3, 1.0) for _ in range(300)} == {"laser"}
+    finally:
+        srv.BOT_LOADOUT.update(saved)

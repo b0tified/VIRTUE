@@ -6,7 +6,7 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette, Crosshair } from "lucide-react";
 import api from "@/api";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { useAuth } from "@/context/AuthContext";
@@ -225,6 +225,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <DefaultLobbyScreenPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <BotLoadoutPanel onToast={setToast} />
       </div>
 
       {/* Live player activity + mode popularity — polls every 5s. */}
@@ -1870,6 +1874,76 @@ function DefaultLobbyScreenPanel({ onToast }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function BotLoadoutPanel({ onToast }) {
+  const [vals, setVals] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api.get("/admin/bot_loadout").then(({ data }) => setVals(data)).catch(() => {});
+  }, []);
+  const fields = [
+    { k: "sniper_low", label: "Sniper % (Bronze bots)" },
+    { k: "sniper_high", label: "Sniper % (Top-rank bots)" },
+    { k: "laser", label: "Laser % (all bots)" },
+  ];
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.post("/admin/bot_loadout", vals);
+      setVals(data);
+      onToast?.({ kind: "ok", text: "Bot loadout saved. Applies to newly spawned bots." });
+    } catch (e) {
+      onToast?.({ kind: "err", text: e?.response?.data?.detail || "Failed to save bot loadout." });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const ak = vals ? Math.max(0, 100 - Math.max(vals.sniper_low, vals.sniper_high) - vals.laser) : 0;
+  return (
+    <div className="bg-white border-4 border-black p-4" data-testid="bot-loadout-panel">
+      <div className="font-anton uppercase tracking-widest text-sm mb-1 flex items-center gap-2">
+        <Crosshair size={16} strokeWidth={3} className="text-[#E62429]" />
+        <span>Bot Loadout</span>
+      </div>
+      <div className="text-xs text-neutral-600 mb-3">
+        Chance a newly spawned bot carries each weapon. Sniper odds scale from Bronze to top rank; the rest use the AK-47.
+      </div>
+      {!vals ? (
+        <Loader2 size={16} className="animate-spin" />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+          {fields.map(({ k, label }) => (
+            <label key={k} className="flex flex-col gap-1">
+              <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">{label}</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={vals[k]}
+                  onChange={(e) => setVals({ ...vals, [k]: Number(e.target.value) })}
+                  className="flex-1 accent-[#E62429]"
+                  data-testid={`bot-loadout-${k}-slider`}
+                />
+                <span className="font-display text-lg w-12 text-right" data-testid={`bot-loadout-${k}-value`}>{Math.round(vals[k])}%</span>
+              </div>
+            </label>
+          ))}
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-anton uppercase tracking-widest text-[10px] opacity-70" data-testid="bot-loadout-ak-value">AK-47 ≥ {Math.round(ak)}%</span>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="btn-pow bg-[#FFD700] text-black text-xs px-4 py-2"
+              data-testid="bot-loadout-save-button"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
