@@ -7,6 +7,7 @@ import AdvancedControls from "@/components/AdvancedControls";
 import AccountSettingsCard from "@/components/AccountSettingsCard";
 import { detectIsMobile } from "@/game/useIsMobile";
 import api from "@/api";
+import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 
 // Matchmaking regions exposed in Account → Server Region. `basePing` seeds a
 // fake-but-stable latency so the list looks alive. Once the gameserver runs
@@ -1312,16 +1313,10 @@ function LobbyVariantPicker({ value, onChange, user }) {
   // page-scoped), rely on `past_seasons` + AUTO as the safe default.
   // A user currently on Season N doesn't yet have S{N} in finished,
   // but the AUTO option will pick the right variant regardless.
-  const options = [
-    { id: "auto",    label: "Auto" },
-    // Season 1 (`default`) button removed per user request — Auto still
-    // falls back to it if the user is Season 1 and no other variant is
-    // selected, so the asset itself stays reachable; only the explicit
-    // button is hidden. Season 2 (`meteor`) is being surfaced as the
-    // generic "Classic" lobby backdrop (user: "change season 2 button
-    // to say classic") and unlocks for everyone (no past-season gate).
-    { id: "meteor",  label: "Classic" },
-  ];
+  // Regular players: Auto + Classic. Admins see every lobby screen.
+  const options = isAdmin
+    ? [{ id: "auto", label: "Auto" }, ...LOBBY_SCREENS]
+    : [{ id: "auto", label: "Auto" }, { id: "meteor", label: "Classic" }];
   return (
     <div className="mt-3" data-testid="settings-lobby-variant-picker">
       <div className="text-xs uppercase tracking-widest opacity-70 mb-1 font-anton">

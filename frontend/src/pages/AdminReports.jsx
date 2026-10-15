@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette } from "lucide-react";
 import api from "@/api";
+import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 
@@ -220,6 +221,10 @@ export default function AdminReports() {
           currently playing without digging through the account search. */}
       <div className="max-w-6xl mx-auto mb-6">
         <RecentActivityPanel />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <DefaultLobbyScreenPanel onToast={setToast} />
       </div>
 
       {/* Live player activity + mode popularity — polls every 5s. */}
@@ -1802,6 +1807,61 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChange
    can leave the page open and watch signups roll in during a spike.
    Rows stay compact (one line each) so 10 items fit without scrolling
    on a laptop viewport. */
+function DefaultLobbyScreenPanel({ onToast }) {
+  const [current, setCurrent] = useState(null);
+  const [saving, setSaving] = useState(null);
+
+  useEffect(() => {
+    api.get("/lobby/default_bg").then(({ data }) => setCurrent(data?.variant || "default")).catch(() => setCurrent("default"));
+  }, []);
+
+  const pick = async (id) => {
+    if (id === current || saving) return;
+    setSaving(id);
+    try {
+      const { data } = await api.post("/admin/lobby/default_bg", { variant: id });
+      setCurrent(data.variant);
+      window.dispatchEvent(new Event("virtue-lobby-default-changed"));
+      onToast?.({ kind: "ok", text: "Default lobby screen updated." });
+    } catch (e) {
+      onToast?.({ kind: "err", text: e?.response?.data?.detail || "Failed to update lobby screen." });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div className="bg-white border-4 border-black p-4" data-testid="default-lobby-screen-panel">
+      <div className="font-anton uppercase tracking-widest text-sm mb-1 flex items-center gap-2">
+        <Palette size={16} strokeWidth={3} className="text-[#E62429]" />
+        <span>Default Lobby Screen</span>
+      </div>
+      <div className="text-xs text-neutral-600 mb-3">Shown to every player whose Lobby Background is set to Auto.</div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {LOBBY_SCREENS.map(({ id, label }) => {
+          const active = current === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => pick(id)}
+              disabled={current === null || !!saving}
+              className={`border-2 border-black px-3 py-2 font-anton uppercase tracking-widest text-xs flex items-center justify-center gap-1 transition-colors ${
+                active ? "bg-[#FFD700]" : "bg-white hover:bg-neutral-100"
+              }`}
+              data-testid={`default-lobby-screen-${id}`}
+              data-active={active ? "1" : "0"}
+            >
+              {saving === id ? <Loader2 size={12} className="animate-spin" /> : active ? <Check size={12} strokeWidth={3} /> : null}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RecentActivityPanel() {
   const [data, setData] = useState({ recent_signups: [], recently_online: [] });
   const [loading, setLoading] = useState(true);

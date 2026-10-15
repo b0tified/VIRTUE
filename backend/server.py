@@ -10158,6 +10158,39 @@ async def admin_set_smurf_ratio(payload: SmurfRatioIn, user: dict = Depends(get_
     }
 
 
+LOBBY_BG_VARIANTS = ("default", "meteor", "castle", "snow", "comic")
+
+
+async def _get_default_lobby_bg() -> str:
+    doc = await db.app_settings.find_one({"_id": "lobby_bg"})
+    v = (doc or {}).get("variant")
+    return v if v in LOBBY_BG_VARIANTS else "default"
+
+
+@api.get("/lobby/default_bg")
+async def get_default_lobby_bg():
+    return {"variant": await _get_default_lobby_bg()}
+
+
+class LobbyBgIn(BaseModel):
+    variant: str
+
+
+@api.post("/admin/lobby/default_bg")
+async def admin_set_default_lobby_bg(payload: LobbyBgIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if payload.variant not in LOBBY_BG_VARIANTS:
+        raise HTTPException(status_code=400, detail="Unknown lobby background.")
+    await db.app_settings.update_one(
+        {"_id": "lobby_bg"},
+        {"$set": {"variant": payload.variant, "updated_by": user.get("username"),
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"variant": payload.variant}
+
+
 # ─── Admin: Custom bot names ───────────────────────────────────────────
 # Admins can register additional bot handles that will be sprinkled into
 # the disguised-bot pool for specific modes (ffa / tdm / ranked / bigffa)

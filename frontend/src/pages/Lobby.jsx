@@ -256,7 +256,17 @@ export default function Lobby() {
   // snow remain selectable via settings for players who unlocked them
   // in past seasons, but "auto" now always resolves to the castle
   // (rendered by the `default` branch below).
-  const autoVariant = "default";
+  const [autoVariant, setAutoVariant] = useState("default");
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.get("/lobby/default_bg")
+      .then(({ data }) => { if (alive && data?.variant) setAutoVariant(data.variant); })
+      .catch(() => {});
+    load();
+    const id = setInterval(load, 30000);
+    window.addEventListener("virtue-lobby-default-changed", load);
+    return () => { alive = false; clearInterval(id); window.removeEventListener("virtue-lobby-default-changed", load); };
+  }, []);
   const [pickedVariant, setPickedVariant] = useState(() => settingsStore.get().lobbyBackgroundVariant || "auto");
   useEffect(() => {
     const onChange = () => setPickedVariant(settingsStore.get().lobbyBackgroundVariant || "auto");
@@ -270,12 +280,9 @@ export default function Lobby() {
   const finishedSeasons = new Set((user?.past_seasons || []).map((e) => Number(e?.season) || 0));
   const canUseVariant = (v) => {
     if (v === "auto") return true;
-    // Snow variant has been retired from the settings picker — force
-    // any legacy `snow` selection to fall through to the auto / castle
-    // default instead of resurrecting the winter backdrop.
-    if (v === "snow") return false;
     if (isAdmin) return true;
     if (v === autoVariant) return true;
+    if (v === "snow") return false;
     if (v === "default") return finishedSeasons.has(1) || (seasonNumber !== null && seasonNumber >= 1);
     if (v === "meteor")  return finishedSeasons.has(2) || (seasonNumber !== null && seasonNumber >= 2);
     return false;
@@ -285,6 +292,9 @@ export default function Lobby() {
     : autoVariant;
   const showSnowBg   = effectiveVariant === "snow";
   const showMeteorBg = effectiveVariant === "meteor";
+  const showCastleBg = effectiveVariant === "castle";
+  const showComicBg  = effectiveVariant === "comic";
+  const usesSynthMusic = effectiveVariant !== "default";
 
   // Initialise audio mute states + volumes from settings/localStorage so the
   // bus reflects user prefs immediately on mount.
@@ -463,7 +473,7 @@ export default function Lobby() {
     // Skip the default synth lobby loop for everyone so the two tracks
     // don't overlap. Snow / meteor seasonal variants below don't play
     // their own music, so those still fall through to the synth loop.
-    if (!showSnowBg && !showMeteorBg) {
+    if (!usesSynthMusic) {
       try { audioBus.stopLobbyMusic(); } catch {}
       return;
     }
@@ -501,7 +511,7 @@ export default function Lobby() {
       document.removeEventListener("touchstart", tryStart);
       document.removeEventListener("pointerdown", tryStart);
     };
-  }, [showSnowBg, showMeteorBg]);
+  }, [usesSynthMusic]);
 
   // Refresh the user payload whenever the Lobby mounts. After completing
   // a ranked match (where rank_points / rank_tier / level / coins can all
@@ -750,6 +760,16 @@ export default function Lobby() {
         <>
           <span className="hidden" data-testid="lobby-bg-meteor" data-active="true" />
           <LobbyBackgroundMeteor animated={animatedBg} />
+        </>
+      ) : showCastleBg ? (
+        <>
+          <span className="hidden" data-testid="lobby-bg-castle" data-active="true" />
+          <LobbyBackgroundCastle animated={animatedBg} />
+        </>
+      ) : showComicBg ? (
+        <>
+          <span className="hidden" data-testid="lobby-bg-comic" data-active="true" />
+          <LobbyBackground imageUrl={LOBBY_BG} />
         </>
       ) : (
         <>
