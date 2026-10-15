@@ -1275,6 +1275,11 @@ async def on_startup():
     asyncio.create_task(season_loop())
     asyncio.create_task(seeded_climb_loop())
     asyncio.create_task(synthetic_online_loop())
+    try:
+        await _load_peak_online()
+    except Exception as e:
+        logger.warning("peak online load failed: %s", e)
+    asyncio.create_task(online_peak_loop())
     asyncio.create_task(_backfill_past_seasons_once())
     asyncio.create_task(_backfill_past_seasons_leaderboard_rank_once())
     asyncio.create_task(_ultimate_gooner_refresh_loop())
@@ -8854,6 +8859,64 @@ PLAYER_LOCATION: Dict[str, dict] = {}
 # that's fine for a live-monitoring signal (persistent history is
 # already captured via the seed-migration audit logs).
 PEAK_ONLINE: Dict[str, Any] = {"value": 0, "at": None}
+# Persisted to db.meta {_id:"peak_online"}; 24h peak from db.online_samples (per-minute max, TTL 25h).
+PEAK_ONLINE_24H: Dict[str, Any] = {"value": 0, "at": None}
+# Logged-out visitors on login/register screens: guest_id -> last ping ts.
+GUEST_HEARTBEAT: Dict[str, float] = {}
+GUEST_HEARTBEAT_MAX = 5000
+
+
+def count_guests_online() -> int:
+    now = time.time()
+    for gid, ts in list(GUEST_HEARTBEAT.items()):
+        if (now - ts) > HEARTBEAT_TTL:
+            GUEST_HEARTBEAT.pop(gid, None)
+    return len(GUEST_HEARTBEAT)
+
+
+async def _load_peak_online() -> None:
+    doc = await db.meta.find_one({"_id": "peak_online"})
+    if doc:
+        PEAK_ONLINE["value"] = max(int(PEAK_ONLINE.get("value") or 0), int(doc.get("value") or 0))
+        PEAK_ONLINE["at"] = PEAK_ONLINE.get("at") or doc.get("at")
+    await db.online_samples.create_index("at_dt", expireAfterSeconds=25 * 3600)
+    await _refresh_peak_24h()
+
+
+async def _refresh_peak_24h(current: int = 0) -> None:
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    doc = await db.online_samples.find_one({"at_dt": {"$gte": since}}, sort=[("count", -1)])
+    best, at = (int(doc["count"]), doc["at_dt"].replace(tzinfo=timezone.utc).isoformat()) if doc else (0, None)
+    if current > best:
+        best, at = current, datetime.now(timezone.utc).isoformat()
+    PEAK_ONLINE_24H["value"], PEAK_ONLINE_24H["at"] = best, at
+
+
+async def online_peak_loop():
+    """Sample the real online count every 5s so peaks are recorded even
+    when no admin is watching; persist all-time peak + per-minute max."""
+    minute_max, minute_start = 0, time.time()
+    while True:
+        try:
+            prev_peak = int(PEAK_ONLINE.get("value") or 0)
+            cur = count_real_online()
+            minute_max = max(minute_max, cur)
+            if cur > int(PEAK_ONLINE_24H.get("value") or 0):
+                PEAK_ONLINE_24H["value"], PEAK_ONLINE_24H["at"] = cur, datetime.now(timezone.utc).isoformat()
+                await db.online_samples.insert_one({"at_dt": datetime.now(timezone.utc), "count": cur})
+            if int(PEAK_ONLINE["value"]) > prev_peak:
+                await db.meta.update_one(
+                    {"_id": "peak_online"},
+                    {"$max": {"value": int(PEAK_ONLINE["value"])}, "$set": {"at": PEAK_ONLINE["at"]}},
+                    upsert=True,
+                )
+            if time.time() - minute_start >= 60:
+                await db.online_samples.insert_one({"at_dt": datetime.now(timezone.utc), "count": minute_max})
+                await _refresh_peak_24h(cur)
+                minute_max, minute_start = 0, time.time()
+        except Exception as e:
+            logger.warning("online_peak_loop error: %s", e)
+        await asyncio.sleep(5.0)
 
 
 def count_real_online() -> int:
@@ -8876,7 +8939,7 @@ def count_real_online() -> int:
             # Opportunistic GC of stale heartbeats. Cheap and keeps
             # the dict from growing unbounded across a long uptime.
             PRESENCE_HEARTBEAT.pop(uid, None)
-    total = len(unique)
+    total = len(unique) + count_guests_online()
     if total > int(PEAK_ONLINE.get("value") or 0):
         PEAK_ONLINE["value"] = total
         PEAK_ONLINE["at"] = datetime.now(timezone.utc).isoformat()
@@ -8985,15 +9048,30 @@ async def _find_user_by_username(username: str) -> Optional[dict]:
 
 
 @api.post("/presence/heartbeat")
-async def presence_heartbeat(user: dict = Depends(get_current_user)):
+async def presence_heartbeat(user: dict = Depends(get_current_user), body: Optional[dict] = Body(default=None)):
     """Lobby clients ping this every ~20s so they show as online to friends.
     Also stamps `last_seen_at` in the user doc so offline friends can show a
     'last seen N min ago' label.
     Returns the current online state for the caller (sanity)."""
     uid = str(user["_id"])
     PRESENCE_HEARTBEAT[uid] = time.time()
+    gid = (body or {}).get("guest_id")
+    if isinstance(gid, str):
+        GUEST_HEARTBEAT.pop(gid, None)
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
     return {"online": True, "ttl": HEARTBEAT_TTL}
+
+
+class GuestHeartbeatIn(BaseModel):
+    guest_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
+
+
+@api.post("/presence/guest")
+async def presence_guest(payload: GuestHeartbeatIn):
+    """Logged-out visitors (login / sign-up screens) ping this every ~20s."""
+    if payload.guest_id in GUEST_HEARTBEAT or len(GUEST_HEARTBEAT) < GUEST_HEARTBEAT_MAX:
+        GUEST_HEARTBEAT[payload.guest_id] = time.time()
+    return {"ok": True, "ttl": HEARTBEAT_TTL}
 
 
 @api.get("/friends")
@@ -10699,8 +10777,11 @@ async def admin_live_stats(user: dict = Depends(get_current_user)):
             1 for uid, ts in PRESENCE_HEARTBEAT.items()
             if (time.time() - ts) <= HEARTBEAT_TTL and uid not in ONLINE_USERS
         ),
+        "real_online_guests": count_guests_online(),
         "peak_online": int(PEAK_ONLINE.get("value") or 0),
         "peak_online_at": PEAK_ONLINE.get("at"),
+        "peak_online_24h": int(PEAK_ONLINE_24H.get("value") or 0),
+        "peak_online_24h_at": PEAK_ONLINE_24H.get("at"),
         "displayed_online": SYNTHETIC_ONLINE["value"],
         "rooms": {
             "quick_match_ffa": {"humans": qm_ffa_humans, "mode": "ffa"},

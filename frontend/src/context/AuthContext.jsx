@@ -53,10 +53,24 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!user || user === false) return;
     let alive = true;
-    const ping = () => { if (alive) api.post("/presence/heartbeat").catch(() => {}); };
+    const ping = () => { if (alive) api.post("/presence/heartbeat", { guest_id: localStorage.getItem("virtue_guest_id") || null }).catch(() => {}); };
     ping();
     const id = setInterval(ping, 20000);
     return () => { alive = false; clearInterval(id); };
+  }, [user]);
+
+  // Logged-out visitors (login / sign-up screens) count toward real online.
+  useEffect(() => {
+    if (user !== false) return;
+    let gid = localStorage.getItem("virtue_guest_id");
+    if (!gid) {
+      gid = (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9-]/g, "");
+      localStorage.setItem("virtue_guest_id", gid);
+    }
+    const ping = () => api.post("/presence/guest", { guest_id: gid }).catch(() => {});
+    ping();
+    const id = setInterval(ping, 20000);
+    return () => clearInterval(id);
   }, [user]);
 
   const login = async (email, password, opts = {}) => {

@@ -419,7 +419,7 @@ function LivePlayerStats() {
           sub={
             Number.isFinite(stats.real_online_in_match) &&
             Number.isFinite(stats.real_online_in_lobby)
-              ? `${stats.real_online_in_match} in-match · ${stats.real_online_in_lobby} in lobby`
+              ? `${stats.real_online_in_match} in-match · ${stats.real_online_in_lobby} in lobby · ${stats.real_online_guests || 0} on login`
               : null
           }
           color="#06A35F"
@@ -446,6 +446,17 @@ function LivePlayerStats() {
       <div className="bg-white px-4 py-2 border-b-2 border-black/10 flex items-center gap-4">
         <div className="font-anton uppercase tracking-widest text-xs opacity-70">
           Parties active <span className="ml-1 font-display text-lg text-[#9B59B6]" data-testid="live-headline-parties">{stats.parties || 0}</span>
+        </div>
+        <div className="font-anton uppercase tracking-widest text-xs opacity-70">
+          On Login Screens <span className="ml-1 font-display text-lg text-[#0055FF]" data-testid="live-headline-guests">{stats.real_online_guests || 0}</span>
+        </div>
+        <div className="font-anton uppercase tracking-widest text-xs opacity-70">
+          Peak 24h <span className="ml-1 font-display text-lg text-[#FF8A00]" data-testid="live-headline-peak-24h">{stats.peak_online_24h || 0}</span>
+          {stats.peak_online_24h_at && (
+            <span className="ml-1 normal-case tracking-normal" data-testid="live-headline-peak-24h-at">
+              {new Date(stats.peak_online_24h_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
         </div>
       </div>
 

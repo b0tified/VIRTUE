@@ -2862,3 +2862,9 @@ Two quality-of-life changes shipped together.
 - Moderation tab: "Default Lobby Screen" panel (POST /api/admin/lobby/default_bg, persisted in db.app_settings `_id: lobby_bg`). Public GET /api/lobby/default_bg; lobby Auto resolves to it (polled every 30s).
 - Non-admin stale picks (anything except auto/meteor) fall back to Auto. Tested: iteration_30 (100%).
 - Pending/backlog: Android maskable icon fix (cancelled by user), refactor engine.js/server.py, WebRTC party voice.
+
+## 2026-06 — Peak Online Persistence + Guest Presence
+- Root cause: PEAK_ONLINE was in-memory only (reset on every backend restart/redeploy) and only sampled when admin polled live-stats.
+- Fix: `online_peak_loop` samples every 5s; all-time peak persisted in db.meta `_id: peak_online`; 24h peak from db.online_samples (TTL 25h, written per-minute + on each new 24h high). Loaded at startup.
+- Logged-out visitors (login/register/forgot screens) ping POST /api/presence/guest {guest_id} (localStorage `virtue_guest_id`); counted in real online + peaks only (not public displayed count). Guest entry dropped when that device logs in.
+- Moderation Live Stats: "On Login Screens" + "Peak 24h" tiles; Real Online subtitle shows "N on login". Verified via curl across 2 backend restarts + screenshot.
