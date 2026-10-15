@@ -1,0 +1,37 @@
+{
+  "summary": "Frontend e2e test of the admin-configurable Default Lobby Screen feature (Moderation panel, lobby Auto resolution, admin and player Settings pickers), plus quick API checks. All requested flows pass. Server default was reset to 'default' at the end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Lobby.jsx canUseVariant / LobbyVariantPicker", "issue": "Stale localStorage: a regular player who saved lobbyBackgroundVariant='default' (Stormy Forest) under the old picker still sees Stormy Forest instead of the admin default, because canUseVariant('default') returns true when seasonNumber >= 1. The new picker shows only Auto and Classic, so neither tile is highlighted and the player can't tell why. A stale 'comic' value is correctly ignored. Suggested fix: for non-admins, treat any value other than auto/meteor as 'auto' (in both canUseVariant and the picker's value).", "selector": "[data-testid=settings-lobby-variant-picker]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Low) Normalize stale non-admin lobbyBackgroundVariant values (default/castle/snow/comic) to 'auto' so player lobbies follow the admin default and the picker always highlights a tile"
+  ],
+  "critical_code_review_comments": [
+    "Lobby.jsx: the comment above autoVariant still says 'auto now always resolves to the castle'. It is out of date now that the value comes from the server.",
+    "DefaultLobbyScreenPanel: if the GET fails it shows 'default' as active, which may not match the server. Minor.",
+    "AdminReports.jsx and SettingsModal.jsx are very large files (>1800 lines); consider splitting them."
+  ],
+  "updated_files": ["/app/test_reports/iteration_30.json"],
+  "success_rate": {"backend": "100% (GET public 200, invalid 400, non-admin 403, unauth 401)", "frontend": "100% of requested flows; 1 low-priority edge case"},
+  "seed_data_creation": "None. Server default lobby bg reset to 'default'. admin and player1 localStorage lobbyBackgroundVariant left at 'auto' in the test browser.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Settings key in localStorage is 'virtue-settings-v1' (field lobbyBackgroundVariant). The picker is in the Settings 'video' tab (settings-tab-video). On a full page load a VIRTUE loading screen appears, so wait for [data-testid^=lobby-bg-] (attached) before asserting. Use the login remember checkbox so the session survives reloads. During testing the server default changed once without my action (from snow to default), probably another client testing at the same time; no code writes it automatically.",
+  "verified": [
+    "Moderation panel default-lobby-screen-panel shows 5 buttons with data-active=1 on the current one; clicking shows the toast 'Default lobby screen updated.' and the choice persists after reload (comic, snow, default, castle)",
+    "Admin lobby on Auto renders lobby-bg-comic / snow / fog / castle to match the server default; in-SPA change via the window event updates the lobby immediately on Back",
+    "Admin Settings picker: Auto + Stormy Forest, Classic, Royal Castle, Winter, Comic Poster; picking one explicitly overrides Auto; switching back to Auto restores the server default",
+    "player1 picker: only Auto + Classic; Auto shows the admin-chosen castle; Classic shows meteor; a tampered 'comic' value is ignored",
+    "player1 POST /api/admin/lobby/default_bg -> 403; invalid variant -> 400; GET /api/lobby/default_bg works unauthenticated",
+    "No console errors besides expected 401s from the pre-login auth probe"
+  ]
+}

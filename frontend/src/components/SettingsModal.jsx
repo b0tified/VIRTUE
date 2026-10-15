@@ -1324,11 +1324,8 @@ function LobbyVariantPicker({ value, onChange, user }) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {options.map(({ id, label, requires }) => {
-          // Classic (meteor) is now unlocked for everyone — the
-          // past-season gate was removed with the Season 1 / Season 2
-          // naming. Auto is always unlocked. Admins unlock everything.
           const unlocked = !requires || id === "auto" || isAdmin || finished.has(requires);
-          const active = value === id;
+          const active = (options.some((o) => o.id === value) ? value : "auto") === id;
           return (
             <button
               key={id}

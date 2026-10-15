@@ -230,19 +230,6 @@ export default function Lobby() {
   // to the meteor-themed backdrop when the live season has rolled over to
   // Season 2 (or later). Admin accounts always see the meteor preview so
   // the Season 2 art can be reviewed before the timer flips for everyone.
-  const [seasonNumber, setSeasonNumber] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const r = await api.get("/season");
-        if (alive) setSeasonNumber(Number(r?.data?.season_number ?? 1) || 1);
-      } catch {
-        if (alive) setSeasonNumber(1);
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
   // Compute the effective lobby background variant. Priority:
   //   1. Explicit user setting (`lobbyBackgroundVariant`), if not "auto"
   //      AND the user is allowed to pick it (see filter below).
@@ -250,12 +237,7 @@ export default function Lobby() {
   // Season 3+ ships the snowy backdrop to everyone; admins get it
   // early as a preview.
   const isAdmin = user?.role === "admin";
-  // Auto-picked lobby variant. We used to swap between default / meteor
-  // / snow based on the current season, but the lobby has been re-themed
-  // to the Royal Guard castle backdrop as the new baseline. Meteor and
-  // snow remain selectable via settings for players who unlocked them
-  // in past seasons, but "auto" now always resolves to the castle
-  // (rendered by the `default` branch below).
+  // Auto resolves to the admin-configured default from the server.
   const [autoVariant, setAutoVariant] = useState("default");
   useEffect(() => {
     let alive = true;
@@ -277,15 +259,10 @@ export default function Lobby() {
   // has played the season that shipped it (past_seasons contains it),
   // OR the user is admin. Season→variant map:
   //   S1 → default, S2 → meteor, S3+ → snow.
-  const finishedSeasons = new Set((user?.past_seasons || []).map((e) => Number(e?.season) || 0));
   const canUseVariant = (v) => {
     if (v === "auto") return true;
     if (isAdmin) return true;
-    if (v === autoVariant) return true;
-    if (v === "snow") return false;
-    if (v === "default") return finishedSeasons.has(1) || (seasonNumber !== null && seasonNumber >= 1);
-    if (v === "meteor")  return finishedSeasons.has(2) || (seasonNumber !== null && seasonNumber >= 2);
-    return false;
+    return v === "meteor";
   };
   const effectiveVariant = (pickedVariant !== "auto" && canUseVariant(pickedVariant))
     ? pickedVariant

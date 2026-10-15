@@ -2856,3 +2856,9 @@ Two quality-of-life changes shipped together.
   - Fresh bigffa entry (<60s) → still surfaces.
   - Ranked entry doesn't leak into casual GET (or vice versa).
   - Existing `test_casual_queue.py::test_casual_matched_payload_includes_tdm_flag` updated to add `matched_at` (real matchmaker always stamps it; test was one of the only sites that didn't).
+
+## 2026-06 — Admin Default Lobby Screen
+- All 5 lobby screens restored for admins (Stormy Forest, Classic/meteor, Royal Castle, Winter/snow, Comic Poster); regular players keep Auto + Classic.
+- Moderation tab: "Default Lobby Screen" panel (POST /api/admin/lobby/default_bg, persisted in db.app_settings `_id: lobby_bg`). Public GET /api/lobby/default_bg; lobby Auto resolves to it (polled every 30s).
+- Non-admin stale picks (anything except auto/meteor) fall back to Auto. Tested: iteration_30 (100%).
+- Pending/backlog: Android maskable icon fix (cancelled by user), refactor engine.js/server.py, WebRTC party voice.
