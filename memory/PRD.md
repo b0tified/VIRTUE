@@ -2871,3 +2871,6 @@ Two quality-of-life changes shipped together.
 
 ## 2026-06 — Practice Map Selector Fit
 - All 7 maps were already in the selector but the 2nd row (Crashsite, Tundra, Royal Guard, Silent Town) sat below the fold on desktop/phone. Selector now uses an 8-column single row (4 cols on narrow), wider modal (max-w-5xl), and a compact short-viewport layout (toggles on one row). Verified all cards visible at 1920x800 and 844x390.
+
+## 2026-06 — Building Facade Stretch Fix
+- engine.js `_buildBuilding` addFace: facade texture now tiles (RepeatWrapping, reps = round(faceWidth / max(3, height))) so long faces like the Crossfire center 20m corridor walls keep normal window proportions instead of one stretched 2x2 window grid. Applies to all maps' building faces.

@@ -1210,8 +1210,19 @@ export class GameEngine {
         blending: (this._isNight && !useHotel) ? THREE.AdditiveBlending : THREE.NormalBlending,
         depthWrite: false,
       });
+      // Tile the facade along long faces so windows keep their aspect instead of stretching.
       const addFace = (w, h, x, y, z, rotY) => {
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), planeMat);
+        const reps = Math.max(1, Math.round(w / Math.max(3, h)));
+        let mat = planeMat;
+        if (reps > 1) {
+          const tex = faceTex.clone();
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.repeat.set(reps, 1);
+          tex.needsUpdate = true;
+          mat = planeMat.clone();
+          mat.map = tex;
+        }
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
         m.position.set(x, y, z);
         m.rotation.y = rotY;
         g.add(m);
