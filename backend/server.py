@@ -2772,9 +2772,9 @@ def _bundle_out(b: dict, owned_titles=None, owned_skins=None) -> Optional[dict]:
     }
     if owned_titles is not None:
         has_t, has_s = b["title_id"] in owned_titles, b["skin_id"] in owned_skins
-        credit = (int(t.get("price", 0)) if has_t else 0) + (int(sk.get("price", 0)) if has_s else 0)
+        unowned = (0 if has_t else int(t.get("price", 0))) + (0 if has_s else int(sk.get("price", 0)))
         out.update({"owned_title": has_t, "owned_skin": has_s, "owned": has_t and has_s,
-                    "your_price": max(0, int(b["price"]) - credit)})
+                    "unowned_value": unowned, "your_price": min(int(b["price"]), unowned)})
     return out
 
 
@@ -2839,7 +2839,8 @@ async def shop_buy_bundle(payload: BundleBuyIn, user: dict = Depends(get_current
         raise HTTPException(status_code=409, detail="You already own everything in this bundle.")
     price = out["your_price"]
     res = await db.users.update_one(
-        {"_id": user["_id"], "coins": {"$gte": price}},
+        {"_id": user["_id"], "coins": {"$gte": price},
+         "$or": [{"owned_titles": {"$ne": b["title_id"]}}, {"owned_skins": {"$ne": b["skin_id"]}}]},
         {"$inc": {"coins": -price},
          "$addToSet": {"owned_titles": b["title_id"], "owned_skins": b["skin_id"]},
          "$set": {"custom_title_id": b["title_id"], "title_season": None, "title_ultimate": False, "selected_skin": b["skin_id"]}},

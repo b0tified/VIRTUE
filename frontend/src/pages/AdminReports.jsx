@@ -1868,6 +1868,7 @@ function TitleMakerPanel({ onToast }) {
     try {
       await api.put(`/admin/titles/${t.id}`, { ...t, active: !t.active });
       load();
+      window.dispatchEvent(new Event("virtue-titles-changed"));
     } catch (e) { err(e, "Failed to update title."); }
   };
   const remove = async (t) => {

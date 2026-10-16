@@ -146,7 +146,8 @@ function MiniSkin({ skinId }) {
 
 function BundleCard({ b, coins, busy, onBuy }) {
   const ends = endsLabel(b.ends_at);
-  const save = Math.max(0, b.full_price - b.price);
+  const was = b.unowned_value ?? b.full_price;
+  const save = Math.max(0, was - b.your_price);
   return (
     <div className="border-pow-thick bg-neutral-100 p-3 flex flex-col gap-3" data-testid={`shop-bundle-card-${b.id}`}>
       <div className="bg-neutral-800 border-2 border-black h-32 flex items-center justify-around px-3 relative">
@@ -155,7 +156,7 @@ function BundleCard({ b, coins, busy, onBuy }) {
         <TitleChip title={b.title} />
         {save > 0 && (
           <span className="absolute top-1 left-1 bg-[#E62429] text-white font-anton uppercase tracking-widest text-[10px] px-1.5 py-0.5 border-2 border-black" data-testid={`shop-bundle-save-${b.id}`}>
-            Save {Math.round((save / Math.max(1, b.full_price)) * 100)}%
+            Save {Math.round((save / Math.max(1, was)) * 100)}%
           </span>
         )}
       </div>
@@ -176,11 +177,10 @@ function BundleCard({ b, coins, busy, onBuy }) {
           className="btn-pow w-full bg-[#FFD700] text-black [&]:py-2 [&]:text-sm disabled:opacity-50"
           data-testid={`shop-bundle-buy-${b.id}`}
         >
-          <span className="flex items-center justify-center gap-2">
-            <Coins size={14} strokeWidth={3} />
-            {b.your_price !== b.full_price && <s className="opacity-50">{b.full_price}</s>}
-            {b.your_price}
-          </span>
+          <div className="flex items-center justify-center gap-2 whitespace-nowrap skew-x-[6deg]">
+            {save > 0 && <div className="text-[11px] opacity-60">WAS <s>{was}</s></div>}
+            <div className="flex items-center gap-1"><Coins size={14} strokeWidth={3} /> {b.your_price}</div>
+          </div>
         </button>
       )}
     </div>

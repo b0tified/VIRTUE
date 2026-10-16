@@ -2908,3 +2908,8 @@ Two quality-of-life changes shipped together.
 - Endpoints: admin GET/POST /api/admin/titles, PUT/DELETE /api/admin/titles/{id} (delete pulls from owners, no refund); GET /api/shop/titles, POST /api/shop/titles/buy (atomic coin deduct, auto-equip), POST /api/profile/me/custom_title {title_id|null}. Equipping season/ultimate title clears custom title and vice versa.
 - Frontend: Moderation TitleMakerPanel (live preview, edit/hide/delete, Expired badge); Shop "Titles" tab (ShopTitlesTab.jsx, timer label for limited titles); banners (PlayerCard/Profile/PublicProfile) render custom text+color+style via bannerTitle.js helpers.
 - Tests: backend/tests/test_custom_titles.py (15 pass), iteration_32 100%.
+
+## 2026-06 — New Title pop-up + Title Bundles
+- NewTitlePopup.jsx: lobby pop-up for newest unseen, unowned, on-sale title with ends_at (seen ids in localStorage virtue_seen_title_popups); VIEW IN SHOP opens ShopModal initialTab="titles".
+- Bundles: db.title_bundles {title_id, skin_id, price, active, ends_at}; admin GET/POST/PUT/DELETE /api/admin/title_bundles; GET /api/shop/bundles (your_price = min(bundle price, value of unowned items)); POST /api/shop/bundles/buy grants+equips both (atomic, ownership guard). Deleting a title deletes its bundles. Bundle sale is independent of title active flag.
+- UI: Moderation BundleMakerPanel (components/admin), Shop "Bundles" tab (ShopBundlesTab). Tests: tests/test_title_bundles.py + test_custom_titles.py (23 pass). iteration_33.

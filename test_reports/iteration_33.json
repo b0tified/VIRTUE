@@ -1,0 +1,41 @@
+{
+  "summary": "Tested the Title Sale pop-up (NewTitlePopup), the admin Title Bundles panel, the bundle backend endpoints and the Shop Bundles tab. Backend: new file tests/test_title_bundles.py has 9 tests and all pass. The regression file test_custom_titles.py has 15 tests and all pass (24/24 total). Frontend: every requested flow works. The pop-up shows only for an unseen, unowned limited title. It did not show for a title with no end date or for an owned limited title. Close and backdrop both mark it seen, so it stays hidden after reload. VIEW IN SHOP opens the shop on the Titles tab, and reopening from the coins badge goes back to Skins. In the Bundles tab: cards, Save %, OWNED state and the partial-ownership note all display, and buying worked (B1 bought for 0 coins, then showed as owned). In the admin panel: the save button is disabled until both title and skin are chosen, add/toggle/delete work, and the form resets after saving. Two business-logic problems found (see action_items). Cleanup is done.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/shop/bundles, POST /api/shop/bundles/buy", "issue": "your_price = max(0, bundle_price - price of owned items). If the owned item costs more than the bundle price, the remaining item is free. Reproduced: player1 already owned Neon (500), bundle Neon+TEST_POPUP was priced 20, so player1 got TEST_POPUP (normally 25) for 0 coins. It also makes very cheap partial deals in normal cases (owning an 800 skin in a 900 bundle leaves the title at 100). Suggested fix: your_price = min(bundle_price, sum of prices of the unowned items), or scale it: bundle_price * unowned_value / full_price.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "_bundle_out / on_sale", "issue": "A bundle's on_sale only checks the bundle's own active flag and end date. A hidden or expired title can still be sold through a bundle, which gets around the 'limited title' timer. Seen live: every title was active=false, yet their bundles were still listed in the shop. Consider also requiring _title_on_sale(title), or at least warning in the admin UI."},
+      {"endpoint": "POST /api/admin/title_bundles", "issue": "Any skin except 'default' can be bundled, including earn-only skins (mech, pass_* season-pass skins). /shop/buy blocks these with 403 (obtain != 'shop'). Confirm whether this is intended, or filter the skin list to obtain=='shop'."},
+      {"endpoint": "POST /api/shop/bundles/buy", "issue": "The update has no ownership guard (unlike titles/buy, which uses owned_titles $ne). Two concurrent requests could both charge the user. Low risk."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Shop Bundles card", "issues": ["The buy button stacks the coin icon above the price row. The struck-through full price and your_price sit close together (e.g. '1500 700') and can read as one number; consider a clearer 'was/now' layout.", "With partial ownership, the struck-through price is still title+skin together (1500) while the user pays only for the missing item. The Save % is based on the full price, so the 'savings' shown are overstated."]},
+      {"screen": "NewTitlePopup", "issues": ["Only the newest unseen limited title is shown per lobby load; any others appear one per later visit. Acceptable, just noting."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_title_bundles.py", "/app/backend/tests/test_custom_titles.py", "/app/test_reports/pytest/pytest_bundles.xml"],
+  "action_items": [
+    "HIGH: change the your_price formula so owning an item can't make the other item free: min(bundle_price, sum of unowned item prices), or scale proportionally.",
+    "Decide whether a bundle whose title is hidden or expired should still be on sale. Probably not: add a _title_on_sale check in _bundle_out.on_sale.",
+    "Consider limiting the bundle skin dropdown and backend validation to skins with obtain=='shop'.",
+    "Optional: add an owned guard to the bundles/buy update filter to prevent a double charge.",
+    "Note: while I was testing, all custom titles (including the user's JOSH) were switched to active=false by someone else, and a JOSH+astronaut bundle (be48771292af) plus a TEST_POPUP+beach_bro bundle (d8c2bde64998) were created by someone else. I did not touch JOSH or the JOSH bundle. The TEST_POPUP bundle was removed automatically when I deleted the TEST_POPUP title."
+  ],
+  "critical_code_review_comments": [
+    "server.py _bundle_out: the credit-based your_price can drop to 0 (see the HIGH issue).",
+    "_bundle_payload reuses _validate_title_payload with a dummy CustomTitleIn just to parse ends_at. It works, but a small _parse_ends helper would be cleaner.",
+    "The title-maker toggle (AdminReports.jsx) doesn't dispatch 'virtue-titles-changed'. Only the bundle dropdown labels go stale, so the impact is minor.",
+    "server.py is 13k lines; split it into routers (shop/titles/bundles)."
+  ],
+  "updated_files": ["/app/backend/tests/test_title_bundles.py"],
+  "success_rate": {"backend": "100% (24/24 tests); 1 business-logic pricing issue", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Created and then deleted: titles TEST_POPUP, TEST_NOEND, and the agent's BUNDLE TEST (ca4db3707d85), plus their bundles (removed with the titles). Test-run titles/bundles were cleaned up by fixtures. The pytest run registered throwaway accounts test_bundle_<hex>@test.com; these were not deleted. player1 reset: custom_title=None, selected_skin=default, owned_titles=[] (still owns neon/crimson/etc. skins).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=... pytest tests/test_title_bundles.py tests/test_custom_titles.py. In UI tests, the pop-up's seen state lives in localStorage 'virtue_seen_title_popups'; set or clear it before logging in. Admin panel is at /admin/reports (bundle-maker-panel sits below title-maker-panel). Remaining data: JOSH title (active=false, not changed by me) and bundle be48771292af (JOSH+astronaut, not created by me)."
+}
