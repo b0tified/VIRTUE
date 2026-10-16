@@ -2896,3 +2896,5 @@ Two quality-of-life changes shipped together.
 - Tests: test_bot_weapons.py + test_bot_loadout_api.py (15 pass, latter needs REACT_APP_BACKEND_URL env). iteration_31.
 
 ## 2026-06 — Killfeed: sniper kills show red Target (scope) icon (Hud.jsx WEAPON_META.sniper, testid kf-weapon-sniper).
+
+## 2026-06 — Removed Team Deathmatch option from Practice selector (practice is FFA-only).

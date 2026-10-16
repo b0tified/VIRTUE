@@ -19,10 +19,8 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
   // training-type + game-mode + map from one place. Defaults to
   // whatever the caller passed in (kept for legacy entry points).
   const [trainingMode, setTrainingMode] = useState(initialMode);
-  // Game mode toggle — "ffa" or "tdm". Persists for the lifetime of the
-  // selector modal; we pass it back via onSelect so the caller can put
-  // `tdm=1` in the WS URL.
-  const [gameMode, setGameMode] = useState("ffa");
+  // Practice is FFA-only (Team Deathmatch removed from practice).
+  const gameMode = "ffa";
   if (!open) return null;
   const modeLabel = trainingMode === "practice" ? "PRACTICE RANGE" : "OFFLINE VS AI";
   return (
@@ -57,7 +55,7 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
             visible on short viewports (notably mobile landscape, where
             the orientation lock keeps the screen height ~360-414px). */}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
-          <div className="[@media(max-height:500px)]:grid [@media(max-height:500px)]:grid-cols-2">
+          <div>
           {/* Training-type toggle (Practice Range vs Offline vs AI).
               First row so the player picks their training flavour
               before format + map — the chosen value drives the
@@ -83,30 +81,6 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
               />
             </div>
           </div>
-          {/* Game-mode toggle (FFA vs TDM) — placed above the map cards so
-              the user picks their format first, then their arena. */}
-          <div className="px-4 pt-3 pb-2 border-b-2 border-black/10 [@media(max-height:500px)]:pt-2 [@media(max-height:500px)]:pb-1">
-            <div className="font-anton uppercase tracking-widest text-[11px] opacity-60 mb-2 [@media(max-height:500px)]:hidden">Game Mode</div>
-            <div className="grid grid-cols-2 gap-3 [@media(max-height:500px)]:gap-2">
-              <ModeCard
-                testid="practice-mode-card-ffa"
-                active={gameMode === "ffa"}
-                onClick={() => setGameMode("ffa")}
-                title="FREE FOR ALL"
-                subtitle="Solo deathmatch · last one standing wins"
-                accent="#E62429"
-              />
-              <ModeCard
-                testid="practice-mode-card-tdm"
-                active={gameMode === "tdm"}
-                onClick={() => setGameMode("tdm")}
-                title="TEAM DEATHMATCH"
-                subtitle="4v4 · first team to 30 kills wins"
-                accent="#9B59B6"
-              />
-            </div>
-          </div>
-
           </div>
           {/* Map grid */}
           <div className="p-3 sm:p-4 [@media(max-height:500px)]:py-2 grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3" data-testid="practice-map-grid">
