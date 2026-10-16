@@ -1285,6 +1285,7 @@ async def on_startup():
         await _reload_custom_titles()
     except Exception as e:
         logger.warning("custom titles load failed: %s", e)
+    asyncio.create_task(custom_titles_refresh_loop())
     try:
         await _load_peak_online()
     except Exception as e:
@@ -1668,6 +1669,7 @@ async def google_callback(payload: GoogleCallbackIn, response: Response):
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     await credit_level_coins(user)
     payload = public_user(user)
     # Surface the player's global leaderboard rank when they're in
@@ -2624,9 +2626,23 @@ TITLE_STYLES = ("plain", "shimmer", "rainbow")
 
 async def _reload_custom_titles() -> None:
     docs = await db.custom_titles.find({}).to_list(1000)
-    CUSTOM_TITLES.clear()
-    for d in docs:
-        CUSTOM_TITLES[str(d["_id"])] = d
+    fresh = {str(d["_id"]): d for d in docs}
+    for k in list(CUSTOM_TITLES):
+        if k not in fresh:
+            CUSTOM_TITLES.pop(k, None)
+    CUSTOM_TITLES.update(fresh)
+
+
+async def custom_titles_refresh_loop():
+    """Multiple workers/replicas each hold a cache — resync from Mongo so
+    titles created/edited on another process show up everywhere."""
+    while True:
+        await asyncio.sleep(5.0)
+        try:
+            await _reload_custom_titles()
+            await _load_bot_loadout()
+        except Exception as e:
+            logger.warning("custom titles refresh failed: %s", e)
 
 
 def custom_title_public(title_id) -> Optional[dict]:
@@ -2694,6 +2710,7 @@ def _require_admin(user: dict) -> None:
 
 @api.get("/admin/titles")
 async def admin_list_titles(user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     _require_admin(user)
     counts = {}
     async for row in db.users.aggregate([
@@ -2718,6 +2735,7 @@ async def admin_create_title(payload: CustomTitleIn, user: dict = Depends(get_cu
 
 @api.put("/admin/titles/{title_id}")
 async def admin_update_title(title_id: str, payload: CustomTitleIn, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     _require_admin(user)
     if title_id not in CUSTOM_TITLES:
         raise HTTPException(status_code=404, detail="Title not found.")
@@ -2729,6 +2747,7 @@ async def admin_update_title(title_id: str, payload: CustomTitleIn, user: dict =
 
 @api.delete("/admin/titles/{title_id}")
 async def admin_delete_title(title_id: str, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     _require_admin(user)
     if title_id not in CUSTOM_TITLES:
         raise HTTPException(status_code=404, detail="Title not found.")
@@ -2780,6 +2799,7 @@ def _bundle_out(b: dict, owned_titles=None, owned_skins=None) -> Optional[dict]:
 
 @api.get("/admin/title_bundles")
 async def admin_list_bundles(user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     _require_admin(user)
     docs = await db.title_bundles.find({}).sort("created_at", -1).to_list(500)
     return {"bundles": [o for o in (_bundle_out(d) for d in docs) if o]}
@@ -2787,6 +2807,7 @@ async def admin_list_bundles(user: dict = Depends(get_current_user)):
 
 @api.post("/admin/title_bundles")
 async def admin_create_bundle(payload: TitleBundleIn, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     _require_admin(user)
     doc = {"_id": uuid.uuid4().hex[:12], **_bundle_payload(payload), "created_at": datetime.now(timezone.utc).isoformat()}
     await db.title_bundles.insert_one(doc)
@@ -2795,6 +2816,7 @@ async def admin_create_bundle(payload: TitleBundleIn, user: dict = Depends(get_c
 
 @api.put("/admin/title_bundles/{bundle_id}")
 async def admin_update_bundle(bundle_id: str, payload: TitleBundleIn, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     _require_admin(user)
     res = await db.title_bundles.find_one_and_update({"_id": bundle_id}, {"$set": _bundle_payload(payload)}, return_document=True)
     if not res:
@@ -2813,6 +2835,7 @@ async def admin_delete_bundle(bundle_id: str, user: dict = Depends(get_current_u
 
 @api.get("/shop/bundles")
 async def shop_bundles(user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     ot = set(user.get("owned_titles") or [])
     os_ = set(user.get("owned_skins") or []) | {"default"}
     docs = await db.title_bundles.find({}).to_list(500)
@@ -2827,6 +2850,7 @@ class BundleBuyIn(BaseModel):
 
 @api.post("/shop/bundles/buy")
 async def shop_buy_bundle(payload: BundleBuyIn, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     await credit_level_coins(user)
     b = await db.title_bundles.find_one({"_id": payload.bundle_id})
     fresh = await db.users.find_one({"_id": user["_id"]})
@@ -2853,6 +2877,7 @@ async def shop_buy_bundle(payload: BundleBuyIn, user: dict = Depends(get_current
 
 @api.get("/shop/titles")
 async def shop_titles(user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     owned = set(user.get("owned_titles") or [])
     items = [t for t in CUSTOM_TITLES.values() if _title_on_sale(t) or str(t["_id"]) in owned]
     items.sort(key=lambda t: (int(t.get("price", 0)), t["text"]))
@@ -2869,6 +2894,7 @@ class TitleBuyIn(BaseModel):
 
 @api.post("/shop/titles/buy")
 async def shop_buy_title(payload: TitleBuyIn, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     await credit_level_coins(user)
     t = CUSTOM_TITLES.get(payload.title_id)
     if not t or not _title_on_sale(t):
@@ -2894,6 +2920,7 @@ class CustomTitleEquipIn(BaseModel):
 
 @api.post("/profile/me/custom_title")
 async def equip_custom_title(payload: CustomTitleEquipIn, user: dict = Depends(get_current_user)):
+    await _reload_custom_titles()
     if payload.title_id is None:
         await db.users.update_one({"_id": user["_id"]}, {"$set": {"custom_title_id": None}})
         user["custom_title_id"] = None

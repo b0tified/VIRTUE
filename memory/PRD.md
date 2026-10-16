@@ -2913,3 +2913,7 @@ Two quality-of-life changes shipped together.
 - NewTitlePopup.jsx: lobby pop-up for newest unseen, unowned, on-sale title with ends_at (seen ids in localStorage virtue_seen_title_popups); VIEW IN SHOP opens ShopModal initialTab="titles".
 - Bundles: db.title_bundles {title_id, skin_id, price, active, ends_at}; admin GET/POST/PUT/DELETE /api/admin/title_bundles; GET /api/shop/bundles (your_price = min(bundle price, value of unowned items)); POST /api/shop/bundles/buy grants+equips both (atomic, ownership guard). Deleting a title deletes its bundles. Bundle sale is independent of title active flag.
 - UI: Moderation BundleMakerPanel (components/admin), Shop "Bundles" tab (ShopBundlesTab). Tests: tests/test_title_bundles.py + test_custom_titles.py (23 pass). iteration_33.
+
+## 2026-06 — Fix: custom titles vanishing/reappearing
+- Root cause: CUSTOM_TITLES (and BOT_LOADOUT) were per-process caches; production runs multiple workers/replicas so titles created/edited on one process were missing on others (Title Maker list, shop, banners flickered).
+- Fix: every title/bundle endpoint + /auth/me reloads from Mongo first; background `custom_titles_refresh_loop` resyncs titles + bot loadout every 5s; reload swaps entries without clearing (no empty window). Verified by inserting a title directly in Mongo (simulated other worker).
