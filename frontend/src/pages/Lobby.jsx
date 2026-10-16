@@ -94,6 +94,7 @@ export default function Lobby() {
   const bigffaQueueState = queueCtx?.bigffaQueueState ?? null;
   const bigffaWaitSec = queueCtx?.bigffaWaitSec ?? 0;
   const bigffaMatchFoundSec = queueCtx?.bigffaMatchFoundSec ?? null;
+  const bigffaPlayersInQueue = queueCtx?.bigffaPlayersInQueue ?? 1;
   const bigffaInQueue = !!(bigffaQueueState && (bigffaQueueState.in_queue || bigffaQueueState.matched));
 
   // Cross-play warning banner state. Renders when the caller is on a
@@ -1582,6 +1583,13 @@ export default function Lobby() {
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#FF7A00] text-black flex items-center gap-1">
                   <Swords size={12} strokeWidth={3} /> 12P FFA
                 </div>
+                <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-black text-white flex items-center gap-1" data-testid="bigffa-queue-players">
+                  <Users size={12} strokeWidth={3} />
+                  <span className="tabular-nums" data-testid="bigffa-queue-players-count">{bigffaPlayersInQueue}/12</span>
+                </div>
+              </div>
+              <div className="mt-2 h-2 border-2 border-black bg-neutral-200 overflow-hidden">
+                <div className="h-full bg-[#FF7A00] transition-[width] duration-500" style={{ width: `${(bigffaPlayersInQueue / 12) * 100}%` }} />
               </div>
               {!bigffaQueueState?.matched && Number.isFinite(bigffaQueueState?.estimated_wait_seconds) && (
                 <div

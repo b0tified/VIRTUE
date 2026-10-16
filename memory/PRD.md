@@ -2898,3 +2898,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Killfeed: sniper kills show red Target (scope) icon (Hud.jsx WEAPON_META.sniper, testid kf-weapon-sniper).
 
 ## 2026-06 — Removed Team Deathmatch option from Practice selector (practice is FFA-only).
+
+## 2026-06 — 12P FFA queue banner shows "Players X/12" + progress bar; cosmetic fill (11 random join times across min(ETA,15)s, never below real queue_size, 12/12 on match). QueueContext `bigffaPlayersInQueue`, testid bigffa-queue-players-count.

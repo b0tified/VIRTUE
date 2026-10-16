@@ -580,6 +580,8 @@ export function QueueProvider({ children }) {
   // ─────────────────────────────────────────────────────────────────────
   const [bigffaQueueState, setBigffaQueueState] = useState(null);
   const [bigffaWaitSec, setBigffaWaitSec] = useState(0);
+  // Cosmetic "players in queue" fill: 11 join times spread across the expected wait.
+  const bigffaFillScheduleRef = useRef([]);
   // 3-2-1 countdown counterpart to ranked's `matchFoundSec` — populated
   // the instant the queue matches and ticked down each second. The
   // queue toast reads this to swap its timer for the giant countdown
@@ -622,6 +624,10 @@ export function QueueProvider({ children }) {
         estimated_wait_seconds: bigffaLockedEtaRef.current,
       });
       setBigffaWaitSec(0);
+      {
+        const horizon = Math.max(6, Math.min(bigffaLockedEtaRef.current || 15, 15));
+        bigffaFillScheduleRef.current = Array.from({ length: 11 }, () => horizon * (0.06 + Math.random() * 0.88)).sort((a, b) => a - b);
+      }
       bigffaLocalRef.current = setInterval(() => {
         setBigffaWaitSec(Math.max(0, Math.floor((Date.now() - bigffaJoinedAtRef.current) / 1000)));
       }, 250);
@@ -736,6 +742,12 @@ export function QueueProvider({ children }) {
       queueState, waitSec, matchFoundSec, joinRanked, cancelRanked,
       casualQueueState, casualWaitSec, joinCasual, cancelCasual,
       bigffaQueueState, bigffaWaitSec, bigffaMatchFoundSec,
+      bigffaPlayersInQueue: bigffaQueueState?.matched
+        ? 12
+        : Math.min(11, Math.max(
+            Number.isFinite(bigffaQueueState?.queue_size) ? bigffaQueueState.queue_size : 1,
+            1 + bigffaFillScheduleRef.current.filter((t) => t <= bigffaWaitSec).length,
+          )),
       joinBigffa, cancelBigffa,
     }}>
       {children}
