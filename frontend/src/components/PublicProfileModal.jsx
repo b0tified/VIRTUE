@@ -77,7 +77,10 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
               {data.ban_status === "suspended" ? "SUSPENDED" : "BANNED"}
             </span>
           )}
-          {data?.online && !data?.banned && (
+          {data?.online && data?.in_match && !data?.banned && (
+            <span className="font-anton uppercase text-xs text-[#E62429]" data-testid="public-profile-in-match">● IN MATCH{data.match_kind ? ` · ${String(data.match_kind).toUpperCase()}` : ""}</span>
+          )}
+          {data?.online && !data?.in_match && !data?.banned && (
             <span className="font-anton uppercase text-xs text-[#06D6A0]" data-testid="public-profile-online">● ONLINE</span>
           )}
           {canReport && (

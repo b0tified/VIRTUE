@@ -440,7 +440,15 @@ function PlayerRow({ r, i, user, delta, onProfile, onSpectate, testidPrefix }) {
             {delta.delta > 0 ? "+" : ""}{delta.delta}
           </span>
         )}
-        {r.in_match ? (
+        {r.in_match && r.spectatable === false ? (
+          <span
+            className="text-[10px] font-anton uppercase tracking-widest px-1.5 py-0.5 bg-[#E62429] text-white border-2 border-black flex-shrink-0"
+            data-testid={`${testidPrefix}-status-${i}`}
+            data-status="in_match"
+          >
+            IN MATCH
+          </span>
+        ) : r.in_match ? (
           <span
             role="button"
             tabIndex={0}

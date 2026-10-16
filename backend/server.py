@@ -1868,10 +1868,6 @@ async def leaderboard():
         {"username": 1, "rank_points": 1, "stats": 1, "email": 1,
          "placement_matches_played": 1, "is_seeded": 1},
     ).sort([("rank_points", -1), ("stats.kills", -1)]).limit(50)
-    # Pseudo-online for seeded accounts: stable 5-minute bucket × username
-    # hash. Re-rolls naturally, ~38% appear online at any time.
-    import hashlib
-    bucket = int(time.time() // 300)
     rows = []
     async for u in cursor:
         s = u.get("stats", {})
@@ -1882,10 +1878,8 @@ async def leaderboard():
         username = u.get("username", u.get("email", "anon"))
         # Real players: actual presence. Seeded: deterministic pseudo-online.
         if u.get("is_seeded"):
-            h = hashlib.md5(f"{username}:{bucket}".encode()).digest()[0]
-            online = h < 97  # ~38% online
-            in_match = False
-            match_kind = None
+            act = bot_activity(username, idx)
+            online, in_match, match_kind = act["online"], act["in_match"], act["match_kind"]
         else:
             loc = player_location(uid)
             in_match = loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party")
@@ -1904,6 +1898,7 @@ async def leaderboard():
             "online": online,
             "in_match": in_match,
             "match_kind": match_kind,
+            "spectatable": not u.get("is_seeded"),
         })
     return rows
 
@@ -12344,48 +12339,87 @@ def _bot_profile_public(username: str) -> bool:
     return h % 100 < 50
 
 
-def _synth_bot_history(username: str, pts: int, tier_idx: int, now: Optional[datetime] = None) -> List[dict]:
+def _bot_grid(username: str):
+    base = random.Random(f"bot-hist::{username.lower()}")
+    period = base.uniform(1.5, 5.0) * 3600.0
+    phase = base.uniform(0, period)
+    return period, phase
+
+
+def _bot_slot(username: str, slot: int, period: float, phase: float, tier_idx: int, avg_kills: Optional[float] = None) -> dict:
+    """One deterministic "session" for a bot: whether it played, when, and the result."""
+    rng = random.Random(f"{username.lower()}::{slot}")
+    played = rng.random() < 0.75
+    ended = datetime.fromtimestamp(phase + slot * period + rng.uniform(0, period * 0.4), tz=timezone.utc)
+    r = rng.random()
+    mode = "casual" if r < 0.55 else ("ranked" if r < 0.80 and tier_idx >= 1 else ("tdm" if r < 0.95 else "bigffa"))
+    duration = 120 if mode == "bigffa" else rng.uniform(240, 420)
+    total = {"bigffa": 12, "tdm": 6, "ranked": 5}.get(mode, 8)
+    if rng.random() < (0.12 + tier_idx * 0.05):
+        placement = 1
+    elif rng.random() < 0.35:
+        placement = rng.randint(2, min(3, total))
+    else:
+        placement = rng.randint(max(2, total // 2), total)
+    base_k = int((avg_kills if avg_kills else 6 + tier_idx * 2) * rng.uniform(0.6, 1.6))
+    if placement == 1:
+        kills, deaths = int(base_k * 1.4), max(0, int(base_k * 0.35))
+    elif placement <= 3:
+        kills, deaths = int(base_k * 1.1), max(0, int(base_k * 0.8))
+    else:
+        kills, deaths = int(base_k * 0.75), int(base_k * 1.1)
+    return {"played": played, "ended": ended, "started": ended - timedelta(seconds=duration),
+            "mode": mode, "total": total, "placement": placement,
+            "kills": max(0, kills), "deaths": max(0, deaths)}
+
+
+def bot_activity(username: str, tier_idx: int = 0, now: Optional[datetime] = None) -> dict:
+    """Live status for a leaderboard bot, consistent with its match history:
+    in a match during a session, online ~30 min before / 45 min after."""
+    now = now or datetime.now(timezone.utc)
+    period, phase = _bot_grid(username)
+    cur = int((now.timestamp() - phase) // period)
+    for sl in (cur + 1, cur, cur - 1):
+        m = _bot_slot(username, sl, period, phase, tier_idx)
+        if not m["played"]:
+            continue
+        if m["started"] <= now < m["ended"]:
+            return {"online": True, "in_match": True, "match_kind": m["mode"]}
+        if m["started"] - timedelta(minutes=30) <= now < m["ended"] + timedelta(minutes=45):
+            return {"online": True, "in_match": False, "match_kind": None}
+    return {"online": False, "in_match": False, "match_kind": None}
+
+
+def _profile_presence(u: dict, user_id: str, tier_idx: int) -> dict:
+    if u.get("is_seeded"):
+        return bot_activity(u.get("username", ""), tier_idx)
+    loc = player_location(user_id)
+    return {"online": is_online(user_id),
+            "in_match": loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party"),
+            "match_kind": loc.get("kind") if loc else None}
+
+
+def _synth_bot_history(username: str, pts: int, tier_idx: int, now: Optional[datetime] = None, avg_kills: Optional[float] = None) -> List[dict]:
     """Last-10 fake matches on a per-bot time grid: each bot "plays" every
     P hours (P from its name), each slot seeded by (name, slot) — so the
     list is stable between refreshes but new matches roll in over time."""
     now = now or datetime.now(timezone.utc)
-    base = random.Random(f"bot-hist::{username.lower()}")
-    period = base.uniform(1.5, 5.0) * 3600.0
-    phase = base.uniform(0, period)
-    avg_kills_per = 6 + tier_idx * 2
+    period, phase = _bot_grid(username)
     slot = int((now.timestamp() - phase) // period)
     history: List[dict] = []
     rp_after = pts
     while len(history) < 10 and slot > 0:
-        rng = random.Random(f"{username.lower()}::{slot}")
-        played = rng.random() < 0.75
-        ended = datetime.fromtimestamp(phase + slot * period + rng.uniform(0, period * 0.4), tz=timezone.utc)
+        m = _bot_slot(username, slot, period, phase, tier_idx, avg_kills)
         slot -= 1
-        if not played or ended > now:
+        if not m["played"] or m["ended"] > now:
             continue
-        r = rng.random()
-        mode = "casual" if r < 0.55 else ("ranked" if r < 0.80 and tier_idx >= 1 else ("tdm" if r < 0.95 else "bigffa"))
-        total = {"bigffa": 12, "tdm": 6, "ranked": 5}.get(mode, 8)
-        if rng.random() < (0.12 + tier_idx * 0.05):
-            placement = 1
-        elif rng.random() < 0.35:
-            placement = rng.randint(2, min(3, total))
-        else:
-            placement = rng.randint(max(2, total // 2), total)
-        base_k = int(avg_kills_per * rng.uniform(0.6, 1.6))
-        if placement == 1:
-            kills, deaths = int(base_k * 1.4), max(0, int(base_k * 0.35))
-        elif placement <= 3:
-            kills, deaths = int(base_k * 1.1), max(0, int(base_k * 0.8))
-        else:
-            kills, deaths = int(base_k * 0.75), int(base_k * 1.1)
-        rp_delta = compute_rp_delta(placement, tier_idx) if mode == "ranked" else 0
+        rp_delta = compute_rp_delta(m["placement"], tier_idx) if m["mode"] == "ranked" else 0
         _, rn_after = rank_for_points(rp_after)
         rp_after = max(0, rp_after - rp_delta)
         history.append({
-            "mode": mode, "kills": max(0, kills), "deaths": max(0, deaths),
-            "placement": placement, "total_players": total, "rp_delta": rp_delta,
-            "rank_name_after": rn_after, "is_placement": False, "ended_at": ended.isoformat(),
+            "mode": m["mode"], "kills": m["kills"], "deaths": m["deaths"],
+            "placement": m["placement"], "total_players": m["total"], "rp_delta": rp_delta,
+            "rank_name_after": rn_after, "is_placement": False, "ended_at": m["ended"].isoformat(),
         })
     return history
 
@@ -12485,7 +12519,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 "past_seasons": [],
                 "title_season": None,
                 "title_ultimate": False,
-                "online": False,
+                **bot_activity(username, tier_idx),
                 "history": history,
             }
         raise HTTPException(status_code=404, detail="User not found")
@@ -12552,14 +12586,16 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
             "title_ultimate": bool(u.get("title_ultimate", False)),
             "custom_title": custom_title_public(u.get("custom_title_id")),
-            "online": is_online(user_id),
+            **_profile_presence(u, user_id, t_idx),
             **leaderboard_extras,
             **ban_extras,
         }
     cursor = db.match_history.find(
         {"user_id": user_id}, {"_id": 0}
     ).sort([("ended_at", -1)]).limit(10)
-    history = _synth_bot_history(u.get("username", ""), pts, t_idx) if bot_public else []
+    _st = u.get("stats") or {}
+    _avg_k = (int(_st.get("kills", 0) or 0) / max(1, int(_st.get("matches", 0) or 0))) or None
+    history = _synth_bot_history(u.get("username", ""), pts, t_idx, avg_kills=_avg_k) if bot_public else []
     async for m in cursor:
         ts = m.get("ended_at")
         history.append({
@@ -12597,7 +12633,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
         "title_ultimate": bool(u.get("title_ultimate", False)),
         "custom_title": custom_title_public(u.get("custom_title_id")),
-        "online": is_online(user_id),
+        **_profile_presence(u, user_id, t_idx),
         "history": history,
         **leaderboard_extras,
         **ban_extras,
