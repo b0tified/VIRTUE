@@ -1,6 +1,6 @@
 // QueueOverlay — global ranked-queue toast. Mounted once at the App level so
 // the timer + "Match Found!" pop persists across Lobby / Profile / Leaderboard.
-import { Trophy, Loader2, X } from "lucide-react";
+import { Trophy, Loader2, X, Users } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useQueue } from "@/context/QueueContext";
 
@@ -15,7 +15,7 @@ export default function QueueOverlay() {
   const q = useQueue();
   const location = useLocation();
   if (!q) return null;
-  const { queueState, waitSec, matchFoundSec, cancelRanked } = q;
+  const { queueState, waitSec, matchFoundSec, cancelRanked, rankedPlayersInQueue = 1 } = q;
   if (!queueState) return null;
   // Suppress the toast (and the disorienting match-found flash) when the
   // user is in the middle of a match. The queue itself keeps polling in
@@ -76,6 +76,13 @@ export default function QueueOverlay() {
             >
               {queueState.tier_name || "BRONZE"}
             </div>
+            <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-black text-white flex items-center gap-1" data-testid="queue-players">
+              <Users size={12} strokeWidth={3} />
+              <span className="tabular-nums" data-testid="queue-players-count">{rankedPlayersInQueue}/4</span>
+            </div>
+          </div>
+          <div className="mt-2 h-2 border-2 border-black bg-neutral-200 overflow-hidden">
+            <div className="h-full bg-[#0055FF] transition-[width] duration-500" style={{ width: `${(rankedPlayersInQueue / 4) * 100}%` }} />
           </div>
           {!queueState.matched && Number.isFinite(queueState.estimated_wait_seconds) && (
             <div

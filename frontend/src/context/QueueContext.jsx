@@ -73,6 +73,7 @@ export function QueueProvider({ children }) {
   // initial estimate gives a stable "here's roughly how long you'll
   // wait" number that plays nicely alongside the live count-up timer.
   const lockedEtaRef = useRef(null);
+  const rankedFillScheduleRef = useRef([]);
   // Consecutive `in_queue: false` poll counter. A single rogue response
   // (e.g. server momentarily 500/empty body, or a queue lock race) used
   // to flip queueState → null and the toast would disappear → reappear
@@ -117,6 +118,11 @@ export function QueueProvider({ children }) {
       : null;
     setQueueState({ ...data, estimated_wait_seconds: lockedEtaRef.current });
     setWaitSec(data.wait_seconds || 0);
+    {
+      // Cosmetic "players found" fill: 3 join times spread across the expected wait.
+      const horizon = Math.max(6, lockedEtaRef.current || 30);
+      rankedFillScheduleRef.current = Array.from({ length: 3 }, () => horizon * (0.1 + Math.random() * 0.8)).sort((a, b) => a - b);
+    }
     missesRef.current = 0;
     startLocalTimer();
     pollIdRef.current = setInterval(async () => {
@@ -740,6 +746,9 @@ export function QueueProvider({ children }) {
   return (
     <QueueContext.Provider value={{
       queueState, waitSec, matchFoundSec, joinRanked, cancelRanked,
+      rankedPlayersInQueue: queueState?.matched
+        ? 4
+        : Math.min(3, 1 + rankedFillScheduleRef.current.filter((t) => t <= waitSec).length),
       casualQueueState, casualWaitSec, joinCasual, cancelCasual,
       bigffaQueueState, bigffaWaitSec, bigffaMatchFoundSec,
       bigffaPlayersInQueue: bigffaQueueState?.matched

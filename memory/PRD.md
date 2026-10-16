@@ -2900,3 +2900,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Removed Team Deathmatch option from Practice selector (practice is FFA-only).
 
 ## 2026-06 — 12P FFA queue banner shows "Players X/12" + progress bar; cosmetic fill (11 random join times across min(ETA,15)s, never below real queue_size, 12/12 on match). QueueContext `bigffaPlayersInQueue`, testid bigffa-queue-players-count.
+
+## 2026-06 — Ranked queue toast (QueueOverlay) shows "X/4" + blue progress bar; cosmetic fill (3 random join times across locked ETA or 30s), 4/4 on match. QueueContext `rankedPlayersInQueue`, testid queue-players-count.
