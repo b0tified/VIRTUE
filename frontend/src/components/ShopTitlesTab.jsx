@@ -128,8 +128,8 @@ export default function ShopTitlesTab({ coins, refreshMe, onError, onCoins }) {
 
 const hex = (n) => "#" + ((n ?? 0x888888) & 0xffffff).toString(16).padStart(6, "0");
 
-function MiniSkin({ skinId }) {
-  const sk = SKINS.find((s) => s.id === skinId) || {};
+function MiniSkin({ skin }) {
+  const sk = skin?.body != null ? skin : SKINS.find((s) => s.id === skin?.id) || {};
   return (
     <div className="flex flex-col items-center" aria-hidden>
       <div className="w-7 h-7 rounded-full border-2 border-black" style={{ background: hex(sk.head) }} />
@@ -151,7 +151,7 @@ function BundleCard({ b, coins, busy, onBuy }) {
   return (
     <div className="border-pow-thick bg-neutral-100 p-3 flex flex-col gap-3" data-testid={`shop-bundle-card-${b.id}`}>
       <div className="bg-neutral-800 border-2 border-black h-32 flex items-center justify-around px-3 relative">
-        <MiniSkin skinId={b.skin.id} />
+        <MiniSkin skin={b.skin} />
         <span className="font-display text-3xl text-[#FFD700]">+</span>
         <TitleChip title={b.title} />
         {save > 0 && (

@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import api from "@/api";
 import { Loader2, Package, Coins } from "lucide-react";
-import { SKINS } from "@/game/skins";
 import { TitleChip } from "@/components/ShopTitlesTab";
 
 const EMPTY = { title_id: "", skin_id: "", price: 0, active: true, ends_at: "" };
@@ -10,15 +9,15 @@ const EMPTY = { title_id: "", skin_id: "", price: 0, active: true, ends_at: "" }
 export default function BundleMakerPanel({ onToast }) {
   const [titles, setTitles] = useState([]);
   const [bundles, setBundles] = useState(null);
+  const [skins, setSkins] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const load = () => {
     api.get("/admin/titles").then(({ data }) => setTitles(data.titles)).catch(() => {});
-    api.get("/admin/title_bundles").then(({ data }) => setBundles(data.bundles)).catch(() => setBundles([]));
+    api.get("/admin/title_bundles").then(({ data }) => { setBundles(data.bundles); setSkins(data.skins || []); }).catch(() => setBundles([]));
   };
   useEffect(() => { load(); window.addEventListener("virtue-titles-changed", load); return () => window.removeEventListener("virtue-titles-changed", load); }, []);
 
-  const skins = SKINS.filter((s) => s.id !== "default");
   const title = titles.find((t) => t.id === form.title_id);
   const skin = skins.find((s) => s.id === form.skin_id);
   const full = (title?.price || 0) + (skin?.price || 0);
@@ -66,7 +65,7 @@ export default function BundleMakerPanel({ onToast }) {
           <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Skin</span>
           <select value={form.skin_id} onChange={(e) => set("skin_id", e.target.value)} className={sel} data-testid="bundle-maker-skin-select">
             <option value="">Select skin…</option>
-            {skins.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.price || 0})</option>)}
+            {skins.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.price || 0}){s.obtain && s.obtain !== "shop" ? ` · ${s.obtain}` : ""}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1">

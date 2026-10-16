@@ -2917,3 +2917,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Fix: custom titles vanishing/reappearing
 - Root cause: CUSTOM_TITLES (and BOT_LOADOUT) were per-process caches; production runs multiple workers/replicas so titles created/edited on one process were missing on others (Title Maker list, shop, banners flickered).
 - Fix: every title/bundle endpoint + /auth/me reloads from Mongo first; background `custom_titles_refresh_loop` resyncs titles + bot loadout every 5s; reload swaps entries without clearing (no empty window). Verified by inserting a title directly in Mongo (simulated other worker).
+
+## 2026-06 — Bundle skin dropdown now uses backend SKINS_CATALOG (GET /api/admin/title_bundles returns `skins`, all 29 non-default incl. ronin/monarch/neonknight/phoenix/shadowblade/knight/nurse); bundle skin payload carries colors for MiniSkin.

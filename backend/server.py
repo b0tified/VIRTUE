@@ -2777,6 +2777,12 @@ def _bundle_payload(payload: TitleBundleIn) -> dict:
             "active": bool(payload.active), "ends_at": fields["ends_at"]}
 
 
+def _bundle_skin(sk: dict) -> dict:
+    return {"id": sk["id"], "name": sk.get("name", sk["id"]), "price": int(sk.get("price", 0) or 0),
+            "rarity": sk.get("rarity"), "obtain": sk.get("obtain"),
+            **{k: sk.get(k) for k in ("body", "head", "leg", "accent")}}
+
+
 def _bundle_out(b: dict, owned_titles=None, owned_skins=None) -> Optional[dict]:
     t = CUSTOM_TITLES.get(b["title_id"])
     sk = SKINS_BY_ID.get(b["skin_id"])
@@ -2787,7 +2793,7 @@ def _bundle_out(b: dict, owned_titles=None, owned_skins=None) -> Optional[dict]:
         "id": str(b["_id"]), "price": int(b["price"]), "full_price": full,
         "active": bool(b.get("active", True)), "ends_at": b.get("ends_at"),
         "on_sale": _title_on_sale(b),
-        "title": _title_out(t), "skin": {"id": sk["id"], "name": sk.get("name", sk["id"]), "price": int(sk.get("price", 0)), "rarity": sk.get("rarity")},
+        "title": _title_out(t), "skin": _bundle_skin(sk),
     }
     if owned_titles is not None:
         has_t, has_s = b["title_id"] in owned_titles, b["skin_id"] in owned_skins
@@ -2802,7 +2808,8 @@ async def admin_list_bundles(user: dict = Depends(get_current_user)):
     await _reload_custom_titles()
     _require_admin(user)
     docs = await db.title_bundles.find({}).sort("created_at", -1).to_list(500)
-    return {"bundles": [o for o in (_bundle_out(d) for d in docs) if o]}
+    return {"bundles": [o for o in (_bundle_out(d) for d in docs) if o],
+            "skins": [_bundle_skin(sk) for sk in SKINS_CATALOG if sk["id"] != "default"]}
 
 
 @api.post("/admin/title_bundles")
