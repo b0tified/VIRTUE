@@ -449,6 +449,17 @@ const MELEE_RANGE = 2.6;
 const MELEE_CONE = 0.55;
 const MELEE_COOLDOWN_MS = 450;
 
+// Mirrors server pick_bot_weapon; odds cached from public /api/bot_loadout.
+function pickOfflineBotWeapon(rankTier) {
+  let lo = { sniper_low: 6, sniper_high: 45, laser: 15 };
+  try { lo = { ...lo, ...JSON.parse(localStorage.getItem("virtue_bot_loadout") || "{}") }; } catch { /* default */ }
+  const tier = Math.max(0, Math.min(7, rankTier | 0));
+  const sniperP = (lo.sniper_low + (lo.sniper_high - lo.sniper_low) * tier / 7) / 100;
+  const laserP = Math.min(lo.laser / 100, Math.max(0, 1 - sniperP));
+  const r = Math.random();
+  return r < sniperP ? "sniper" : r < sniperP + laserP ? "laser" : "ak47";
+}
+
 const BOT_NAMES = [
   "Wraith-X", "Vortex-7", "Blaze-Δ", "Cipher-9", "Raven-K",
   "Nyx-Ω", "Hex-3", "Zap-Σ", "Rune-1", "Shade-8",
@@ -595,7 +606,7 @@ class LocalPlayer {
     this.invuln_until = performance.now() + 3000;
     this.last_shot_ms = 0;
     this.last_melee_ms = 0;
-    this.weapon = (opts.weapon === "sniper") ? "sniper" : "ak47";
+    this.weapon = (opts.weapon === "sniper" || opts.weapon === "laser") ? opts.weapon : "ak47";
     this.is_ads = false;
     this.ammo = { ak47: WEAPONS.ak47.mag_size, sniper: WEAPONS.sniper.mag_size, laser: WEAPONS.laser.mag_size };
     this.reload_until_ms = { ak47: 0, sniper: 0, laser: 0 };
@@ -663,6 +674,7 @@ class LocalPlayer {
       reload_progress: Number(this.reload_progress(now).toFixed(3)),
       spread: 0,
       weapon: this.weapon,
+      aim_at: this.is_bot && this.weapon === "sniper" ? (this.aim_at || null) : null,
       laser_heat: Number((this.laser_heat || 0).toFixed(3)),
       laser_overheated: !!this.laser_overheated,
       laser_firing: !!this.laser_firing,
@@ -724,6 +736,7 @@ export class LocalSim {
         id: genId("bot"),
         username: BOT_NAMES[(i + Math.floor(Math.random() * BOT_NAMES.length)) % BOT_NAMES.length] + "-" + Math.floor(Math.random() * 100),
         is_bot: true,
+        weapon: this.mode === "practice" ? "ak47" : pickOfflineBotWeapon(this.user?.rank_tier ?? 0),
       });
       // Practice bots stand still
       bot.passive = this.mode === "practice";
@@ -1131,21 +1144,33 @@ export class LocalSim {
         // their spawn-invuln window (otherwise the bullet would be wasted +
         // feel like spawn-killing the moment invuln ends).
         const playerInvuln = now < (this.me.invuln_until || 0);
-        if (
-          this.me.alive &&
-          !playerInvuln &&
-          now > bot.botFireAt &&
-          !segBlockedByObstacles(bot.x, bot.z, this.me.x, this.me.z)
-        ) {
-          // Spread out subsequent shots (1.4 - 3.0s) so the player has room to
-          // breathe and react. Total DPS from 3 bots stays balanced.
-          bot.botFireAt = now + 1400 + Math.random() * 1600;
-          // Add intentional aim error so bots aren't laser-accurate.
+        const canFire = this.me.alive && !playerInvuln && now > bot.botFireAt &&
+          !segBlockedByObstacles(bot.x, bot.z, this.me.x, this.me.z);
+        if (!canFire) {
+          if (bot.weapon === "sniper") bot.aim_at = null;
+        } else if (bot.weapon === "sniper" && (bot.aim_at !== this.me.id || now - bot.snipeSince < 750)) {
+          // Sniper holds aim (client shows a scope glint) for 750ms before firing.
+          if (bot.aim_at !== this.me.id) { bot.aim_at = this.me.id; bot.snipeSince = now; }
+        } else {
+          // Spread out subsequent shots (1.4 - 3.0s) so the player has room to react.
+          bot.botFireAt = now + 1400 + Math.random() * 1600 + (bot.weapon === "sniper" ? 600 : 0);
           const dist = Math.hypot(this.me.x - bot.x, this.me.z - bot.z);
-          const spread = 0.04 + Math.min(0.14, dist * 0.004);
+          const spread = (0.04 + Math.min(0.14, dist * 0.004)) * (bot.weapon === "sniper" ? 0.75 : 1);
           const yawErr = (Math.random() - 0.5) * 2 * spread;
           const pitchErr = (Math.random() - 0.5) * spread;
-          this._handleShoot(bot, "ak47", bot.yaw + yawErr, bot.pitch + pitchErr, now);
+          if (bot.weapon === "laser") {
+            // Short beam burst: 8 pulses ~90ms apart.
+            for (let k = 0; k < 8; k++) {
+              setTimeout(() => {
+                if (!bot.alive || !this.me.alive) return;
+                const e = (Math.random() - 0.5) * 2 * spread;
+                bot.last_shot_ms = 0;
+                this._handleShoot(bot, "laser", bot.yaw + e, bot.pitch + pitchErr, performance.now());
+              }, k * 90);
+            }
+          } else {
+            this._handleShoot(bot, bot.weapon, bot.yaw + yawErr, bot.pitch + pitchErr, now);
+          }
         }
       }
     }

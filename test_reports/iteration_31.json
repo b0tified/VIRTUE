@@ -1,0 +1,34 @@
+{
+  "summary": "Tested three things: Bot Loadout admin API + Moderation panel, bot held-weapon models, and the sniper glint. Backend: 15/15 pytest pass (the 5 tests in test_bot_weapons.py plus a new test_bot_loadout_api.py with 10 tests). That covers admin GET/POST, 403 for player1, 401 when not logged in, 400 when the sum is over 100, 422 for values out of range or missing fields, the 60+40=100 boundary, and saved values persisting. Frontend: the BotLoadoutPanel loads, the sliders update the value labels and the AK remainder, Save persists (12/55/25 survived a reload), and the over-100 case (sniper_high 90 + laser 20) shows the error toast 'Sniper + laser chance can't exceed 100%.' The success toast was not caught on screen: the first run read body text after a 1.5s wait (looked for it the wrong way), and the corrected re-check never ran because the test session had left the admin page. The save itself works. In game (offline TDM, server-driven bots), bots carry the server-assigned weapons and the matching held gun is shown (sniper and laser seen, AK hidden). Material colours match the spec: AK #0a0a0a + wood #b5713a; sniper olive #2f3b2a + black scope + cyan lens #66d9ff; laser white #e8e8f0 + cyan #00e5ff/#7ff6ff. The glint Sprite is attached to the sniper and reached opacity 0.75 while a sniper bot faced the player. No page JS errors during matches. Loadout was reset to defaults 6/45/15 at the end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "Offline practice (FFA)", "issue": "Offline FFA 'vs AI' runs entirely in the client-side LocalSim (frontend/src/game/localSim.js). Its bots are created with no weapon, so the constructor default makes them always AK-47. The admin Bot Loadout, server pick_bot_weapon and the sniper 750ms aim delay do not apply there. Confirmed in game: 3 LocalSim bots all held AK while the server loadout was sniper 60 / laser 40. Only offline TDM (tdm=1), casual and ranked use server bots."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Offline FFA practice vs AI", "issue": "Bots never show sniper or laser models and never glint, because LocalSim bots are always AK and ignore the admin loadout. The review instruction to verify via practice-type-card-offline FFA cannot show the feature; only TDM mode does.", "affected_selectors": ["practice-type-card-offline", "practice-mode-card-ffa"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_bot_weapons.py", "/app/backend/tests/test_bot_loadout_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "LocalSim (frontend/src/game/localSim.js ~line 722): give offline FFA bots a weapon (sniper/laser/ak47), ideally using the admin loadout (e.g. expose it on a public GET, or bundle it with practice config), and port the sniper aim-hold delay so the glint is meaningful offline. Otherwise document that the loadout affects server rooms only.",
+    "Optional: _updateSniperGlint has no line-of-sight check (it only uses yaw dot > 0.985 and distance > 6m), so the glint shows through walls and on snipers that are only facing you, not aiming (it also ignores pitch). Consider gating it on server aim state, e.g. send a 'sniper_aiming' flag from the _snipe_since window.",
+    "Optional: _setRemoteWeapon maps 'katana' to no visible held model (all three guns hidden), so a remote katana user shows empty hands."
+  ],
+  "critical_code_review_comments": [
+    "server.py admin_set_bot_loadout: validation is correct (Pydantic 0-100 and max(lo,hi)+laser <= 100). It persists to app_settings with upsert and _load_bot_loadout runs at startup. OK.",
+    "pick_bot_weapon: distribution matches the configured odds (simulated 60/40: sniper 1193/2000, laser 807/2000).",
+    "Sniper aim delay: _snipe_target/_snipe_since reset on target change or LOS loss, and fire waits 750ms. OK. Note that tests/test_bot_weapons.py::test_pick_bot_weapon_distribution_scales_with_rank relies on the module-level defaults; it passes only because it imports server without loading the DB value.",
+    "Concurrency note: during testing another session (admin user 'hi') changed the loadout several times (seen at 50/50/30) and auto-joined casual matches. Admin values can be overwritten by concurrent sessions; this is not a bug."
+  ],
+  "updated_files": ["/app/backend/tests/test_bot_loadout_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "seed_data_creation": "None. Loadout changed during the tests and reset to 6/45/15 at the end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To see server-driven bots with weapon models, use Practice -> practice-type-card-offline -> practice-mode-card-tdm -> map -> confirm (URL /play?mode=offline&tdm=1). Offline FFA uses LocalSim (always AK). window.__virtueEngine.players holds entries with heldGuns {ak47,sniper,laser,glint} and heldWeapon. Setting engine.yaw directly does not rotate the camera. Run only tests/test_bot_weapons.py and tests/test_bot_loadout_api.py."
+}

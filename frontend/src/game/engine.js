@@ -2957,20 +2957,13 @@ export class GameEngine {
     if (entry.remoteMuzzleFlash) entry.remoteMuzzleFlash.position.z = w === "sniper" ? 1.22 : w === "laser" ? 0.6 : 0.62;
   }
 
-  // Lens flash on a remote sniper whose aim line points at the local player.
+  // Lens flash while a sniper bot is holding aim on the local player (server `aim_at`).
   _updateSniperGlint(entry, now) {
     const glint = entry.heldGuns?.glint;
     if (!glint) return;
     let target = 0;
-    if (entry.heldWeapon === "sniper" && entry.prevAlive !== false && entry.mesh.visible !== false) {
-      const yaw = (entry.targetYaw ?? entry.mesh.rotation.y) - Math.PI;
-      const dx = this.position.x - entry.mesh.position.x;
-      const dz = this.position.z - entry.mesh.position.z;
-      const d = Math.hypot(dx, dz);
-      if (d > 6) {
-        const dot = (dx * -Math.sin(yaw) + dz * -Math.cos(yaw)) / d;
-        if (dot > 0.985) target = 0.65 + 0.35 * Math.sin((now || performance.now()) * 0.012);
-      }
+    if (entry.heldWeapon === "sniper" && entry.prevAlive !== false && this.youId && entry.aimAt === this.youId) {
+      target = 0.65 + 0.35 * Math.sin((now || performance.now()) * 0.012);
     }
     const m = glint.material;
     m.opacity += (target - m.opacity) * 0.25;
@@ -5554,6 +5547,7 @@ export class GameEngine {
         entry.targetY = meshLift;
         entry.targetYaw = (p.yaw || 0) + Math.PI;
         this._setRemoteWeapon(entry, p.weapon);
+        if ("aim_at" in p) entry.aimAt = p.aim_at;
 
         // Death animation trigger
         if (entry.prevAlive && !p.alive) {

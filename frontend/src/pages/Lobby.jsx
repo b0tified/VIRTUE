@@ -251,6 +251,7 @@ export default function Lobby() {
       })
       .catch(() => {});
     load();
+    api.get("/bot_loadout").then(({ data }) => localStorage.setItem("virtue_bot_loadout", JSON.stringify(data))).catch(() => {});
     const id = setInterval(load, 30000);
     window.addEventListener("virtue-lobby-default-changed", load);
     return () => { alive = false; clearInterval(id); window.removeEventListener("virtue-lobby-default-changed", load); };

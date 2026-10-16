@@ -4082,6 +4082,7 @@ class Player:
             "is_bot": False if disguised else self.is_bot,
             "invuln": time.time() < self.invuln_until,
             "weapon": self.weapon,
+            "aim_at": getattr(self, "_snipe_target", None) if (self.is_bot and self.weapon == "sniper") else None,
             "ammo": self.cur_ammo(),
             "mag_size": self.mag_size(),
             "reloading": self.is_reloading(),
@@ -10311,6 +10312,11 @@ async def _load_bot_loadout() -> None:
         for k in BOT_LOADOUT:
             if k in doc:
                 BOT_LOADOUT[k] = float(doc[k])
+
+
+@api.get("/bot_loadout")
+async def public_bot_loadout():
+    return dict(BOT_LOADOUT)
 
 
 @api.get("/admin/bot_loadout")
