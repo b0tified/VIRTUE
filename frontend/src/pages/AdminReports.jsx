@@ -1892,7 +1892,7 @@ function TitleMakerPanel({ onToast }) {
           </label>
           <label className="flex flex-col gap-1">
             <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Color</span>
-            <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 ${form.style === "rainbow" ? "opacity-40 pointer-events-none" : ""}`}>
               <input type="color" value={form.color} onChange={(e) => set("color", e.target.value.toUpperCase())} className="w-10 h-9 border-2 border-black p-0" data-testid="title-maker-color-input" />
               <span className="font-mono text-xs">{form.color}</span>
             </div>
@@ -1940,7 +1940,9 @@ function TitleMakerPanel({ onToast }) {
             <TitleChip title={t} />
             <span className="font-anton text-xs flex items-center gap-1"><Coins size={12} /> {t.price}</span>
             <span className="text-[10px] uppercase tracking-widest text-neutral-500">{t.owners} owned</span>
-            {t.ends_at && <span className="text-[10px] uppercase tracking-widest text-[#E62429]">ends {new Date(t.ends_at).toLocaleString()}</span>}
+            {t.ends_at && (new Date(t.ends_at) <= new Date()
+              ? <span className="text-[10px] uppercase tracking-widest bg-[#E62429] text-white px-1.5 py-0.5 border border-black" data-testid={`title-maker-expired-${t.id}`}>Expired</span>
+              : <span className="text-[10px] uppercase tracking-widest text-[#E62429]">ends {new Date(t.ends_at).toLocaleString()}</span>)}
             <div className="ml-auto flex gap-1">
               <button type="button" onClick={() => toggle(t)} className={`border-2 border-black px-2 py-1 font-anton uppercase text-[10px] tracking-widest ${t.active ? "bg-[#06A35F] text-white" : "bg-neutral-200"}`} data-testid={`title-maker-toggle-${t.id}`}>{t.active ? "In Shop" : "Hidden"}</button>
               <button type="button" onClick={() => edit(t)} className="border-2 border-black px-2 py-1 font-anton uppercase text-[10px] tracking-widest bg-white" data-testid={`title-maker-edit-${t.id}`}>Edit</button>

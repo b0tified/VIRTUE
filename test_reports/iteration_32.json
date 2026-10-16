@@ -1,0 +1,34 @@
+{
+  "summary": "Tested the custom shop titles feature (admin Title Maker) end to end. Backend: 15/15 pytest pass. Covered admin-only CRUD (player gets 403, logged-out user gets 401/403), validation (color, style, text length 1-24 and blank, price < 0, bad ends_at), text stored in uppercase and color normalised, PUT/DELETE on an unknown id gives 404, expired and hidden titles left out of the shop, buying them gives 404, buying deducts coins and auto-equips, re-buy 409, not enough coins 402, equip/unequip, equipping a title you don't own gives 403, owned titles stay listed after being hidden, owners count, delete pulls the title from owners and unequips it, equipping a season title clears custom_title, /auth/me and the public profile include custom_title. Frontend: Title Maker panel checked (save disabled when text empty, live preview with color/style, maxlength 24, create shows a row with price, owners and end date, form resets after save, toggle In Shop/Hidden, edit loads values into the form including datetime-local and Save Changes updates the row, cancel edit, delete with confirm dialog). Shop Titles tab checked (expired title not listed, EQUIPPED state, buy disabled when coins are too low, '3D 4H LEFT' label, buy then auto-equip, coins 847 -> 837 in the DB and in the modal after reload, EQUIP switches back). Lobby PlayerCard banner and Profile banner both show the custom text with its color and style class. No page errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "startup (_reload_custom_titles)", "issue": "_reload_custom_titles() runs in the same try block as _load_bot_loadout(). If the bot loadout load throws, the titles cache is never filled until restart and every title disappears from the shop and banners. Give it its own try/except."},
+      {"endpoint": "CUSTOM_TITLES in-memory cache", "issue": "Works because uvicorn runs --workers 1. It would break with multiple workers or replicas. Acceptable for now."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Title Maker list / Shop TitleChip (rainbow style)", "issues": ["custom-title-rainbow uses background-clip:text, which wipes out the chip's bg-black/80. Rainbow chips sit on a transparent/white background while other chips are on black, so contrast is lower on the white admin panel. Put the gradient on an inner span."]},
+      {"screen": "Admin Title Maker", "issues": ["The rainbow style ignores the chosen color (gradient only). Consider hiding or disabling the color picker when rainbow is selected.", "Expired titles (ends_at in the past) still show a green 'IN SHOP' toggle. Add an 'EXPIRED' badge so the admin knows the title is not on sale."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_custom_titles.py", "/app/test_reports/pytest/pytest_custom_titles.xml"],
+  "action_items": [
+    "Optional: move _reload_custom_titles() into its own try/except at startup",
+    "Optional: fix rainbow chip background (gradient on an inner span) and add an expired badge in the admin list"
+  ],
+  "critical_code_review_comments": [
+    "shop_buy_title returns 402 when the atomic update matches nothing. That also covers a race where the title was already owned. Fine, but the message would be wrong.",
+    "Deleting a title gives owners no refund (intended per the design, but worth telling the user).",
+    "AdminReports.jsx is about 3069 lines. TitleMakerPanel should move to its own component file."
+  ],
+  "updated_files": ["/app/backend/tests/test_custom_titles.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Cleaned up: TEST LEGEND, EXPIRED, TEST_UIBUY, TEST_PRICEY and all pytest-created titles are deleted. player1 now has custom_title=None, owned_titles=[], coins=837. NOT deleted: title 'JOSH' (id bf51c33d6a39, 500 coins, created_by 'hi' at 00:54:04 UTC while testing was running). It appears the real user created and bought it on the admin account. While restoring admin state the tester briefly set the admin's custom_title_id to null, then restored it to JOSH (title_ultimate=false). Please check this matches the user's intent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=... pytest /app/backend/tests/test_custom_titles.py. It creates TEST_ titles and cleans them up, but it changes player1's equipped custom title and the admin's season title (test_season_title_clears_custom). Reset admin title_ultimate/custom_title_id afterwards if needed. Use the lobby-profile-button client-side link to reach /profile; page.goto('/profile') shows the boot loading screen for more than 5 seconds."
+}

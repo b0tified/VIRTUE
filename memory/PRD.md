@@ -2902,3 +2902,9 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — 12P FFA queue banner shows "Players X/12" + progress bar; cosmetic fill (11 random join times across min(ETA,15)s, never below real queue_size, 12/12 on match). QueueContext `bigffaPlayersInQueue`, testid bigffa-queue-players-count.
 
 ## 2026-06 — Ranked queue toast (QueueOverlay) shows "X/4" + blue progress bar; cosmetic fill (3 random join times across locked ETA or 30s), 4/4 on match. QueueContext `rankedPlayersInQueue`, testid queue-players-count.
+
+## 2026-06 — Title Maker (custom shop titles)
+- db.custom_titles {_id, text(upper, <=24), color #RRGGBB, style plain|shimmer|rainbow, price, active, ends_at?}; in-memory CUSTOM_TITLES cache (single worker). Users: owned_titles[], custom_title_id. public_user/public profiles expose custom_title {id,text,color,style}.
+- Endpoints: admin GET/POST /api/admin/titles, PUT/DELETE /api/admin/titles/{id} (delete pulls from owners, no refund); GET /api/shop/titles, POST /api/shop/titles/buy (atomic coin deduct, auto-equip), POST /api/profile/me/custom_title {title_id|null}. Equipping season/ultimate title clears custom title and vice versa.
+- Frontend: Moderation TitleMakerPanel (live preview, edit/hide/delete, Expired badge); Shop "Titles" tab (ShopTitlesTab.jsx, timer label for limited titles); banners (PlayerCard/Profile/PublicProfile) render custom text+color+style via bannerTitle.js helpers.
+- Tests: backend/tests/test_custom_titles.py (15 pass), iteration_32 100%.

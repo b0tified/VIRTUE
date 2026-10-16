@@ -192,7 +192,7 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false,
           on the small (sm) size banner strip in the lobby header. */}
       {title && (
         <span
-          className={`absolute left-1/2 -translate-x-1/2 font-anton uppercase tracking-widest leading-none whitespace-nowrap pointer-events-none px-1 border border-black/40 bg-black/25 ${titleClass}`}
+          className={`absolute left-1/2 -translate-x-1/2 font-anton uppercase tracking-widest leading-none whitespace-nowrap pointer-events-none px-1 border border-black/40 bg-black/25 ${titleClass.replace("custom-title-rainbow", "")}`}
           style={{
             color: c.fg,
             fontSize: Math.max(9, height - 2),
@@ -201,7 +201,7 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false,
           }}
           data-testid="player-card-banner-title"
         >
-          {title}
+          {titleClass.includes("custom-title-rainbow") ? <span className="custom-title-rainbow">{title}</span> : title}
         </span>
       )}
       <I size={Math.max(10, height - 4)} strokeWidth={3} style={{ color: c.fg }} />

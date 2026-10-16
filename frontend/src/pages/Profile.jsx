@@ -1015,14 +1015,14 @@ function ProfileBanner({ iconIdx, colorIdx, animated = false, title = null, titl
           data-testid="profile-banner-title"
         >
           <span
-            className={`font-display uppercase text-2xl md:text-3xl tracking-widest text-center px-3 py-1 border-2 border-black bg-black/25 ${titleClass}`}
+            className={`font-display uppercase text-2xl md:text-3xl tracking-widest text-center px-3 py-1 border-2 border-black bg-black/25 ${titleClass.replace("custom-title-rainbow", "")}`}
             style={{
               color: c.fg,
               textShadow: "2px 2px 0 rgba(0,0,0,0.85)",
               ...titleStyle,
             }}
           >
-            {title}
+            {titleClass.includes("custom-title-rainbow") ? <span className="custom-title-rainbow">{title}</span> : title}
           </span>
         </div>
       )}

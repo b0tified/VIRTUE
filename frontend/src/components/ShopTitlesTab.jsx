@@ -7,11 +7,11 @@ import { customTitleClass } from "@/game/bannerTitle";
 export function TitleChip({ title, size = "md" }) {
   return (
     <span
-      className={`inline-block font-anton uppercase tracking-widest leading-none whitespace-nowrap px-2 py-1 border-2 border-black bg-black/80 ${size === "lg" ? "text-xl" : "text-sm"} ${customTitleClass(title.style)}`}
+      className={`inline-block font-anton uppercase tracking-widest leading-none whitespace-nowrap px-2 py-1 border-2 border-black bg-black/80 ${size === "lg" ? "text-xl" : "text-sm"} ${title.style === "rainbow" ? "" : customTitleClass(title.style)}`}
       style={{ color: title.color, textShadow: "0 1px 0 rgba(0,0,0,0.85)" }}
       data-testid={`title-chip-${title.id || "preview"}`}
     >
-      {title.text || "TITLE"}
+      {title.style === "rainbow" ? <span className="custom-title-rainbow">{title.text || "TITLE"}</span> : (title.text || "TITLE")}
     </span>
   );
 }

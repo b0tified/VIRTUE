@@ -1279,9 +1279,12 @@ async def on_startup():
     asyncio.create_task(synthetic_online_loop())
     try:
         await _load_bot_loadout()
-        await _reload_custom_titles()
     except Exception as e:
         logger.warning("bot loadout load failed: %s", e)
+    try:
+        await _reload_custom_titles()
+    except Exception as e:
+        logger.warning("custom titles load failed: %s", e)
     try:
         await _load_peak_online()
     except Exception as e:
