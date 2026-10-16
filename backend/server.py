@@ -1880,11 +1880,13 @@ async def leaderboard():
         if u.get("is_seeded"):
             act = bot_activity(username, idx)
             online, in_match, match_kind = act["online"], act["in_match"], act["match_kind"]
+            in_queue = act["in_queue"]
         else:
             loc = player_location(uid)
             in_match = loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party")
             match_kind = loc.get("kind") if loc else None
             online = is_online(uid)
+            in_queue = False
         rows.append({
             "id": uid,
             "username": username,
@@ -1899,6 +1901,7 @@ async def leaderboard():
             "in_match": in_match,
             "match_kind": match_kind,
             "spectatable": not u.get("is_seeded"),
+            "in_queue": in_queue,
         })
     return rows
 
@@ -12368,7 +12371,9 @@ def _bot_slot(username: str, slot: int, period: float, phase: float, tier_idx: i
         kills, deaths = int(base_k * 1.1), max(0, int(base_k * 0.8))
     else:
         kills, deaths = int(base_k * 0.75), int(base_k * 1.1)
+    queue_secs = rng.uniform(90, 240)
     return {"played": played, "ended": ended, "started": ended - timedelta(seconds=duration),
+            "queued": ended - timedelta(seconds=duration + queue_secs),
             "mode": mode, "total": total, "placement": placement,
             "kills": max(0, kills), "deaths": max(0, deaths)}
 
@@ -12384,10 +12389,12 @@ def bot_activity(username: str, tier_idx: int = 0, now: Optional[datetime] = Non
         if not m["played"]:
             continue
         if m["started"] <= now < m["ended"]:
-            return {"online": True, "in_match": True, "match_kind": m["mode"]}
+            return {"online": True, "in_match": True, "in_queue": False, "match_kind": m["mode"]}
+        if m["queued"] <= now < m["started"]:
+            return {"online": True, "in_match": False, "in_queue": True, "match_kind": m["mode"]}
         if m["started"] - timedelta(minutes=30) <= now < m["ended"] + timedelta(minutes=45):
-            return {"online": True, "in_match": False, "match_kind": None}
-    return {"online": False, "in_match": False, "match_kind": None}
+            return {"online": True, "in_match": False, "in_queue": False, "match_kind": None}
+    return {"online": False, "in_match": False, "in_queue": False, "match_kind": None}
 
 
 def _profile_presence(u: dict, user_id: str, tier_idx: int) -> dict:
@@ -12396,6 +12403,7 @@ def _profile_presence(u: dict, user_id: str, tier_idx: int) -> dict:
     loc = player_location(user_id)
     return {"online": is_online(user_id),
             "in_match": loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party"),
+            "in_queue": False,
             "match_kind": loc.get("kind") if loc else None}
 
 

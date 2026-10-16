@@ -29,6 +29,19 @@ def test_activity_matches_history():
     end = datetime.fromisoformat(m["ended_at"])
     act = srv.bot_activity(name, 3, end - timedelta(seconds=30))
     assert act["in_match"] and act["match_kind"] == m["mode"]
-    assert srv.bot_activity(name, 3, end + timedelta(minutes=10)) == {"online": True, "in_match": False, "match_kind": None}
+    assert srv.bot_activity(name, 3, end + timedelta(minutes=10)) == {"online": True, "in_match": False, "in_queue": False, "match_kind": None}
     share = sum(srv.bot_activity(f"B{i}", 2, now)["online"] for i in range(400)) / 400
     assert 0.15 < share < 0.6
+
+
+def test_bot_queues_before_match():
+    now = datetime(2026, 6, 1, 12, tzinfo=timezone.utc)
+    name = "FlareStorm"
+    m = srv._synth_bot_history(name, 1500, 3, now + timedelta(days=2))[0]
+    end = datetime.fromisoformat(m["ended_at"])
+    # Walk back from match end until the bot is queued (before the match started).
+    t = end - timedelta(seconds=30)
+    while srv.bot_activity(name, 3, t)["in_match"]:
+        t -= timedelta(seconds=10)
+    act = srv.bot_activity(name, 3, t - timedelta(seconds=5))
+    assert act["in_queue"] and not act["in_match"] and act["match_kind"] == m["mode"]

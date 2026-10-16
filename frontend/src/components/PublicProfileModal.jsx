@@ -80,7 +80,10 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
           {data?.online && data?.in_match && !data?.banned && (
             <span className="font-anton uppercase text-xs text-[#E62429]" data-testid="public-profile-in-match">● IN MATCH{data.match_kind ? ` · ${String(data.match_kind).toUpperCase()}` : ""}</span>
           )}
-          {data?.online && !data?.in_match && !data?.banned && (
+          {data?.online && data?.in_queue && !data?.banned && (
+            <span className="font-anton uppercase text-xs text-[#B8860B]" data-testid="public-profile-in-queue">● IN QUEUE{data.match_kind ? ` · ${String(data.match_kind).toUpperCase()}` : ""}</span>
+          )}
+          {data?.online && !data?.in_match && !data?.in_queue && !data?.banned && (
             <span className="font-anton uppercase text-xs text-[#06D6A0]" data-testid="public-profile-online">● ONLINE</span>
           )}
           {canReport && (

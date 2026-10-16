@@ -2926,3 +2926,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Live bot activity: `bot_activity(username, tier)` derives online/in_match/match_kind from the same per-bot session grid as match history (in match during session, online 30m before/45m after). Used by leaderboard rows (seeded rows `spectatable:false` -> non-clickable IN MATCH chip) and public profiles (modal shows "IN MATCH · MODE"). History kills now scale to the bot doc kills/match average.
 
 ## 2026-06 — Match-history scoreboard bots open full profiles: PublicProfileModal now fetches /users/{name}/profile for bots too (named/custom bots get fabricated public profile + rolling history + live status); falls back to Private card only on 404.
+
+## 2026-06 — Leaderboard bots show IN QUEUE (90-240s, deterministic per session) right before each fake match starts; leaderboard yellow spinner chip (data-status=in_queue), profile modal "IN QUEUE · MODE". `bot_activity` returns in_queue.
