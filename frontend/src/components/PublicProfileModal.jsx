@@ -32,7 +32,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
   const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
-    if (!username || isBot) return;
+    if (!username) return;
     setData(null);
     setError("");
     setLoading(true);
@@ -125,7 +125,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
             who's locked their profile — same padlock, same message, no
             content. Callers pass `isBot={true}` when opening from a bot's
             scoreboard row. */}
-        {isBot && (
+        {isBot && !loading && !data && (
           <div className="px-5 py-14 text-center bg-white" data-testid="public-profile-private">
             <Lock size={44} strokeWidth={3} className="inline text-neutral-400" />
             <div className="font-display text-2xl mt-3 text-neutral-700">Private Profile</div>
@@ -135,7 +135,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
           </div>
         )}
 
-        {!isBot && loading && (
+        {loading && (
           <div className="px-5 py-12 text-center" data-testid="public-profile-loading">
             <Loader2 size={28} strokeWidth={3} className="inline animate-spin text-neutral-500" />
           </div>

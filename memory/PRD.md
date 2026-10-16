@@ -2924,3 +2924,5 @@ Two quality-of-life changes shipped together.
 - ~50% of seeded leaderboard bots (stable md5(username) % 100 < 50 via `_bot_profile_public`) now return full public profiles: real lerped `stats` from seeded_climb_loop + `_synth_bot_history` (per-bot time grid, 1.5-5h period, 75% play chance per slot, seeded by name+slot) so new matches appear over time; the rest stay private. Unregistered disguised/custom bot names also use the rolling history. Tests: tests/test_bot_public_profiles.py.
 
 ## 2026-06 — Live bot activity: `bot_activity(username, tier)` derives online/in_match/match_kind from the same per-bot session grid as match history (in match during session, online 30m before/45m after). Used by leaderboard rows (seeded rows `spectatable:false` -> non-clickable IN MATCH chip) and public profiles (modal shows "IN MATCH · MODE"). History kills now scale to the bot doc kills/match average.
+
+## 2026-06 — Match-history scoreboard bots open full profiles: PublicProfileModal now fetches /users/{name}/profile for bots too (named/custom bots get fabricated public profile + rolling history + live status); falls back to Private card only on 404.
