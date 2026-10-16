@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Zap, Swords, Star, Smartphone, Monitor, Gamepad2, Flag, X, Check } from "lucide-react";
+import { Heart, Trophy, LogOut, Play, Activity, Wifi, Bot, Timer, Crosshair, Target, Zap, Swords, Star, Smartphone, Monitor, Gamepad2, Flag, X, Check } from "lucide-react";
 import { rankIconFor } from "@/game/rankIcons";
 import PlayerCard from "@/components/PlayerCard";
 import MatchResultOverlay from "@/components/MatchResultOverlay";
@@ -11,6 +11,7 @@ const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A
 
 const WEAPON_META = {
   ak47:   { Icon: Crosshair, color: "#FFD700", label: "AK-47" },
+  sniper: { Icon: Target,    color: "#E62429", label: "SNIPER" },
   laser:  { Icon: Zap,       color: "#00CFFF", label: "LASER" },
   katana: { Icon: Swords,    color: "#9B59B6", label: "MELEE" },
 };

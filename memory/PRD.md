@@ -2894,3 +2894,5 @@ Two quality-of-life changes shipped together.
 - Server: sniper bots hold aim 750ms on a LOS target before firing; `aim_at` serialized for sniper bots.
 - Admin: Moderation "Bot Loadout" panel (sniper % Bronze, sniper % top rank, laser %) -> GET/POST /api/admin/bot_loadout (db.app_settings `bot_loadout`, validated sum<=100); public GET /api/bot_loadout cached to localStorage for offline LocalSim bots (now also get sniper/laser + aim-hold).
 - Tests: test_bot_weapons.py + test_bot_loadout_api.py (15 pass, latter needs REACT_APP_BACKEND_URL env). iteration_31.
+
+## 2026-06 — Killfeed: sniper kills show red Target (scope) icon (Hud.jsx WEAPON_META.sniper, testid kf-weapon-sniper).
