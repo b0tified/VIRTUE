@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import random
+import hashlib
 import re
 import time
 import uuid
@@ -12337,6 +12338,58 @@ async def spectate_info(username: str, _user: dict = Depends(get_current_user)):
     }
 
 
+def _bot_profile_public(username: str) -> bool:
+    """~Half of seeded leaderboard bots expose fake stats + history (stable per name)."""
+    h = int(hashlib.md5(username.lower().encode()).hexdigest()[:8], 16)
+    return h % 100 < 50
+
+
+def _synth_bot_history(username: str, pts: int, tier_idx: int, now: Optional[datetime] = None) -> List[dict]:
+    """Last-10 fake matches on a per-bot time grid: each bot "plays" every
+    P hours (P from its name), each slot seeded by (name, slot) — so the
+    list is stable between refreshes but new matches roll in over time."""
+    now = now or datetime.now(timezone.utc)
+    base = random.Random(f"bot-hist::{username.lower()}")
+    period = base.uniform(1.5, 5.0) * 3600.0
+    phase = base.uniform(0, period)
+    avg_kills_per = 6 + tier_idx * 2
+    slot = int((now.timestamp() - phase) // period)
+    history: List[dict] = []
+    rp_after = pts
+    while len(history) < 10 and slot > 0:
+        rng = random.Random(f"{username.lower()}::{slot}")
+        played = rng.random() < 0.75
+        ended = datetime.fromtimestamp(phase + slot * period + rng.uniform(0, period * 0.4), tz=timezone.utc)
+        slot -= 1
+        if not played or ended > now:
+            continue
+        r = rng.random()
+        mode = "casual" if r < 0.55 else ("ranked" if r < 0.80 and tier_idx >= 1 else ("tdm" if r < 0.95 else "bigffa"))
+        total = {"bigffa": 12, "tdm": 6, "ranked": 5}.get(mode, 8)
+        if rng.random() < (0.12 + tier_idx * 0.05):
+            placement = 1
+        elif rng.random() < 0.35:
+            placement = rng.randint(2, min(3, total))
+        else:
+            placement = rng.randint(max(2, total // 2), total)
+        base_k = int(avg_kills_per * rng.uniform(0.6, 1.6))
+        if placement == 1:
+            kills, deaths = int(base_k * 1.4), max(0, int(base_k * 0.35))
+        elif placement <= 3:
+            kills, deaths = int(base_k * 1.1), max(0, int(base_k * 0.8))
+        else:
+            kills, deaths = int(base_k * 0.75), int(base_k * 1.1)
+        rp_delta = compute_rp_delta(placement, tier_idx) if mode == "ranked" else 0
+        _, rn_after = rank_for_points(rp_after)
+        rp_after = max(0, rp_after - rp_delta)
+        history.append({
+            "mode": mode, "kills": max(0, kills), "deaths": max(0, deaths),
+            "placement": placement, "total_players": total, "rp_delta": rp_delta,
+            "rank_name_after": rn_after, "is_placement": False, "ended_at": ended.isoformat(),
+        })
+    return history
+
+
 @api.get("/users/{username}/profile")
 async def public_profile(username: str, _user: dict = Depends(get_current_user)):
     """Public view of any user's profile — username, avatar, stats, rank,
@@ -12410,62 +12463,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 "matches": matches_played,
                 "wins": wins,
             }
-            # Synthesize last-10 match history. Mode mix: 55% casual,
-            # 25% ranked (tier ≥ 1), 15% tdm, 5% bigffa. Ended-at
-            # spread across last ~7-14 days, most recent first.
-            now = datetime.now(timezone.utc)
-            history: List[dict] = []
-            _rp_after = pts
-            for i in range(10):
-                _r = rng.random()
-                if _r < 0.55:
-                    _mode = "casual"
-                elif _r < 0.80 and tier_idx >= 1:
-                    _mode = "ranked"
-                elif _r < 0.95:
-                    _mode = "tdm"
-                else:
-                    _mode = "bigffa"
-                if _mode == "bigffa":
-                    _total = 12
-                elif _mode == "tdm":
-                    _total = 6
-                elif _mode == "ranked":
-                    _total = 5
-                else:
-                    _total = 8
-                if rng.random() < (0.12 + tier_idx * 0.05):
-                    _placement = 1
-                elif rng.random() < 0.35:
-                    _placement = rng.randint(2, min(3, _total))
-                else:
-                    _placement = rng.randint(max(2, _total // 2), _total)
-                _base_k = int(avg_kills_per * rng.uniform(0.6, 1.6))
-                if _placement == 1:
-                    _kills = int(_base_k * 1.4)
-                    _deaths = max(0, int(_base_k * 0.35))
-                elif _placement <= 3:
-                    _kills = int(_base_k * 1.1)
-                    _deaths = max(0, int(_base_k * 0.8))
-                else:
-                    _kills = int(_base_k * 0.75)
-                    _deaths = int(_base_k * 1.1)
-                _rp_delta = compute_rp_delta(_placement, tier_idx) if _mode == "ranked" else 0
-                _, _rn_after = rank_for_points(_rp_after)
-                _rp_after = max(0, _rp_after - _rp_delta)
-                _hours_back = int(rng.uniform(1, 6) + i * rng.uniform(6, 20))
-                _ended_at = now - timedelta(hours=_hours_back)
-                history.append({
-                    "mode": _mode,
-                    "kills": max(0, _kills),
-                    "deaths": max(0, _deaths),
-                    "placement": _placement,
-                    "total_players": _total,
-                    "rp_delta": _rp_delta,
-                    "rank_name_after": _rn_after,
-                    "is_placement": False,
-                    "ended_at": _ended_at.isoformat(),
-                })
+            history = _synth_bot_history(username, pts, tier_idx)
             return {
                 "id": f"bot::{username}",
                 "username": username,
@@ -12494,7 +12492,8 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     is_self = str(u.get("_id")) == str(_user.get("_id"))
     is_bot = bool(u.get("is_bot", False)) or bool(u.get("is_seeded", False))
     user_private = bool(u.get("profile_private", False))
-    private = (is_bot or user_private) and not is_self
+    bot_public = is_bot and bool(u.get("is_seeded")) and _bot_profile_public(u.get("username", ""))
+    private = ((is_bot and not bot_public) or user_private) and not is_self
     pts = int(u.get("rank_points", 0) or 0)
     peak = int(u.get("peak_rank_points", pts) or pts)
     if pts > peak:
@@ -12560,7 +12559,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     cursor = db.match_history.find(
         {"user_id": user_id}, {"_id": 0}
     ).sort([("ended_at", -1)]).limit(10)
-    history = []
+    history = _synth_bot_history(u.get("username", ""), pts, t_idx) if bot_public else []
     async for m in cursor:
         ts = m.get("ended_at")
         history.append({

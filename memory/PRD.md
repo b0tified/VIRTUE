@@ -2919,3 +2919,6 @@ Two quality-of-life changes shipped together.
 - Fix: every title/bundle endpoint + /auth/me reloads from Mongo first; background `custom_titles_refresh_loop` resyncs titles + bot loadout every 5s; reload swaps entries without clearing (no empty window). Verified by inserting a title directly in Mongo (simulated other worker).
 
 ## 2026-06 — Bundle skin dropdown now uses backend SKINS_CATALOG (GET /api/admin/title_bundles returns `skins`, all 29 non-default incl. ronin/monarch/neonknight/phoenix/shadowblade/knight/nurse); bundle skin payload carries colors for MiniSkin.
+
+## 2026-06 — Public leaderboard bots
+- ~50% of seeded leaderboard bots (stable md5(username) % 100 < 50 via `_bot_profile_public`) now return full public profiles: real lerped `stats` from seeded_climb_loop + `_synth_bot_history` (per-bot time grid, 1.5-5h period, 75% play chance per slot, seeded by name+slot) so new matches appear over time; the rest stay private. Unregistered disguised/custom bot names also use the rolling history. Tests: tests/test_bot_public_profiles.py.
