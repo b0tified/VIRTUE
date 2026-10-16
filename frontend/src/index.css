@@ -1986,3 +1986,28 @@ html.virtue-no-ui-blur .hud-panel {
 @keyframes lobby-fall-drop { from { transform: translateY(0); } to { transform: translateY(118vh); } }
 @keyframes lobby-fall-sway { 0% { transform: translateX(-28px) rotate(-35deg); } 100% { transform: translateX(28px) rotate(40deg); } }
 @media (prefers-reduced-motion: reduce) { .lobby-fall-leaf, .lobby-fall-leaf-sway { animation: none; } }
+
+/* Custom shop titles (Title Maker) */
+.custom-title-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.75) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: custom-title-sheen 2.6s linear infinite;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+@keyframes custom-title-sheen { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+.custom-title-rainbow {
+  background-image: linear-gradient(90deg, #FF3B3B, #FFB800, #FFF34D, #3BFF6B, #3BC8FF, #9B5BFF, #FF3BD4, #FF3B3B);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none !important;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.9));
+  animation: custom-title-rainbow 3s linear infinite;
+}
+@keyframes custom-title-rainbow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+@media (prefers-reduced-motion: reduce) { .custom-title-shimmer::after, .custom-title-rainbow { animation: none; } }

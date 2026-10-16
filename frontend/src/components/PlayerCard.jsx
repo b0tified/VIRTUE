@@ -155,7 +155,7 @@ export function Avatar({ idx = 0, peakTier = null, peakDivision = 0, leaderboard
   );
 }
 
-function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false, level = null, title = null, titleClass = "" }) {
+function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false, level = null, title = null, titleClass = "", titleStyle }) {
   const c = BANNER_COLORS[Math.max(0, Math.min(BANNER_COLORS.length - 1, colorIdx | 0))];
   const I = BANNER_ICONS[Math.max(0, Math.min(BANNER_ICONS.length - 1, iconIdx | 0))];
   return (
@@ -197,6 +197,7 @@ function BannerStrip({ iconIdx = 0, colorIdx = 0, height = 14, animated = false,
             color: c.fg,
             fontSize: Math.max(9, height - 2),
             textShadow: "0 1px 0 rgba(0,0,0,0.85)",
+            ...titleStyle,
           }}
           data-testid="player-card-banner-title"
         >
@@ -224,6 +225,7 @@ export default function PlayerCard({
   bannerAnimated = false,
   bannerTitle = null,   // e.g. "S2 · DIAMOND" — past-season peak-rank flex.
   bannerTitleClass = "", // Optional extra class for Master+ shimmer.
+  bannerTitleStyle,      // Optional inline style (custom shop title color).
   level = null,
   leaderboardRank = null, // Goonmaster-only: global leaderboard position (1 = top).
   isBot = false,
@@ -250,7 +252,7 @@ export default function PlayerCard({
       className={`card-pow p-0 bg-white flex flex-col ${className}`}
       data-testid={testid}
     >
-      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} title={bannerTitle} titleClass={bannerTitleClass} />}
+      {showBanner && <BannerStrip iconIdx={bannerIcon} colorIdx={bannerColor} height={dims.banner} animated={bannerAnimated} level={Number.isFinite(level) ? level : null} title={bannerTitle} titleClass={bannerTitleClass} titleStyle={bannerTitleStyle} />}
       <div className="flex items-stretch">
         {(() => {
           // Left "avatar bar" background. Normally uses the avatar's own

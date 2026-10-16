@@ -7,7 +7,7 @@ import PlayerCard from "@/components/PlayerCard";
 import RankProgressBar from "@/components/RankProgressBar";
 import { divisionRoman, isUltimateGooner } from "@/game/rankIcons";
 import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
-import { formatBannerTitle, bannerTitleAnimClass } from "@/game/bannerTitle";
+import { formatBannerTitle, bannerTitleAnimClass, bannerTitleStyle } from "@/game/bannerTitle";
 import { useAuth } from "@/context/AuthContext";
 import { ReportPlayerModal } from "@/components/Hud";
 
@@ -161,6 +161,7 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
                 bannerAnimated={!!data.banner_animated}
                 bannerTitle={formatBannerTitle(data)}
                 bannerTitleClass={bannerTitleAnimClass(data)}
+                bannerTitleStyle={bannerTitleStyle(data)}
                 level={data.level ?? 1}
                 online={data.online}
                 testid="public-profile-card"

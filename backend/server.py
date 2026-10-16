@@ -189,6 +189,8 @@ def public_user(user: dict) -> dict:
         # `leaderboard_rank` before actually displaying it so a stale
         # flag left over from dropping out of top-50 is a no-op.
         "title_ultimate": bool(user.get("title_ultimate", False)),
+        "custom_title": custom_title_public(user.get("custom_title_id")),
+        "owned_titles": list(user.get("owned_titles") or []),
         "stats": stats,
         "level": lvl["level"],
         "xp": lvl["xp"],
@@ -1277,6 +1279,7 @@ async def on_startup():
     asyncio.create_task(synthetic_online_loop())
     try:
         await _load_bot_loadout()
+        await _reload_custom_titles()
     except Exception as e:
         logger.warning("bot loadout load failed: %s", e)
     try:
@@ -2571,8 +2574,9 @@ async def set_title(payload: TitleIn, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail="You must be a top-50 Goonmaster to equip this title.")
         await db.users.update_one(
             {"_id": user["_id"]},
-            {"$set": {"title_ultimate": True, "title_season": None}},
+            {"$set": {"title_ultimate": True, "title_season": None, "custom_title_id": None}},
         )
+        user["custom_title_id"] = None
         user["title_ultimate"] = True
         user["title_season"] = None
         return public_user(user)
@@ -2599,10 +2603,193 @@ async def set_title(payload: TitleIn, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="You didn't finish that season — nothing to display.")
     await db.users.update_one(
         {"_id": user["_id"]},
-        {"$set": {"title_season": int(payload.season), "title_ultimate": False}},
+        {"$set": {"title_season": int(payload.season), "title_ultimate": False, "custom_title_id": None}},
     )
+    user["custom_title_id"] = None
     user["title_season"] = int(payload.season)
     user["title_ultimate"] = False
+    return public_user(user)
+
+
+# ---------------------------------------------------------------------
+# Custom shop titles (admin Title Maker). Cached in-memory so user
+# serializers can resolve `custom_title_id` synchronously.
+# ---------------------------------------------------------------------
+CUSTOM_TITLES: Dict[str, dict] = {}
+TITLE_STYLES = ("plain", "shimmer", "rainbow")
+
+
+async def _reload_custom_titles() -> None:
+    docs = await db.custom_titles.find({}).to_list(1000)
+    CUSTOM_TITLES.clear()
+    for d in docs:
+        CUSTOM_TITLES[str(d["_id"])] = d
+
+
+def custom_title_public(title_id) -> Optional[dict]:
+    t = CUSTOM_TITLES.get(str(title_id)) if title_id else None
+    if not t:
+        return None
+    return {"id": str(t["_id"]), "text": t["text"], "color": t["color"], "style": t["style"]}
+
+
+def _title_out(t: dict) -> dict:
+    return {
+        "id": str(t["_id"]), "text": t["text"], "color": t["color"], "style": t["style"],
+        "price": int(t.get("price", 0)), "active": bool(t.get("active", True)),
+        "ends_at": t.get("ends_at"), "created_at": t.get("created_at"),
+    }
+
+
+def _title_on_sale(t: dict) -> bool:
+    if not t.get("active", True):
+        return False
+    ends = t.get("ends_at")
+    if ends:
+        try:
+            if datetime.fromisoformat(ends.replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                return False
+        except ValueError:
+            pass
+    return True
+
+
+class CustomTitleIn(BaseModel):
+    text: str = Field(min_length=1, max_length=24)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    style: str = Field(default="plain")
+    price: int = Field(ge=0, le=1_000_000)
+    active: bool = True
+    ends_at: Optional[str] = None
+
+
+def _validate_title_payload(payload: CustomTitleIn) -> dict:
+    if payload.style not in TITLE_STYLES:
+        raise HTTPException(status_code=400, detail="Unknown title style.")
+    ends = None
+    if payload.ends_at:
+        try:
+            ends = datetime.fromisoformat(payload.ends_at.replace("Z", "+00:00"))
+            if ends.tzinfo is None:
+                ends = ends.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end date.")
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Title text is required.")
+    return {
+        "text": text.upper(), "color": payload.color.upper(), "style": payload.style,
+        "price": int(payload.price), "active": bool(payload.active),
+        "ends_at": ends.isoformat() if ends else None,
+    }
+
+
+def _require_admin(user: dict) -> None:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+
+@api.get("/admin/titles")
+async def admin_list_titles(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    counts = {}
+    async for row in db.users.aggregate([
+        {"$match": {"owned_titles.0": {"$exists": True}}},
+        {"$unwind": "$owned_titles"},
+        {"$group": {"_id": "$owned_titles", "n": {"$sum": 1}}},
+    ]):
+        counts[str(row["_id"])] = int(row["n"])
+    items = sorted(CUSTOM_TITLES.values(), key=lambda t: t.get("created_at") or "", reverse=True)
+    return {"titles": [{**_title_out(t), "owners": counts.get(str(t["_id"]), 0)} for t in items]}
+
+
+@api.post("/admin/titles")
+async def admin_create_title(payload: CustomTitleIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    doc = {"_id": uuid.uuid4().hex[:12], **_validate_title_payload(payload),
+           "created_at": datetime.now(timezone.utc).isoformat(), "created_by": user.get("username")}
+    await db.custom_titles.insert_one(doc)
+    CUSTOM_TITLES[doc["_id"]] = doc
+    return _title_out(doc)
+
+
+@api.put("/admin/titles/{title_id}")
+async def admin_update_title(title_id: str, payload: CustomTitleIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    if title_id not in CUSTOM_TITLES:
+        raise HTTPException(status_code=404, detail="Title not found.")
+    fields = _validate_title_payload(payload)
+    await db.custom_titles.update_one({"_id": title_id}, {"$set": fields})
+    CUSTOM_TITLES[title_id] = {**CUSTOM_TITLES[title_id], **fields}
+    return _title_out(CUSTOM_TITLES[title_id])
+
+
+@api.delete("/admin/titles/{title_id}")
+async def admin_delete_title(title_id: str, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    if title_id not in CUSTOM_TITLES:
+        raise HTTPException(status_code=404, detail="Title not found.")
+    await db.custom_titles.delete_one({"_id": title_id})
+    CUSTOM_TITLES.pop(title_id, None)
+    await db.users.update_many({"owned_titles": title_id}, {"$pull": {"owned_titles": title_id}})
+    await db.users.update_many({"custom_title_id": title_id}, {"$set": {"custom_title_id": None}})
+    return {"ok": True}
+
+
+@api.get("/shop/titles")
+async def shop_titles(user: dict = Depends(get_current_user)):
+    owned = set(user.get("owned_titles") or [])
+    items = [t for t in CUSTOM_TITLES.values() if _title_on_sale(t) or str(t["_id"]) in owned]
+    items.sort(key=lambda t: (int(t.get("price", 0)), t["text"]))
+    return {
+        "titles": [{**_title_out(t), "owned": str(t["_id"]) in owned, "on_sale": _title_on_sale(t)} for t in items],
+        "equipped": user.get("custom_title_id"),
+        "coins": int(user.get("coins", 0) or 0),
+    }
+
+
+class TitleBuyIn(BaseModel):
+    title_id: str = Field(min_length=1, max_length=32)
+
+
+@api.post("/shop/titles/buy")
+async def shop_buy_title(payload: TitleBuyIn, user: dict = Depends(get_current_user)):
+    await credit_level_coins(user)
+    t = CUSTOM_TITLES.get(payload.title_id)
+    if not t or not _title_on_sale(t):
+        raise HTTPException(status_code=404, detail="Title not available.")
+    owned = list(user.get("owned_titles") or [])
+    if payload.title_id in owned:
+        raise HTTPException(status_code=409, detail="Already owned.")
+    price = int(t.get("price", 0))
+    res = await db.users.update_one(
+        {"_id": user["_id"], "coins": {"$gte": price}, "owned_titles": {"$ne": payload.title_id}},
+        {"$inc": {"coins": -price}, "$push": {"owned_titles": payload.title_id},
+         "$set": {"custom_title_id": payload.title_id, "title_season": None, "title_ultimate": False}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=402, detail=f"Not enough coins — needs {price}.")
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    return {"ok": True, "user": public_user(fresh)}
+
+
+class CustomTitleEquipIn(BaseModel):
+    title_id: Optional[str] = None
+
+
+@api.post("/profile/me/custom_title")
+async def equip_custom_title(payload: CustomTitleEquipIn, user: dict = Depends(get_current_user)):
+    if payload.title_id is None:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"custom_title_id": None}})
+        user["custom_title_id"] = None
+        return public_user(user)
+    if payload.title_id not in (user.get("owned_titles") or []) or payload.title_id not in CUSTOM_TITLES:
+        raise HTTPException(status_code=403, detail="You don't own that title.")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"custom_title_id": payload.title_id, "title_season": None, "title_ultimate": False}},
+    )
+    user.update({"custom_title_id": payload.title_id, "title_season": None, "title_ultimate": False})
     return public_user(user)
 
 
@@ -12216,6 +12403,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             "past_seasons": list(u.get("past_seasons") or []),
             "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
             "title_ultimate": bool(u.get("title_ultimate", False)),
+            "custom_title": custom_title_public(u.get("custom_title_id")),
             "online": is_online(user_id),
             **leaderboard_extras,
             **ban_extras,
@@ -12260,6 +12448,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         "past_seasons": list(u.get("past_seasons") or []),
         "title_season": (int(u["title_season"]) if isinstance(u.get("title_season"), (int, float)) else None),
         "title_ultimate": bool(u.get("title_ultimate", False)),
+        "custom_title": custom_title_public(u.get("custom_title_id")),
         "online": is_online(user_id),
         "history": history,
         **leaderboard_extras,

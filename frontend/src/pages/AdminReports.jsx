@@ -6,9 +6,10 @@
    Non-admin users are bounced back to the lobby on mount. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette, Crosshair } from "lucide-react";
+import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette, Crosshair, Type, Coins } from "lucide-react";
 import api from "@/api";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
+import { TitleChip } from "@/components/ShopTitlesTab";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 
@@ -229,6 +230,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <BotLoadoutPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <TitleMakerPanel onToast={setToast} />
       </div>
 
       {/* Live player activity + mode popularity — polls every 5s. */}
@@ -1822,6 +1827,132 @@ function AccountRow({ row, testid, onRenamed, onPassReset, onError, onRankChange
    can leave the page open and watch signups roll in during a spike.
    Rows stay compact (one line each) so 10 items fit without scrolling
    on a laptop viewport. */
+const EMPTY_TITLE = { text: "", color: "#FFD700", style: "plain", price: 500, active: true, ends_at: "" };
+
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function TitleMakerPanel({ onToast }) {
+  const [titles, setTitles] = useState(null);
+  const [form, setForm] = useState(EMPTY_TITLE);
+  const [editId, setEditId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = () => api.get("/admin/titles").then(({ data }) => setTitles(data.titles)).catch(() => setTitles([]));
+  useEffect(() => { load(); }, []);
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const payload = () => ({ ...form, price: Number(form.price) || 0, ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null });
+  const err = (e, m) => onToast?.({ kind: "err", text: e?.response?.data?.detail?.[0]?.msg || e?.response?.data?.detail || m });
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (editId) await api.put(`/admin/titles/${editId}`, payload());
+      else await api.post("/admin/titles", payload());
+      onToast?.({ kind: "ok", text: editId ? "Title updated." : "Title added to the shop." });
+      setForm(EMPTY_TITLE);
+      setEditId(null);
+      load();
+    } catch (e) { err(e, "Failed to save title."); } finally { setSaving(false); }
+  };
+  const toggle = async (t) => {
+    try {
+      await api.put(`/admin/titles/${t.id}`, { ...t, active: !t.active });
+      load();
+    } catch (e) { err(e, "Failed to update title."); }
+  };
+  const remove = async (t) => {
+    if (!window.confirm(`Delete "${t.text}"? Players who own it will lose it.`)) return;
+    try {
+      await api.delete(`/admin/titles/${t.id}`);
+      onToast?.({ kind: "ok", text: "Title deleted." });
+      load();
+    } catch (e) { err(e, "Failed to delete title."); }
+  };
+  const edit = (t) => {
+    setEditId(t.id);
+    setForm({ text: t.text, color: t.color, style: t.style, price: t.price, active: t.active, ends_at: toLocalInput(t.ends_at) });
+  };
+
+  return (
+    <div className="bg-white border-4 border-black p-4" data-testid="title-maker-panel">
+      <div className="font-anton uppercase tracking-widest text-sm mb-1 flex items-center gap-2">
+        <Type size={16} strokeWidth={3} className="text-[#E62429]" />
+        <span>Title Maker</span>
+      </div>
+      <div className="text-xs text-neutral-600 mb-3">Create banner titles players can buy in the Shop → Titles tab.</div>
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <label className="flex flex-col gap-1 col-span-2 sm:col-span-1">
+            <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Text (max 24)</span>
+            <input value={form.text} maxLength={24} onChange={(e) => set("text", e.target.value)} className="border-2 border-black px-2 py-1.5 font-anton uppercase" placeholder="LEGEND" data-testid="title-maker-text-input" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Color</span>
+            <div className="flex items-center gap-2">
+              <input type="color" value={form.color} onChange={(e) => set("color", e.target.value.toUpperCase())} className="w-10 h-9 border-2 border-black p-0" data-testid="title-maker-color-input" />
+              <span className="font-mono text-xs">{form.color}</span>
+            </div>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Price (coins)</span>
+            <input type="number" min={0} value={form.price} onChange={(e) => set("price", e.target.value)} className="border-2 border-black px-2 py-1.5" data-testid="title-maker-price-input" />
+          </label>
+          <div className="flex flex-col gap-1 col-span-2 sm:col-span-1">
+            <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Style</span>
+            <div className="flex gap-1">
+              {["plain", "shimmer", "rainbow"].map((st) => (
+                <button key={st} type="button" onClick={() => set("style", st)} className={`flex-1 border-2 border-black px-2 py-1.5 font-anton uppercase text-[10px] tracking-widest ${form.style === st ? "bg-[#FFD700]" : "bg-white hover:bg-neutral-100"}`} data-testid={`title-maker-style-${st}`}>{st}</button>
+              ))}
+            </div>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="font-anton uppercase tracking-widest text-[10px] opacity-70">Ends (optional)</span>
+            <input type="datetime-local" value={form.ends_at} onChange={(e) => set("ends_at", e.target.value)} className="border-2 border-black px-2 py-1.5 text-xs" data-testid="title-maker-ends-input" />
+          </label>
+          <label className="flex items-center gap-2 mt-5">
+            <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} data-testid="title-maker-active-checkbox" />
+            <span className="font-anton uppercase tracking-widest text-[10px]">In shop</span>
+          </label>
+        </div>
+        <div className="flex flex-col items-center justify-between gap-3 min-w-[220px]">
+          <div className="bg-neutral-800 border-2 border-black w-full h-20 flex items-center justify-center" data-testid="title-maker-preview">
+            <TitleChip title={{ ...form, text: (form.text || "TITLE").toUpperCase() }} size="lg" />
+          </div>
+          <div className="flex gap-2 w-full">
+            {editId && (
+              <button type="button" onClick={() => { setEditId(null); setForm(EMPTY_TITLE); }} className="btn-pow bg-white text-black flex-1 [&]:py-2 [&]:text-xs" data-testid="title-maker-cancel-edit">Cancel</button>
+            )}
+            <button type="button" onClick={save} disabled={saving || !form.text.trim()} className="btn-pow bg-[#06A35F] text-white flex-1 [&]:py-2 [&]:text-xs disabled:opacity-50" data-testid="title-maker-save-button">
+              {saving ? <Loader2 size={12} className="animate-spin mx-auto" /> : editId ? "Save Changes" : "Add to Shop"}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 border-t-2 border-black/10 pt-3" data-testid="title-maker-list">
+        {titles === null ? <Loader2 size={16} className="animate-spin" /> : titles.length === 0 ? (
+          <div className="text-xs text-neutral-500">No custom titles yet.</div>
+        ) : titles.map((t) => (
+          <div key={t.id} className="flex items-center gap-3 py-2 border-b border-black/5 flex-wrap" data-testid={`title-maker-row-${t.id}`}>
+            <TitleChip title={t} />
+            <span className="font-anton text-xs flex items-center gap-1"><Coins size={12} /> {t.price}</span>
+            <span className="text-[10px] uppercase tracking-widest text-neutral-500">{t.owners} owned</span>
+            {t.ends_at && <span className="text-[10px] uppercase tracking-widest text-[#E62429]">ends {new Date(t.ends_at).toLocaleString()}</span>}
+            <div className="ml-auto flex gap-1">
+              <button type="button" onClick={() => toggle(t)} className={`border-2 border-black px-2 py-1 font-anton uppercase text-[10px] tracking-widest ${t.active ? "bg-[#06A35F] text-white" : "bg-neutral-200"}`} data-testid={`title-maker-toggle-${t.id}`}>{t.active ? "In Shop" : "Hidden"}</button>
+              <button type="button" onClick={() => edit(t)} className="border-2 border-black px-2 py-1 font-anton uppercase text-[10px] tracking-widest bg-white" data-testid={`title-maker-edit-${t.id}`}>Edit</button>
+              <button type="button" onClick={() => remove(t)} className="border-2 border-black px-2 py-1 font-anton uppercase text-[10px] tracking-widest bg-[#E62429] text-white" data-testid={`title-maker-delete-${t.id}`}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DefaultLobbyScreenPanel({ onToast }) {
   const [current, setCurrent] = useState(null);
   const [saving, setSaving] = useState(null);

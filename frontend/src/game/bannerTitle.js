@@ -8,6 +8,7 @@
    "ULTIMATE GOONER" instead — the flex title for top-50 Goonmasters. */
 export function formatBannerTitle(user) {
   if (!user) return null;
+  if (user.custom_title?.text) return user.custom_title.text;
   if (_isUltimateEquipped(user)) {
     // Live season Ultimate Gooner — stamp the current placement so a
     // top-50 player's banner reads "ULTIMATE GOONER · #7". The value
@@ -47,6 +48,7 @@ export function bannerTitleTierIdx(user) {
    Master (5), Grandmaster (6) and Goonmaster (7) titles animate with
    a subtle shimmer / sparkle. Diamond and below → empty string. */
 export function bannerTitleAnimClass(user) {
+  if (user?.custom_title?.text) return customTitleClass(user.custom_title.style);
   const idx = bannerTitleTierIdx(user);
   if (idx >= 7) return "banner-title-anim banner-title-anim-goonmaster";
   if (idx >= 6) return "banner-title-anim banner-title-anim-grandmaster";
@@ -66,4 +68,17 @@ function _resolveEquippedEntry(user) {
   if (equipped == null) return null;
   const past = Array.isArray(user.past_seasons) ? user.past_seasons : [];
   return past.find((e) => Number(e?.season) === Number(equipped)) || null;
+}
+
+/* Custom shop titles (admin Title Maker): style -> CSS class. */
+export function customTitleClass(style) {
+  if (style === "rainbow") return "custom-title-rainbow";
+  if (style === "shimmer") return "banner-title-anim custom-title-shimmer";
+  return "";
+}
+
+/* Inline color for custom shop titles; undefined keeps the banner default. */
+export function bannerTitleStyle(user) {
+  const c = user?.custom_title?.color;
+  return c ? { color: c } : undefined;
 }
