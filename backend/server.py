@@ -4026,6 +4026,21 @@ def weapon_cfg(name: str) -> dict:
 BOT_LOADOUT: Dict[str, float] = {"sniper_low": 6.0, "sniper_high": 45.0, "laser": 15.0}
 
 
+def _remember_bot_identity(name: Optional[str], rp: int, level: Optional[int] = None) -> None:
+    """Persist the rank/level a disguised bot last showed in a lobby so its
+    public profile matches what players saw (shared across workers)."""
+    if not name:
+        return
+    fields = {"rp": int(rp), "updated_at": datetime.now(timezone.utc).isoformat()}
+    if level:
+        fields["level"] = int(level)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    asyncio.ensure_future(db.bot_identity.update_one({"_id": name.lower()}, {"$set": fields}, upsert=True))
+
+
 def pick_bot_weapon(rank_tier: int, difficulty: float) -> str:
     """Bot loadout roll. Sniper odds climb linearly from `sniper_low` (Bronze)
     to `sniper_high` (top tier); laser is a flat pick."""
@@ -4721,6 +4736,7 @@ class GameRoom:
             # ladder. Player.__init__ picked from the generic weighted
             # pool; overwriting here keeps disguise + skin correlated.
             bot.selected_skin = pick_bot_skin(t_idx)
+            _remember_bot_identity(getattr(bot, "username", None), pts, getattr(bot, "level", None))
         bot.weapon = pick_bot_weapon(getattr(bot, "rank_tier", 0) or 0, bot.difficulty)
         # Reposition the bot to a spawn from THIS room's arena — avoid
         # placing it right on top of an existing player/bot.
@@ -6148,6 +6164,7 @@ class GameRoom:
             _lvl_lo = 10 + t_idx * 5
             _lvl_hi = min(99, 20 + t_idx * 10)
             bot.level = random.randint(_lvl_lo, _lvl_hi)
+            _remember_bot_identity(getattr(bot, "username", None), pts, bot.level)
 
     async def _update_bots(self, dt: float):
         now_ms = int(time.time() * 1000)
@@ -7031,6 +7048,7 @@ class GameRoom:
                 bot_new_tier_idx, bot_new_tier_name = rank_for_points(bot_new_points)
                 bot_new_division = rank_division_for_points(bot_new_points, bot_new_tier_idx)
                 bot_prev_division = rank_division_for_points(bot_cur, bot_tier_idx)
+                _remember_bot_identity(getattr(p, "username", None), bot_new_points, getattr(p, "level", None))
                 placements.append({
                     "id": p.id,
                     "user_id": "",
@@ -7073,6 +7091,8 @@ class GameRoom:
                     tier_name = getattr(p, "disguise_rank_name", None) or "BRONZE"
                     disguise_rp = int(getattr(p, "disguise_rank_points", 0) or 0)
                     tier_division = rank_division_for_points(disguise_rp, tier_idx)
+                    if getattr(p, "disguise_rank_name", None):
+                        _remember_bot_identity(getattr(p, "username", None), disguise_rp, getattr(p, "level", None))
                     placements.append({
                         "id": p.id,
                         "user_id": "",
@@ -12477,6 +12497,12 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             if _override is not None:
                 pts = _snap_rp_to_match_grid(int(_override))
                 tier_idx, _ = rank_for_points(pts)
+            # Last rank/level this bot showed in a real lobby wins so the
+            # profile matches the scoreboard the viewer just saw.
+            _ident = await db.bot_identity.find_one({"_id": lu}) if _override is None else None
+            if _ident and _ident.get("rp") is not None:
+                pts = int(_ident["rp"])
+                tier_idx, _ = rank_for_points(pts)
             # RNG call order below MUST match /api/users/search so
             # avatar / level / banner values are identical across both
             # endpoints for the same bot name (deterministic identity).
@@ -12486,6 +12512,8 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 (25, 60), (35, 75), (45, 90), (50, 99),
             )[min(tier_idx, 7)]
             fake_level = rng.randint(_lvl_lo, _lvl_hi)
+            if _ident and _ident.get("level"):
+                fake_level = int(_ident["level"])
             fake_banner_icon = rng.randint(0, 5)
             fake_banner_color = rng.randint(0, 5)
             _, tier_name = rank_for_points(pts)
