@@ -2011,3 +2011,6 @@ html.virtue-no-ui-blur .hud-panel {
 }
 @keyframes custom-title-rainbow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
 @media (prefers-reduced-motion: reduce) { .custom-title-shimmer::after, .custom-title-rainbow { animation: none; } }
+
+.new-title-pop { animation: new-title-pop 0.45s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes new-title-pop { from { transform: scale(0.6) rotate(-4deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }

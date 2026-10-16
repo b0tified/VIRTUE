@@ -14,6 +14,7 @@ import LobbyBackground from "@/components/LobbyBackground";
 import LobbyBackgroundMeteor from "@/components/LobbyBackgroundMeteor";
 import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
 import LobbyBackgroundFall from "@/components/LobbyBackgroundFall";
+import NewTitlePopup from "@/components/NewTitlePopup";
 import LobbyBackgroundCastle from "@/components/LobbyBackgroundCastle";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
@@ -63,6 +64,7 @@ export default function Lobby() {
   // normal list view.
   const [whisperOpenWith, setWhisperOpenWith] = useState(null);
   const [showShop, setShowShop] = useState(false);
+  const [shopTab, setShopTab] = useState("skins");
   const [showProgression, setShowProgression] = useState(false);
   // News unread badge — refreshed every 30s and cleared when the user
   // opens /news (the News page dispatches `virtue-news-read`).
@@ -1419,7 +1421,8 @@ export default function Lobby() {
           `}</style>
         </div>
       )}
-      <ShopModal open={showShop} onClose={() => setShowShop(false)} />
+      <ShopModal open={showShop} onClose={() => { setShowShop(false); setShopTab("skins"); }} initialTab={shopTab} />
+      <NewTitlePopup onView={() => { setShopTab("titles"); setShowShop(true); }} />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
       <PracticeMapSelector
         open={!!practiceSelectorMode}

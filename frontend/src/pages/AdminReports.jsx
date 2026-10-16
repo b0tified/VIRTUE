@@ -10,6 +10,7 @@ import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter
 import api from "@/api";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { TitleChip } from "@/components/ShopTitlesTab";
+import BundleMakerPanel from "@/components/admin/BundleMakerPanel";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, AVATAR_COUNT } from "@/components/PlayerCard";
 
@@ -234,6 +235,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <TitleMakerPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <BundleMakerPanel onToast={setToast} />
       </div>
 
       {/* Live player activity + mode popularity — polls every 5s. */}
@@ -1856,6 +1861,7 @@ function TitleMakerPanel({ onToast }) {
       setForm(EMPTY_TITLE);
       setEditId(null);
       load();
+      window.dispatchEvent(new Event("virtue-titles-changed"));
     } catch (e) { err(e, "Failed to save title."); } finally { setSaving(false); }
   };
   const toggle = async (t) => {
@@ -1870,6 +1876,7 @@ function TitleMakerPanel({ onToast }) {
       await api.delete(`/admin/titles/${t.id}`);
       onToast?.({ kind: "ok", text: "Title deleted." });
       load();
+      window.dispatchEvent(new Event("virtue-titles-changed"));
     } catch (e) { err(e, "Failed to delete title."); }
   };
   const edit = (t) => {

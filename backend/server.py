@@ -2736,7 +2736,118 @@ async def admin_delete_title(title_id: str, user: dict = Depends(get_current_use
     CUSTOM_TITLES.pop(title_id, None)
     await db.users.update_many({"owned_titles": title_id}, {"$pull": {"owned_titles": title_id}})
     await db.users.update_many({"custom_title_id": title_id}, {"$set": {"custom_title_id": None}})
+    await db.title_bundles.delete_many({"title_id": title_id})
     return {"ok": True}
+
+
+class TitleBundleIn(BaseModel):
+    title_id: str = Field(min_length=1, max_length=32)
+    skin_id: str = Field(min_length=1, max_length=64)
+    price: int = Field(ge=0, le=1_000_000)
+    active: bool = True
+    ends_at: Optional[str] = None
+
+
+def _bundle_payload(payload: TitleBundleIn) -> dict:
+    if payload.title_id not in CUSTOM_TITLES:
+        raise HTTPException(status_code=404, detail="Title not found.")
+    if payload.skin_id not in SKINS_BY_ID or payload.skin_id == "default":
+        raise HTTPException(status_code=404, detail="Skin not found.")
+    fields = _validate_title_payload(CustomTitleIn(text="x", color="#000000", price=payload.price, ends_at=payload.ends_at))
+    return {"title_id": payload.title_id, "skin_id": payload.skin_id, "price": int(payload.price),
+            "active": bool(payload.active), "ends_at": fields["ends_at"]}
+
+
+def _bundle_out(b: dict, owned_titles=None, owned_skins=None) -> Optional[dict]:
+    t = CUSTOM_TITLES.get(b["title_id"])
+    sk = SKINS_BY_ID.get(b["skin_id"])
+    if not t or not sk:
+        return None
+    full = int(t.get("price", 0)) + int(sk.get("price", 0))
+    out = {
+        "id": str(b["_id"]), "price": int(b["price"]), "full_price": full,
+        "active": bool(b.get("active", True)), "ends_at": b.get("ends_at"),
+        "on_sale": _title_on_sale(b),
+        "title": _title_out(t), "skin": {"id": sk["id"], "name": sk.get("name", sk["id"]), "price": int(sk.get("price", 0)), "rarity": sk.get("rarity")},
+    }
+    if owned_titles is not None:
+        has_t, has_s = b["title_id"] in owned_titles, b["skin_id"] in owned_skins
+        credit = (int(t.get("price", 0)) if has_t else 0) + (int(sk.get("price", 0)) if has_s else 0)
+        out.update({"owned_title": has_t, "owned_skin": has_s, "owned": has_t and has_s,
+                    "your_price": max(0, int(b["price"]) - credit)})
+    return out
+
+
+@api.get("/admin/title_bundles")
+async def admin_list_bundles(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    docs = await db.title_bundles.find({}).sort("created_at", -1).to_list(500)
+    return {"bundles": [o for o in (_bundle_out(d) for d in docs) if o]}
+
+
+@api.post("/admin/title_bundles")
+async def admin_create_bundle(payload: TitleBundleIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    doc = {"_id": uuid.uuid4().hex[:12], **_bundle_payload(payload), "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.title_bundles.insert_one(doc)
+    return _bundle_out(doc)
+
+
+@api.put("/admin/title_bundles/{bundle_id}")
+async def admin_update_bundle(bundle_id: str, payload: TitleBundleIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    res = await db.title_bundles.find_one_and_update({"_id": bundle_id}, {"$set": _bundle_payload(payload)}, return_document=True)
+    if not res:
+        raise HTTPException(status_code=404, detail="Bundle not found.")
+    return _bundle_out(res)
+
+
+@api.delete("/admin/title_bundles/{bundle_id}")
+async def admin_delete_bundle(bundle_id: str, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    res = await db.title_bundles.delete_one({"_id": bundle_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Bundle not found.")
+    return {"ok": True}
+
+
+@api.get("/shop/bundles")
+async def shop_bundles(user: dict = Depends(get_current_user)):
+    ot = set(user.get("owned_titles") or [])
+    os_ = set(user.get("owned_skins") or []) | {"default"}
+    docs = await db.title_bundles.find({}).to_list(500)
+    items = [o for o in (_bundle_out(d, ot, os_) for d in docs) if o and o["on_sale"]]
+    items.sort(key=lambda o: o["price"])
+    return {"bundles": items, "coins": int(user.get("coins", 0) or 0)}
+
+
+class BundleBuyIn(BaseModel):
+    bundle_id: str = Field(min_length=1, max_length=32)
+
+
+@api.post("/shop/bundles/buy")
+async def shop_buy_bundle(payload: BundleBuyIn, user: dict = Depends(get_current_user)):
+    await credit_level_coins(user)
+    b = await db.title_bundles.find_one({"_id": payload.bundle_id})
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    ot = set(fresh.get("owned_titles") or [])
+    os_ = set(fresh.get("owned_skins") or []) | {"default"}
+    out = _bundle_out(b, ot, os_) if b else None
+    if not out or not out["on_sale"]:
+        raise HTTPException(status_code=404, detail="Bundle not available.")
+    if out["owned"]:
+        raise HTTPException(status_code=409, detail="You already own everything in this bundle.")
+    price = out["your_price"]
+    res = await db.users.update_one(
+        {"_id": user["_id"], "coins": {"$gte": price}},
+        {"$inc": {"coins": -price},
+         "$addToSet": {"owned_titles": b["title_id"], "owned_skins": b["skin_id"]},
+         "$set": {"custom_title_id": b["title_id"], "title_season": None, "title_ultimate": False, "selected_skin": b["skin_id"]}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=402, detail=f"Not enough coins — needs {price}.")
+    fresh = await db.users.find_one({"_id": user["_id"]})
+    return {"ok": True, "user": public_user(fresh)}
 
 
 @api.get("/shop/titles")

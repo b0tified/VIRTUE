@@ -12,11 +12,11 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/api";
 import { SKINS, RARITY_COLOR } from "@/game/skins";
 import { useAuth } from "@/context/AuthContext";
-import { Coins, Check, X, Lock, Eye, Zap, Clock, Type } from "lucide-react";
-import ShopTitlesTab from "@/components/ShopTitlesTab";
+import { Coins, Check, X, Lock, Eye, Zap, Clock, Type, Package } from "lucide-react";
+import ShopTitlesTab, { ShopBundlesTab } from "@/components/ShopTitlesTab";
 import SkinPreview3D from "@/components/SkinPreview3D";
 
-export default function ShopModal({ open, onClose }) {
+export default function ShopModal({ open, onClose, initialTab = "skins" }) {
   const { user, refreshMe } = useAuth();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -55,12 +55,13 @@ export default function ShopModal({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setTab(initialTab);
     reload();
     // Warm the boost countdown too — cheap request, keeps the badge
     // fresh so a user who bought a boost outside the modal still
     // sees the "ACTIVE · Xm LEFT" chip when they open it.
     reloadBoosts();
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const coins = boostsData?.coins ?? data?.coins ?? user?.coins ?? 0;
   const selected = data?.selected_skin ?? user?.selected_skin ?? "default";
@@ -154,6 +155,7 @@ export default function ShopModal({ open, onClose }) {
             { id: "skins",  label: "SKINS",  icon: <Eye size={12} strokeWidth={3} /> },
             { id: "boosts", label: "XP BOOSTS", icon: <Zap size={12} strokeWidth={3} /> },
             { id: "titles", label: "TITLES", icon: <Type size={12} strokeWidth={3} /> },
+            { id: "bundles", label: "BUNDLES", icon: <Package size={12} strokeWidth={3} /> },
           ].map((t) => (
             <button
               key={t.id}
@@ -217,6 +219,9 @@ export default function ShopModal({ open, onClose }) {
           )}
           {tab === "titles" && (
             <ShopTitlesTab coins={coins} refreshMe={refreshMe} onError={setError} onCoins={() => { reload(); reloadBoosts(); }} />
+          )}
+          {tab === "bundles" && (
+            <ShopBundlesTab coins={coins} refreshMe={refreshMe} onError={setError} onCoins={() => { reload(); reloadBoosts(); }} />
           )}
           {tab === "boosts" && (
             <>
