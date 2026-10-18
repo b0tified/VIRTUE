@@ -7,6 +7,9 @@ import settingsStore from "@/game/settings";
 import api from "@/api";
 import { detectIsMobile } from "@/game/useIsMobile";
 
+const KF_MOBILE_TTL_MS = 4000;
+const isTouchKf = detectIsMobile();
+
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
 const WEAPON_META = {
@@ -224,9 +227,22 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
 
       {/* Top-right: kill feed */}
       {showKf && (
-      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end max-w-[420px]" data-testid="hud-kill-feed">
-        {hud.killFeed.slice(0, 6).map((k) => (
-          <div key={k.id} className="hud-panel kf-row" style={{ background: "rgba(10,10,10,0.88)" }} data-testid={`kf-row-${k.weapon || "ak47"}`}>
+      <div
+        className={isTouchKf
+          ? "absolute top-3 right-[76px] z-20 flex flex-col gap-1 items-end max-w-[240px] pointer-events-none"
+          : "absolute top-4 right-4 z-20 flex flex-col gap-2 items-end max-w-[420px]"}
+        data-testid="hud-kill-feed"
+      >
+        {(isTouchKf
+          ? hud.killFeed.filter((k) => Date.now() - (k.ts || 0) < KF_MOBILE_TTL_MS).slice(0, 3)
+          : hud.killFeed.slice(0, 6)
+        ).map((k) => (
+          <div
+            key={k.id}
+            className={isTouchKf ? "hud-panel kf-row kf-row-mobile" : "hud-panel kf-row"}
+            style={{ background: isTouchKf ? "rgba(10,10,10,0.55)" : "rgba(10,10,10,0.88)" }}
+            data-testid={`kf-row-${k.weapon || "ak47"}`}
+          >
             <div className="flex items-center gap-2">
               <span className="text-[#FFD700]">{k.shooter}</span>
               <WeaponIcon weapon={k.weapon} />

@@ -235,6 +235,12 @@ canvas { outline: none; display: block; }
   100% { opacity: 1; }
 }
 .kf-row { animation: kf-pop 0.25s ease-out; }
+.kf-row-mobile {
+  font-size: 0.7rem;
+  padding: 2px 8px !important;
+  animation: kf-pop 0.25s ease-out, kf-mobile-fade 4s linear forwards;
+}
+@keyframes kf-mobile-fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
 
 /* Damage vignette */
 .dmg-vignette {
