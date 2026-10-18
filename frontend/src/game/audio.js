@@ -225,6 +225,52 @@ class AudioBus {
   /* -------- UI cue: triumphant "match found" fanfare --------
      3-note ascending chord (perfect 4th → 5th → octave) over a soft sub thump,
      ~700ms total. Mixed through sfxGain so the Mute SFX toggle silences it. */
+  // Rank reveal: rising snare-style drumroll for `dur` seconds.
+  revealDrumroll(dur = 2.6) {
+    if (!this._ensure()) return;
+    const ctx = this.ctx, now = ctx.currentTime, out = this.sfxGain;
+    const len = Math.floor(ctx.sampleRate * 0.05);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    let t = 0;
+    while (t < dur) {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const g = ctx.createGain();
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass"; f.frequency.value = 1800;
+      g.gain.value = 0.08 + 0.25 * (t / dur);
+      src.connect(f); f.connect(g); g.connect(out);
+      src.start(now + t);
+      t += Math.max(0.035, 0.11 - 0.075 * (t / dur));
+    }
+  }
+
+  // Rank reveal impact: low boom + bright major chord.
+  revealImpact(big = false) {
+    if (!this._ensure()) return;
+    const ctx = this.ctx, now = ctx.currentTime, out = this.sfxGain;
+    const boom = ctx.createOscillator(), bg = ctx.createGain();
+    boom.type = "sine";
+    boom.frequency.setValueAtTime(140, now);
+    boom.frequency.exponentialRampToValueAtTime(40, now + 0.5);
+    bg.gain.setValueAtTime(0.6, now);
+    bg.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    boom.connect(bg); bg.connect(out); boom.start(now); boom.stop(now + 0.75);
+    const notes = big ? [523.25, 659.25, 783.99, 1046.5, 1318.5] : [523.25, 659.25, 783.99];
+    notes.forEach((hz, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = i % 2 ? "triangle" : "square";
+      o.frequency.value = hz;
+      const t0 = now + 0.04 * i;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + (big ? 1.6 : 1.0));
+      o.connect(g); g.connect(out); o.start(t0); o.stop(t0 + (big ? 1.7 : 1.1));
+    });
+  }
+
   matchFound() {
     if (!this._ensure()) return;
     const ctx = this.ctx;

@@ -5,6 +5,7 @@ import PlayerCard from "@/components/PlayerCard";
 import MatchResultOverlay from "@/components/MatchResultOverlay";
 import settingsStore from "@/game/settings";
 import api from "@/api";
+import RankRevealOverlay from "@/components/RankRevealOverlay";
 import { detectIsMobile } from "@/game/useIsMobile";
 
 const KF_MOBILE_TTL_MS = 4000;
@@ -64,6 +65,11 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
   const [showDmg, setShowDmg] = useState(false);
   const [showHit, setShowHit] = useState(false);
   const [gfx, setGfx] = useState(() => settingsStore.get());
+  const [revealedFor, setRevealedFor] = useState(null);
+  const myEndRow = hud.matchEnd?.placements?.find((p) => p.id === hud.youId);
+  const needsReveal = !!(hud.matchEnd && myEndRow?.is_placement
+    && myEndRow.placement_match_number >= (myEndRow.placement_matches_total || 5)
+    && revealedFor !== hud.matchEnd);
 
   // React to live graphics settings (HUD scale, crosshair, toggles).
   useEffect(() => settingsStore.subscribe(setGfx), []);
@@ -460,7 +466,10 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
       )}
 
       {/* Match end overlay — Victory / Defeat splash with placement stats */}
-      {hud.matchEnd && (
+      {needsReveal && (
+        <RankRevealOverlay row={myEndRow} onDone={() => setRevealedFor(hud.matchEnd)} />
+      )}
+      {hud.matchEnd && !needsReveal && (
         <MatchResultOverlay
           matchEnd={hud.matchEnd}
           youId={hud.youId}

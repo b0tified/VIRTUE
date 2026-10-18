@@ -429,7 +429,7 @@ export default function Game() {
           // on mount and dispatches `virtue-rankup` 600ms later.
           const youId = engineRef.current?.youId;
           const mine = (msg.placements || []).find((p) => p.id === youId);
-          if (mine && !mine.unranked) {
+          if (mine && !mine.is_placement) {
             const tierChanged = (mine.rank_change || 0) > 0;
             // Sub-division promotion (lower number = higher division: 3 → 2 → 1).
             const prevDiv = mine.prev_rank_division ?? 0;
