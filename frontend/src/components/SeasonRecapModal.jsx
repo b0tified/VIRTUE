@@ -33,7 +33,7 @@ function RankCard({ label, rank, testid, delay, big }) {
 
 function Stat({ icon, label, value, delay, testid }) {
   return (
-    <div className="bg-white border-4 border-black px-3 py-2 tiny:py-1 flex items-center gap-2 recap-pop" style={{ animationDelay: `${delay}ms`, boxShadow: "3px 3px 0 0 #0A0A0A" }} data-testid={testid}>
+    <div className="bg-white text-black border-4 border-black px-3 py-2 tiny:py-1 flex items-center gap-2 recap-pop" style={{ animationDelay: `${delay}ms`, boxShadow: "3px 3px 0 0 #0A0A0A" }} data-testid={testid}>
       {icon}
       <div className="leading-none">
         <div className="font-anton uppercase tracking-widest text-[9px] text-neutral-500">{label}</div>
@@ -43,17 +43,7 @@ function Stat({ icon, label, value, delay, testid }) {
   );
 }
 
-export default function SeasonRecapModal() {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    api.get("/season/recap").then(({ data: d }) => { if (d.recap) setData(d); }).catch(() => {});
-  }, []);
-  if (!data) return null;
-  const r = data.recap;
-  const close = () => {
-    api.post("/season/recap/seen").catch(() => {});
-    setData(null);
-  };
+export function SeasonRecapView({ recap: r, nextSeason, onClose, buttonLabel }) {
   return (
     <div className="fixed inset-0 z-[70] overflow-y-auto flex items-start justify-center p-4" style={{ background: "radial-gradient(ellipse at center, #2a1058 0%, #0A0A0A 75%)" }} data-testid="season-recap-modal">
       <style>{`
@@ -66,28 +56,55 @@ export default function SeasonRecapModal() {
           <div className="font-display text-white text-4xl sm:text-6xl tiny:text-3xl leading-none" style={{ textShadow: "4px 4px 0 #E62429, 7px 7px 0 #0A0A0A" }} data-testid="season-recap-title">
             SEASON RECAP
           </div>
+          {r.leaderboard_rank ? (
+            <div className="font-anton uppercase tracking-widest text-xs text-white mt-1" data-testid="season-recap-leaderboard">Finished #{r.leaderboard_rank} globally</div>
+          ) : null}
         </div>
-        <div className="flex flex-wrap items-end justify-center gap-4 tiny:gap-3">
-          <RankCard label="Season peak" rank={r.peak} testid="season-recap-peak" delay={200} big />
-          <RankCard label="Final rank" rank={r.final} testid="season-recap-final" delay={450} />
-        </div>
-        <ArrowDown size={28} strokeWidth={4} className="text-[#FFD700] recap-pop tiny:hidden" style={{ animationDelay: "700ms" }} />
-        <RankCard label={`Season ${data.current_season} start`} rank={r.new} testid="season-recap-new" delay={850} big />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
-          <Stat icon={<Swords size={18} strokeWidth={3} />} label="Ranked matches" value={r.matches} delay={1100} testid="season-recap-matches" />
-          <Stat icon={<Trophy size={18} strokeWidth={3} />} label="Wins" value={r.wins} delay={1200} testid="season-recap-wins" />
-          <Stat icon={<Crosshair size={18} strokeWidth={3} />} label="Kills" value={r.kills} delay={1300} testid="season-recap-kills" />
-          <Stat icon={<Coins size={18} strokeWidth={3} className="text-[#FFB800]" />} label="Coins earned" value={r.coins_earned} delay={1400} testid="season-recap-coins" />
-        </div>
-        {r.season_end_coins > 0 && (
-          <div className="font-anton uppercase tracking-widest text-xs text-[#FFD700] recap-pop" style={{ animationDelay: "1500ms" }} data-testid="season-recap-reward">
-            Includes +{r.season_end_coins} season-end reward
-          </div>
+        {r.full === false ? (
+          <>
+            <RankCard label="Final rank" rank={r.final} testid="season-recap-final" delay={200} big />
+            <div className="font-anton uppercase tracking-widest text-xs text-white/60 recap-pop" style={{ animationDelay: "450ms" }} data-testid="season-recap-not-tracked">
+              Stats not tracked for this season
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-end justify-center gap-4 tiny:gap-3">
+              <RankCard label="Season peak" rank={r.peak} testid="season-recap-peak" delay={200} big />
+              <RankCard label="Final rank" rank={r.final} testid="season-recap-final" delay={450} />
+            </div>
+            <ArrowDown size={28} strokeWidth={4} className="text-[#FFD700] recap-pop tiny:hidden" style={{ animationDelay: "700ms" }} />
+            <RankCard label={`Season ${nextSeason} start`} rank={r.new} testid="season-recap-new" delay={850} big />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
+              <Stat icon={<Swords size={18} strokeWidth={3} />} label="Ranked matches" value={r.matches} delay={1100} testid="season-recap-matches" />
+              <Stat icon={<Trophy size={18} strokeWidth={3} />} label="Wins" value={r.wins} delay={1200} testid="season-recap-wins" />
+              <Stat icon={<Crosshair size={18} strokeWidth={3} />} label="Kills" value={r.kills} delay={1300} testid="season-recap-kills" />
+              <Stat icon={<Coins size={18} strokeWidth={3} className="text-[#FFB800]" />} label="Coins earned" value={r.coins_earned} delay={1400} testid="season-recap-coins" />
+            </div>
+            {r.season_end_coins > 0 && (
+              <div className="font-anton uppercase tracking-widest text-xs text-[#FFD700] recap-pop" style={{ animationDelay: "1500ms" }} data-testid="season-recap-reward">
+                Includes +{r.season_end_coins} season-end reward
+              </div>
+            )}
+          </>
         )}
-        <button onClick={close} className="btn-pow bg-[#FFD700] text-black recap-pop [&]:py-2 tiny:[&]:py-1" style={{ animationDelay: "1650ms" }} data-testid="season-recap-continue">
-          <span className="font-anton uppercase tracking-widest">Start Season {data.current_season}</span>
+        <button onClick={onClose} className="btn-pow bg-[#FFD700] text-black recap-pop [&]:py-2 tiny:[&]:py-1" style={{ animationDelay: r.full === false ? "600ms" : "1650ms" }} data-testid="season-recap-continue">
+          <span className="font-anton uppercase tracking-widest">{buttonLabel}</span>
         </button>
       </div>
     </div>
   );
+}
+
+export default function SeasonRecapModal() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    api.get("/season/recap").then(({ data: d }) => { if (d.recap) setData(d); }).catch(() => {});
+  }, []);
+  if (!data) return null;
+  const close = () => {
+    api.post("/season/recap/seen").catch(() => {});
+    setData(null);
+  };
+  return <SeasonRecapView recap={data.recap} nextSeason={data.current_season} onClose={close} buttonLabel={`Start Season ${data.current_season}`} />;
 }

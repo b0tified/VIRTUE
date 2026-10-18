@@ -98,3 +98,12 @@ def test_ranked_match_tracks_season_stats():
             await server.db.users.delete_one({"_id": uid})
             await server.db.match_history.delete_many({"user_id": str(uid)})
     LOOP.run_until_complete(run())
+
+
+def test_season_recap_history_merges_old_and_full():
+    full = server.build_season_recap({"rank_points": 900}, 4, 200, 0)
+    u = {"past_seasons": [{"season": 3, "rp": 1600, "leaderboard_rank": 7}, {"season": 4, "rp": 900}], "season_recaps": [full]}
+    h = server.season_recap_history(u)
+    assert [x["season"] for x in h] == [4, 3]
+    assert h[0]["full"] is True and h[0]["coins_earned"] == 200
+    assert h[1]["full"] is False and h[1]["final"]["name"] == "DIAMOND" and h[1]["leaderboard_rank"] == 7

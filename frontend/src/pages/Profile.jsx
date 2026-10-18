@@ -17,6 +17,7 @@ import { formatBannerTitle, bannerTitleAnimClass, bannerTitleStyle } from "@/gam
 import audioBus from "@/game/audio";
 import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
 import PublicProfileModal from "@/components/PublicProfileModal";
+import { SeasonRecapView } from "@/components/SeasonRecapModal";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -235,12 +236,13 @@ export default function Profile() {
   // Past-seasons archive: every season where this user finished top-100
   // gets a row here. Loads once per profile mount.
   const [seasonHistory, setSeasonHistory] = useState(null);
+  const [openRecap, setOpenRecap] = useState(null);
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const { data } = await api.get("/me/season_history");
-        if (alive) setSeasonHistory(Array.isArray(data) ? data : []);
+        const { data } = await api.get("/me/season_recaps");
+        if (alive) setSeasonHistory(Array.isArray(data?.seasons) ? data.seasons : []);
       } catch {
         if (alive) setSeasonHistory([]);
       }
@@ -406,51 +408,50 @@ export default function Profile() {
           )}
         </div>
 
-        {/* Past Seasons — every archived season where the user finished
-            top-50 shows here. Quiet section: only renders when at least
-            one archived placement exists so brand-new accounts don't see
-            a confusing empty card. */}
         {seasonHistory !== null && seasonHistory.length > 0 && (
           <div className="card-pow p-0 mt-8 overflow-hidden" data-testid="profile-season-history-card">
             <div className="bg-black text-white px-5 py-3 flex items-center gap-2">
               <Trophy size={18} strokeWidth={3} className="text-[#FFD700]" />
-              <span className="font-anton uppercase tracking-widest">Past Seasons</span>
-              <span className="opacity-60 text-xs ml-auto">Your top-50 finishes</span>
+              <span className="font-anton uppercase tracking-widest">Season History</span>
+              <span className="opacity-60 text-xs ml-auto">Tap a season to view its recap</span>
             </div>
-            <div className="hidden md:grid grid-cols-12 bg-[#FFD700] px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
+            <div className="hidden md:grid grid-cols-12 bg-[#FFD700] text-black px-4 py-2 font-anton uppercase tracking-widest text-sm border-t-4 border-black">
               <div className="col-span-2">Season</div>
-              <div className="col-span-3">Tier</div>
+              <div className="col-span-3">Final rank</div>
               <div className="col-span-2 text-right">Global #</div>
               <div className="col-span-2 text-right">Final RP</div>
-              <div className="col-span-3 text-right">Kills</div>
+              <div className="col-span-2 text-right">Kills</div>
+              <div className="col-span-1" />
             </div>
             {seasonHistory.map((s, i) => {
-              const tier = Math.max(0, Math.min(8, s.rank_tier ?? 0));
-              const color = RANK_COLORS[tier];
+              const tier = Math.max(0, Math.min(8, s.final?.tier ?? 0));
               return (
-                <div
-                  key={s.season_number}
-                  className={`grid grid-cols-12 px-4 py-3 border-t-2 border-black items-center ${i % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"}`}
-                  data-testid={`profile-season-row-${s.season_number}`}
+                <button
+                  type="button"
+                  key={s.season}
+                  onClick={() => setOpenRecap(s)}
+                  className={`w-full text-left grid grid-cols-12 px-4 py-3 border-t-2 border-black items-center hover:bg-neutral-700 transition-colors ${i % 2 === 0 ? "bg-neutral-900 text-white" : "bg-neutral-800 text-white"}`}
+                  data-testid={`profile-season-row-${s.season}`}
                 >
-                  <div className="col-span-2 font-display text-2xl">S{s.season_number}</div>
-                  <div className="col-span-3">
-                    <span
-                      className="font-anton uppercase text-xs px-2 py-1"
-                      style={{ background: color, color: tier === 8 ? "#FFD700" : "#0A0A0A" }}
-                    >
-                      {s.rank_name || "BRONZE"}
+                  <div className="col-span-3 md:col-span-2 font-display text-2xl">S{s.season}</div>
+                  <div className="col-span-5 md:col-span-3">
+                    <span className="font-anton uppercase text-xs px-2 py-1" style={{ background: RANK_COLORS[tier], color: tier === 8 ? "#FFD700" : "#0A0A0A" }}>
+                      {s.final?.name || "BRONZE"}
                     </span>
                   </div>
-                  <div className="col-span-2 text-right font-display text-xl">#{s.rank}</div>
-                  <div className="col-span-2 text-right font-anton text-lg">{s.rank_points}</div>
-                  <div className="col-span-3 text-right font-anton">{s.kills}</div>
-                </div>
+                  <div className="hidden md:block col-span-2 text-right font-display text-xl">{s.leaderboard_rank ? `#${s.leaderboard_rank}` : "—"}</div>
+                  <div className="hidden md:block col-span-2 text-right font-anton text-lg">{s.final?.rp ?? 0}</div>
+                  <div className="hidden md:block col-span-2 text-right font-anton">{s.full ? s.kills : "—"}</div>
+                  <div className="col-span-4 md:col-span-1 text-right font-anton uppercase text-xs text-[#FFD700]">View</div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
+      {openRecap && (
+        <SeasonRecapView recap={openRecap} nextSeason={openRecap.season + 1} onClose={() => setOpenRecap(null)} buttonLabel="Close" />
+      )}
       {/* Match scoreboard — opened by clicking any history row that has
           a persisted roster. Displays every player who was in that match
           (real + bots) with kills/deaths. Clicking a real player opens

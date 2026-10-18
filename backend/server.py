@@ -380,8 +380,10 @@ async def maybe_reset_season() -> dict:
                     if reward > 0:
                         upd["$inc"] = {"coins": reward}
                         upd["$set"]["season_end_coins"] = {"season": finishing_season, "coins": reward, "tier_name": t_name}
-                    upd["$set"]["season_recap"] = build_season_recap(u, finishing_season, reward, _rollback_rp(pts))
+                    recap = build_season_recap(u, finishing_season, reward, _rollback_rp(pts))
+                    upd["$set"]["season_recap"] = recap
                     upd["$set"]["season_recap_seen"] = False
+                    upd["$push"] = {"season_recaps": recap}
                 await db.users.update_one({"_id": u["_id"]}, upd)
         except Exception as e:
             logger.warning("past_seasons stamp failed at S%d rollover: %s", finishing_season, e)
@@ -13480,6 +13482,28 @@ async def leaderboard_friends(user: dict = Depends(get_current_user)):
     return rows
 
 
+
+
+def season_recap_history(user: dict) -> List[dict]:
+    """Every past season for this user, newest first. Full recaps where saved,
+    final-rank-only entries (from past_seasons) for older seasons."""
+    by_season: Dict[int, dict] = {}
+    for e in user.get("past_seasons") or []:
+        sn = int(e.get("season", 0) or 0)
+        if sn <= 0:
+            continue
+        by_season[sn] = {"season": sn, "full": False, "final": _rank_snapshot(int(e.get("rp", 0) or 0)),
+                         "leaderboard_rank": e.get("leaderboard_rank")}
+    for r in user.get("season_recaps") or []:
+        sn = int(r.get("season", 0) or 0)
+        lb = (by_season.get(sn) or {}).get("leaderboard_rank")
+        by_season[sn] = {**r, "full": True, "leaderboard_rank": lb}
+    return [by_season[k] for k in sorted(by_season, reverse=True)]
+
+
+@api.get("/me/season_recaps")
+async def me_season_recaps(user: dict = Depends(get_current_user)):
+    return {"seasons": season_recap_history(user)}
 
 
 @api.get("/me/season_history")
