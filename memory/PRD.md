@@ -2936,3 +2936,6 @@ Two quality-of-life changes shipped together.
 - Fix: `_buildHumanoid` normalizes bodyMeshes entries; hit-flash guards missing material color; `_loop` runs update and render in separate try/catch so a throwing update can never freeze the picture. Verified with two real accounts in a 12P FFA (frames advancing, 0 errors).
 
 ## 2026-06 — Stormy Forest lobby Android "lite" mode (AdminFogLobby ANDROID_LITE via UA): no CSS blur filters, no mix-blend (rain/grain), rain animated with translate3d instead of background-position, tree-crown SVG sway disabled, fog bands will-change: transform, eye-level haze uses radial gradient. Desktop unchanged.
+
+## 2026-06 Bot Real Match Log
+- Bots now record their real results at match end (db.bot_match_log, only when real players were in the match). Bot profiles (disguised/custom + public seeded leaderboard bots) merge these into history (newest first) and add them to Matches/Kills/Deaths/Wins totals.

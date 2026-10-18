@@ -1154,6 +1154,8 @@ async def on_startup():
     # and by any global leaderboard endpoints — index it descending.
     await db.users.create_index([("rank_points", -1)])
     await db.match_history.create_index([("user_id", 1), ("ended_at", -1)])
+    await db.bot_match_log.create_index([("name", 1), ("ended_at", -1)])
+
     # Prime the Ultimate Gooner cache once at boot so the very first
     # /auth/me response after a restart carries the correct badge for
     # any top-50 player. Subsequent refreshes are triggered by the
@@ -7252,6 +7254,11 @@ class GameRoom:
                     shared_roster.sort(key=lambda r: (-r["kills"], r["deaths"]))
                 else:
                     shared_roster.sort(key=lambda r: (r["placement"] or 999, -r["kills"]))
+                if real_players:
+                    try:
+                        await _log_bot_matches(self, placements, shared_roster, mode, total_with_bots, now, match_id)
+                    except Exception as _e:
+                        logger.warning("bot match log failed: %s", _e)
                 for pl in real_players:
                     entry = placements_by_uid.get(pl.user_id) or {}
                     doc = {
@@ -12427,6 +12434,63 @@ def _profile_presence(u: dict, user_id: str, tier_idx: int) -> dict:
             "match_kind": loc.get("kind") if loc else None}
 
 
+async def _log_bot_matches(match, placements, roster, mode, total, now, match_id) -> None:
+    """Persist each bot's real result so its profile shows matches it played with real players."""
+    by_id = {r.get("id"): r for r in (placements or [])}
+    docs = []
+    for p in match.players.values():
+        if not p.is_bot or getattr(p, "is_spectator", False) or not getattr(p, "username", None):
+            continue
+        row = by_id.get(p.id) or {}
+        placement = int(row.get("placement") or 0)
+        won = placement == 1
+        team = (getattr(p, "team", None) or "").lower() or None
+        if match.game_mode == "tdm" and team:
+            other = "blue" if team == "red" else "red"
+            won = int(match.team_scores.get(team, 0)) > int(match.team_scores.get(other, 0))
+        docs.append({
+            "name": p.username.lower(), "mode": mode, "game_mode": match.game_mode,
+            "kills": int(p.kills or 0), "deaths": int(p.deaths or 0),
+            "placement": placement, "total_players": int(total),
+            "rp_delta": int(row.get("delta", 0) or 0) if mode == "ranked" else 0,
+            "rank_name_after": row.get("rank_name") or getattr(p, "disguise_rank_name", None) or "BRONZE",
+            "won": bool(won), "team": team, "ended_at": now,
+            "match_id": match_id, "players": list(roster),
+        })
+    if docs:
+        await db.bot_match_log.insert_many(docs)
+
+
+async def _bot_real_matches(username: str):
+    """(last-10 real history rows, totals) for a bot from bot_match_log."""
+    lu = (username or "").lower()
+    rows = await db.bot_match_log.find({"name": lu}, {"_id": 0, "name": 0}).sort("ended_at", -1).limit(10).to_list(10)
+    agg = await db.bot_match_log.aggregate([
+        {"$match": {"name": lu}},
+        {"$group": {"_id": None, "matches": {"$sum": 1}, "kills": {"$sum": "$kills"},
+                    "deaths": {"$sum": "$deaths"}, "wins": {"$sum": {"$cond": ["$won", 1, 0]}}}},
+    ]).to_list(1)
+    totals = agg[0] if agg else {"matches": 0, "kills": 0, "deaths": 0, "wins": 0}
+    hist = []
+    for r in rows:
+        ts = r.get("ended_at")
+        if isinstance(ts, datetime) and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        r.pop("won", None)
+        r["is_placement"] = False
+        r["ended_at"] = ts.isoformat() if isinstance(ts, datetime) else ts
+        hist.append(r)
+    return hist, totals
+
+
+def _merge_bot_history(synth: List[dict], real: List[dict]) -> List[dict]:
+    return sorted(synth + real, key=lambda h: h.get("ended_at") or "", reverse=True)[:10]
+
+
+def _add_bot_totals(stats: dict, totals: dict) -> dict:
+    return {k: int(stats.get(k, 0) or 0) + int(totals.get(k, 0) or 0) for k in ("kills", "deaths", "matches", "wins")}
+
+
 def _synth_bot_history(username: str, pts: int, tier_idx: int, now: Optional[datetime] = None, avg_kills: Optional[float] = None) -> List[dict]:
     """Last-10 fake matches on a per-bot time grid: each bot "plays" every
     P hours (P from its name), each slot seeded by (name, slot) — so the
@@ -12533,7 +12597,9 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 "matches": matches_played,
                 "wins": wins,
             }
-            history = _synth_bot_history(username, pts, tier_idx)
+            _real_hist, _real_tot = await _bot_real_matches(username)
+            history = _merge_bot_history(_synth_bot_history(username, pts, tier_idx), _real_hist)
+            fake_stats = _add_bot_totals(fake_stats, _real_tot)
             return {
                 "id": f"bot::{username}",
                 "username": username,
@@ -12645,12 +12711,17 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
             "is_placement": bool(m.get("is_placement", False)),
             "ended_at": ts.isoformat() if isinstance(ts, datetime) else ts,
         })
+    _stats_out = u.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0})
+    if bot_public:
+        _real_hist, _real_tot = await _bot_real_matches(u.get("username", ""))
+        history = _merge_bot_history(history, _real_hist)
+        _stats_out = _add_bot_totals(_stats_out, _real_tot)
     return {
         "id": user_id,
         "username": u.get("username", ""),
         "avatar": int(u.get("avatar", 0) or 0),
         "private": False,
-        "stats": u.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0}),
+        "stats": _stats_out,
         "rank_points": pts,
         "rank_tier": t_idx,
         "rank_name": t_name,
