@@ -93,6 +93,8 @@ export default function Game() {
   const [pointerLocked, setPointerLocked] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [showPause, setShowPause] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [isTouchDevice] = useState(() => detectIsMobile());
   // Pause-menu player-report flow. `showReportPicker` toggles a modal
   // that lists every other in-match player (bots hidden). Clicking a
   // row sets `reportTarget` which opens ReportPlayerModal.
@@ -912,19 +914,19 @@ export default function Game() {
 
       {showPause && !isSpectator && (
         <div
-          className="absolute inset-0 z-40 bg-black/70 flex items-center justify-center"
+          className="absolute inset-0 z-40 bg-black/70 flex items-start justify-center overflow-y-auto p-3"
           data-testid="pause-overlay"
         >
-          <div className="card-pow p-0 w-[min(440px,92vw)]">
-            <div className="bg-black text-white px-6 py-4 font-display text-4xl text-pow-shadow-lg flex items-center justify-between">
+          <div className="card-pow p-0 w-[min(440px,92vw)] tiny:w-[min(620px,92vw)] my-auto">
+            <div className="bg-black text-white px-6 py-4 tiny:py-2 font-display text-4xl tiny:text-2xl text-pow-shadow-lg flex items-center justify-between">
               <span>PAUSED</span>
               <span className="text-[#FFD700] text-xl">ESC</span>
             </div>
-            <div className="bg-white p-5 space-y-3">
+            <div className="bg-white p-5 space-y-3 tiny:p-3 tiny:space-y-0 tiny:grid tiny:grid-cols-2 tiny:gap-2 [&>button]:tiny:py-1.5 [&>button]:tiny:text-base">
               <button
                 onClick={() => {
                   setShowPause(false);
-                  handleStart();
+                  if (!isTouchDevice) handleStart();
                 }}
                 className="btn-pow bg-[#06A35F] text-white w-full text-xl [&]:py-3"
                 data-testid="pause-resume-button"
@@ -962,7 +964,7 @@ export default function Game() {
               {!hud.isRanked && (
                 <button
                   onClick={handleExit}
-                  className="btn-pow bg-[#E62429] text-white w-full text-xl [&]:py-3"
+                  className="btn-pow bg-[#E62429] text-white w-full text-xl [&]:py-3 tiny:col-span-2"
                   data-testid="pause-leave-button"
                 >
                   <span className="flex items-center justify-center gap-2"><LogOut size={18} strokeWidth={3} /> LEAVE MATCH</span>
@@ -970,7 +972,7 @@ export default function Game() {
               )}
               {hud.isRanked && (
                 <div
-                  className="text-center font-anton uppercase tracking-widest text-[11px] text-[#E62429] px-2 py-2 border-pow-thin bg-[#FFE4E4]"
+                  className="text-center font-anton uppercase tracking-widest text-[11px] text-[#E62429] px-2 py-2 border-pow-thin bg-[#FFE4E4] tiny:col-span-2"
                   data-testid="pause-ranked-no-leave"
                 >
                   Ranked matches can't be left mid-game. Quitting will lock you out of ranked queue for 10 minutes.
@@ -990,12 +992,45 @@ export default function Game() {
             try { document.exitPointerLock?.(); } catch {}
             setShowPause(true);
           }}
-          className="absolute top-3 right-3 z-30 btn-pow bg-black text-white [&]:px-3 [&]:py-2 [&]:text-xs"
+          className={`absolute z-40 btn-pow bg-black text-white [&]:px-3 [&]:py-2 [&]:text-xs ${isTouchDevice ? "top-[124px] left-3" : "top-3 right-3"}`}
           data-testid="game-menu-button"
           aria-label="Menu (ESC)"
         >
           <span className="flex items-center gap-1"><Menu size={16} strokeWidth={3} /></span>
         </button>
+      )}
+      {isTouchDevice && !showPause && !isSpectator && !hud.isRanked && (
+        <button
+          onClick={() => setShowLeaveConfirm(true)}
+          className="absolute top-[124px] left-[60px] z-40 btn-pow bg-[#E62429] text-white [&]:px-3 [&]:py-2 [&]:text-xs"
+          data-testid="mobile-leave-button"
+          aria-label="Leave match"
+        >
+          <span className="flex items-center gap-1 font-anton uppercase tracking-widest"><LogOut size={14} strokeWidth={3} /> LEAVE</span>
+        </button>
+      )}
+      {showLeaveConfirm && (
+        <div className="absolute inset-0 z-50 bg-black/70 flex items-center justify-center p-4" data-testid="leave-confirm-modal">
+          <div className="card-pow p-0 w-[min(360px,92vw)]">
+            <div className="bg-black text-white px-5 py-3 font-display text-2xl">LEAVE MATCH?</div>
+            <div className="bg-white p-4 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setShowLeaveConfirm(false)}
+                className="btn-pow bg-white text-black [&]:py-2"
+                data-testid="leave-confirm-cancel"
+              >
+                <span className="font-anton uppercase tracking-widest">STAY</span>
+              </button>
+              <button
+                onClick={() => { setShowLeaveConfirm(false); handleExit(); }}
+                className="btn-pow bg-[#E62429] text-white [&]:py-2"
+                data-testid="leave-confirm-yes"
+              >
+                <span className="font-anton uppercase tracking-widest">LEAVE</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* In-match Settings + Friends modals (reuse lobby components). */}

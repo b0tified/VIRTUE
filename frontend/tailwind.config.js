@@ -13,6 +13,7 @@ module.exports = {
   		xl: '1280px',
   		'2xl': '1536px',
   		short: { raw: '(max-height: 700px)' },
+                tiny: { raw: '(max-height: 500px)' },
   	},
   	extend: {
   		borderRadius: {

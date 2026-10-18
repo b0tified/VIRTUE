@@ -9,6 +9,7 @@ import { Trophy, Skull, Star, Crosshair, Target, Home, Users, Handshake } from "
 import { rankIconFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import audioBus from "@/game/audio";
+import useTinyScreen from "@/hooks/useTinyScreen";
 
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 // Team accent colors — matches the in-game team tint (red / blue).
@@ -98,6 +99,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
 
   // Stagger entry animation — splash, then headline, then stats, then table.
   const [stage, setStage] = useState(0);
+  const tiny = useTinyScreen();
   useEffect(() => {
     const a = setTimeout(() => setStage(1), 60);
     const b = setTimeout(() => setStage(2), 320);
@@ -136,7 +138,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
       // (items-start) and keeps the centered feel on tablet/desktop
       // (sm:items-center). pb-10 reserves safe-area so the lobby
       // button never kisses the bottom edge.
-      className="absolute inset-0 z-50 overflow-y-auto flex items-start sm:items-center justify-center px-4 pt-4 pb-10 sm:py-6 pointer-events-auto"
+      className="absolute inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-4 pb-10 sm:py-6 tiny:py-2 sm:tiny:py-2 pointer-events-auto"
       data-testid="match-end-overlay"
       data-result={outcome}
       data-game-mode={isTdm ? "tdm" : "ffa"}
@@ -219,7 +221,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
         }
       `}</style>
 
-      <div className="relative w-full max-w-3xl flex flex-col items-stretch gap-4">
+      <div className="relative w-full max-w-3xl my-auto flex flex-col items-stretch gap-4 tiny:gap-2">
         {/* Hero headline card — diagonally striped band over a thick black border */}
         <div
           className="relative card-pow p-0 overflow-hidden"
@@ -240,21 +242,21 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
             }}
             aria-hidden="true"
           />
-          <div className="relative px-6 py-5 flex items-center gap-5">
+          <div className="relative px-6 py-5 tiny:px-4 tiny:py-2 flex items-center gap-5 tiny:gap-3">
             <div
-              className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center border-4 border-black"
+              className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 tiny:w-12 tiny:h-12 sm:tiny:w-12 sm:tiny:h-12 flex items-center justify-center border-4 border-black"
               style={{ background: palette.ink, color: palette.accent }}
             >
-              <palette.Icon size={56} strokeWidth={3} />
+              <palette.Icon size={56} strokeWidth={3} className="tiny:w-7 tiny:h-7" />
             </div>
             <div className="flex-1 min-w-0">
               <div
                 className="font-display leading-none uppercase tracking-tight"
-                style={{ fontSize: "clamp(2.5rem, 7vw, 5rem)" }}
+                style={{ fontSize: tiny ? "clamp(1.6rem, 5vw, 2.4rem)" : "clamp(2.5rem, 7vw, 5rem)" }}
               >
                 {palette.headline}
               </div>
-              <div className="font-anton uppercase tracking-widest text-sm sm:text-base mt-1 flex items-center gap-2">
+              <div className="font-anton uppercase tracking-widest text-sm sm:text-base tiny:text-xs sm:tiny:text-xs mt-1 tiny:mt-0.5 flex items-center gap-2">
                 {palette.sub}
                 {mine && (
                   <span
@@ -287,7 +289,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                 return (
                   <div
                     key={t}
-                    className="relative px-4 py-4 flex items-center justify-center gap-3 border-r-4 border-black last:border-r-0"
+                    className="relative px-4 py-4 tiny:py-1 flex items-center justify-center gap-3 border-r-4 border-black last:border-r-0"
                     style={{
                       background: TEAM_COLORS[t],
                       color: "#FFFFFF",
@@ -304,7 +306,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                         {TEAM_LABELS[t]}{isMine ? " · YOU" : ""}
                       </div>
                       <div
-                        className="font-display text-5xl sm:text-6xl tabular-nums"
+                        className="font-display text-5xl sm:text-6xl tiny:text-3xl sm:tiny:text-3xl tabular-nums"
                         style={{ textShadow: "3px 3px 0 #0A0A0A" }}
                         data-testid={`match-result-team-score-${t}`}
                       >
@@ -329,7 +331,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
         {/* Stat strip — your kills / deaths / RP delta (or placement) */}
         {mine && (
           <div
-            className="grid grid-cols-2 sm:grid-cols-4 gap-3"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-3 tiny:gap-2"
             style={{
               opacity: stage >= 2 ? 1 : 0,
               animation: stage >= 2 ? "match-slide-up 360ms ease-out both" : "none",
@@ -367,21 +369,21 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
               animation: stage >= 3 ? "match-slide-up 360ms ease-out both" : "none",
             }}
           >
-            <div className="grid grid-cols-12 bg-[#FFD700] px-3 py-2 font-anton uppercase tracking-widest text-xs border-b-4 border-black">
+            <div className="grid grid-cols-12 bg-[#FFD700] px-3 py-2 tiny:py-1 font-anton uppercase tracking-widest text-xs border-b-4 border-black">
               <div className="col-span-1">#</div>
               <div className="col-span-5">Player</div>
               <div className="col-span-2 text-right">Kills</div>
               <div className="col-span-2 text-right">{isRanked ? "Δ RP" : "K/D"}</div>
               <div className="col-span-2 text-right">Rank</div>
             </div>
-            <div className="max-h-[34vh] overflow-y-auto">
+            <div className="max-h-[34vh] tiny:max-h-[22vh] overflow-y-auto">
               {placements.map((p, i) => {
                 const c = RANK_COLORS[Math.max(0, Math.min(8, p.rank_tier ?? 0))];
                 const isMe = p === mine;
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-12 px-3 py-1.5 border-t border-black/15 items-center text-sm ${
+                    className={`grid grid-cols-12 px-3 py-1.5 tiny:py-0.5 border-t border-black/15 items-center text-sm ${
                       isMe ? "bg-[#FFE680]" : i === 0 ? "bg-[#FFF6CC]" : "bg-white"
                     }`}
                     data-testid={`match-end-row-${i}`}
@@ -469,7 +471,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
         >
           <button
             onClick={onLobby}
-            className="btn-pow bg-white text-black w-full sm:w-auto sm:min-w-[260px] [&]:py-3"
+            className="btn-pow bg-white text-black w-full sm:w-auto sm:min-w-[260px] [&]:py-3 tiny:[&]:py-1 tiny:text-sm"
             data-testid="match-result-lobby"
           >
             <span className="flex items-center justify-center gap-2 font-anton uppercase tracking-widest">
@@ -485,18 +487,18 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
 function StatTile({ icon, label, value, accent, testid }) {
   return (
     <div
-      className="card-pow bg-white p-3 flex items-center gap-3"
+      className="card-pow bg-white p-3 tiny:p-1.5 flex items-center gap-3 tiny:gap-2"
       data-testid={testid}
     >
       <div
-        className="w-9 h-9 flex items-center justify-center border-2 border-black"
+        className="w-9 h-9 tiny:w-7 tiny:h-7 flex items-center justify-center border-2 border-black"
         style={{ background: accent, color: "#0A0A0A" }}
       >
         {icon}
       </div>
       <div className="min-w-0">
         <div className="font-anton uppercase tracking-widest text-[10px] text-neutral-500">{label}</div>
-        <div className="font-display text-xl leading-tight" style={{ color: accent === "#FFD700" || accent === "#06A35F" ? "#0A0A0A" : accent }}>
+        <div className="font-display text-xl tiny:text-base leading-tight" style={{ color: accent === "#FFD700" || accent === "#06A35F" ? "#0A0A0A" : accent }}>
           {value}
         </div>
       </div>

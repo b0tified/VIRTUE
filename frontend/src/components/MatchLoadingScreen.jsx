@@ -20,6 +20,7 @@ import LobbyBackground from "@/components/LobbyBackground";
 import MapPreview from "@/components/MapPreview";
 import { MAPS_META, pickRandomMapMeta } from "@/game/mapsMeta";
 import { Loader2, Zap, Check } from "lucide-react";
+import useTinyScreen from "@/hooks/useTinyScreen";
 
 const MODE_LABELS = {
   casual:   { title: "QUICK MATCH",   accent: "#FFD700" },
@@ -57,6 +58,7 @@ export default function MatchLoadingScreen() {
   const [dots, setDots] = useState("");
   const safetyTimerRef = useRef(null);
   const dismissTimerRef = useRef(null);
+  const tiny = useTinyScreen();
 
   const clearTimers = () => {
     if (safetyTimerRef.current)  { clearTimeout(safetyTimerRef.current);  safetyTimerRef.current = null; }
@@ -180,7 +182,7 @@ export default function MatchLoadingScreen() {
       // reachable via scroll. Decorative conic burst stays position:
       // absolute so it still fills the whole screen regardless of the
       // scroll container.
-      className="fixed inset-0 z-[9000] overflow-y-auto flex items-start sm:items-center justify-center"
+      className="fixed inset-0 z-[9000] overflow-y-auto flex items-start justify-center"
       data-testid="match-loading-screen"
       data-phase={phase}
     >
@@ -206,9 +208,9 @@ export default function MatchLoadingScreen() {
           WebkitMaskImage: "radial-gradient(circle at 50% 50%, transparent 12%, black 30%, transparent 70%)",
         }}
       />
-      <div className="relative flex flex-col items-center justify-center gap-3 sm:gap-5 px-4 py-10 sm:py-6 text-center min-h-full">
+      <div className="relative flex flex-col items-center justify-center gap-3 sm:gap-5 tiny:gap-1.5 sm:tiny:gap-1.5 px-4 py-10 sm:py-6 tiny:py-2 sm:tiny:py-2 text-center min-h-full w-full">
         <div
-          className="font-display text-pow-shadow-lg flex items-center gap-2 sm:gap-3 leading-none text-3xl sm:text-6xl"
+          className="font-display text-pow-shadow-lg flex items-center gap-2 sm:gap-3 leading-none text-3xl sm:text-6xl sm:tiny:text-3xl"
           style={{
             color: "#FFFFFF",
             textShadow: `0 0 18px ${meta.accent}99, 5px 5px 0 #0A0A0A, -1px -1px 0 #0A0A0A`,
@@ -247,7 +249,7 @@ export default function MatchLoadingScreen() {
             data-testid="match-loading-map"
             key={showMap.map_id /* re-mount on map swap so the pop-in re-fires */}
           >
-            <MapPreview map={showMap} size={220} />
+            <MapPreview map={showMap} size={tiny ? Math.max(110, Math.round(window.innerHeight * 0.38)) : 220} />
             <div className="flex items-center gap-2 font-anton uppercase tracking-widest text-white/60 text-[10px]">
               <span>MAP</span>
               <span
