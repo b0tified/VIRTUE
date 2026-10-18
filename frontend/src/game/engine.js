@@ -4887,6 +4887,11 @@ export class GameEngine {
       group.add(aura);
     }
 
+    // Cosmetic builders push raw meshes; normalize to { mesh, baseColor } for hit-flash / fades.
+    for (let i = 0; i < bodyMeshes.length; i++) {
+      const bm = bodyMeshes[i];
+      if (bm && bm.isObject3D) bodyMeshes[i] = { mesh: bm, baseColor: bm.material?.color?.getHex?.() ?? 0xffffff };
+    }
     return { group, bodyMeshes, leftArm, rightArm, leftLeg, rightLeg, torso, aura, astro, heldGun, heldGuns, remoteMuzzleFlash };
   }
 
@@ -6555,8 +6560,10 @@ export class GameEngine {
       // Hit flash
       const flashing = nowMs < entry.flashUntil;
       for (const bm of entry.bodyMeshes) {
-        if (flashing) bm.mesh.material.color.copy(flashRed);
-        else bm.mesh.material.color.setHex(bm.baseColor);
+        const col = bm.mesh?.material?.color;
+        if (!col) continue;
+        if (flashing) col.copy(flashRed);
+        else col.setHex(bm.baseColor);
       }
       // ─────────────────────────────────────────────────────────────
       // WALK / RUN CYCLE — richer gait: hip↔shoulder counter-rotation,
@@ -7051,14 +7058,21 @@ export class GameEngine {
       this._scheduleFrame();
       return;
     }
+    // Update and render are guarded separately so a throwing update can
+    // never stop frames from presenting (frozen picture with live HUD/audio).
     try {
       this._update(dt);
-      this.renderer.render(this.scene, this.camera);
     } catch (err) {
       this._loopErrCount = (this._loopErrCount || 0) + 1;
       if (this._loopErrCount <= 2) {
         console.error("[engine] frame error (loop keeps running)", err);
       }
+    }
+    try {
+      this.renderer.render(this.scene, this.camera);
+    } catch (err) {
+      this._renderErrCount = (this._renderErrCount || 0) + 1;
+      if (this._renderErrCount <= 2) console.error("[engine] render error", err);
     }
     this._fpsFrames++;
     // Frame Generation — re-render with a sub-tick interpolation step so each

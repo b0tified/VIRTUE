@@ -2930,3 +2930,7 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — Leaderboard bots show IN QUEUE (90-240s, deterministic per session) right before each fake match starts; leaderboard yellow spinner chip (data-status=in_queue), profile modal "IN QUEUE · MODE". `bot_activity` returns in_queue.
 
 ## 2026-06 — Bot profiles match lobby rank: `_remember_bot_identity(name, rp, level)` upserts db.bot_identity (_id=name.lower()) at disguised spawn, ranked-room reroll, and match end (ranked post-match RP / casual disguise RP). Unregistered bot profile endpoint uses this rp/level (unless admin rank override). Test: tests/test_bot_identity_profile.py.
+
+## 2026-06 — FIX: game screen freezing when real players join
+- Root cause: newer cosmetic skins (astronaut/Lunar Pioneer, knight, nurse, etc.) pushed raw meshes into `bodyMeshes` instead of {mesh, baseColor}; hit-flash loop in `_update` threw every frame for anyone seeing that player, and since update+render shared one try/catch the picture froze while HUD/audio kept going.
+- Fix: `_buildHumanoid` normalizes bodyMeshes entries; hit-flash guards missing material color; `_loop` runs update and render in separate try/catch so a throwing update can never freeze the picture. Verified with two real accounts in a 12P FFA (frames advancing, 0 errors).

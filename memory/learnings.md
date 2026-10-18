@@ -1,0 +1,1 @@
+- engine.js bodyMeshes must hold {mesh, baseColor}; cosmetic code pushing raw meshes froze rendering (normalized at end of _buildHumanoid).
