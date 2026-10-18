@@ -6869,116 +6869,135 @@ export class GameEngine {
   */
   applyAimAssist(dt, intensity = 0.5, fullLock = false) {
     if (!intensity || intensity <= 0) return;
-    const me = this.players?.get(this.youId);
-    if (!me || !me.alive) return;
-    if (!this.players) return;
+    if (this.alive === false || !this.players) return;
+    if (this.touchActive && !fullLock) {
+      this._applyTouchAimAssist(dt, intensity);
+      return;
+    }
 
-    // Cone sizes / range. Touch gets a wide acquisition cone AND an
-    // even wider tracking cone so a moving target under the reticle
-    // stays sticky as they strafe past 90° of screen space; controller
-    // stays tight. FULL LOCK mode widens both cones to full 180° so
-    // any visible enemy anywhere gets acquired + tracked (aimbot).
-    const ACQUIRE_CONE = fullLock ? Math.PI : (this.touchActive ? 0.90 : 0.35);   // ~52° / ~20°
-    const TRACK_CONE   = fullLock ? Math.PI : (this.touchActive ? 1.45 : 0.35);   // ~83° for sticky on touch
-    const MAX_RANGE    = fullLock ? 200 : (this.touchActive ? 60 : 35);
-
-    const cp = Math.cos(this.pitch);
-    // Match Three.js camera forward exactly (rotation.y=yaw on a camera that
-    // looks at -Z by default → effective forward is (-sin(yaw)*cp, sin(pitch), -cos(yaw)*cp)).
-    const fwd = new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
-    const eye = new THREE.Vector3(this.position.x, this.position.y, this.position.z);
-
-    // Helper: measure a candidate enemy → returns {tgt, dist, ang} or null.
-    const measure = (p) => {
-      if (!p || !p.alive) return null;
-      const tgt = new THREE.Vector3(p.x, (p.y || 1.8) - 0.6, p.z);
-      const to = new THREE.Vector3().subVectors(tgt, eye);
-      const dist = to.length();
-      if (dist < 0.5 || dist > MAX_RANGE) return null;
-      to.normalize();
-      const dot = Math.max(-1, Math.min(1, fwd.dot(to)));
-      const ang = Math.acos(dot);
-      return { tgt, dist, ang };
-    };
-
+    const ACQUIRE_CONE = fullLock ? Math.PI : 0.35;
+    const MAX_RANGE    = fullLock ? 200 : 35;
     let best = null;
-    let bestId = null;
-
-    // Sticky-target retention: on touch, if we locked onto someone last
-    // frame and they're still valid + inside TRACK_CONE, keep tracking
-    // them without re-scanning. This is what makes the reticle "follow"
-    // a moving target instead of the aim swinging around the room.
-    if (this.touchActive && this._stickyTargetId) {
-      const sticky = this.players.get(this._stickyTargetId);
-      const m = measure(sticky);
-      if (m && m.ang < TRACK_CONE) {
+    let bestAngle = ACQUIRE_CONE;
+    this.players.forEach((p, id) => {
+      if (id === this.youId) return;
+      const m = this._aimMeasure(p, MAX_RANGE);
+      if (m && m.ang < bestAngle && (!fullLock || this._hasLineOfSight(m.tgt))) {
+        bestAngle = m.ang;
         best = m;
-        bestId = this._stickyTargetId;
-      } else {
-        // Sticky broke — dead / out of range / turned too far. Fall
-        // through to a fresh acquisition scan.
-        this._stickyTargetId = null;
-        this._stickyTargetSince = 0;
       }
-    }
-
-    if (!best) {
-      // Fresh acquisition: pick the closest-to-center enemy inside the
-      // (narrower) ACQUIRE_CONE. Same behaviour as before, but we now
-      // remember the winner as the sticky target for touch users.
-      let bestAngle = ACQUIRE_CONE;
-      this.players.forEach((p, id) => {
-        if (!p || id === this.youId || !p.alive) return;
-        const m = measure(p);
-        if (!m) return;
-        if (m.ang < bestAngle) {
-          bestAngle = m.ang;
-          best = m;
-          bestId = id;
-        }
-      });
-      if (best && this.touchActive && bestId) {
-        this._stickyTargetId = bestId;
-        this._stickyTargetSince = performance.now();
-      }
-    }
-
+    });
     if (!best) return;
+    const k = fullLock ? 1 : (1 - Math.exp(-6 * intensity * dt));
+    this.yaw += best.yd * k;
+    this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch + best.pd * k));
+  }
 
-    const dx = best.tgt.x - this.position.x;
-    const dy = best.tgt.y - this.position.y;
-    const dz = best.tgt.z - this.position.z;
+  // Angle + yaw/pitch deltas from the current aim to an enemy's chest.
+  _aimMeasure(p, maxRange) {
+    if (!p || !p.alive) return null;
+    const mp = p.mesh?.position;
+    const tx = mp ? mp.x : p.x, ty = (p.y || 1.8) - 0.6, tz = mp ? mp.z : p.z;
+    const dx = tx - this.position.x, dy = ty - this.position.y, dz = tz - this.position.z;
     const horiz = Math.hypot(dx, dz);
-    // Three.js camera convention: yaw=0 → look -Z, yaw=-π/2 → look +X.
-    // Flip dx sign so the desired yaw matches what the camera will actually face.
-    const desiredYaw = Math.atan2(-dx, -dz);
-    const desiredPitch = Math.atan2(dy, horiz);
-    // Base lerp rates. Touch stays aggressive (rate 28) for the console-
-    // style snap; controller stays gentle at 6.
-    let lerpRate = (this.touchActive ? 28 : 6) * intensity;
-    // Touch "near-lock" boost: when the target is already close to the
-    // center of the screen (inside ACQUIRE_CONE/2), crank the rate up so
-    // the reticle appears to stick to them mid-strafe. Falls back to the
-    // baseline snap when the target is at the edge of the tracking cone
-    // so re-acquiring a wide-angle target still feels like a soft snap
-    // rather than a violent whip.
-    if (this.touchActive) {
-      const halfAcquire = ACQUIRE_CONE * 0.5;
-      if (best.ang < halfAcquire) {
-        // Full near-lock: up to 1.7x rate when perfectly centered.
-        const nearness = 1 - Math.min(1, best.ang / Math.max(halfAcquire, 0.001));
-        lerpRate *= 1 + 0.7 * nearness;
-      }
-    }
-    let yd = desiredYaw - this.yaw;
+    const dist = Math.hypot(horiz, dy);
+    if (dist < 0.5 || dist > maxRange) return null;
+    let yd = Math.atan2(-dx, -dz) - this.yaw;
     while (yd >  Math.PI) yd -= Math.PI * 2;
     while (yd < -Math.PI) yd += Math.PI * 2;
-    const pd = desiredPitch - this.pitch;
-    // Full-lock: snap directly to the target every frame (k=1). No
-    // interpolation, no lag — reticle is glued to the enemy.
-    const k = fullLock ? 1 : (1 - Math.exp(-lerpRate * dt));
-    this.yaw += yd * k;
-    this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch + pd * k));
+    const pd = Math.atan2(dy, horiz) - this.pitch;
+    return { tgt: { x: tx, y: ty, z: tz }, dist, yd, pd, ang: Math.hypot(yd * Math.cos(this.pitch), pd) };
+  }
+
+  // Segment-vs-box test against arena obstacles (2D slab test + height check).
+  _hasLineOfSight(tgt) {
+    const ox = this.position.x, oy = this.position.y, oz = this.position.z;
+    const dx = tgt.x - ox, dy = tgt.y - oy, dz = tgt.z - oz;
+    for (const ob of this.obstacles || []) {
+      const hx = ob.w / 2, hz = ob.d / 2;
+      let t0 = 0, t1 = 1;
+      const slab = (o, d, mn, mx) => {
+        if (Math.abs(d) < 1e-6) return o >= mn && o <= mx;
+        let a = (mn - o) / d, b = (mx - o) / d;
+        if (a > b) [a, b] = [b, a];
+        t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+        return t0 <= t1;
+      };
+      if (!slab(ox, dx, ob.x - hx, ob.x + hx) || !slab(oz, dz, ob.z - hz, ob.z + hz)) continue;
+      const base = ob.y_base || 0, top = base + (ob.h || 0);
+      const yIn = oy + dy * t0, yOut = oy + dy * t1;
+      if (Math.max(yIn, yOut) >= base && Math.min(yIn, yOut) <= top) return false;
+    }
+    return true;
+  }
+
+  // Touch look input: slows the camera while the reticle is on the locked
+  // target and lets the lock go when the player swipes hard away from it.
+  touchLook(dYaw, dPitch) {
+    const now = performance.now();
+    const p = this._stickyTargetId && this.players?.get(this._stickyTargetId);
+    const m = p ? this._aimMeasure(p, 60) : null;
+    if (m) {
+      const away = (-dYaw * m.yd) + (-dPitch * m.pd) < 0;
+      const mag = Math.hypot(dYaw, dPitch);
+      this._swipeAwayAccum = away ? (this._swipeAwayAccum || 0) * 0.85 + mag : 0;
+      if (this._swipeAwayAccum > 0.12) {
+        this._stickyTargetId = null;
+        this._aimAssistPausedUntil = now + 350;
+        this._swipeAwayAccum = 0;
+      } else if (m.ang < 0.12) {
+        const f = 0.45 + 0.55 * (m.ang / 0.12);
+        dYaw *= f; dPitch *= f;
+      }
+    }
+    this.yaw -= dYaw;
+    this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dPitch));
+  }
+
+  _applyTouchAimAssist(dt, intensity) {
+    const now = performance.now();
+    if (this._aimAssistPausedUntil && now < this._aimAssistPausedUntil) return;
+    const ACQUIRE = 0.44;   // ~25°
+    const TRACK   = 0.70;   // ~40°
+    const RANGE   = 60;
+    // LOS is re-checked at most every 100ms per target to keep it cheap.
+    const losCache = this._aimLosCache || (this._aimLosCache = new Map());
+    const visible = (id, m) => {
+      const c = losCache.get(id);
+      if (c && now - c.t < 100) return c.v;
+      const v = this._hasLineOfSight(m.tgt);
+      losCache.set(id, { t: now, v });
+      return v;
+    };
+
+    let stickyM = null;
+    if (this._stickyTargetId) {
+      const m = this._aimMeasure(this.players.get(this._stickyTargetId), RANGE);
+      if (m && m.ang < TRACK && visible(this._stickyTargetId, m)) stickyM = m;
+      else this._stickyTargetId = null;
+    }
+    let candM = null, candId = null;
+    this.players.forEach((p, id) => {
+      if (id === this.youId || id === this._stickyTargetId) return;
+      if (this._gameMode === "tdm" && this._myTeam && p.team === this._myTeam) return;
+      const m = this._aimMeasure(p, RANGE);
+      if (!m || m.ang >= ACQUIRE || (candM && m.ang >= candM.ang)) return;
+      if (visible(id, m)) { candM = m; candId = id; }
+    });
+    // Switch only when the new enemy is clearly closer to the crosshair.
+    if (candM && (!stickyM || candM.ang < stickyM.ang * 0.5)) {
+      stickyM = candM;
+      this._stickyTargetId = candId;
+      this._stickyTargetSince = now;
+    }
+    if (!stickyM) return;
+
+    // Console-style lock: near-glued close to center, gentler at the edge.
+    const near = 1 - Math.min(1, stickyM.ang / TRACK);
+    const rate = (10 + 30 * near * near) * Math.min(1.5, intensity);
+    const k = 1 - Math.exp(-rate * dt);
+    this.yaw += stickyM.yd * k;
+    this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch + stickyM.pd * k));
   }
 
   /* Bullet magnetism (touch hip-fire only). Returns a slightly bent

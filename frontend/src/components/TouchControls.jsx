@@ -52,8 +52,11 @@ function makeAimWhileHeld(engineRef, onTap, { autoRepeatMs = 0 } = {}) {
       state.lastY = t.clientY;
       const adsFactor = eng._adsSensFactor ? eng._adsSensFactor() : 1.0;
       const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0) * adsFactor;
-      eng.yaw -= dx * sens;
-      eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
+      if (eng.touchLook) eng.touchLook(dx * sens, dy * sens);
+      else {
+        eng.yaw -= dx * sens;
+        eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
+      }
     }
   };
   const end = (e) => {
@@ -254,8 +257,11 @@ export default function TouchControls({ engineRef, onShoot, onReload, onSwitchWe
       // Apply the ADS multiplier so touch-aim slows down when aiming.
       const adsFactor = eng._adsSensFactor ? eng._adsSensFactor() : 1.0;
       const sens = 0.005 * (parseFloat(settingsStore.get()?.touchSensitivity) || 1.0) * adsFactor;
-      eng.yaw -= dx * sens;
-      eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
+      if (eng.touchLook) eng.touchLook(dx * sens, dy * sens);
+      else {
+        eng.yaw -= dx * sens;
+        eng.pitch = Math.max(-1.5, Math.min(1.5, eng.pitch - dy * sens));
+      }
     }
   };
 
