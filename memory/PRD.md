@@ -2934,3 +2934,5 @@ Two quality-of-life changes shipped together.
 ## 2026-06 — FIX: game screen freezing when real players join
 - Root cause: newer cosmetic skins (astronaut/Lunar Pioneer, knight, nurse, etc.) pushed raw meshes into `bodyMeshes` instead of {mesh, baseColor}; hit-flash loop in `_update` threw every frame for anyone seeing that player, and since update+render shared one try/catch the picture froze while HUD/audio kept going.
 - Fix: `_buildHumanoid` normalizes bodyMeshes entries; hit-flash guards missing material color; `_loop` runs update and render in separate try/catch so a throwing update can never freeze the picture. Verified with two real accounts in a 12P FFA (frames advancing, 0 errors).
+
+## 2026-06 — Stormy Forest lobby Android "lite" mode (AdminFogLobby ANDROID_LITE via UA): no CSS blur filters, no mix-blend (rain/grain), rain animated with translate3d instead of background-position, tree-crown SVG sway disabled, fog bands will-change: transform, eye-level haze uses radial gradient. Desktop unchanged.

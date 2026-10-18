@@ -28,6 +28,8 @@
 import { useEffect, useState } from "react";
 import audioBus from "@/game/audio";
 
+const ANDROID_LITE = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent || "");
+
 const MUSIC_URL =
   "https://customer-assets-wrfwihn1.emergentagent.net/job_blast-arena-servers/artifacts/4l14mia5_Avith%20Ortega%20-%20Recurring%20Tourism-%5BAudioTrimmer.com%5D.mp3";
 
@@ -77,6 +79,10 @@ export default function AdminFogLobby({ enabled }) {
   }, [enabled]);
 
   if (!enabled) return null;
+  // Android GPUs flicker with animated CSS blur, blend modes and SVG
+  // transform animations — use a composited-only variant there.
+  const lite = ANDROID_LITE;
+  const blur = (px) => (lite ? undefined : `blur(${px}px)`);
 
   return (
     <div
@@ -105,7 +111,7 @@ export default function AdminFogLobby({ enabled }) {
           the mid + ground fog so distance reads correctly. */}
       <svg
         className="absolute inset-x-0 bottom-0 w-full pointer-events-none"
-        style={{ height: "78%", opacity: 0.55, filter: "blur(1.6px)" }}
+        style={{ height: "78%", opacity: 0.55, filter: blur(1.6) }}
         viewBox="0 0 1600 780"
         preserveAspectRatio="xMidYMax slice"
       >
@@ -121,7 +127,8 @@ export default function AdminFogLobby({ enabled }) {
         style={{
           background:
             "radial-gradient(ellipse 55% 60% at 40% 50%, rgba(220,225,228,0.55) 0%, rgba(220,225,228,0) 60%)",
-          filter: "blur(28px)",
+          filter: blur(28),
+          willChange: "transform",
           animation: "admin-fog-drift-mid 45s ease-in-out infinite",
         }}
       />
@@ -134,7 +141,8 @@ export default function AdminFogLobby({ enabled }) {
         style={{
           background:
             "radial-gradient(ellipse 60% 55% at 55% 85%, rgba(230,235,238,0.65) 0%, rgba(230,235,238,0) 55%)",
-          filter: "blur(34px)",
+          filter: blur(34),
+          willChange: "transform",
           animation: "admin-fog-drift-ground 55s ease-in-out infinite",
         }}
       />
@@ -160,9 +168,11 @@ export default function AdminFogLobby({ enabled }) {
       <div
         className="absolute -inset-x-1/2 top-[45%] h-[20%]"
         style={{
-          background:
-            "linear-gradient(90deg, rgba(210,215,220,0) 0%, rgba(210,215,220,0.30) 40%, rgba(210,215,220,0.30) 60%, rgba(210,215,220,0) 100%)",
-          filter: "blur(22px)",
+          background: lite
+            ? "radial-gradient(ellipse 50% 50% at 50% 50%, rgba(210,215,220,0.30) 0%, rgba(210,215,220,0.18) 45%, rgba(210,215,220,0) 100%)"
+            : "linear-gradient(90deg, rgba(210,215,220,0) 0%, rgba(210,215,220,0.30) 40%, rgba(210,215,220,0.30) 60%, rgba(210,215,220,0) 100%)",
+          filter: blur(22),
+          willChange: "transform",
           animation: "admin-fog-drift-eye 70s ease-in-out infinite",
         }}
       />
@@ -180,8 +190,9 @@ export default function AdminFogLobby({ enabled }) {
           backgroundRepeat: "repeat",
           backgroundSize: "220px 300px",
           opacity: 0.55,
-          animation: "admin-storm-rain-back 0.9s linear infinite",
-          mixBlendMode: "screen",
+          animation: `admin-storm-rain-back${lite ? "-lite" : ""} 0.9s linear infinite`,
+          mixBlendMode: lite ? undefined : "screen",
+          ...(lite ? { top: "-400px", height: "calc(100% + 400px)", right: "-120px", willChange: "transform" } : {}),
         }}
       />
       <div
@@ -191,8 +202,9 @@ export default function AdminFogLobby({ enabled }) {
           backgroundRepeat: "repeat",
           backgroundSize: "180px 260px",
           opacity: 0.72,
-          animation: "admin-storm-rain-front 0.55s linear infinite",
-          mixBlendMode: "screen",
+          animation: `admin-storm-rain-front${lite ? "-lite" : ""} 0.55s linear infinite`,
+          mixBlendMode: lite ? undefined : "screen",
+          ...(lite ? { top: "-400px", height: "calc(100% + 400px)", right: "-120px", willChange: "transform" } : {}),
         }}
       />
 
@@ -206,8 +218,9 @@ export default function AdminFogLobby({ enabled }) {
           backgroundRepeat: "repeat",
           backgroundSize: "300px 380px",
           opacity: 0.38,
-          animation: "admin-storm-rain-gust 1.3s linear infinite",
-          mixBlendMode: "screen",
+          animation: `admin-storm-rain-gust${lite ? "-lite" : ""} 1.3s linear infinite`,
+          mixBlendMode: lite ? undefined : "screen",
+          ...(lite ? { top: "-400px", height: "calc(100% + 400px)", right: "-120px", willChange: "transform" } : {}),
         }}
       />
 
@@ -259,7 +272,7 @@ export default function AdminFogLobby({ enabled }) {
           opacity, no dot pattern so it feels more like a foggy photo
           than a comic panel. */}
       <div
-        className="absolute inset-0 mix-blend-overlay opacity-[0.14]"
+        className={`absolute inset-0 opacity-[0.14] ${lite ? "hidden" : "mix-blend-overlay"}`}
         style={{
           backgroundImage:
             "radial-gradient(rgba(255,255,255,0.6) 0.6px, transparent 0.9px)",
@@ -286,10 +299,10 @@ export default function AdminFogLobby({ enabled }) {
           will-change: transform;
         }
         .admin-fog-crown-near {
-          animation: admin-fog-sway-near 5.4s ease-in-out infinite;
+          animation: ${lite ? "none" : "admin-fog-sway-near 5.4s ease-in-out infinite"};
         }
         .admin-fog-crown-far {
-          animation: admin-fog-sway-far 7.2s ease-in-out infinite;
+          animation: ${lite ? "none" : "admin-fog-sway-far 7.2s ease-in-out infinite"};
         }
         /* Amplitude tuned to look like a light wind: 2.0deg / 1.4deg
            tilt + a matching horizontal skew so the branch tips travel
@@ -339,6 +352,9 @@ export default function AdminFogLobby({ enabled }) {
           from { background-position: 0 0; }
           to   { background-position: -100px 380px; }
         }
+        @keyframes admin-storm-rain-back-lite  { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-55px, 300px, 0); } }
+        @keyframes admin-storm-rain-front-lite { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-72px, 260px, 0); } }
+        @keyframes admin-storm-rain-gust-lite  { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-100px, 380px, 0); } }
         /* Lightning: white/blue wash flashes on, snaps to peak in the
            first 30ms, and decays over the rest. --flash-peak is set
            inline per strike so intensity varies naturally between hits. */
