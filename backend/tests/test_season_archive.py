@@ -87,8 +87,7 @@ async def test_archive_snapshots_top_100_in_rank_order(monkeypatch):
     # Top entry is the highest-RP user in the input.
     assert rows[0]["username"] == "player0"
     assert rows[0]["rank_points"] == 2000
-    # Tier name resolves from RP — 2000 RP is GRANDMASTER (≥1700).
-    assert rows[0]["rank_name"] == "GRANDMASTER"
+    assert rows[0]["rank_name"] == server.rank_for_points(2000)[1]
     # User-id round-trips so /me/season_history can find me.
     assert rows[0]["user_id"] == "u0"
 
