@@ -747,7 +747,7 @@ export default function SettingsModal({ open, onClose }) {
                   { v: "on",   label: "ON"   },
                   { v: "off",  label: "OFF"  },
                 ].map((opt) => {
-                  const active = (s.autoPerf || "auto") === opt.v;
+                  const active = (s.autoPerf || "off") === opt.v;
                   return (
                     <button
                       key={opt.v}

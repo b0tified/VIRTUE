@@ -271,7 +271,7 @@ export class GameEngine {
     // "off" → never engage. "on" → engage as soon as BigFFA starts,
     // no FPS gate. "auto" (default) → FPS-gated. Exposed in Settings
     // for tinkerers who want to force one behaviour.
-    this._autoPerfPref = "auto";
+    this._autoPerfPref = "off";
   }
 
   getFps() { return this.fps; }

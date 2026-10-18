@@ -94,9 +94,9 @@ const DEFAULTS = Object.freeze({
   // the mode that ships enough players + bullet FX to weaker GPUs to
   // matter. Engaging drops pixelRatio → 0.6, tightens fog + camera
   // far, and disables shadow map casts; disengages when FPS recovers.
-  // Values: "auto" (default, FPS-gated), "on" (force-on in BigFFA),
-  // "off" (never engage, even during framerate dips).
-  autoPerf: "auto",
+  // Values: "off" (default, never engage), "auto" (FPS-gated),
+  // "on" (force-on in BigFFA).
+  autoPerf: "off",
   // Animated lobby background — when true, the lobby uses the new
   // souped-up animated background (parallax meteors, pulsing crater
   // glow, drifting embers). Off = legacy static-ish background
@@ -162,6 +162,12 @@ function read() {
 }
 
 let cache = read();
+
+// One-time migration: Auto Performance is now off by default for everyone.
+if (!cache.autoPerfOffMigrated) {
+  cache = { ...cache, autoPerf: "off", autoPerfOffMigrated: true };
+  try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch {}
+}
 
 // Defensive normalization: `mobileOnlyMatchmaking` is a mobile-only concept.
 // If a user toggled it on while on mobile then loaded the game on desktop
