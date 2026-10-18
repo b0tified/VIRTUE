@@ -5,7 +5,7 @@
    table is still rendered below so the player can see kills / Δ RP /
    final rank for every participant. */
 import { useEffect, useMemo, useState } from "react";
-import { Trophy, Skull, Star, Crosshair, Target, Home, Users, Handshake } from "lucide-react";
+import { Trophy, Skull, Star, Crosshair, Target, Home, Users, Handshake, Coins } from "lucide-react";
 import { rankIconFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import audioBus from "@/game/audio";
@@ -357,6 +357,16 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                 testid="match-result-stat-kd"
               />
             )}
+          </div>
+        )}
+
+        {mine?.coins_earned > 0 && (
+          <div
+            className="self-center inline-flex items-center gap-2 px-4 py-1.5 tiny:py-0.5 border-4 border-black font-display text-xl tiny:text-base"
+            style={{ background: "#FFD700", color: "#0A0A0A", boxShadow: "4px 4px 0 0 #0A0A0A", opacity: stage >= 2 ? 1 : 0, animation: stage >= 2 ? "match-pop-in 420ms ease-out both" : "none" }}
+            data-testid="match-result-coins"
+          >
+            <Coins size={18} strokeWidth={3} /> +{mine.coins_earned} COINS
           </div>
         )}
 

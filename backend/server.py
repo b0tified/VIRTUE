@@ -356,7 +356,7 @@ async def maybe_reset_season() -> dict:
                 logger.warning("past_seasons rank lookup failed S%d: %s", finishing_season, e)
             cursor = db.users.find(
                 {"rank_points": {"$gt": 0}},
-                {"_id": 1, "rank_points": 1, "past_seasons": 1},
+                {"_id": 1, "rank_points": 1, "past_seasons": 1, "is_seeded": 1},
             )
             async for u in cursor:
                 pts = int(u.get("rank_points", 0) or 0)
@@ -379,10 +379,14 @@ async def maybe_reset_season() -> dict:
                 if pos:
                     entry["leaderboard_rank"] = int(pos)
                 past.append(entry)
-                await db.users.update_one(
-                    {"_id": u["_id"]},
-                    {"$set": {"past_seasons": past}},
-                )
+                upd: Dict[str, Any] = {"$set": {"past_seasons": past}}
+                if not u.get("is_seeded"):
+                    tiers = list(COIN_CONFIG.get("season_end") or [])
+                    reward = int(round(int(tiers[min(t_idx, len(tiers) - 1)] if tiers else 0) * coin_multiplier()))
+                    if reward > 0:
+                        upd["$inc"] = {"coins": reward}
+                        upd["$set"]["season_end_coins"] = {"season": finishing_season, "coins": reward, "tier_name": t_name}
+                await db.users.update_one({"_id": u["_id"]}, upd)
         except Exception as e:
             logger.warning("past_seasons stamp failed at S%d rollover: %s", finishing_season, e)
 
@@ -609,6 +613,42 @@ async def refresh_ultimate_gooner_cache() -> None:
 # No in-match earning — kills/wins don't grant coins (kept that way so
 # the economy can be tuned later via promo events).
 COINS_PER_LEVEL = 100  # awarded once per level the player reaches.
+
+# Admin-tunable coin economy (persisted in db.meta {_id: "coin_config"}).
+COIN_CONFIG_DEFAULTS: Dict[str, Any] = {
+    "match_play": 10,
+    "per_kill": 2,
+    "kill_cap": 30,
+    "win_bonus": 25,
+    "rank_up_bonus": 100,
+    "season_end": [50, 100, 150, 200, 300, 400, 600, 800, 1000],
+    "daily": [25, 50, 75, 100, 125, 150, 200],
+    "multiplier": 1.0,
+    "multiplier_until": 0.0,
+}
+COIN_CONFIG: Dict[str, Any] = dict(COIN_CONFIG_DEFAULTS)
+
+
+def coin_multiplier() -> float:
+    m = float(COIN_CONFIG.get("multiplier", 1.0) or 1.0)
+    until = float(COIN_CONFIG.get("multiplier_until", 0) or 0)
+    if m <= 1.0 or (until and until < time.time()):
+        return 1.0
+    return m
+
+
+def match_coin_reward(kills: int, won: bool) -> int:
+    c = COIN_CONFIG
+    k = min(max(0, int(kills or 0)), int(c["kill_cap"]))
+    base = int(c["match_play"]) + k * int(c["per_kill"]) + (int(c["win_bonus"]) if won else 0)
+    return int(round(base * coin_multiplier()))
+
+
+async def _load_coin_config() -> None:
+    doc = await db.meta.find_one({"_id": "coin_config"}) or {}
+    COIN_CONFIG.clear()
+    COIN_CONFIG.update(COIN_CONFIG_DEFAULTS)
+    COIN_CONFIG.update({k: doc[k] for k in COIN_CONFIG_DEFAULTS if k in doc})
 
 # XP Boost store items — coin-only consumables that grant a 2x XP
 # multiplier for a set duration. Applied at end_match: bonus_xp is
@@ -1284,6 +1324,10 @@ async def on_startup():
         await _load_bot_loadout()
     except Exception as e:
         logger.warning("bot loadout load failed: %s", e)
+    try:
+        await _load_coin_config()
+    except Exception as e:
+        logger.warning("coin config load failed: %s", e)
     try:
         await _reload_custom_titles()
     except Exception as e:
@@ -4927,6 +4971,13 @@ class GameRoom:
             return
         self._maintain_population()
 
+    def _coin_win(self, p: "Player", placement: int) -> bool:
+        if self.game_mode == "tdm":
+            team = (getattr(p, "team", None) or "").lower()
+            other = "blue" if team == "red" else "red"
+            return bool(team) and int(self.team_scores.get(team, 0)) > int(self.team_scores.get(other, 0))
+        return placement == 1
+
     def _grant_first_load_shield(self, p: "Player") -> None:
         """10s spawn immunity on first load into an online match; only shooting ends it early."""
         if p.is_bot or getattr(self, "is_offline", False) or getattr(self, "is_practice", False):
@@ -6905,6 +6956,7 @@ class GameRoom:
                 placement = placement_of.get(p.id, len(real_players))
                 new_points = 0
                 placement_played_before = 0
+                coins_earned = 0
                 is_placement = False
                 delta = 0
                 prev_tier_idx, prev_tier_name = 0, "BRONZE"
@@ -6992,6 +7044,11 @@ class GameRoom:
                     inc_doc = {"stats.matches": 1, "placement_matches_played": 1}
                     if placement == 1:
                         inc_doc["stats.wins"] = 1
+                    coins_earned = match_coin_reward(p.kills, placement == 1)
+                    if rank_change > 0:
+                        coins_earned += int(round(int(COIN_CONFIG["rank_up_bonus"]) * rank_change * coin_multiplier()))
+                    if coins_earned > 0:
+                        inc_doc["coins"] = coins_earned
                     # XP Boost: if the player has an active 2x boost, credit
                     # the same amount of `bonus_xp` that this match would
                     # naturally earn, effectively doubling their XP for the
@@ -7027,6 +7084,7 @@ class GameRoom:
                     "prev_rank_name": prev_tier_name,
                     "prev_rank_division": rank_division_for_points(max(0, new_points - delta), prev_tier_idx),
                     "rank_change": rank_change,
+                    "coins_earned": coins_earned,
                     "is_placement": is_placement,
                     "placement_match_number": placement_played_before + 1 if is_placement else None,
                     "placement_matches_total": PLACEMENT_MATCHES,
@@ -7132,6 +7190,7 @@ class GameRoom:
                     })
                     continue
                 cur_points = 0
+                coins_earned = 0
                 tier_idx, tier_name = 0, "BRONZE"
                 try:
                     udoc = await db.users.find_one({"_id": ObjectId(p.user_id)})
@@ -7143,6 +7202,10 @@ class GameRoom:
                     inc_doc = {"stats.matches": 1}
                     if placement == 1:
                         inc_doc["stats.wins"] = 1
+                    if not getattr(self, "is_offline", False) and not getattr(self, "is_practice", False):
+                        coins_earned = match_coin_reward(p.kills, self._coin_win(p, placement))
+                        if coins_earned > 0:
+                            inc_doc["coins"] = coins_earned
                     # XP Boost: credit bonus_xp same as ranked branch.
                     boost_bonus = xp_boost_bonus_for_match(udoc or {}, p.kills, placement)
                     if boost_bonus > 0:
@@ -7169,6 +7232,7 @@ class GameRoom:
                     "prev_rank_name": tier_name,
                     "prev_rank_division": rank_division_for_points(cur_points, tier_idx),
                     "rank_change": 0,
+                    "coins_earned": coins_earned,
                     "is_placement": False,
                     "placement_match_number": None,
                     "placement_matches_total": PLACEMENT_MATCHES,
@@ -10695,6 +10759,88 @@ async def _load_bot_loadout() -> None:
 @api.get("/bot_loadout")
 async def public_bot_loadout():
     return dict(BOT_LOADOUT)
+
+
+class CoinConfigIn(BaseModel):
+    match_play: int = Field(ge=0, le=1000)
+    per_kill: int = Field(ge=0, le=100)
+    kill_cap: int = Field(ge=0, le=200)
+    win_bonus: int = Field(ge=0, le=1000)
+    rank_up_bonus: int = Field(ge=0, le=5000)
+    season_end: List[int] = Field(min_length=9, max_length=9)
+    daily: List[int] = Field(min_length=7, max_length=7)
+    multiplier: float = Field(ge=1.0, le=5.0)
+    multiplier_hours: float = Field(default=0, ge=0, le=24 * 14)
+
+
+def _coin_config_public() -> dict:
+    out = {k: COIN_CONFIG[k] for k in COIN_CONFIG_DEFAULTS}
+    out["active_multiplier"] = coin_multiplier()
+    return out
+
+
+@api.get("/admin/coin_config")
+async def admin_get_coin_config(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return _coin_config_public()
+
+
+@api.post("/admin/coin_config")
+async def admin_set_coin_config(payload: CoinConfigIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if any(v < 0 or v > 100000 for v in payload.season_end + payload.daily):
+        raise HTTPException(status_code=400, detail="Coin amounts must be between 0 and 100000.")
+    doc = payload.model_dump(exclude={"multiplier_hours"})
+    doc["multiplier_until"] = (time.time() + payload.multiplier_hours * 3600) if payload.multiplier > 1 and payload.multiplier_hours > 0 else 0.0
+    await db.meta.update_one({"_id": "coin_config"}, {"$set": doc}, upsert=True)
+    await _load_coin_config()
+    return _coin_config_public()
+
+
+@api.get("/coins/boost")
+async def coin_boost_status(_user: dict = Depends(get_current_user)):
+    m = coin_multiplier()
+    until = float(COIN_CONFIG.get("multiplier_until", 0) or 0)
+    return {"multiplier": m, "until": until if m > 1 and until else None}
+
+
+def _daily_state(user: dict) -> dict:
+    today = datetime.now(timezone.utc).date()
+    last_raw = user.get("daily_last_claim")
+    last = datetime.fromisoformat(last_raw).date() if isinstance(last_raw, str) and last_raw else None
+    streak = int(user.get("daily_streak", 0) or 0)
+    if last == today:
+        return {"claimable": False, "streak": streak, "next_day": streak}
+    cont = last is not None and (today - last).days == 1
+    nxt = (streak % 7) + 1 if cont else 1
+    return {"claimable": True, "streak": streak if cont else 0, "next_day": nxt}
+
+
+@api.get("/rewards/daily")
+async def daily_reward_status(user: dict = Depends(get_current_user)):
+    st = _daily_state(user)
+    m = coin_multiplier()
+    return {**st, "rewards": [int(round(int(v) * m)) for v in COIN_CONFIG["daily"]], "multiplier": m}
+
+
+@api.post("/rewards/daily/claim")
+async def daily_reward_claim(user: dict = Depends(get_current_user)):
+    st = _daily_state(user)
+    if not st["claimable"]:
+        raise HTTPException(status_code=400, detail="Already claimed today.")
+    day = st["next_day"]
+    amount = int(round(int(COIN_CONFIG["daily"][day - 1]) * coin_multiplier()))
+    today = datetime.now(timezone.utc).date().isoformat()
+    res = await db.users.update_one(
+        {"_id": user["_id"], "daily_last_claim": {"$ne": today}},
+        {"$set": {"daily_last_claim": today, "daily_streak": day}, "$inc": {"coins": amount}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Already claimed today.")
+    fresh = await db.users.find_one({"_id": user["_id"]}, {"coins": 1})
+    return {"claimed": amount, "day": day, "coins": int((fresh or {}).get("coins", 0) or 0)}
 
 
 @api.get("/admin/bot_loadout")

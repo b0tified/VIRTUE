@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette, Crosshair, Type, Coins } from "lucide-react";
 import api from "@/api";
+import AdminCoinPanel from "@/components/AdminCoinPanel";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { TitleChip } from "@/components/ShopTitlesTab";
 import BundleMakerPanel from "@/components/admin/BundleMakerPanel";
@@ -231,6 +232,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <BotLoadoutPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <AdminCoinPanel onToast={setToast} />
       </div>
 
       <div className="max-w-6xl mx-auto mb-6">
