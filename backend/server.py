@@ -13609,7 +13609,10 @@ async def me_placements(user: dict = Depends(get_current_user)):
     if isinstance(start, datetime):
         q["ended_at"] = {"$gte": start}
     rows = await db.match_history.find(q, {"_id": 0, "placement": 1, "total_players": 1, "kills": 1, "rp_delta": 1, "ended_at": 1}) \
-        .sort("ended_at", 1).limit(PLACEMENT_MATCHES).to_list(PLACEMENT_MATCHES)
+        .sort("ended_at", -1).limit(PLACEMENT_MATCHES).to_list(PLACEMENT_MATCHES)
+    rows.reverse()
+    played = min(PLACEMENT_MATCHES, int(user.get("placement_matches_played", 0) or 0))
+    rows = rows[-played:] if played else []
     results = [{
         "placement": int(r.get("placement", 0) or 0),
         "total_players": int(r.get("total_players", 0) or 0),

@@ -42,6 +42,7 @@ export default function RankProgressBar({
   points = 0,
   compact = false,
   className = "",
+  onDark = false,
   testid = "rank-progress",
 }) {
   const t = Math.max(0, Math.min(GOONMASTER_IDX, Number.isFinite(tier) ? tier : 0));
@@ -82,11 +83,11 @@ export default function RankProgressBar({
   return (
     <div className={`flex flex-col gap-1 ${className}`} data-testid={testid}>
       <div className="flex items-center justify-between text-[10px] sm:text-xs font-anton uppercase tracking-widest gap-2">
-        <span className="text-neutral-500 tabular-nums" data-testid={`${testid}-current`}>
+        <span className={`${onDark ? "text-neutral-300" : "text-neutral-500"} tabular-nums`} data-testid={`${testid}-current`}>
           {into} / {divisionWidth}
         </span>
         {!compact && (
-          <span className="text-neutral-700" data-testid={`${testid}-next`}>
+          <span className={onDark ? "text-neutral-100" : "text-neutral-700"} data-testid={`${testid}-next`}>
             <span className="opacity-50">→</span> {nextLabel}
           </span>
         )}

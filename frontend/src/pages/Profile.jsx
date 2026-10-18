@@ -919,6 +919,7 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
             division={division}
             points={points}
             testid={`${testid}-progress`}
+            onDark
           />
         </div>
       )}

@@ -969,7 +969,7 @@ export default function Lobby() {
             <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} leaderboardRank={user?.in_placements ? null : (user?.leaderboard_rank ?? null)} predicted={!!user?.in_placements} />
             {user?.in_placements && (
               <div
-                className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white [@media(max-height:500px)]:hidden"
+                className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white"
                 data-testid="placement-streak-badge"
                 aria-label="Placement streak: performance-scaled RP anchors your first 5 ranked matches to your true skill."
               >
@@ -1010,12 +1010,13 @@ export default function Lobby() {
             />
           )}
           {!user?.in_placements && (
-          <div className="mt-2 sm:mt-3 [@media(max-height:500px)]:mt-1 [@media(max-height:500px)]:hidden max-w-md" data-testid="lobby-rank-progress-wrap">
+          <div className="mt-2 sm:mt-3 [@media(max-height:500px)]:mt-1 max-w-md [@media(max-height:500px)]:max-w-[320px]" data-testid="lobby-rank-progress-wrap">
             <RankProgressBar
               tier={user?.rank_tier ?? 0}
               division={user?.rank_division ?? 0}
               points={user?.rank_points ?? 0}
               testid="lobby-rank-progress"
+              onDark
             />
           </div>
           )}
