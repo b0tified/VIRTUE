@@ -1358,6 +1358,7 @@ async def on_startup():
         logger.warning("peak online load failed: %s", e)
     asyncio.create_task(online_peak_loop())
     asyncio.create_task(_backfill_past_seasons_once())
+    asyncio.create_task(_normalize_seeded_bot_titles_once())
     asyncio.create_task(_backfill_past_seasons_leaderboard_rank_once())
     asyncio.create_task(_ultimate_gooner_refresh_loop())
 
@@ -1400,8 +1401,7 @@ async def _backfill_past_seasons_once():
     try:
         # Small delay so the season doc + climb loop init have settled.
         await asyncio.sleep(1.0)
-        season_doc = await db.season.find_one({"_id": "current"})
-        cur = int((season_doc or {}).get("season_number", 1))
+        cur = int((await get_or_init_season()).get("season_number", 1))
         prev_season = max(1, cur - 1)
         # Cache for the synchronous seed-endpoint path so newly-inserted
         # bots also get past-season titles keyed to the right season.
@@ -11564,6 +11564,61 @@ def _seed_past_seasons_for(rp: int, rank_idx: int) -> list[dict]:
     return entries
 
 
+def _bot_title_fields(rng: random.Random, past: list) -> dict:
+    """Random banner title for a bot: a past-season rank title, a shop title, or none."""
+    seasons = [int(e["season"]) for e in past if int(e.get("season", 0) or 0) > 0]
+    shop = sorted(CUSTOM_TITLES.keys())
+    roll = rng.random()
+    if seasons and roll < 0.55:
+        return {"title_season": rng.choice(seasons), "custom_title_id": None}
+    if shop and roll < 0.85:
+        return {"title_season": None, "custom_title_id": rng.choice(shop)}
+    return {"title_season": None, "custom_title_id": None}
+
+
+def _fake_bot_past_seasons(username: str, tier_idx: int) -> list:
+    """Deterministic past seasons for user-doc-less bots; tier_name always matches rp."""
+    rng = random.Random(f"bot-seasons::{username.lower()}")
+    prev = int(_CACHED_PREV_SEASON_NUMBER[0] or 1)
+    out = []
+    t = tier_idx
+    for sn in range(prev, max(0, prev - rng.randint(1, 3)), -1):
+        t = max(0, min(len(RANK_TIERS) - 1, t + rng.choice([-1, 0, 0, 1]) if out else t))
+        lo = RANK_TIERS[t][0]
+        hi = RANK_TIERS[t + 1][0] - 1 if t + 1 < len(RANK_TIERS) else lo + 300
+        rp = _snap_rp_to_match_grid(rng.randint(lo, hi))
+        ti, tn = rank_for_points(rp)
+        out.append({"season": sn, "tier": ti, "tier_name": tn, "rp": rp})
+        t = max(0, t - 1) if rng.random() < 0.5 else t
+    return out
+
+
+async def _normalize_seeded_bot_titles_once() -> None:
+    """Seeded bots: make past-season rank names match their RP and equip a random title."""
+    await asyncio.sleep(2.0)
+    try:
+        cur = int((await get_or_init_season()).get("season_number", 1))
+        cursor = db.users.find({"is_seeded": True, "bot_titles_v2": {"$ne": True}}, {"_id": 1, "username": 1, "past_seasons": 1})
+        n = 0
+        async for u in cursor:
+            by_season = {}
+            for e in u.get("past_seasons") or []:
+                sn = int(e.get("season", 0) or 0)
+                if 1 <= sn < cur:
+                    rp = int(e.get("rp", 0) or 0)
+                    ti, tn = rank_for_points(rp)
+                    by_season[sn] = {**e, "tier": ti, "tier_name": tn}
+            past = [by_season[k] for k in sorted(by_season)]
+            rng = random.Random(f"bot-title::{u.get('username', '')}")
+            fields = _bot_title_fields(rng, past)
+            await db.users.update_one({"_id": u["_id"]}, {"$set": {"past_seasons": past, **fields, "title_ultimate": False, "bot_titles_v2": True}})
+            n += 1
+        if n:
+            logger.info("seeded bot titles normalized: %d", n)
+    except Exception as e:
+        logger.warning("seeded bot title normalize failed: %s", e)
+
+
 # Small module-level cache updated by the season loop each tick so the
 # synchronous seed endpoint can read the previous-season number without
 # blocking on a fresh Mongo lookup.
@@ -11738,8 +11793,9 @@ async def admin_seed_veterans(payload: SeedVeteransIn, user: dict = Depends(get_
             # moment they hit the leaderboard. Season 1 seeds show a
             # single "S0" fallback which we hide client-side (S0 stays
             # in past_seasons for future rollover math).
-            "past_seasons": _seed_past_seasons_for(rp, rank_idx),
-            "title_season": max(1, _CACHED_PREV_SEASON_NUMBER[0]),
+            "past_seasons": (_seed_past := _seed_past_seasons_for(rp, rank_idx)),
+            **_bot_title_fields(random.Random(), _seed_past),
+            "bot_titles_v2": True,
             "seed_v3_boost": True,
             "seed_v4_gm": True,
             "seed_v5_all_gm": True,
@@ -12819,8 +12875,9 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 "banner_icon": fake_banner_icon,
                 "banner_color": fake_banner_color,
                 "banner_animated": False,
-                "past_seasons": [],
-                "title_season": None,
+                "past_seasons": (_fake_past := _fake_bot_past_seasons(username, tier_idx)),
+                **{k: v for k, v in _bot_title_fields(random.Random(f"bot-title::{lu}"), _fake_past).items() if k == "title_season"},
+                "custom_title": custom_title_public(_bot_title_fields(random.Random(f"bot-title::{lu}"), _fake_past)["custom_title_id"]),
                 "title_ultimate": False,
                 **bot_activity(username, tier_idx),
                 "history": history,
@@ -13484,6 +13541,19 @@ async def leaderboard_friends(user: dict = Depends(get_current_user)):
 
 
 
+def _earned_rank_snapshot(e: dict) -> dict:
+    """Rank as it was earned (stored tier_name wins over today's RP bands)."""
+    rp = int(e.get("rp", 0) or 0)
+    names = [n for _, n in RANK_TIERS]
+    name = (e.get("tier_name") or "").upper()
+    if name not in names:
+        return _rank_snapshot(rp)
+    idx = names.index(name)
+    lo = RANK_TIERS[idx][0]
+    hi = RANK_TIERS[idx + 1][0] - 1 if idx + 1 < len(RANK_TIERS) else 10 ** 9
+    return {"rp": rp, "tier": idx, "name": name, "division": rank_division_for_points(rp, idx) if lo <= rp <= hi else None}
+
+
 def season_recap_history(user: dict) -> List[dict]:
     """Every past season for this user, newest first. Full recaps where saved,
     final-rank-only entries (from past_seasons) for older seasons."""
@@ -13492,7 +13562,7 @@ def season_recap_history(user: dict) -> List[dict]:
         sn = int(e.get("season", 0) or 0)
         if sn <= 0:
             continue
-        by_season[sn] = {"season": sn, "full": False, "final": _rank_snapshot(int(e.get("rp", 0) or 0)),
+        by_season[sn] = {"season": sn, "full": False, "final": _earned_rank_snapshot(e),
                          "leaderboard_rank": e.get("leaderboard_rank")}
     for r in user.get("season_recaps") or []:
         sn = int(r.get("season", 0) or 0)

@@ -12,6 +12,11 @@ import { useAuth } from "@/context/AuthContext";
 import { ReportPlayerModal } from "@/components/Hud";
 
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
+const TIER_NAMES = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
+const seasonTierIdx = (e) => {
+  const i = TIER_NAMES.indexOf((e.tier_name || "").toUpperCase());
+  return i >= 0 ? i : Math.max(0, Math.min(8, Number(e.tier) || 0));
+};
 
 const MODE_META = {
   ranked:  { label: "RANKED",  color: "#0055FF", Icon: Trophy },
@@ -237,6 +242,36 @@ export default function PublicProfileModal({ username, isBot = false, onClose })
                     data.history.map((m, i) => <HistoryRow key={i} m={m} idx={i} />)
                   )}
                 </div>
+
+                {(data.past_seasons || []).filter((e) => Number(e.season) > 0).length > 0 && (
+                  <div className="border-t-4 border-black" data-testid="public-season-history">
+                    <div className="bg-[#FFD700] px-4 py-2 flex items-center gap-2 font-anton uppercase tracking-widest text-sm">
+                      <Trophy size={16} strokeWidth={3} /> Season History
+                    </div>
+                    {[...data.past_seasons]
+                      .filter((e) => Number(e.season) > 0)
+                      .sort((a, b) => b.season - a.season)
+                      .map((e, i) => (
+                        <div
+                          key={e.season}
+                          className={`flex items-center gap-3 px-4 py-2 border-t-2 border-black/10 ${i % 2 ? "bg-neutral-50" : "bg-white"}`}
+                          data-testid={`public-season-row-${e.season}`}
+                        >
+                          <span className="font-display text-xl w-12">S{e.season}</span>
+                          <span
+                            className="font-anton uppercase text-xs px-2 py-1 border-2 border-black"
+                            style={{ background: RANK_COLORS[seasonTierIdx(e)], color: seasonTierIdx(e) === 8 ? "#FFD700" : "#0A0A0A" }}
+                          >
+                            {(e.tier_name || "BRONZE").toUpperCase()}
+                          </span>
+                          {Number(e.leaderboard_rank) >= 1 && Number(e.leaderboard_rank) <= 50 && (
+                            <span className="font-anton uppercase text-xs text-[#E62429]">#{e.leaderboard_rank} global</span>
+                          )}
+                          <span className="ml-auto font-anton text-sm text-neutral-600">{e.rp ?? 0} RP</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </>
             )}
           </div>
