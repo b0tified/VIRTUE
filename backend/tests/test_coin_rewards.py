@@ -58,3 +58,43 @@ def test_casual_match_end_awards_coins():
             await server.db.users.delete_one({"_id": uid})
             await server.db.match_history.delete_many({"user_id": str(uid)})
     LOOP.run_until_complete(run())
+
+
+def test_build_season_recap():
+    u = {"rank_points": 2450, "season_peak_rp": 2600, "season_coins": 300, "season_stats": {"matches": 40, "wins": 9, "kills": 310}}
+    r = server.build_season_recap(u, 3, 1000, 1500)
+    assert r["peak"]["name"] == "GOONMASTER" and r["peak"]["rp"] == 2600
+    assert r["final"]["rp"] == 2450 and r["new"]["name"] == "DIAMOND" and r["new"]["division"] == 3
+    assert r["coins_earned"] == 1300 and r["season_end_coins"] == 1000
+    assert (r["matches"], r["wins"], r["kills"]) == (40, 9, 310)
+    r2 = server.build_season_recap({"rank_points": 700}, 3, 150, 0)
+    assert r2["peak"]["rp"] == 700 and r2["matches"] == 0
+
+
+def test_ranked_match_tracks_season_stats():
+    async def run():
+        uid = ObjectId()
+        await server.db.users.insert_one({"_id": uid, "email": f"rk_{uid}@t.com", "username": f"rk{str(uid)[-5:]}", "coins": 0, "rank_points": 500, "placement_matches_played": 10, "stats": {}})
+        try:
+            room = server.GameRoom(is_ranked=True)
+            async def _bc(msg, *a, **k):
+                return None
+            room.broadcast = _bc
+            p = server.Player(None, await server.db.users.find_one({"_id": uid}))
+            room.players[p.id] = p
+            p.kills = 12
+            for b in list(room.players.values()):
+                if b.is_bot:
+                    b.kills = 0
+            try:
+                await asyncio.wait_for(room.end_match(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
+            doc = await server.db.users.find_one({"_id": uid})
+            assert doc["season_stats"] == {"matches": 1, "kills": 12, "wins": 1}
+            assert doc["season_peak_rp"] == doc["rank_points"] > 500
+            assert doc["season_coins"] == doc["coins"] > 0
+        finally:
+            await server.db.users.delete_one({"_id": uid})
+            await server.db.match_history.delete_many({"user_id": str(uid)})
+    LOOP.run_until_complete(run())

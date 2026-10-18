@@ -349,7 +349,8 @@ async def maybe_reset_season() -> dict:
                 logger.warning("past_seasons rank lookup failed S%d: %s", finishing_season, e)
             cursor = db.users.find(
                 {"rank_points": {"$gt": 0}},
-                {"_id": 1, "rank_points": 1, "past_seasons": 1, "is_seeded": 1},
+                {"_id": 1, "rank_points": 1, "past_seasons": 1, "is_seeded": 1,
+                 "season_peak_rp": 1, "season_coins": 1, "season_stats": 1},
             )
             async for u in cursor:
                 pts = int(u.get("rank_points", 0) or 0)
@@ -379,6 +380,8 @@ async def maybe_reset_season() -> dict:
                     if reward > 0:
                         upd["$inc"] = {"coins": reward}
                         upd["$set"]["season_end_coins"] = {"season": finishing_season, "coins": reward, "tier_name": t_name}
+                    upd["$set"]["season_recap"] = build_season_recap(u, finishing_season, reward, _rollback_rp(pts))
+                    upd["$set"]["season_recap_seen"] = False
                 await db.users.update_one({"_id": u["_id"]}, upd)
         except Exception as e:
             logger.warning("past_seasons stamp failed at S%d rollover: %s", finishing_season, e)
@@ -409,6 +412,9 @@ async def maybe_reset_season() -> dict:
                     "placement_matches_played": 0,
                     "season_xp": 0,
                     "claimed_season_tiers": [],
+                    "season_peak_rp": 0,
+                    "season_coins": 0,
+                    "season_stats": {"matches": 0, "wins": 0, "kills": 0},
                 }
             }],
         )
@@ -469,6 +475,28 @@ async def maybe_reset_season() -> dict:
         logger.info("Season reset → S%d", next_num)
         doc = {"_id": "season", "season_number": next_num, "season_start": now}
     return doc
+
+
+def _rank_snapshot(rp: int) -> dict:
+    idx, name = rank_for_points(rp)
+    return {"rp": int(rp), "tier": idx, "name": name, "division": rank_division_for_points(rp, idx)}
+
+
+def build_season_recap(u: dict, season: int, reward: int, new_rp: int) -> dict:
+    final_rp = int(u.get("rank_points", 0) or 0)
+    peak_rp = max(final_rp, int(u.get("season_peak_rp", 0) or 0))
+    st = u.get("season_stats") or {}
+    return {
+        "season": int(season),
+        "peak": _rank_snapshot(peak_rp),
+        "final": _rank_snapshot(final_rp),
+        "new": _rank_snapshot(new_rp),
+        "season_end_coins": int(reward),
+        "coins_earned": int(u.get("season_coins", 0) or 0) + int(reward),
+        "matches": int(st.get("matches", 0) or 0),
+        "wins": int(st.get("wins", 0) or 0),
+        "kills": int(st.get("kills", 0) or 0),
+    }
 
 
 async def _archive_season_top_100(season_number: int, started_at: datetime, ended_at: datetime) -> None:
@@ -7038,6 +7066,11 @@ class GameRoom:
                         coins_earned += int(round(int(COIN_CONFIG["rank_up_bonus"]) * rank_change * coin_multiplier()))
                     if coins_earned > 0:
                         inc_doc["coins"] = coins_earned
+                        inc_doc["season_coins"] = coins_earned
+                    inc_doc["season_stats.matches"] = 1
+                    inc_doc["season_stats.kills"] = int(p.kills or 0)
+                    if placement == 1:
+                        inc_doc["season_stats.wins"] = 1
                     # XP Boost: if the player has an active 2x boost, credit
                     # the same amount of `bonus_xp` that this match would
                     # naturally earn, effectively doubling their XP for the
@@ -7047,7 +7080,7 @@ class GameRoom:
                         inc_doc["stats.bonus_xp"] = boost_bonus
                     await db.users.update_one(
                         {"_id": ObjectId(p.user_id)},
-                        {"$set": update_set, "$inc": inc_doc},
+                        {"$set": update_set, "$inc": inc_doc, "$max": {"season_peak_rp": new_points}},
                     )
                 except Exception as e:
                     logger.warning("rank update failed: %s", e)
@@ -7195,6 +7228,7 @@ class GameRoom:
                         coins_earned = match_coin_reward(p.kills, self._coin_win(p, placement))
                         if coins_earned > 0:
                             inc_doc["coins"] = coins_earned
+                            inc_doc["season_coins"] = coins_earned
                     # XP Boost: credit bonus_xp same as ranked branch.
                     boost_bonus = xp_boost_bonus_for_match(udoc or {}, p.kills, placement)
                     if boost_bonus > 0:
@@ -10807,6 +10841,20 @@ def _daily_state(user: dict) -> dict:
     return {"claimable": True, "streak": streak if cont else 0, "next_day": nxt}
 
 
+@api.get("/season/recap")
+async def get_season_recap(user: dict = Depends(get_current_user)):
+    if user.get("season_recap_seen", True) or not user.get("season_recap"):
+        return {"recap": None}
+    season = await get_or_init_season()
+    return {"recap": user["season_recap"], "current_season": season["season_number"]}
+
+
+@api.post("/season/recap/seen")
+async def mark_season_recap_seen(user: dict = Depends(get_current_user)):
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"season_recap_seen": True}})
+    return {"ok": True}
+
+
 @api.get("/rewards/daily")
 async def daily_reward_status(user: dict = Depends(get_current_user)):
     st = _daily_state(user)
@@ -10824,7 +10872,7 @@ async def daily_reward_claim(user: dict = Depends(get_current_user)):
     today = datetime.now(timezone.utc).date().isoformat()
     res = await db.users.update_one(
         {"_id": user["_id"], "daily_last_claim": {"$ne": today}},
-        {"$set": {"daily_last_claim": today, "daily_streak": day}, "$inc": {"coins": amount}},
+        {"$set": {"daily_last_claim": today, "daily_streak": day}, "$inc": {"coins": amount, "season_coins": amount}},
     )
     if res.modified_count == 0:
         raise HTTPException(status_code=400, detail="Already claimed today.")
