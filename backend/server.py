@@ -3883,6 +3883,7 @@ MELEE_COOLDOWN_MS = 600
 BOT_SHOT_COOLDOWN_MS = 620
 BOT_AIM_NOISE = 0.10
 TICK_RATE = 20
+FIRST_LOAD_SHIELD_S = 10.0
 NUM_BOTS = 3
 # FFA quick-match / ranked / practice rooms cap the active lobby at this
 # many combat players (incl. bots). Caller adds/removes bots as humans
@@ -4299,6 +4300,7 @@ class Player:
         self.last_melee_ms = 0
         self.respawn_at = 0.0
         self.invuln_until = time.time() + 3.0
+        self.spawn_shield = False
         self.last_attacker: Optional[str] = None
         self.bot_strafe_t = random.uniform(0, 6.28)
         self.bot_repath_at = 0.0
@@ -4925,6 +4927,13 @@ class GameRoom:
             return
         self._maintain_population()
 
+    def _grant_first_load_shield(self, p: "Player") -> None:
+        """10s spawn immunity on first load into an online match; only shooting ends it early."""
+        if p.is_bot or getattr(self, "is_offline", False) or getattr(self, "is_practice", False):
+            return
+        p.invuln_until = time.time() + FIRST_LOAD_SHIELD_S
+        p.spawn_shield = True
+
     async def add(self, player: Player):
         # Reposition the player onto a spawn point from THIS room's arena —
         # Player.__init__ used the global default spawn list, which may not
@@ -4934,6 +4943,7 @@ class GameRoom:
             sx, sz = random_spawn(self.arena, occupants=list(self.players.values()))
             player.x = float(sx)
             player.z = float(sz)
+            self._grant_first_load_shield(player)
         async with self.lock:
             # Detect whether the room had any real, non-spectator players
             # BEFORE this add. Used to restart the match clock so the very
@@ -5834,6 +5844,9 @@ class GameRoom:
         self.match_started = True
         self.countdown_until = None
         self.match_start = time.time()
+        for p in self.players.values():
+            if p.spawn_shield and p.alive:
+                p.invuln_until = self.match_start + FIRST_LOAD_SHIELD_S
         # New match — flush any stale kill snapshots from a prior match
         # in the same room (persistent rooms hold multiple matches).
         self.kill_log = []
@@ -5910,7 +5923,7 @@ class GameRoom:
                 # first post-respawn input tick zeroed invuln_until
                 # instantly, making the 3s spawn shield a no-op in
                 # practice (users reported "spawn immunity doesn't work").
-                if 0.02 < dist <= max_delta and player.invuln_until > time.time():
+                if 0.02 < dist <= max_delta and player.invuln_until > time.time() and not player.spawn_shield:
                     player.invuln_until = 0.0
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
@@ -6695,6 +6708,7 @@ class GameRoom:
                 p.hp = p.max_hp
                 p.alive = True
                 p.invuln_until = now + 3.0
+                p.spawn_shield = False
                 # Refill ammo on respawn (cancel any pending reloads)
                 for w in p.ammo.keys():
                     p.ammo[w] = WEAPON_CONFIGS.get(w, WEAPON_CONFIGS["ak47"])["mag_size"]
@@ -7417,6 +7431,8 @@ class GameRoom:
             p.hp = p.max_hp
             p.alive = True
             p.invuln_until = time.time() + 3.0
+            p.spawn_shield = False
+            self._grant_first_load_shield(p)
             p.last_attacker = None
             # All current players are now participating in the next match.
             p.joined_match_num = self.match_num + 1

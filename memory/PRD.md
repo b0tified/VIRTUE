@@ -2939,3 +2939,4 @@ Two quality-of-life changes shipped together.
 
 ## 2026-06 Bot Real Match Log
 - Bots now record their real results at match end (db.bot_match_log, only when real players were in the match). Bot profiles (disguised/custom + public seeded leaderboard bots) merge these into history (newest first) and add them to Matches/Kills/Deaths/Wins totals.
+- 2026-06: First-load spawn shield — real players get 10s immunity on first load into an online match (restarts when pre-match countdown ends; also each new round). Movement does not cancel it, only shooting/melee/laser. Respawns keep 3s (move/shoot cancels). Not in practice/offline, not for bots. FIRST_LOAD_SHIELD_S in server.py; tests/test_first_load_shield.py
