@@ -307,7 +307,7 @@ function HistoryRow({ m, idx }) {
       <div className="col-span-2 font-anton text-right">{m.kills}K</div>
       <div className="col-span-2 font-anton text-right">{m.deaths}D</div>
       <div className="col-span-1 text-right font-display text-lg" style={{ color: deltaColor }}>
-        {m.rp_delta !== 0 ? `${sign}${m.rp_delta}` : "—"}
+        {m.is_placement ? <span className="font-anton uppercase text-[10px] text-[#9B59B6]">Placement</span> : m.rp_delta !== 0 ? `${sign}${m.rp_delta}` : "—"}
       </div>
       <div className="col-span-2 text-right">
         <span className="inline-block font-anton uppercase text-[10px] px-1.5 py-0.5" style={{ background: rankColor, color: tierIdx === 8 ? "#FFD700" : "#0A0A0A" }}>

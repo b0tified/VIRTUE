@@ -17,7 +17,7 @@ export default function PlacementTracker({ played = 0, total = 5, testid = "plac
         {slots.map((r, i) => (
           <span
             key={i}
-            title={r ? `Match ${i + 1}: #${r.placement}${r.total_players ? ` of ${r.total_players}` : ""} · ${r.kills} kills · ${r.rp_delta >= 0 ? "+" : ""}${r.rp_delta} RP` : `Match ${i + 1}: not played`}
+            title={r ? `Match ${i + 1}: #${r.placement}${r.total_players ? ` of ${r.total_players}` : ""} · ${r.kills} kills` : `Match ${i + 1}: not played`}
             className={`w-5 h-5 rounded-full border-2 border-black flex items-center justify-center font-anton text-[9px] leading-none ${r ? "text-white" : "text-white/40 border-dashed bg-transparent"}`}
             style={r ? { background: r.win ? "#06A35F" : "#E62429", boxShadow: "2px 2px 0 0 #0A0A0A" } : { borderColor: "rgba(255,255,255,0.4)" }}
             data-testid={`${testid}-dot-${i}`}

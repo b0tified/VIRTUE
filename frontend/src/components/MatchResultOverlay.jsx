@@ -344,8 +344,8 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
               <StatTile
                 icon={<Trophy size={16} strokeWidth={3} />}
                 label="RP"
-                value={`${(mine.delta ?? 0) >= 0 ? "+" : ""}${mine.delta ?? 0}${mine.is_placement && (mine.delta ?? 0) > 0 ? " ×2" : ""}`}
-                accent={(mine.delta ?? 0) >= 0 ? "#06A35F" : "#E62429"}
+                value={mine.is_placement ? "PLACEMENT" : `${(mine.delta ?? 0) >= 0 ? "+" : ""}${mine.delta ?? 0}`}
+                accent={mine.is_placement ? "#9B59B6" : (mine.delta ?? 0) >= 0 ? "#06A35F" : "#E62429"}
                 testid="match-result-stat-rp"
               />
             ) : (
@@ -425,17 +425,14 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                     <div
                       className={`col-span-2 text-right font-display text-lg ${
                         isRanked
-                          ? ((p.delta ?? 0) >= 0 ? "text-[#06A35F]" : "text-[#E62429]")
+                          ? (p.is_placement ? "text-neutral-400" : (p.delta ?? 0) >= 0 ? "text-[#06A35F]" : "text-[#E62429]")
                           : "text-black"
                       }`}
                       data-testid={`match-end-delta-${i}`}
                     >
                       {isRanked ? (
                         <>
-                          {(p.delta ?? 0) >= 0 ? "+" : ""}{p.delta ?? 0}
-                          {p.is_placement && (p.delta ?? 0) > 0 && (
-                            <span className="ml-1 text-[10px] font-anton text-[#9B59B6]">2x</span>
-                          )}
+                          {p.is_placement ? "—" : `${(p.delta ?? 0) >= 0 ? "+" : ""}${p.delta ?? 0}`}
                         </>
                       ) : (
                         (p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : (p.kills || 0).toFixed(2))

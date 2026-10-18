@@ -686,10 +686,9 @@ function HistoryRow({ idx, m, onOpen }) {
         <span className="md:hidden text-xs opacity-60 uppercase mr-1">D</span>{m.deaths}
       </div>
       <div className="col-span-4 md:col-span-2 md:text-right font-display text-2xl" style={{ color: deltaColor }} data-testid={`history-delta-${idx}`}>
-        {m.rp_delta !== 0 ? `${sign}${m.rp_delta}` : "—"}
-        {m.is_placement && m.rp_delta > 0 && (
-          <span className="ml-1 text-xs font-anton text-[#9B59B6]">2x</span>
-        )}
+        {m.is_placement ? (
+          <span className="font-anton uppercase text-xs text-[#9B59B6]" data-testid={`history-placement-${idx}`}>Placement</span>
+        ) : m.rp_delta !== 0 ? `${sign}${m.rp_delta}` : "—"}
       </div>
       <div className="col-span-12 md:col-span-2 mt-1 md:mt-0 md:text-right flex items-center gap-2 justify-start md:justify-end">
         <span
