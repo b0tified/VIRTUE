@@ -13600,6 +13600,27 @@ def season_recap_history(user: dict) -> List[dict]:
     return [by_season[k] for k in sorted(by_season, reverse=True)]
 
 
+@api.get("/me/placements")
+async def me_placements(user: dict = Depends(get_current_user)):
+    """This season's placement results (oldest first) for the lobby/profile tracker."""
+    season = await get_or_init_season()
+    start = season.get("season_start")
+    q: Dict[str, Any] = {"user_id": str(user["_id"]), "mode": "ranked", "is_placement": True}
+    if isinstance(start, datetime):
+        q["ended_at"] = {"$gte": start}
+    rows = await db.match_history.find(q, {"_id": 0, "placement": 1, "total_players": 1, "kills": 1, "rp_delta": 1, "ended_at": 1}) \
+        .sort("ended_at", 1).limit(PLACEMENT_MATCHES).to_list(PLACEMENT_MATCHES)
+    results = [{
+        "placement": int(r.get("placement", 0) or 0),
+        "total_players": int(r.get("total_players", 0) or 0),
+        "kills": int(r.get("kills", 0) or 0),
+        "rp_delta": int(r.get("rp_delta", 0) or 0),
+        "win": int(r.get("placement", 0) or 0) == 1,
+    } for r in rows]
+    return {"results": results, "total": PLACEMENT_MATCHES,
+            "played": int(user.get("placement_matches_played", 0) or 0)}
+
+
 @api.get("/me/season_recaps")
 async def me_season_recaps(user: dict = Depends(get_current_user)):
     return {"seasons": season_recap_history(user)}

@@ -18,6 +18,7 @@ import audioBus from "@/game/audio";
 import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
 import PublicProfileModal from "@/components/PublicProfileModal";
 import { SeasonRecapView } from "@/components/SeasonRecapModal";
+import PlacementTracker from "@/components/PlacementTracker";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -297,6 +298,9 @@ export default function Profile() {
           <RankCard
             label={inPlacements ? "Predicted Rank" : "Current Rank"}
             predictedNote={placementNote}
+            footer={inPlacements ? (
+              <PlacementTracker played={user?.placement_matches_played ?? 0} total={user?.placement_matches_total ?? 5} testid="profile-placement-tracker" />
+            ) : null}
             tier={currentTier}
             name={currentName}
             division={user?.rank_division ?? 0}
@@ -857,7 +861,7 @@ function SectionHeader({ title, testid }) {
 }
 
 
-function RankCard({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid, predictedNote = null }) {
+function RankCard({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid, predictedNote = null, footer = null }) {
   const ultimate = isUltimateGooner(tier, leaderboardRank);
   const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, tier))];
   const textColor = ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A");
@@ -907,6 +911,7 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
       {/* Progression bar to the next sub-division (or next tier from I).
           Hidden for the Peak Rank card — peak is a static snapshot of the
           high-water mark, not something the player is actively climbing. */}
+      {footer && <div className="px-5 py-3 bg-neutral-800 border-t-2 border-black">{footer}</div>}
       {!crown && !predictedNote && (
         <div className="px-5 py-3 bg-neutral-800 border-t-2 border-black" data-testid={`${testid}-progress-wrap`}>
           <RankProgressBar

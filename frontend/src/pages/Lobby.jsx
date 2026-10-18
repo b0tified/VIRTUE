@@ -17,6 +17,7 @@ import LobbyBackgroundFall from "@/components/LobbyBackgroundFall";
 import NewTitlePopup from "@/components/NewTitlePopup";
 import DailyRewardModal from "@/components/DailyRewardModal";
 import SeasonRecapModal from "@/components/SeasonRecapModal";
+import PlacementTracker from "@/components/PlacementTracker";
 import LobbyBackgroundCastle from "@/components/LobbyBackgroundCastle";
 import RankUpOverlay from "@/components/RankUpOverlay";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
@@ -1000,6 +1001,14 @@ export default function Lobby() {
               — the info is still visible in Profile, and cutting it
               here reclaims ~24px of vertical space that lets all mode
               buttons stay above the fold. */}
+          {user?.in_placements && (
+            <PlacementTracker
+              played={user?.placement_matches_played ?? 0}
+              total={user?.placement_matches_total ?? 5}
+              testid="lobby-placement-tracker"
+              className="mt-2 sm:mt-3 [@media(max-height:500px)]:mt-1"
+            />
+          )}
           {!user?.in_placements && (
           <div className="mt-2 sm:mt-3 [@media(max-height:500px)]:mt-1 [@media(max-height:500px)]:hidden max-w-md" data-testid="lobby-rank-progress-wrap">
             <RankProgressBar
