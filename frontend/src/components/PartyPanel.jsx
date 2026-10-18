@@ -150,7 +150,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
         {party.members.map((m, i) => {
           const isLeaderRow = m.id === party.leader_id;
           const tierIdx = Math.max(0, Math.min(8, m.rank_tier ?? 0));
-          const rankColor = RANK_COLORS[tierIdx];
+          const rankColor = (m.rank_tier ?? 0) < 0 ? "#9CA3AF" : RANK_COLORS[tierIdx];
           const isMe = m.id === myId;
           // Highlight the row whose rank is anchoring the ranked queue
           // so it's obvious which member is dragging the tier up.
@@ -178,7 +178,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                   >
                     {m.rank_name}{divisionRoman(m.rank_division) ? ` ${divisionRoman(m.rank_division)}` : ""}
                   </span>
-                  <span className="font-anton uppercase text-[9px] text-neutral-500">{m.rank_points} RP</span>
+                  {(m.rank_tier ?? 0) >= 0 && <span className="font-anton uppercase text-[9px] text-neutral-500">{m.rank_points} RP</span>}
                   {m.in_match ? (
                     <span className="font-anton uppercase text-[9px] text-[#E62429]">IN MATCH</span>
                   ) : isAnchor ? (

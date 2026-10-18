@@ -233,9 +233,11 @@ export default function PlayerCard({
   size = "md",
   className = "",
   testid = "player-card",
+  predicted = false,
 }) {
+  const unranked = !isBot && (rankTier < 0 || rankName === "UNRANKED");
   const t = Math.max(0, Math.min(8, rankTier));
-  const rankColor = isBot ? "#9B59B6" : RANK_COLORS[t];
+  const rankColor = isBot ? "#9B59B6" : unranked ? "#9CA3AF" : RANK_COLORS[t];
   const rankTextColor = isBot || t === 8 ? "#FFD700" : "#0A0A0A";
 
   const dims =
@@ -298,9 +300,9 @@ export default function PlayerCard({
                     style={{ background: rankColor, color: rankTextColor }}
                     data-testid={`${testid}-rank`}
                   >
-                    {isBot ? "BOT" : (ultimate
+                    {isBot ? "BOT" : unranked ? "UNRANKED" : (ultimate
                       ? "ULTIMATE GOONER"
-                      : (rankName + (divisionRoman(rankDivision) ? ` ${divisionRoman(rankDivision)}` : "")))}
+                      : ((predicted ? "PREDICTED · " : "") + rankName + (divisionRoman(rankDivision) ? ` ${divisionRoman(rankDivision)}` : "")))}
                   </span>
                   {/* Ultimate Gooner (top-50 Goonmaster) → flame + #N.
                       Other Goonmasters just show the plain rank pill. */}
@@ -314,7 +316,7 @@ export default function PlayerCard({
                 </>
               );
             })()}
-            {!isBot && (
+            {!isBot && !unranked && !predicted && (
               <span className={`font-anton tabular-nums ${dims.points} text-neutral-700`} data-testid={`${testid}-rp`}>
                 {rankPoints} RP
               </span>

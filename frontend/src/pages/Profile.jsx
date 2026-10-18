@@ -134,6 +134,8 @@ export default function Profile() {
   const peakRP = user?.peak_rank_points ?? currentRP;
   const peakTier = Math.max(0, Math.min(8, user?.peak_rank_tier ?? currentTier));
   const peakName = user?.peak_rank_name || currentName;
+  const inPlacements = !!user?.in_placements;
+  const placementNote = inPlacements ? `Placements ${user?.placement_matches_played ?? 0}/${user?.placement_matches_total ?? 5}` : null;
 
   const bannerIcon = user?.banner_icon ?? 0;
   const bannerColor = user?.banner_color ?? 0;
@@ -293,7 +295,8 @@ export default function Profile() {
         <SectionHeader title="Your Rank" testid="profile-section-rank" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <RankCard
-            label="Current Rank"
+            label={inPlacements ? "Predicted Rank" : "Current Rank"}
+            predictedNote={placementNote}
             tier={currentTier}
             name={currentName}
             division={user?.rank_division ?? 0}
@@ -308,6 +311,7 @@ export default function Profile() {
             division={user?.peak_rank_division ?? 0}
             points={peakRP}
             leaderboardRank={user?.leaderboard_rank ?? null}
+            predictedNote={inPlacements && peakRP <= currentRP ? placementNote : null}
             crown
             testid="profile-peak-rank"
           />
@@ -853,7 +857,7 @@ function SectionHeader({ title, testid }) {
 }
 
 
-function RankCard({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid }) {
+function RankCard({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid, predictedNote = null }) {
   const ultimate = isUltimateGooner(tier, leaderboardRank);
   const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, tier))];
   const textColor = ultimate ? "#0A0A0A" : (tier === 8 ? "#FFD700" : "#0A0A0A");
@@ -863,6 +867,9 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
       <div className="bg-black text-white px-5 py-2 flex items-center gap-2">
         {crown && <Crown size={16} strokeWidth={3} className="text-[#FFD700]" />}
         <span className="font-anton uppercase tracking-widest text-sm">{label}</span>
+        {predictedNote && (
+          <span className="ml-auto font-anton uppercase tracking-widest text-xs text-[#FFD700]" data-testid={`${testid}-predicted-note`}>{predictedNote}</span>
+        )}
       </div>
       <div className="flex items-stretch">
         <div className="font-display px-5 py-5 text-4xl uppercase flex-1 flex items-center gap-3" style={{ background: color, color: textColor }}>
@@ -890,15 +897,17 @@ function RankCard({ label, tier, name, division = 0, points, crown = false, lead
             )}
           </div>
         </div>
-        <div className="bg-neutral-900 text-white px-5 py-5 font-display text-4xl border-l-2 border-black tabular-nums">
-          {points}
-          <span className="font-anton uppercase tracking-widest text-xs ml-1 opacity-60">RP</span>
-        </div>
+        {!predictedNote && (
+          <div className="bg-neutral-900 text-white px-5 py-5 font-display text-4xl border-l-2 border-black tabular-nums">
+            {points}
+            <span className="font-anton uppercase tracking-widest text-xs ml-1 opacity-60">RP</span>
+          </div>
+        )}
       </div>
       {/* Progression bar to the next sub-division (or next tier from I).
           Hidden for the Peak Rank card — peak is a static snapshot of the
           high-water mark, not something the player is actively climbing. */}
-      {!crown && (
+      {!crown && !predictedNote && (
         <div className="px-5 py-3 bg-neutral-800 border-t-2 border-black" data-testid={`${testid}-progress-wrap`}>
           <RankProgressBar
             tier={tier}

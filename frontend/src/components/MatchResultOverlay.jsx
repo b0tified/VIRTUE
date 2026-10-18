@@ -388,7 +388,8 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
             </div>
             <div className="max-h-[34vh] tiny:max-h-[22vh] overflow-y-auto">
               {placements.map((p, i) => {
-                const c = RANK_COLORS[Math.max(0, Math.min(8, p.rank_tier ?? 0))];
+                const hideRank = p.unranked && p !== mine;
+                const c = hideRank ? "#9CA3AF" : RANK_COLORS[Math.max(0, Math.min(8, p.rank_tier ?? 0))];
                 const isMe = p === mine;
                 return (
                   <div
@@ -455,13 +456,18 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                             when rank_tier is missing. */}
                         {Number.isFinite(p.rank_tier) ? (
                           <AnimatedRankIcon
-                            tier={p.rank_tier}
+                            tier={hideRank ? -1 : p.rank_tier}
                             division={p.rank_division ?? 3}
                             size={12}
                             testid={`match-result-rank-icon-${i}`}
                           />
                         ) : (() => { const RI = rankIconFor(p.rank_tier ?? 0); return <RI size={11} strokeWidth={3} />; })()}
-                        {p.rank_name}{divisionRoman(p.rank_division) ? ` ${divisionRoman(p.rank_division)}` : ""}
+                        {hideRank ? "UNRANKED" : (
+                          <>
+                            {p.unranked ? "PREDICTED " : ""}
+                            {p.rank_name}{divisionRoman(p.rank_division) ? ` ${divisionRoman(p.rank_division)}` : ""}
+                          </>
+                        )}
                       </span>
                     </div>
                   </div>

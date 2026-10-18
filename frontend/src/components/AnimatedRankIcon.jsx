@@ -35,6 +35,19 @@ export default function AnimatedRankIcon({
   testid = "animated-rank-icon",
 }) {
   const paused = !!pausedProp;
+  if (Number(tier) < 0) {
+    return (
+      <span
+        className={`inline-flex items-center justify-center border-2 border-black bg-neutral-400 text-white font-display ${className}`}
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.55), borderRadius: "50%" }}
+        data-tier="-1"
+        data-testid={testid}
+        aria-label="Unranked"
+      >
+        ?
+      </span>
+    );
+  }
   const t = Math.max(0, Math.min(8, Number.isFinite(tier) ? tier : 0));
   const d = t === 8 ? 0 : Math.max(1, Math.min(3, Number.isFinite(division) ? division : 3));
   const Icon = rankIconFor(t);

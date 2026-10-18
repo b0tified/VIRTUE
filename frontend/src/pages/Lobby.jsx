@@ -803,6 +803,7 @@ export default function Lobby() {
               rankName={user.rank_name || "BRONZE"}
               rankDivision={user.rank_division ?? 0}
               rankPoints={user.rank_points ?? 0}
+              predicted={!!user.in_placements}
               peakRankTier={user.peak_rank_tier ?? user.rank_tier ?? 0}
               peakRankDivision={user.peak_rank_division ?? user.rank_division ?? 0}
               bannerIcon={user.banner_icon ?? null}
@@ -964,7 +965,7 @@ export default function Lobby() {
           </h1>
 
           <div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-2 sm:gap-3" data-testid="rank-badge-row">
-            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} leaderboardRank={user?.leaderboard_rank ?? null} />
+            <RankBadge tier={user?.rank_tier ?? 0} name={user?.rank_name || "BRONZE"} division={user?.rank_division ?? 0} points={user?.rank_points || 0} leaderboardRank={user?.in_placements ? null : (user?.leaderboard_rank ?? null)} predicted={!!user?.in_placements} />
             {user?.in_placements && (
               <div
                 className="border-pow shadow-pow-sm flex items-center bg-[#9B59B6] text-white [@media(max-height:500px)]:hidden"
@@ -999,6 +1000,7 @@ export default function Lobby() {
               — the info is still visible in Profile, and cutting it
               here reclaims ~24px of vertical space that lets all mode
               buttons stay above the fold. */}
+          {!user?.in_placements && (
           <div className="mt-2 sm:mt-3 [@media(max-height:500px)]:mt-1 [@media(max-height:500px)]:hidden max-w-md" data-testid="lobby-rank-progress-wrap">
             <RankProgressBar
               tier={user?.rank_tier ?? 0}
@@ -1007,6 +1009,7 @@ export default function Lobby() {
               testid="lobby-rank-progress"
             />
           </div>
+          )}
 
           <div className="mt-1 sm:mt-2 space-y-1.5 sm:space-y-3 [@media(max-height:500px)]:space-y-1 max-w-md">
             {party && (
@@ -1698,7 +1701,7 @@ const RANK_TIERS = [
 
 const RANK_COLORS = RANK_TIERS.map(t => t.color);
 
-function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
+function RankBadge({ tier, name, division, points, leaderboardRank = null, predicted = false }) {
   // Ultimate Gooner (top-50 Goonmasters globally) upgrade the pill to
   // gold + flame icon + "ULTIMATE GOONER" label. Sub-division is
   // hidden — the Ultimate tier is undivided.
@@ -1737,6 +1740,7 @@ function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
         )}
       </div>
       <div className="font-display px-4 py-2 text-2xl uppercase flex items-baseline gap-1.5" style={{ background: color, color: textColor }}>
+        {predicted && <span className="font-anton text-[10px] tracking-widest opacity-80 self-center" data-testid="rank-badge-predicted">PREDICTED</span>}
         <span data-testid="rank-badge-name">{ultimate ? "ULTIMATE GOONER" : name}</span>
         {!ultimate && roman && tier !== 8 && (
           <span className="font-anton text-sm tracking-widest opacity-90" data-testid="rank-badge-division">{roman}</span>
@@ -1747,9 +1751,11 @@ function RankBadge({ tier, name, division, points, leaderboardRank = null }) {
           </span>
         )}
       </div>
-      <div className="bg-white px-3 py-2 font-anton uppercase tracking-widest text-sm">
-        {points} <span className="opacity-60">RP</span>
-      </div>
+      {!predicted && (
+        <div className="bg-white px-3 py-2 font-anton uppercase tracking-widest text-sm">
+          {points} <span className="opacity-60">RP</span>
+        </div>
+      )}
     </div>
   );
 }

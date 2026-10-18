@@ -260,7 +260,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
     }
   };
 
-  const rankColor = RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
+  const rankColor = (u.rank_tier ?? 0) < 0 ? "#9CA3AF" : RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
   const rankText = (u.rank_tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A";
 
   return (
@@ -526,7 +526,7 @@ function SearchPanel({ onChange, onInspect }) {
           <div className="px-1 py-6 text-center font-anton uppercase text-neutral-400 text-xs" data-testid="friends-search-no-results">No players found</div>
         )}
         {results.map((u, i) => {
-          const rankColor = RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
+          const rankColor = (u.rank_tier ?? 0) < 0 ? "#9CA3AF" : RANK_COLORS[Math.max(0, Math.min(8, u.rank_tier ?? 0))];
           const isBot = !!u.is_bot;
           return (
             <div key={u.id} className="px-2 py-2 flex items-center gap-3" data-testid={`friends-search-row-${i}`}>

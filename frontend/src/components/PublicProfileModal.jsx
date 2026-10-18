@@ -323,9 +323,10 @@ function rankIdxFromName(name) {
 
 function RankPill({ label, tier, name, division = 0, points, crown = false, leaderboardRank = null, testid }) {
   const ultimate = isUltimateGooner(tier, leaderboardRank);
-  const color = ultimate ? "#FFD700" : RANK_COLORS[Math.max(0, Math.min(8, tier ?? 0))];
+  const unranked = (tier ?? 0) < 0;
+  const color = ultimate ? "#FFD700" : unranked ? "#9CA3AF" : RANK_COLORS[Math.max(0, Math.min(8, tier ?? 0))];
   const textColor = ultimate ? "#0A0A0A" : ((tier ?? 0) === 8 ? "#FFD700" : "#0A0A0A");
-  const roman = divisionRoman(division);
+  const roman = unranked ? "" : divisionRoman(division);
   return (
     <div className="flex items-center gap-2" data-testid={testid}>
       {crown && <Crown size={14} strokeWidth={3} className="text-[#FFD700]" />}
@@ -336,7 +337,7 @@ function RankPill({ label, tier, name, division = 0, points, crown = false, lead
       {ultimate && (
         <UltimateGoonerBadge rank={leaderboardRank} size={18} data-testid={`${testid}-badge`} />
       )}
-      <span className="font-anton tabular-nums text-xs">{points} RP</span>
+      {!unranked && <span className="font-anton tabular-nums text-xs">{points} RP</span>}
     </div>
   );
 }

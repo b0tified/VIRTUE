@@ -1927,7 +1927,7 @@ async def change_username(payload: UsernameChangeIn, user: dict = Depends(get_cu
 async def leaderboard():
     # Same gating as /leaderboard/ranked — exclude players who never
     # touched ranked so the board reflects real ranked activity.
-    query = {"placement_matches_played": {"$gte": 1}, "rank_points": {"$gt": 0}}
+    query = LEADERBOARD_RANKED_QUERY
     cursor = db.users.find(
         query,
         {"username": 1, "rank_points": 1, "stats": 1, "email": 1,
@@ -4185,6 +4185,19 @@ TIERED_BOT_NAMES: Dict[int, List[str]] = {
         "GoonAvatar_X"],
 }
 PLACEMENT_MATCHES = 5
+
+
+def placements_done(u: dict) -> bool:
+    """Rank is only public once all placement matches are played (seeded bots always ranked)."""
+    return bool(u.get("is_seeded")) or int(u.get("placement_matches_played", 0) or 0) >= PLACEMENT_MATCHES
+
+
+_UNRANKED_STATE: Dict[str, Any] = {"rank_tier": -1, "rank_name": "UNRANKED", "rank_points": 0, "rank_division": 0, "unranked": True}
+
+LEADERBOARD_RANKED_QUERY: Dict[str, Any] = {
+    "rank_points": {"$gt": 0},
+    "$or": [{"placement_matches_played": {"$gte": PLACEMENT_MATCHES}}, {"is_seeded": True}],
+}
 # Ranked early-leave penalty — quitting an in-progress ranked match
 # stamps `ranked_ban_until = now + N minutes` on the user, and the
 # /queue/ranked POST handler 403s until it elapses (with the remaining
@@ -4339,6 +4352,7 @@ class Player:
             self.avatar = int(user.get("avatar", 0) or 0)
             pts = int(user.get("rank_points", 0) or 0)
             t_idx, t_name = rank_for_points(pts)
+            self.unranked = not placements_done(user)
             self.rank_tier = t_idx
             self.rank_name = t_name
             self.rank_points = pts
@@ -4510,13 +4524,15 @@ class Player:
             "laser_firing": bool(self.laser_firing),
             "platform": self.platform if not disguised else getattr(self, "disguise_platform", "pc"),
             "avatar": int(getattr(self, "avatar", 0) or 0),
-            "rank_tier": int(getattr(self, "rank_tier", 0) or 0),
-            "rank_name": getattr(self, "rank_name", "BRONZE") if not disguised else getattr(self, "disguise_rank_name", "BRONZE"),
-            "rank_points": int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
-            "rank_division": rank_division_for_points(
-                int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
-                int(getattr(self, "rank_tier", 0) or 0),
-            ),
+            **(_UNRANKED_STATE if getattr(self, "unranked", False) else {
+                "rank_tier": int(getattr(self, "rank_tier", 0) or 0),
+                "rank_name": getattr(self, "rank_name", "BRONZE") if not disguised else getattr(self, "disguise_rank_name", "BRONZE"),
+                "rank_points": int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
+                "rank_division": rank_division_for_points(
+                    int(getattr(self, "rank_points", 0) or 0) if not disguised else int(getattr(self, "disguise_rank_points", 0) or 0),
+                    int(getattr(self, "rank_tier", 0) or 0),
+                ),
+            }),
             "level": int(getattr(self, "level", 1) or 1),
             "banner_icon": int(getattr(self, "banner_icon", 0) or 0),
             "banner_color": int(getattr(self, "banner_color", 0) or 0),
@@ -4530,17 +4546,19 @@ class Player:
         """Fields embedded in `kill` events for the killer's PlayerCard. Hides
         bot identity when disguised (no BOT badge after killing a player)."""
         disguised = bool(getattr(self, "disguised", False)) and self.is_bot
+        unranked = bool(getattr(self, "unranked", False))
         return {
+            "shooter_unranked": unranked,
             "shooter_id": self.id,
             "shooter_name": self.username,
             "shooter_avatar": int(getattr(self, "avatar", 0) or 0),
-            "shooter_rank_tier": int(getattr(self, "rank_tier", 0) or 0),
-            "shooter_rank_name": (
+            "shooter_rank_tier": -1 if unranked else int(getattr(self, "rank_tier", 0) or 0),
+            "shooter_rank_name": "UNRANKED" if unranked else (
                 getattr(self, "rank_name", "BRONZE")
                 if not disguised
                 else getattr(self, "disguise_rank_name", "BRONZE")
             ),
-            "shooter_rank_points": (
+            "shooter_rank_points": 0 if unranked else (
                 int(getattr(self, "rank_points", 0) or 0)
                 if not disguised
                 else int(getattr(self, "disguise_rank_points", 0) or 0)
@@ -7112,7 +7130,10 @@ class GameRoom:
                     "is_placement": is_placement,
                     "placement_match_number": placement_played_before + 1 if is_placement else None,
                     "placement_matches_total": PLACEMENT_MATCHES,
+                    "unranked": is_placement and placement_played_before + 1 < PLACEMENT_MATCHES,
                 })
+                if placement_played_before + 1 >= PLACEMENT_MATCHES:
+                    p.unranked = False
             # Append bot rows so the match-end overlay shows the full lobby
             # in ranked mode too. Bots don't have real accounts, but we
             # run them through the SAME performance-scaled RP delta
@@ -7166,6 +7187,7 @@ class GameRoom:
                     "is_placement": False,
                     "placement_match_number": None,
                     "placement_matches_total": PLACEMENT_MATCHES,
+                    "unranked": bool(getattr(p, "unranked", False)),
                     "placement": bot_placement,
                 })
             # Re-sort by kills so the bot rows interleave with real-player
@@ -7210,6 +7232,7 @@ class GameRoom:
                         "is_placement": False,
                         "placement_match_number": None,
                         "placement_matches_total": PLACEMENT_MATCHES,
+                        "unranked": bool(getattr(p, "unranked", False)),
                         "placement": placement,
                     })
                     continue
@@ -7261,6 +7284,7 @@ class GameRoom:
                     "is_placement": False,
                     "placement_match_number": None,
                     "placement_matches_total": PLACEMENT_MATCHES,
+                    "unranked": bool(getattr(p, "unranked", False)),
                     "placement": placement,
                 })
 
@@ -9503,6 +9527,8 @@ def _friend_card(u: dict) -> dict:
     pts = int(u.get("rank_points", 0) or 0)
     t_idx, t_name = rank_for_points(pts)
     t_div = rank_division_for_points(pts, t_idx)
+    if not placements_done(u):
+        pts, t_idx, t_name, t_div = 0, -1, "UNRANKED", 0
     loc = player_location(str(u["_id"]))
     last_seen = u.get("last_seen_at")
     lvl = compute_level(u.get("stats", {}))
@@ -9936,7 +9962,7 @@ async def users_search(q: str, user: dict = Depends(get_current_user), limit: in
     limit = max(1, min(20, int(limit)))
     cursor = db.users.find(
         {"username": {"$regex": f"^{q}", "$options": "i"}, "_id": {"$ne": user["_id"]}},
-        {"_id": 1, "username": 1, "avatar": 1, "rank_points": 1},
+        {"_id": 1, "username": 1, "avatar": 1, "rank_points": 1, "placement_matches_played": 1, "is_seeded": 1},
     ).limit(limit)
     rows: List[dict] = []
     async for u in cursor:
@@ -12894,6 +12920,10 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
         peak = pts
     t_idx, t_name = rank_for_points(pts)
     p_idx, p_name = rank_for_points(peak)
+    if not is_self and not placements_done(u):
+        if peak <= pts:
+            peak, p_idx, p_name = 0, -1, "UNRANKED"
+        pts, t_idx, t_name = 0, -1, "UNRANKED"
     user_id = str(u["_id"])
     # Ultimate Gooner: expose the cached top-50 leaderboard rank so the
     # public-profile modal can render the flame + #N badge on both the
@@ -13380,10 +13410,7 @@ async def leaderboard_ranked():
     # on `rank_points > 0` as a belt-and-suspenders filter for any legacy
     # accounts that may have been seeded with a non-zero RP without the
     # placement counter ever firing.
-    query = {
-        "placement_matches_played": {"$gte": 1},
-        "rank_points": {"$gt": 0},
-    }
+    query = LEADERBOARD_RANKED_QUERY
     cursor = db.users.find(
         query,
         {"_id": 1, "username": 1, "rank_points": 1, "stats": 1, "email": 1,
@@ -13510,7 +13537,7 @@ async def leaderboard_friends(user: dict = Depends(get_current_user)):
 
     cursor = db.users.find(
         {"_id": {"$in": obj_ids}},
-        {"username": 1, "rank_points": 1, "stats": 1, "email": 1, "is_seeded": 1},
+        {"username": 1, "rank_points": 1, "stats": 1, "email": 1, "is_seeded": 1, "placement_matches_played": 1},
     ).sort([("rank_points", -1), ("stats.kills", -1)])
     rows = []
     async for u in cursor:
@@ -13518,6 +13545,8 @@ async def leaderboard_friends(user: dict = Depends(get_current_user)):
         pts = int(u.get("rank_points", 0) or 0)
         idx, name = rank_for_points(pts)
         uid = str(u["_id"])
+        if uid != me_id and not placements_done(u):
+            pts, idx, name = 0, -1, "UNRANKED"
         username = u.get("username", u.get("email", "anon"))
         loc = player_location(uid)
         in_match = loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party")
