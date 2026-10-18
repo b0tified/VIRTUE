@@ -119,6 +119,11 @@ def compute_rp_delta(placement: int, tier_idx: int) -> int:
     return -30
 
 
+PLACEMENT_SECOND_BASE = 15
+PLACEMENT_SECOND_MIN = 10
+PLACEMENT_SECOND_MAX = 40
+
+
 def compute_placement_delta(kills: int, deaths: int, placement: int, cur_tier_idx: int) -> int:
     """RP delta for a placement match.
 
@@ -133,8 +138,11 @@ def compute_placement_delta(kills: int, deaths: int, placement: int, cur_tier_id
     capped at `PLACEMENT_HIGH_TIER_WIN_CAP` so a returning veteran
     can't rocket back to peak on placement wins alone.
     """
-    base = 100 if placement == 1 else -100
     perf_raw = int(kills) * 10 - int(deaths) * 8
+    if placement == 2:
+        # Near-miss 2nd place always earns a small gain.
+        return max(PLACEMENT_SECOND_MIN, min(PLACEMENT_SECOND_MAX, PLACEMENT_SECOND_BASE + perf_raw // 4))
+    base = 100 if placement == 1 else -100
     if perf_raw >= 0:
         perf = min(PLACEMENT_PERF_BONUS_CAP, perf_raw)
     else:

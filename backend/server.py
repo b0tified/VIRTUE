@@ -7010,7 +7010,7 @@ class GameRoom:
                         # dominant carry doesn't earn the same as a
                         # lucky 1st place, and a hard-throw doesn't
                         # slip through with the same soft −100 as a
-                        # near-miss 2nd place. See `compute_placement_delta`
+                        # loss (2nd place always gains +10..+40). See `compute_placement_delta`
                         # (top of file) for the full formula + caps.
                         delta = compute_placement_delta(
                             kills=p.kills,
