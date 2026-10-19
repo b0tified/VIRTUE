@@ -4854,6 +4854,10 @@ class GameRoom:
         if self.game_mode != "tdm":
             player.team = None
             return
+        mate_team = self._party_mate_team(player)
+        if mate_team:
+            player.team = mate_team
+            return
         # Count current live (non-spectator) members per team.
         red  = sum(1 for p in self.players.values() if p.team == "red"  and not getattr(p, "is_spectator", False))
         blue = sum(1 for p in self.players.values() if p.team == "blue" and not getattr(p, "is_spectator", False))
@@ -4871,10 +4875,31 @@ class GameRoom:
         feels fresh without massive shuffling."""
         if self.game_mode != "tdm":
             return
-        order = list(self.players.values())
+        # Party members always stay together; groups go to the smaller side.
+        groups: Dict[str, list] = {}
+        for p in self.players.values():
+            key = (not p.is_bot and PARTY_MEMBER_INDEX.get(str(p.user_id or ""))) or p.id
+            groups.setdefault(key, []).append(p)
+        order = list(groups.values())
         random.shuffle(order)
-        for i, p in enumerate(order):
-            p.team = "red" if i % 2 == 0 else "blue"
+        order.sort(key=len, reverse=True)
+        counts = {"red": 0, "blue": 0}
+        for g in order:
+            side = "red" if counts["red"] <= counts["blue"] else "blue"
+            for p in g:
+                p.team = side
+            counts[side] += len(g)
+
+    def _party_mate_team(self, player: "Player") -> Optional[str]:
+        if player.is_bot or not player.user_id:
+            return None
+        pid = PARTY_MEMBER_INDEX.get(str(player.user_id))
+        if not pid:
+            return None
+        for p in self.players.values():
+            if p is not player and not p.is_bot and p.team and PARTY_MEMBER_INDEX.get(str(p.user_id or "")) == pid:
+                return p.team
+        return None
 
     def _maintain_population(self) -> None:
         """Keep the room at its target lobby size by swapping bots in/out
