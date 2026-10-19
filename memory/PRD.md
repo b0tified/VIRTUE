@@ -2961,3 +2961,7 @@ Two quality-of-life changes shipped together.
 - 2026-06: Shared matchmaking across replicas — _lib/cluster.py: Mongo lease leader election (db.meta cluster_leader, TTL 10s, renew 3s); ClusterProxyMiddleware on followers forwards all /api HTTP + WS (/api/ws/game) to leader pod IP:8001 (x-virtue-proxied header prevents loops); on connect failure serves locally for 60s. Verified locally with a 2nd uvicorn on :8002 (HTTP + WS ping/pong + leader saw player). Prod pod-to-pod reachability unverified until deploy; server_health.cluster shows role/proxy counters.
 - 2026-06: Party fix — TDM put party members on opposite teams. GameRoom._assign_team now joins a party mate's team (_party_mate_team via PARTY_MEMBER_INDEX); _rebalance_teams keeps party groups together (largest groups first to smaller side). Verified with /app/memory/party_probe.py (leader+follower casual queue → same match_id, same room, same team). Live split across replicas addressed by cluster proxy.
 - 2026-06: Chat — placeholder "Enter", input bar always visible (desktop bottom-left above HP; press Enter/T to type). Mobile chat enabled: top-left under Menu/Leave, tap bar to type, last 3 messages.
+
+## 2026-06 Respawn shield tweak
+- Real-player respawn immunity now 4s (RESPAWN_SHIELD_S), ends early on movement or any attack. Bots keep 3s. First-load 10s shield unchanged.
+- Test: tests/test_spawn_immunity_forfeit.py::test_real_player_respawn_shield_is_4s_and_breaks_on_move

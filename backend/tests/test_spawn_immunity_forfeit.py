@@ -84,7 +84,8 @@ async def test_invuln_ends_on_movement_in_bigffa():
     room.is_bigffa = True
     p = _make_real_player("mover_bf", SpyWS())
     await _add_and_start(room, p)
-    assert p.invuln_until > time.time()
+    p.spawn_shield = False
+    p.invuln_until = time.time() + srv.RESPAWN_SHIELD_S
 
     # Simulate a real movement input (delta > 0.02 and <= max_delta).
     # ~0.4 units per 50ms tick is a realistic sprint delta (8u/s).
@@ -231,3 +232,19 @@ async def test_invuln_survives_respawn_stale_input():
         "stale post-respawn input must NOT burn the 3s spawn shield "
         f"(was {original_until}, became {p.invuln_until})"
     )
+
+
+@pytest.mark.asyncio
+async def test_real_player_respawn_shield_is_4s_and_breaks_on_move():
+    room = srv.GameRoom(is_ranked=False)
+    p = _make_real_player("respawn4", SpyWS())
+    await _add_and_start(room, p)
+    p.spawn_shield = False
+    p.alive = False
+    p.respawn_at = time.time() - 1
+    await room.tick()
+    assert p.alive
+    remaining = p.invuln_until - time.time()
+    assert 3.7 < remaining <= 4.05, f"expected ~4s respawn shield, got {remaining:.2f}"
+    await room.handle_message(p, {"type": "input", "x": p.x + 0.3, "z": p.z, "yaw": 0.0, "pitch": 0.0})
+    assert p.invuln_until == 0.0

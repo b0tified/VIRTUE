@@ -3951,6 +3951,7 @@ BOT_SHOT_COOLDOWN_MS = 620
 BOT_AIM_NOISE = 0.10
 TICK_RATE = 20
 FIRST_LOAD_SHIELD_S = 10.0
+RESPAWN_SHIELD_S = 4.0
 IDLE_ROOM_SLEEP_S = 0.5
 NUM_BOTS = 3
 # FFA quick-match / ranked / practice rooms cap the active lobby at this
@@ -6831,7 +6832,7 @@ class GameRoom:
                 p.y = PLAYER_HEIGHT
                 p.hp = p.max_hp
                 p.alive = True
-                p.invuln_until = now + 3.0
+                p.invuln_until = now + (3.0 if p.is_bot else RESPAWN_SHIELD_S)
                 p.spawn_shield = False
                 # Refill ammo on respawn (cancel any pending reloads)
                 for w in p.ammo.keys():
