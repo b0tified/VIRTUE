@@ -31,6 +31,7 @@ from pydantic import BaseModel, EmailStr, Field
 # maintainability refactor. Every symbol is re-exported below so
 # existing callers (`server.RANK_TIERS`, `server.hash_password`, ...)
 # and the entire pytest suite keep working unchanged.
+from _lib import cluster
 from _lib.ranks import (  # noqa: F401 — re-exported public API
     RANK_TIERS,
     MASTERS_TIER_IDX,
@@ -1331,6 +1332,7 @@ async def on_startup():
     await maybe_reset_season()
 
     asyncio.create_task(_server_health_monitor())
+    asyncio.create_task(cluster.leader_loop(db))
     asyncio.create_task(game_room.run())
     asyncio.create_task(tdm_room.run())
     asyncio.create_task(ranked_room.run())
@@ -10965,7 +10967,7 @@ SERVER_NODE_ID = hashlib.sha1(socket.gethostname().encode()).hexdigest()[:6].upp
 
 @api.get("/server_info")
 async def server_info():
-    return {"region": SERVER_REGION_LABEL, "node": SERVER_NODE_ID}
+    return {"region": SERVER_REGION_LABEL, "node": SERVER_NODE_ID, "leader": cluster.STATE["is_leader"]}
 
 
 @api.get("/admin/server_health")
@@ -11010,6 +11012,7 @@ async def admin_server_health(user: dict = Depends(get_current_user)):
         "ping_max_ms": max(pings) if pings else None,
         "tick_rate": TICK_RATE,
         "node": SERVER_NODE_ID,
+        "cluster": {k: cluster.STATE[k] for k in ("is_leader", "leader_node", "proxied_http", "proxied_ws")},
         "rooms": rooms,
     }
 
@@ -13806,3 +13809,4 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(cluster.ClusterProxyMiddleware)
