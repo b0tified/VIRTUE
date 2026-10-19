@@ -2965,3 +2965,4 @@ Two quality-of-life changes shipped together.
 ## 2026-06 Respawn shield tweak
 - Real-player respawn immunity now 4s (RESPAWN_SHIELD_S), ends early on movement or any attack. Bots keep 3s. First-load 10s shield unchanged.
 - Test: tests/test_spawn_immunity_forfeit.py::test_real_player_respawn_shield_is_4s_and_breaks_on_move
+- 2026-06: Mobile chat box narrowed to min(210px,28vw); messages 10px, max 2 lines, so chat stays in the left corner.

@@ -39,7 +39,7 @@ export default function Chat({ messages, onSend, mobile = false }) {
   };
 
   const wrap = mobile
-    ? "absolute left-3 top-[168px] z-40 w-[min(300px,45vw)] pointer-events-none"
+    ? "absolute left-3 top-[168px] z-40 w-[min(210px,28vw)] pointer-events-none"
     : "absolute left-4 bottom-[124px] z-30 w-[min(420px,42vw)] pointer-events-none";
   return (
     <div className={wrap} data-testid="chat-panel">
@@ -47,7 +47,7 @@ export default function Chat({ messages, onSend, mobile = false }) {
         {messages.slice(mobile ? -3 : -6).map((m) => (
           <div
             key={m.id}
-            className={`bg-black/60 backdrop-blur-sm border-l-2 border-[#E62429] px-2 py-1 font-body text-white ${mobile ? "text-[11px] py-0.5" : "text-sm"}`}
+            className={`bg-black/60 backdrop-blur-sm border-l-2 border-[#E62429] px-2 py-1 font-body text-white ${mobile ? "text-[10px] py-0.5 leading-tight break-words line-clamp-2" : "text-sm"}`}
             data-testid="chat-message"
           >
             <span className={`font-anton uppercase tracking-widest text-xs mr-2 ${m.is_bot ? "text-[#9B59B6]" : "text-[#FFD700]"}`}>
