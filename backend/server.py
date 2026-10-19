@@ -3948,6 +3948,7 @@ BOT_SHOT_COOLDOWN_MS = 620
 BOT_AIM_NOISE = 0.10
 TICK_RATE = 20
 FIRST_LOAD_SHIELD_S = 10.0
+IDLE_ROOM_SLEEP_S = 0.5
 NUM_BOTS = 3
 # FFA quick-match / ranked / practice rooms cap the active lobby at this
 # many combat players (incl. bots). Caller adds/removes bots as humans
@@ -7478,34 +7479,7 @@ class GameRoom:
                     except Exception:
                         pass
                 if docs:
-                    await db.match_history.insert_many(docs)
-                    # Retention cap: keep only the last 20 matches per
-                    # user (per-user request). For each user we just
-                    # inserted a row for, find their 21st-newest and
-                    # delete anything older. Cheap because the users we
-                    # touched here is small (real players in this match).
-                    HISTORY_KEEP = 20
-                    for pl in real_players:
-                        try:
-                            skip_cursor = db.match_history.find(
-                                {"user_id": pl.user_id},
-                                {"_id": 1, "ended_at": 1},
-                            ).sort("ended_at", -1).skip(HISTORY_KEEP).limit(1)
-                            cutoff = await skip_cursor.to_list(length=1)
-                            if cutoff:
-                                await db.match_history.delete_many({
-                                    "user_id": pl.user_id,
-                                    "ended_at": {"$lt": cutoff[0]["ended_at"]},
-                                })
-                        except Exception as _e:
-                            logger.warning("history retention prune failed for %s: %s", pl.user_id, _e)
-                # Issue mech-skin grants outside the doc loop so failures
-                # don't roll back the match record.
-                for uid in first_match_grants:
-                    try:
-                        await _grant_first_match_skin(uid)
-                    except Exception:
-                        pass
+                    asyncio.create_task(_persist_match_history(docs, [pl.user_id for pl in real_players], list(first_match_grants)))
         except Exception as e:
             logger.warning("match_history insert failed: %s", e)
 
@@ -7615,7 +7589,15 @@ class GameRoom:
 
     async def run(self):
         interval = 1.0 / TICK_RATE
+        next_at = time.perf_counter()
         while True:
+            # Idle rooms (no humans at all) don't simulate bots — saves the
+            # shared event loop for rooms people are actually playing in.
+            if not any(not p.is_bot for p in self.players.values()):
+                self.match_start = time.time()
+                await asyncio.sleep(IDLE_ROOM_SLEEP_S)
+                next_at = time.perf_counter()
+                continue
             try:
                 if not self.in_intermission:
                     real_count = sum(1 for p in self.players.values() if not p.is_bot)
@@ -7655,7 +7637,13 @@ class GameRoom:
                 self.tick_ms_max = max(_ms, getattr(self, "tick_ms_max", 0.0) * 0.995)
             except Exception as e:
                 logger.exception("tick error: %s", e)
-            await asyncio.sleep(interval)
+            # Drift-compensated pacing: aim for fixed deadlines instead of
+            # tick-time + interval, and never spiral if we fall behind.
+            next_at += interval
+            now_pc = time.perf_counter()
+            if next_at < now_pc - interval:
+                next_at = now_pc
+            await asyncio.sleep(max(0.0, next_at - now_pc))
 
 
 game_room = GameRoom(is_ranked=False, match_duration=60.0)  # 1 minute Quick Match (FFA)
@@ -12822,6 +12810,28 @@ def _profile_presence(u: dict, user_id: str, tier_idx: int) -> dict:
             "in_match": loc is not None and loc.get("kind") in ("casual", "bigffa", "ranked", "party"),
             "in_queue": False,
             "match_kind": loc.get("kind") if loc else None}
+
+
+async def _persist_match_history(docs: list, user_ids: list, grants: list) -> None:
+    """Off-tick: insert match rows, prune to last 20 per user, grant first-match skins."""
+    try:
+        await db.match_history.insert_many(docs)
+    except Exception as e:
+        logger.warning("match_history insert failed: %s", e)
+        return
+    for uid in user_ids:
+        try:
+            cutoff = await db.match_history.find({"user_id": uid}, {"_id": 1, "ended_at": 1}) \
+                .sort("ended_at", -1).skip(20).limit(1).to_list(length=1)
+            if cutoff:
+                await db.match_history.delete_many({"user_id": uid, "ended_at": {"$lt": cutoff[0]["ended_at"]}})
+        except Exception as _e:
+            logger.warning("history retention prune failed for %s: %s", uid, _e)
+    for uid in grants:
+        try:
+            await _grant_first_match_skin(uid)
+        except Exception:
+            pass
 
 
 async def _log_bot_matches(match, placements, roster, mode, total, now, match_id) -> None:
