@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-/* Bottom-left in-match chat for desktop. Press Enter to type, Enter again to
-   send, Esc to dismiss. Mobile already has limited screen real estate so we
-   hide the input on touch devices (touch-controls-on setting). */
-export default function Chat({ messages, onSend, hidden }) {
+/* In-match chat. Desktop: bottom-left, press Enter to type, Enter to send,
+   Esc to dismiss. Mobile: top-left under the Menu/Leave buttons, tap the bar to type. */
+export default function Chat({ messages, onSend, mobile = false }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef(null);
@@ -18,42 +17,37 @@ export default function Chat({ messages, onSend, hidden }) {
   }, [open]);
 
   useEffect(() => {
+    if (mobile) return undefined;
     const onKey = (e) => {
-      if (hidden) return;
-      // Ignore if user is in a form input elsewhere
       const tag = (e.target?.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea") return;
-      if (e.code === "Enter" || e.code === "NumpadEnter") {
-        if (!open) {
-          e.preventDefault();
-          setOpen(true);
-        }
-      } else if (e.code === "KeyT" && !open) {
+      if ((e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyT") && !open) {
         e.preventDefault();
         setOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, hidden]);
+  }, [open, mobile]);
 
+  const close = () => { setOpen(false); setDraft(""); inputRef.current?.blur(); };
   const submit = (e) => {
     e?.preventDefault?.();
     const text = draft.trim();
     if (text) onSend?.(text);
-    setDraft("");
-    setOpen(false);
+    close();
   };
 
-  if (hidden) return null;
-
+  const wrap = mobile
+    ? "absolute left-3 top-[168px] z-40 w-[min(300px,45vw)] pointer-events-none"
+    : "absolute left-4 bottom-[124px] z-30 w-[min(420px,42vw)] pointer-events-none";
   return (
-    <div className="absolute left-4 bottom-6 z-30 w-[min(420px,42vw)] pointer-events-none" data-testid="chat-panel">
-      <div className="space-y-1 mb-1">
-        {messages.slice(-6).map((m) => (
+    <div className={wrap} data-testid="chat-panel">
+      <div className={`space-y-1 mb-1`}>
+        {messages.slice(mobile ? -3 : -6).map((m) => (
           <div
             key={m.id}
-            className="bg-black/60 backdrop-blur-sm border-l-2 border-[#E62429] px-2 py-1 text-sm font-body text-white"
+            className={`bg-black/60 backdrop-blur-sm border-l-2 border-[#E62429] px-2 py-1 font-body text-white ${mobile ? "text-[11px] py-0.5" : "text-sm"}`}
             data-testid="chat-message"
           >
             <span className={`font-anton uppercase tracking-widest text-xs mr-2 ${m.is_bot ? "text-[#9B59B6]" : "text-[#FFD700]"}`}>
@@ -63,26 +57,33 @@ export default function Chat({ messages, onSend, hidden }) {
           </div>
         ))}
       </div>
-      {open ? (
-        <form onSubmit={submit} className="pointer-events-auto flex items-center gap-2 bg-black/80 backdrop-blur-sm border-2 border-[#E62429] px-2 py-1" data-testid="chat-input-form">
-          <span className="font-anton uppercase tracking-widest text-xs text-[#E62429]">SAY</span>
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") { setOpen(false); setDraft(""); }
-            }}
-            maxLength={140}
-            placeholder="Trash talk responsibly…"
-            className="flex-1 bg-transparent outline-none text-white text-sm"
-            data-testid="chat-input"
-          />
+      <form
+        onSubmit={submit}
+        onPointerDown={() => { if (mobile && !open) setOpen(true); }}
+        className={`flex items-center gap-2 backdrop-blur-sm border-2 px-2 py-1 transition-colors ${open ? "bg-black/80 border-[#E62429] pointer-events-auto" : "bg-black/40 border-white/20"} ${mobile ? "pointer-events-auto" : ""}`}
+        data-testid="chat-input-form"
+      >
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => { if (mobile && !draft) setOpen(false); }}
+          onKeyDown={(e) => { if (e.key === "Escape") close(); }}
+          readOnly={!open && !mobile}
+          tabIndex={open || mobile ? 0 : -1}
+          maxLength={140}
+          placeholder="Enter"
+          enterKeyHint="send"
+          className={`flex-1 min-w-0 bg-transparent outline-none text-white placeholder:text-white/50 ${mobile ? "text-xs" : "text-sm"}`}
+          data-testid="chat-input"
+        />
+        {open && (
           <button type="submit" className="text-xs font-anton uppercase tracking-widest text-[#FFD700]" data-testid="chat-send">
             SEND
           </button>
-        </form>
-      ) : null}
+        )}
+      </form>
     </div>
   );
 }

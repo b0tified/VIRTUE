@@ -1155,7 +1155,7 @@ export default function Game() {
       <Chat
         messages={chatMessages}
         onSend={(text) => sockRef.current?.send({ type: "chat", text })}
-        hidden={"ontouchstart" in window || navigator.maxTouchPoints > 0}
+        mobile={isTouchDevice}
       />
     </div>
   );
