@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, User as UserIcon, Globe, Gift, Check, Gamepad2, Smartphone } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, RotateCcw, Settings as SettingsIcon, Volume2, VolumeX, Music, LogOut, Mouse, Monitor, Crosshair, User as UserIcon, Gift, Check, Gamepad2, Smartphone } from "lucide-react";
 import settingsStore from "@/game/settings";
 import audioBus from "@/game/audio";
 import { useAuth } from "@/context/AuthContext";
@@ -8,19 +8,7 @@ import AccountSettingsCard from "@/components/AccountSettingsCard";
 import { detectIsMobile } from "@/game/useIsMobile";
 import api from "@/api";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
-
-// Matchmaking regions exposed in Account → Server Region. `basePing` seeds a
-// fake-but-stable latency so the list looks alive. Once the gameserver runs
-// in multiple regions the chosen id will be honored by the matchmaker.
-const REGION_OPTIONS = [
-  { id: "auto",    label: "Auto (Lowest Ping)", basePing: 28 },
-  { id: "na-east", label: "North America — East", basePing: 35 },
-  { id: "na-west", label: "North America — West", basePing: 65 },
-  { id: "sa",      label: "South America",        basePing: 110 },
-  { id: "eu",      label: "Europe",               basePing: 95 },
-  { id: "asia",    label: "Asia / Pacific",       basePing: 145 },
-  { id: "oce",     label: "Oceania",              basePing: 175 },
-];
+import ServerRegionStatus from "@/components/ServerRegionStatus";
 
 const GRAPHICS_OPTIONS = [
   { value: "low",    label: "Low",    note: "Best FPS. Lower render resolution." },
@@ -52,16 +40,6 @@ export default function SettingsModal({ open, onClose }) {
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [redeemMsg, setRedeemMsg] = useState(null); // { kind: "ok"|"err", text }
-
-  // Per-region pings — each region's basePing ± a small jitter so the list
-  // doesn't look statically hard-coded. Recomputed once per modal open.
-  const regionPings = useMemo(() => {
-    const out = {};
-    for (const r of REGION_OPTIONS) {
-      out[r.id] = Math.max(8, r.basePing + Math.floor(Math.random() * 21) - 10);
-    }
-    return out;
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1132,46 +1110,7 @@ export default function SettingsModal({ open, onClose }) {
             </p>
           </section>
 
-          {/* Server / region selector. The "ping" values are seeded per-region
-              so the list looks alive; in this deployment all regions route to
-              the same gameserver. Once additional regions come online the
-              chosen value is honored by the matchmaker. */}
-          <section data-testid="settings-server-region">
-            <div className="font-anton uppercase tracking-widest text-sm mb-2 flex items-center gap-2">
-              <Globe size={14} strokeWidth={3} /> Server Region
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {REGION_OPTIONS.map(({ id, label, basePing }) => {
-                const active = (s.serverRegion || "auto") === id;
-                const ping = regionPings[id] ?? basePing;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => patch({ serverRegion: id })}
-                    className={`flex items-center justify-between rounded border px-3 py-2 text-sm transition-colors ${
-                      active
-                        ? "border-[#FFD700] bg-[#FFD700]/15 text-[#FFD700]"
-                        : "border-neutral-800 hover:border-neutral-700"
-                    }`}
-                    data-testid={`settings-server-region-${id}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className={`inline-block h-2 w-2 rounded-full ${ping < 60 ? "bg-emerald-400" : ping < 110 ? "bg-yellow-400" : "bg-red-400"}`} />
-                      {label}
-                    </span>
-                    <span className="font-anton tabular-nums text-xs">
-                      {id === "auto" ? "auto" : `${ping}ms`}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-2">
-              Choose a region for matchmaking. Auto picks the lowest-latency
-              server. Currently routes to the active deployment region.
-            </p>
-          </section>
+          <ServerRegionStatus open={open} />
 
           <p className="text-[11px] text-neutral-500 pt-1">
             Settings save to this device only.

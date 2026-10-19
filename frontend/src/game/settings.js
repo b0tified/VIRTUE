@@ -59,7 +59,7 @@ const DEFAULTS = Object.freeze({
   saturation: 1.0,          // 0.0 - 1.6 — multiplicative CSS filter
   showFps: false,           // small FPS counter (top-left)
   showPing: false,          // small ping counter next to FPS
-  // Network — server region. Currently cosmetic (single-region deployment),
+  // Network — legacy server region (single-region deployment; unused by UI),
   // but persists the user's choice so we can route matchmaking to the
   // chosen region once additional gameservers come online.
   serverRegion: "auto",     // "auto" | "na-east" | "na-west" | "eu" | "sa" | "asia" | "oce"

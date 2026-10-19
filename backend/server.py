@@ -11,6 +11,7 @@ import logging
 import math
 import random
 import hashlib
+import socket
 import re
 import time
 import uuid
@@ -7671,6 +7672,7 @@ bigffa_room.bots_target_size = BIGFFA_LOBBY_SIZE
 
 # ---- Server health (Moderation → Server Health panel) ----
 SERVER_STARTED_AT = time.time()
+SERVER_REGION_LABEL = "US West (Oregon)"
 SERVER_HEALTH: Dict[str, Any] = {"loop_lag_ms": 0.0, "loop_lag_max_ms": 0.0, "cpu_pct": 0.0, "rss_mb": 0.0}
 
 
@@ -10958,6 +10960,14 @@ async def daily_reward_claim(user: dict = Depends(get_current_user)):
     return {"claimed": amount, "day": day, "coins": int((fresh or {}).get("coins", 0) or 0)}
 
 
+SERVER_NODE_ID = hashlib.sha1(socket.gethostname().encode()).hexdigest()[:6].upper()
+
+
+@api.get("/server_info")
+async def server_info():
+    return {"region": SERVER_REGION_LABEL, "node": SERVER_NODE_ID}
+
+
 @api.get("/admin/server_health")
 async def admin_server_health(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
@@ -10999,6 +11009,7 @@ async def admin_server_health(user: dict = Depends(get_current_user)):
         "ping_avg_ms": round(sum(pings) / len(pings)) if pings else None,
         "ping_max_ms": max(pings) if pings else None,
         "tick_rate": TICK_RATE,
+        "node": SERVER_NODE_ID,
         "rooms": rooms,
     }
 
