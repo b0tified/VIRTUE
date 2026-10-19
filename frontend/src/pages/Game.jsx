@@ -638,7 +638,7 @@ export default function Game() {
 
     // Ping loop @ 1Hz
     const pingId = setInterval(() => {
-      sock.send({ type: "ping", ts: Date.now() });
+      sock.send({ type: "ping", ts: Date.now(), rtt: pingRef.current?.value | 0 });
     }, 1000);
 
     // FPS/ping display refresh @ 4Hz. Also samples the engine's

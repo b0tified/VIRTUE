@@ -1329,6 +1329,7 @@ async def on_startup():
     await get_or_init_season()
     await maybe_reset_season()
 
+    asyncio.create_task(_server_health_monitor())
     asyncio.create_task(game_room.run())
     asyncio.create_task(tdm_room.run())
     asyncio.create_task(ranked_room.run())
@@ -5947,6 +5948,12 @@ class GameRoom:
         mtype = msg.get("type")
         if mtype == "ping":
             await self._send(player, {"type": "pong", "ts": msg.get("ts", 0)})
+            try:
+                rtt = int(msg.get("rtt", 0) or 0)
+                if 0 < rtt < 5000:
+                    player.last_ping_ms = rtt
+            except (TypeError, ValueError):
+                pass
             return
         if mtype == "loaded":
             # Client finished its loading screen and is ready for the
@@ -7641,7 +7648,11 @@ class GameRoom:
                         if dirty and self.game_mode == "tdm":
                             self.team_scores = {"red": 0, "blue": 0}
                             self._tdm_early_end_armed = False
+                _t0 = time.perf_counter()
                 await self.tick()
+                _ms = (time.perf_counter() - _t0) * 1000.0
+                self.tick_ms_avg = getattr(self, "tick_ms_avg", _ms) * 0.9 + _ms * 0.1
+                self.tick_ms_max = max(_ms, getattr(self, "tick_ms_max", 0.0) * 0.995)
             except Exception as e:
                 logger.exception("tick error: %s", e)
             await asyncio.sleep(interval)
@@ -7669,6 +7680,57 @@ BIGFFA_LOBBY_SIZE = 12
 bigffa_room = GameRoom(is_ranked=False, match_duration=120.0)
 bigffa_room.is_bigffa = True
 bigffa_room.bots_target_size = BIGFFA_LOBBY_SIZE
+
+# ---- Server health (Moderation → Server Health panel) ----
+SERVER_STARTED_AT = time.time()
+SERVER_HEALTH: Dict[str, Any] = {"loop_lag_ms": 0.0, "loop_lag_max_ms": 0.0, "cpu_pct": 0.0, "rss_mb": 0.0}
+
+
+def _proc_cpu_seconds() -> float:
+    with open("/proc/self/stat") as f:
+        parts = f.read().rsplit(")", 1)[1].split()
+    return (int(parts[11]) + int(parts[12])) / os.sysconf("SC_CLK_TCK")
+
+
+def _proc_rss_mb() -> float:
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) / 1024.0
+    return 0.0
+
+
+async def _server_health_monitor() -> None:
+    """Samples event-loop lag every 0.5s and process CPU/RSS every ~2s."""
+    interval = 0.5
+    lag_window: List[float] = []
+    last_cpu, last_wall, n = _proc_cpu_seconds(), time.time(), 0
+    while True:
+        t0 = time.perf_counter()
+        await asyncio.sleep(interval)
+        lag = max(0.0, (time.perf_counter() - t0 - interval) * 1000.0)
+        lag_window = (lag_window + [lag])[-120:]
+        SERVER_HEALTH["loop_lag_ms"] = round(sum(lag_window[-6:]) / len(lag_window[-6:]), 1)
+        SERVER_HEALTH["loop_lag_max_ms"] = round(max(lag_window), 1)
+        n += 1
+        if n % 4 == 0:
+            try:
+                cpu, wall = _proc_cpu_seconds(), time.time()
+                SERVER_HEALTH["cpu_pct"] = round(100.0 * (cpu - last_cpu) / max(1e-6, wall - last_wall), 1)
+                SERVER_HEALTH["rss_mb"] = round(_proc_rss_mb(), 1)
+                last_cpu, last_wall = cpu, wall
+            except Exception:
+                pass
+
+
+def _all_rooms() -> List[tuple]:
+    rooms = [("Quick Match", game_room), ("Team Deathmatch", tdm_room), ("Ranked", ranked_room),
+             ("Practice", practice_room), ("Practice TDM", practice_tdm_room), ("Big FFA", bigffa_room)]
+    for label, d in (("Offline", OFFLINE_ROOMS), ("Offline TDM", OFFLINE_TDM_ROOMS),
+                     ("Ranked vs Bots", RANKED_BOT_ROOMS), ("Party", PARTY_ROOMS)):
+        rooms += [(label, r) for r in list(d.values())]
+    return rooms
+
 
 # Offline-vs-AI: one private room per user, spawned on demand.
 OFFLINE_ROOMS: Dict[str, "GameRoom"] = {}
@@ -10906,6 +10968,51 @@ async def daily_reward_claim(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Already claimed today.")
     fresh = await db.users.find_one({"_id": user["_id"]}, {"coins": 1})
     return {"claimed": amount, "day": day, "coins": int((fresh or {}).get("coins", 0) or 0)}
+
+
+@api.get("/admin/server_health")
+async def admin_server_health(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    t0 = time.perf_counter()
+    try:
+        await db.command("ping")
+        db_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+    except Exception:
+        db_ms = None
+    rooms, pings = [], []
+    tot_real = tot_bots = 0
+    for label, r in _all_rooms():
+        real = [p for p in r.players.values() if not p.is_bot]
+        bots = sum(1 for p in r.players.values() if p.is_bot)
+        tot_real += len(real)
+        tot_bots += bots
+        pings += [int(p.last_ping_ms) for p in real if int(getattr(p, "last_ping_ms", 0) or 0) > 0]
+        rooms.append({
+            "label": label, "mode": r.game_mode, "ranked": bool(r.is_ranked),
+            "real": len(real), "bots": bots,
+            "tick_ms": round(float(getattr(r, "tick_ms_avg", 0.0)), 2),
+            "tick_ms_max": round(float(getattr(r, "tick_ms_max", 0.0)), 2),
+            "state": "intermission" if r.in_intermission else ("live" if r.match_started else "waiting"),
+        })
+    rooms.sort(key=lambda x: (-x["real"], -x["tick_ms"]))
+    tick_budget = round(sum(r["tick_ms"] for r in rooms) * TICK_RATE / 10.0, 1)
+    return {
+        **SERVER_HEALTH,
+        "tick_budget_pct": tick_budget,
+        "db_ping_ms": db_ms,
+        "load_avg": [round(x, 2) for x in os.getloadavg()],
+        "cpu_count": os.cpu_count(),
+        "uptime_s": int(time.time() - SERVER_STARTED_AT),
+        "rooms_total": len(rooms),
+        "rooms_active": sum(1 for r in rooms if r["real"] > 0),
+        "players_real": tot_real,
+        "bots": tot_bots,
+        "ping_avg_ms": round(sum(pings) / len(pings)) if pings else None,
+        "ping_max_ms": max(pings) if pings else None,
+        "tick_rate": TICK_RATE,
+        "rooms": rooms,
+    }
 
 
 @api.get("/admin/bot_loadout")
