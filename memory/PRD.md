@@ -2966,3 +2966,4 @@ Two quality-of-life changes shipped together.
 - Real-player respawn immunity now 4s (RESPAWN_SHIELD_S), ends early on movement or any attack. Bots keep 3s. First-load 10s shield unchanged.
 - Test: tests/test_spawn_immunity_forfeit.py::test_real_player_respawn_shield_is_4s_and_breaks_on_move
 - 2026-06: Mobile chat box narrowed to min(210px,28vw); messages 10px, max 2 lines, so chat stays in the left corner.
+- 2026-06: Moderation "Queue Time Before Bot Autofill" panel (AdminQueueFillPanel.jsx) + GET/POST /api/admin/queue_fill_config (db.meta queue_fill_config): Quick Match secs, Big FFA min/max, Ranked min/max per each of 9 ranks. Re-synced every 30s on all pods.

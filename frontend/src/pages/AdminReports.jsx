@@ -9,6 +9,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter, Clock, Hammer, Sprout, Ticket, Trash2, Plus, RotateCcw, AlertTriangle, Flame, Activity, Loader2, Users, Search, Pencil, KeyRound, Check, Bot, Trophy, Palette, Crosshair, Type, Coins } from "lucide-react";
 import api from "@/api";
 import AdminCoinPanel from "@/components/AdminCoinPanel";
+import AdminQueueFillPanel from "@/components/AdminQueueFillPanel";
 import AdminServerHealthPanel from "@/components/AdminServerHealthPanel";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { TitleChip } from "@/components/ShopTitlesTab";
@@ -237,6 +238,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <BotLoadoutPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <AdminQueueFillPanel onToast={setToast} />
       </div>
 
       <div className="max-w-6xl mx-auto mb-6">

@@ -1351,6 +1351,7 @@ async def on_startup():
         await _load_coin_config()
     except Exception as e:
         logger.warning("coin config load failed: %s", e)
+    asyncio.create_task(_queue_fill_config_loop())
     try:
         await _reload_custom_titles()
     except Exception as e:
@@ -4129,15 +4130,16 @@ def pick_bot_weapon(rank_tier: int, difficulty: float) -> str:
     return "ak47"
 
 
+# Admin-tunable per-tier [min, max] ranked bot-fill window (db.meta "queue_fill_config").
+QUEUE_BOT_FILL_BY_TIER: List[List[float]] = [
+    [QUEUE_BOT_FILL_HIGH_MIN, QUEUE_BOT_FILL_HIGH_MAX] if i >= QUEUE_HIGH_TIER_MIN else [QUEUE_BOT_FILL_LOW_MIN, QUEUE_BOT_FILL_LOW_MAX]
+    for i in range(len(RANK_TIERS))
+]
+
+
 def bot_fill_seconds_for_tier(tier_idx: int) -> float:
-    # High tiers (Master / Grandmaster / Goonmaster, 5-7): random 30-180s
-    # per join — the ladder gets slower to climb but never stalls out for
-    # >3 minutes. Re-rolled every /queue/ranked POST.
-    if tier_idx >= QUEUE_HIGH_TIER_MIN:
-        return random.uniform(QUEUE_BOT_FILL_HIGH_MIN, QUEUE_BOT_FILL_HIGH_MAX)
-    # Bronze → Diamond (0-4): random 20-45s so ranked feels snappy at the
-    # low-to-mid ladder without becoming instant-pop.
-    return random.uniform(QUEUE_BOT_FILL_LOW_MIN, QUEUE_BOT_FILL_LOW_MAX)
+    lo, hi = QUEUE_BOT_FILL_BY_TIER[max(0, min(len(QUEUE_BOT_FILL_BY_TIER) - 1, int(tier_idx)))]
+    return random.uniform(lo, hi)
 
 
 def bot_fill_seconds_for_tier_api(tier_idx: int) -> int:
@@ -10890,6 +10892,76 @@ async def _load_bot_loadout() -> None:
 @api.get("/bot_loadout")
 async def public_bot_loadout():
     return dict(BOT_LOADOUT)
+
+
+QUEUE_FILL_DEFAULTS: Dict[str, Any] = {
+    "casual_sec": 6.0,
+    "bigffa_min": 20.0,
+    "bigffa_max": 64.0,
+    "ranked": [list(x) for x in QUEUE_BOT_FILL_BY_TIER],
+}
+
+
+def _apply_queue_fill_config(doc: dict) -> None:
+    global CASUAL_BOT_FILL_SEC, BIGFFA_BOT_FILL_SEC, BIGFFA_ETA_MIN_SEC, BIGFFA_ETA_MAX_SEC, BIGFFA_ETA_MODE_SEC
+    cfg = {**QUEUE_FILL_DEFAULTS, **{k: doc[k] for k in QUEUE_FILL_DEFAULTS if k in doc}}
+    CASUAL_BOT_FILL_SEC = float(cfg["casual_sec"])
+    BIGFFA_ETA_MIN_SEC = float(cfg["bigffa_min"])
+    BIGFFA_ETA_MAX_SEC = float(cfg["bigffa_max"])
+    BIGFFA_ETA_MODE_SEC = BIGFFA_ETA_MIN_SEC + (BIGFFA_ETA_MAX_SEC - BIGFFA_ETA_MIN_SEC) * 0.41
+    BIGFFA_BOT_FILL_SEC = BIGFFA_ETA_MAX_SEC
+    ranked = cfg["ranked"]
+    if isinstance(ranked, list) and len(ranked) == len(QUEUE_BOT_FILL_BY_TIER):
+        QUEUE_BOT_FILL_BY_TIER[:] = [[float(a), float(b)] for a, b in ranked]
+
+
+def _queue_fill_config_public() -> dict:
+    return {
+        "casual_sec": CASUAL_BOT_FILL_SEC,
+        "bigffa_min": BIGFFA_ETA_MIN_SEC,
+        "bigffa_max": BIGFFA_ETA_MAX_SEC,
+        "ranked": [list(x) for x in QUEUE_BOT_FILL_BY_TIER],
+        "tiers": [t[1] for t in RANK_TIERS],
+        "defaults": QUEUE_FILL_DEFAULTS,
+    }
+
+
+async def _queue_fill_config_loop() -> None:
+    # Re-read periodically so every cluster pod (incl. a newly elected leader) stays in sync.
+    while True:
+        try:
+            _apply_queue_fill_config(await db.meta.find_one({"_id": "queue_fill_config"}) or {})
+        except Exception as e:
+            logger.warning("queue fill config load failed: %s", e)
+        await asyncio.sleep(30)
+
+
+class QueueFillConfigIn(BaseModel):
+    casual_sec: float = Field(ge=0, le=600)
+    bigffa_min: float = Field(ge=0, le=900)
+    bigffa_max: float = Field(ge=0, le=900)
+    ranked: List[List[float]]
+
+
+@api.get("/admin/queue_fill_config")
+async def admin_get_queue_fill_config(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return _queue_fill_config_public()
+
+
+@api.post("/admin/queue_fill_config")
+async def admin_set_queue_fill_config(payload: QueueFillConfigIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if payload.bigffa_min > payload.bigffa_max:
+        raise HTTPException(status_code=400, detail="Big FFA min must be ≤ max.")
+    if len(payload.ranked) != len(RANK_TIERS) or any(len(r) != 2 or not (0 <= r[0] <= r[1] <= 1800) for r in payload.ranked):
+        raise HTTPException(status_code=400, detail="Each rank needs min ≤ max, between 0 and 1800 seconds.")
+    doc = payload.model_dump()
+    await db.meta.update_one({"_id": "queue_fill_config"}, {"$set": doc}, upsert=True)
+    _apply_queue_fill_config(doc)
+    return _queue_fill_config_public()
 
 
 class CoinConfigIn(BaseModel):
