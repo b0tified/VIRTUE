@@ -56,7 +56,7 @@ export default function AdminQueueFillPanel({ onToast }) {
       setSaving(false);
     }
   };
-  const current = () => ({ casual_sec: vals.casual_sec, bigffa_min: vals.bigffa_min, bigffa_max: vals.bigffa_max, ranked: vals.ranked });
+  const current = () => ({ casual_min: vals.casual_min, casual_max: vals.casual_max, bigffa_min: vals.bigffa_min, bigffa_max: vals.bigffa_max, ranked: vals.ranked });
 
   return (
     <div className="bg-white border-4 border-black p-4" data-testid="admin-queue-fill-panel">
@@ -69,9 +69,11 @@ export default function AdminQueueFillPanel({ onToast }) {
       </div>
       {!vals ? <Loader2 size={16} className="animate-spin" /> : (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3 max-w-xl">
-            <label className="flex flex-col gap-1"><Label>Quick Match</Label>
-              <Sec value={vals.casual_sec} onChange={(v) => setVals({ ...vals, casual_sec: v })} testid="queue-casual-input" /></label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl">
+            <label className="flex flex-col gap-1"><Label>Quick Match min</Label>
+              <Sec value={vals.casual_min} onChange={(v) => setVals({ ...vals, casual_min: v })} testid="queue-casual-min-input" /></label>
+            <label className="flex flex-col gap-1"><Label>Quick Match max</Label>
+              <Sec value={vals.casual_max} onChange={(v) => setVals({ ...vals, casual_max: v })} testid="queue-casual-max-input" /></label>
             <label className="flex flex-col gap-1"><Label>Big FFA min</Label>
               <Sec value={vals.bigffa_min} onChange={(v) => setVals({ ...vals, bigffa_min: v })} testid="queue-bigffa-min-input" /></label>
             <label className="flex flex-col gap-1"><Label>Big FFA max</Label>

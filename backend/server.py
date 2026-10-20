@@ -7957,6 +7957,7 @@ RANKED_QUEUE: Dict[int, List[dict]] = {i: [] for i in range(len(RANK_TIERS))}
 # required.
 CASUAL_QUEUE: List[dict] = []
 CASUAL_BOT_FILL_SEC = 6.0
+CASUAL_BOT_FILL_MIN_SEC = 6.0
 
 # BigFFA queue — same pattern as CASUAL_QUEUE but drops the whole cohort
 # into the shared `bigffa_room` at once. We hold queued players up to
@@ -8194,8 +8195,8 @@ async def matchmaker_loop():
                         b.get("mode_pref", "both"),
                         mid, match_tdm,
                     )
-                while CASUAL_QUEUE and (now - CASUAL_QUEUE[0]["joined_at"]) >= CASUAL_BOT_FILL_SEC:
-                    a = CASUAL_QUEUE.pop(0)
+                for a in [e for e in CASUAL_QUEUE if (now - e["joined_at"]) >= min(float(e.get("dispatch_after", CASUAL_BOT_FILL_SEC)), CASUAL_BOT_FILL_SEC)]:
+                    CASUAL_QUEUE.remove(a)
                     mid = uuid.uuid4().hex[:10]
                     a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
                     shared_key = a_uids[0] if a_uids else None
@@ -8209,7 +8210,7 @@ async def matchmaker_loop():
                         "Casual bot-filled entry=%s (pref=%s, %d users) after %ds queue tdm=%s",
                         ",".join(a.get("usernames") or [a.get("username", "?")]),
                         a.get("mode_pref", "both"),
-                        len(a_uids), int(CASUAL_BOT_FILL_SEC), bot_tdm,
+                        len(a_uids), int(now - a["joined_at"]), bot_tdm,
                     )
                 # BigFFA queue — everyone lands in the shared `bigffa_room`.
                 # Dispatch when either (a) the queue holds ≥ BIGFFA_LOBBY_SIZE
@@ -9110,8 +9111,9 @@ async def queue_casual_join(
         for uid in member_ids:
             _remove_user_from_casual_queue(uid)
             MATCHED_USERS.pop(uid, None)
-        eta = random.uniform(3.0, 12.0)
+        eta = random.uniform(min(CASUAL_BOT_FILL_MIN_SEC, CASUAL_BOT_FILL_SEC), CASUAL_BOT_FILL_SEC)
         CASUAL_QUEUE.append({
+            "dispatch_after": float(eta),
             "user_id": user_id,
             "user_ids": member_ids,
             "username": user.get("username", "?"),
@@ -10895,7 +10897,8 @@ async def public_bot_loadout():
 
 
 QUEUE_FILL_DEFAULTS: Dict[str, Any] = {
-    "casual_sec": 6.0,
+    "casual_min": 6.0,
+    "casual_max": 6.0,
     "bigffa_min": 20.0,
     "bigffa_max": 64.0,
     "ranked": [list(x) for x in QUEUE_BOT_FILL_BY_TIER],
@@ -10903,9 +10906,10 @@ QUEUE_FILL_DEFAULTS: Dict[str, Any] = {
 
 
 def _apply_queue_fill_config(doc: dict) -> None:
-    global CASUAL_BOT_FILL_SEC, BIGFFA_BOT_FILL_SEC, BIGFFA_ETA_MIN_SEC, BIGFFA_ETA_MAX_SEC, BIGFFA_ETA_MODE_SEC
+    global CASUAL_BOT_FILL_SEC, CASUAL_BOT_FILL_MIN_SEC, BIGFFA_BOT_FILL_SEC, BIGFFA_ETA_MIN_SEC, BIGFFA_ETA_MAX_SEC, BIGFFA_ETA_MODE_SEC
     cfg = {**QUEUE_FILL_DEFAULTS, **{k: doc[k] for k in QUEUE_FILL_DEFAULTS if k in doc}}
-    CASUAL_BOT_FILL_SEC = float(cfg["casual_sec"])
+    CASUAL_BOT_FILL_MIN_SEC = float(cfg["casual_min"])
+    CASUAL_BOT_FILL_SEC = float(cfg["casual_max"])
     BIGFFA_ETA_MIN_SEC = float(cfg["bigffa_min"])
     BIGFFA_ETA_MAX_SEC = float(cfg["bigffa_max"])
     BIGFFA_ETA_MODE_SEC = BIGFFA_ETA_MIN_SEC + (BIGFFA_ETA_MAX_SEC - BIGFFA_ETA_MIN_SEC) * 0.41
@@ -10917,7 +10921,8 @@ def _apply_queue_fill_config(doc: dict) -> None:
 
 def _queue_fill_config_public() -> dict:
     return {
-        "casual_sec": CASUAL_BOT_FILL_SEC,
+        "casual_min": CASUAL_BOT_FILL_MIN_SEC,
+        "casual_max": CASUAL_BOT_FILL_SEC,
         "bigffa_min": BIGFFA_ETA_MIN_SEC,
         "bigffa_max": BIGFFA_ETA_MAX_SEC,
         "ranked": [list(x) for x in QUEUE_BOT_FILL_BY_TIER],
@@ -10937,7 +10942,8 @@ async def _queue_fill_config_loop() -> None:
 
 
 class QueueFillConfigIn(BaseModel):
-    casual_sec: float = Field(ge=0, le=600)
+    casual_min: float = Field(ge=0, le=600)
+    casual_max: float = Field(ge=0, le=600)
     bigffa_min: float = Field(ge=0, le=900)
     bigffa_max: float = Field(ge=0, le=900)
     ranked: List[List[float]]
@@ -10954,6 +10960,8 @@ async def admin_get_queue_fill_config(user: dict = Depends(get_current_user)):
 async def admin_set_queue_fill_config(payload: QueueFillConfigIn, user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
+    if payload.casual_min > payload.casual_max:
+        raise HTTPException(status_code=400, detail="Quick Match min must be ≤ max.")
     if payload.bigffa_min > payload.bigffa_max:
         raise HTTPException(status_code=400, detail="Big FFA min must be ≤ max.")
     if len(payload.ranked) != len(RANK_TIERS) or any(len(r) != 2 or not (0 <= r[0] <= r[1] <= 1800) for r in payload.ranked):
