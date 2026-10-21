@@ -10946,24 +10946,29 @@ async def admin_rank_distribution(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     roman = {1: "I", 2: "II", 3: "III"}
-    buckets = [{"key": "UNRANKED", "label": "UNRANKED", "tier": -1, "count": 0}]
+    buckets = []
     for i, (_, name) in enumerate(RANK_TIERS):
         if i == len(RANK_TIERS) - 1:
             buckets.append({"key": name, "label": name, "tier": i, "count": 0})
         else:
             buckets += [{"key": f"{name}_{d}", "label": f"{name} {roman[d]}", "tier": i, "count": 0} for d in (3, 2, 1)]
     idx = {b["key"]: b for b in buckets}
-    cur = db.users.find({"is_seeded": {"$ne": True}}, {"rank_points": 1, "placement_matches_played": 1})
+    bot_names = {n.lower() for n in _all_custom_bot_names() + DISGUISED_BOT_NAMES + BOT_NAMES}
+    bot_names |= {n.lower() for names in TIERED_BOT_NAMES.values() for n in names}
+    excluded = {"placements": 0, "bots": 0}
+    cur = db.users.find({"is_seeded": {"$ne": True}}, {"username": 1, "email": 1, "rank_points": 1, "placement_matches_played": 1})
     async for u in cur:
+        if not u.get("email") or (u.get("username") or "").lower() in bot_names:
+            excluded["bots"] += 1
+            continue
         if not placements_done(u):
-            idx["UNRANKED"]["count"] += 1
+            excluded["placements"] += 1
             continue
         pts = int(u.get("rank_points", 0) or 0)
         t, name = rank_for_points(pts)
         d = rank_division_for_points(pts, t)
         idx[name if d == 0 else f"{name}_{d}"]["count"] += 1
-    total = sum(b["count"] for b in buckets)
-    return {"buckets": buckets, "total": total, "ranked": total - idx["UNRANKED"]["count"]}
+    return {"buckets": buckets, "total": sum(b["count"] for b in buckets), "excluded": excluded}
 
 
 @api.get("/admin/queue_fill_config")
