@@ -2968,3 +2968,4 @@ Two quality-of-life changes shipped together.
 - 2026-06: Mobile chat box narrowed to min(210px,28vw); messages 10px, max 2 lines, so chat stays in the left corner.
 - 2026-06: Moderation "Queue Time Before Bot Autofill" panel (AdminQueueFillPanel.jsx) + GET/POST /api/admin/queue_fill_config (db.meta queue_fill_config): Quick Match secs, Big FFA min/max, Ranked min/max per each of 9 ranks. Re-synced every 30s on all pods.
 - 2026-06: Quick Match autofill now min/max (casual_min/casual_max, random per queue join, stored as entry dispatch_after). Defaults 6/6.
+- 2026-06: Bot match history fixed: synthetic lobby sizes now match real (FFA 4, ranked 4, TDM 8, BigFFA 12); synth ranked RP uses bot_ranked_delta (same perf formula as real); _merge_bot_history(synth, real, pts) re-walks rank_name_after from current RP. PayPal request cancelled by user.

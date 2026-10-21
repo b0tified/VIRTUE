@@ -7193,15 +7193,7 @@ class GameRoom:
                 # had `bot_cur` RP before the match, finished Nth place,
                 # and gained/lost `bot_delta` → `bot_new_points`.
                 bot_cur = int(getattr(p, "disguise_rank_points", 0) or 0)
-                bot_base_delta = compute_rp_delta(bot_placement, bot_tier_idx)
-                bot_raw_perf = p.kills * 3 - p.deaths * 5
-                if bot_tier_idx >= MASTERS_TIER_IDX + 1:
-                    bot_perf_delta = int(bot_raw_perf * 0.4) - 20
-                elif bot_tier_idx >= MASTERS_TIER_IDX:
-                    bot_perf_delta = int(bot_raw_perf * 0.55) - 15
-                else:
-                    bot_perf_delta = bot_raw_perf
-                bot_delta = max(-60, min(35, bot_base_delta + bot_perf_delta))
+                bot_delta = bot_ranked_delta(bot_placement, bot_tier_idx, p.kills, p.deaths)
                 bot_new_points = max(0, bot_cur + bot_delta)
                 bot_new_tier_idx, bot_new_tier_name = rank_for_points(bot_new_points)
                 bot_new_division = rank_division_for_points(bot_new_points, bot_new_tier_idx)
@@ -7214,7 +7206,7 @@ class GameRoom:
                     "kills": p.kills,
                     "deaths": p.deaths,
                     "delta": bot_delta,
-                    "base_delta": bot_base_delta,
+                    "base_delta": compute_rp_delta(bot_placement, bot_tier_idx),
                     "new_points": bot_new_points,
                     "rank_tier": bot_new_tier_idx,
                     "rank_name": bot_new_tier_name,
@@ -12867,6 +12859,22 @@ def _bot_profile_public(username: str) -> bool:
     return h % 100 < 50
 
 
+def bot_ranked_delta(placement: int, tier_idx: int, kills: int, deaths: int) -> int:
+    """Same performance-scaled ranked RP delta a real non-placement player gets."""
+    raw = int(kills) * 3 - int(deaths) * 5
+    if tier_idx >= MASTERS_TIER_IDX + 1:
+        perf = int(raw * 0.4) - 20
+    elif tier_idx >= MASTERS_TIER_IDX:
+        perf = int(raw * 0.55) - 15
+    else:
+        perf = raw
+    return max(-60, min(35, compute_rp_delta(placement, tier_idx) + perf))
+
+
+# Lobby sizes that real matches actually have (FFA quick match = 1 + NUM_BOTS, TDM 4v4).
+BOT_HISTORY_LOBBY_SIZE = {"casual": NUM_BOTS + 1, "ranked": 4, "tdm": TDM_TEAM_SIZE * 2, "bigffa": BIGFFA_LOBBY_SIZE}
+
+
 def _bot_grid(username: str):
     base = random.Random(f"bot-hist::{username.lower()}")
     period = base.uniform(1.5, 5.0) * 3600.0
@@ -12882,7 +12890,7 @@ def _bot_slot(username: str, slot: int, period: float, phase: float, tier_idx: i
     r = rng.random()
     mode = "casual" if r < 0.55 else ("ranked" if r < 0.80 and tier_idx >= 1 else ("tdm" if r < 0.95 else "bigffa"))
     duration = 120 if mode == "bigffa" else rng.uniform(240, 420)
-    total = {"bigffa": 12, "tdm": 6, "ranked": 5}.get(mode, 8)
+    total = BOT_HISTORY_LOBBY_SIZE[mode]
     if rng.random() < (0.12 + tier_idx * 0.05):
         placement = 1
     elif rng.random() < 0.35:
@@ -13003,8 +13011,16 @@ async def _bot_real_matches(username: str):
     return hist, totals
 
 
-def _merge_bot_history(synth: List[dict], real: List[dict]) -> List[dict]:
-    return sorted(synth + real, key=lambda h: h.get("ended_at") or "", reverse=True)[:10]
+def _merge_bot_history(synth: List[dict], real: List[dict], pts: int) -> List[dict]:
+    """Newest-first merge; rank-after is re-walked back from current RP so the +/- chain adds up."""
+    rows = sorted(synth + real, key=lambda h: h.get("ended_at") or "", reverse=True)[:10]
+    rp_after = int(pts)
+    for r in rows:
+        if r.get("mode") != "ranked":
+            continue
+        r["rank_name_after"] = rank_for_points(rp_after)[1]
+        rp_after = max(0, rp_after - int(r.get("rp_delta", 0) or 0))
+    return rows
 
 
 def _add_bot_totals(stats: dict, totals: dict) -> dict:
@@ -13025,7 +13041,7 @@ def _synth_bot_history(username: str, pts: int, tier_idx: int, now: Optional[dat
         slot -= 1
         if not m["played"] or m["ended"] > now:
             continue
-        rp_delta = compute_rp_delta(m["placement"], tier_idx) if m["mode"] == "ranked" else 0
+        rp_delta = bot_ranked_delta(m["placement"], rank_for_points(rp_after)[0], m["kills"], m["deaths"]) if m["mode"] == "ranked" else 0
         _, rn_after = rank_for_points(rp_after)
         rp_after = max(0, rp_after - rp_delta)
         history.append({
@@ -13118,7 +13134,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
                 "wins": wins,
             }
             _real_hist, _real_tot = await _bot_real_matches(username)
-            history = _merge_bot_history(_synth_bot_history(username, pts, tier_idx), _real_hist)
+            history = _merge_bot_history(_synth_bot_history(username, pts, tier_idx), _real_hist, pts)
             fake_stats = _add_bot_totals(fake_stats, _real_tot)
             return {
                 "id": f"bot::{username}",
@@ -13239,7 +13255,7 @@ async def public_profile(username: str, _user: dict = Depends(get_current_user))
     _stats_out = u.get("stats", {"kills": 0, "deaths": 0, "matches": 0, "wins": 0})
     if bot_public:
         _real_hist, _real_tot = await _bot_real_matches(u.get("username", ""))
-        history = _merge_bot_history(history, _real_hist)
+        history = _merge_bot_history(history, _real_hist, pts)
         _stats_out = _add_bot_totals(_stats_out, _real_tot)
     return {
         "id": user_id,
