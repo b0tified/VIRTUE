@@ -10951,24 +10951,36 @@ async def admin_rank_distribution(user: dict = Depends(get_current_user)):
         if i == len(RANK_TIERS) - 1:
             buckets.append({"key": name, "label": name, "tier": i, "count": 0})
         else:
-            buckets += [{"key": f"{name}_{d}", "label": f"{name} {roman[d]}", "tier": i, "count": 0} for d in (3, 2, 1)]
-    idx = {b["key"]: b for b in buckets}
+            buckets += [{"key": f"{name}_{d}", "label": f"{name} {roman[d]}", "tier": i} for d in (3, 2, 1)]
+    groups = ("ranked", "placements", "bots")
+    for bk in buckets:
+        bk.update({g: 0 for g in groups})
+    idx = {bk["key"]: bk for bk in buckets}
+
+    def add(pts: int, group: str) -> None:
+        t, name = rank_for_points(int(pts or 0))
+        d = rank_division_for_points(int(pts or 0), t)
+        idx[name if d == 0 else f"{name}_{d}"][group] += 1
+
     bot_names = {n.lower() for n in _all_custom_bot_names() + DISGUISED_BOT_NAMES + BOT_NAMES}
     bot_names |= {n.lower() for names in TIERED_BOT_NAMES.values() for n in names}
-    excluded = {"placements": 0, "bots": 0}
-    cur = db.users.find({"is_seeded": {"$ne": True}}, {"username": 1, "email": 1, "rank_points": 1, "placement_matches_played": 1})
+    seeded_names = set()
+    cur = db.users.find({}, {"username": 1, "email": 1, "rank_points": 1, "placement_matches_played": 1, "is_seeded": 1})
     async for u in cur:
-        if not u.get("email") or (u.get("username") or "").lower() in bot_names:
-            excluded["bots"] += 1
+        uname = (u.get("username") or "").lower()
+        if u.get("is_seeded"):
+            seeded_names.add(uname)
+            add(u.get("rank_points", 0), "bots")
+        elif not u.get("email") or uname in bot_names:
             continue
-        if not placements_done(u):
-            excluded["placements"] += 1
-            continue
-        pts = int(u.get("rank_points", 0) or 0)
-        t, name = rank_for_points(pts)
-        d = rank_division_for_points(pts, t)
-        idx[name if d == 0 else f"{name}_{d}"]["count"] += 1
-    return {"buckets": buckets, "total": sum(b["count"] for b in buckets), "excluded": excluded}
+        else:
+            add(u.get("rank_points", 0), "ranked" if placements_done(u) else "placements")
+    for r in CUSTOM_BOT_NAMES_CACHE:
+        nm = str(r.get("name") or "").lower()
+        if nm and isinstance(r.get("rank_points"), int) and nm not in seeded_names:
+            add(r["rank_points"], "bots")
+    totals = {g: sum(bk[g] for bk in buckets) for g in groups}
+    return {"buckets": buckets, "totals": totals}
 
 
 @api.get("/admin/queue_fill_config")
