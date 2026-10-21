@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import api from "@/api";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
+import RankResetOverlay from "@/components/RankResetOverlay";
 import { divisionRoman } from "@/game/rankIcons";
 import { ArrowDown, Coins, Crosshair, Swords, Trophy } from "lucide-react";
 
@@ -98,6 +99,7 @@ export function SeasonRecapView({ recap: r, nextSeason, onClose, buttonLabel }) 
 
 export default function SeasonRecapModal() {
   const [data, setData] = useState(null);
+  const [resetDone, setResetDone] = useState(false);
   useEffect(() => {
     api.get("/season/recap").then(({ data: d }) => { if (d.recap) setData(d); }).catch(() => {});
   }, []);
@@ -106,5 +108,9 @@ export default function SeasonRecapModal() {
     api.post("/season/recap/seen").catch(() => {});
     setData(null);
   };
+  const r = data.recap;
+  if (!resetDone && r.full !== false && r.final && r.new) {
+    return <RankResetOverlay from={r.final} to={r.new} season={data.current_season} onDone={() => setResetDone(true)} />;
+  }
   return <SeasonRecapView recap={data.recap} nextSeason={data.current_season} onClose={close} buttonLabel={`Start Season ${data.current_season}`} />;
 }
