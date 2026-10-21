@@ -7754,6 +7754,11 @@ RANKED_BOT_ROOMS: Dict[str, "GameRoom"] = {}
 RANKED_BOT_ROOM_TASKS: Dict[str, asyncio.Task] = {}
 
 
+# Admin-tunable ranked bot difficulty per rank (db.meta "ranked_bot_difficulty").
+RANKED_BOT_DIFF_DEFAULTS: List[float] = [round(1.9 + min(6, i) * 0.30, 2) for i in range(len(RANK_TIERS))]
+RANKED_BOT_DIFF_BY_TIER: List[float] = list(RANKED_BOT_DIFF_DEFAULTS)
+
+
 def ranked_bot_count_for_tier(tier_idx: int) -> int:
     # All ranked-vs-bots rooms now spawn 4 bots regardless of tier so the
     # lobby always looks like a full 5-player FFA (player + 4 opponents).
@@ -7854,7 +7859,7 @@ async def get_or_create_ranked_bot_room(user_id: str, tier_idx: int, *, player_r
     # Buffed difficulty curve — quickplay was easy, ranked at low tiers was
     # too forgiving. Base 1.6→1.9 and per-tier scaling 0.25→0.30 — ranked
     # bots now range **1.90 (Bronze) → 3.70 (Grandmaster/Goonmaster)**.
-    ranked_difficulty = 1.9 + min(6, tier_idx) * 0.30
+    ranked_difficulty = RANKED_BOT_DIFF_BY_TIER[max(0, min(len(RANKED_BOT_DIFF_BY_TIER) - 1, int(tier_idx)))]
     # Tier-aligned name pool — higher tiers get longer / more "competitive"
     # handles (sponsor tags, TTV suffixes, etc.). Falls back to BOT_NAMES if
     # the tier has no custom pool seeded. Goonmaster / Ultimate-Gooner
@@ -10928,6 +10933,7 @@ async def _queue_fill_config_loop() -> None:
     while True:
         try:
             _apply_queue_fill_config(await db.meta.find_one({"_id": "queue_fill_config"}) or {})
+            _apply_ranked_bot_difficulty(await db.meta.find_one({"_id": "ranked_bot_difficulty"}) or {})
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -10981,6 +10987,39 @@ async def admin_rank_distribution(user: dict = Depends(get_current_user)):
             add(r["rank_points"], "bots")
     totals = {g: sum(bk[g] for bk in buckets) for g in groups}
     return {"buckets": buckets, "totals": totals}
+
+
+def _apply_ranked_bot_difficulty(doc: dict) -> None:
+    vals = doc.get("values")
+    if isinstance(vals, list) and len(vals) == len(RANKED_BOT_DIFF_BY_TIER):
+        RANKED_BOT_DIFF_BY_TIER[:] = [float(v) for v in vals]
+
+
+class RankedBotDifficultyIn(BaseModel):
+    values: List[float]
+
+
+def _ranked_bot_difficulty_public() -> dict:
+    return {"values": list(RANKED_BOT_DIFF_BY_TIER), "defaults": RANKED_BOT_DIFF_DEFAULTS, "tiers": [t[1] for t in RANK_TIERS], "min": 0.5, "max": 5.0}
+
+
+@api.get("/admin/ranked_bot_difficulty")
+async def admin_get_ranked_bot_difficulty(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return _ranked_bot_difficulty_public()
+
+
+@api.post("/admin/ranked_bot_difficulty")
+async def admin_set_ranked_bot_difficulty(payload: RankedBotDifficultyIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if len(payload.values) != len(RANK_TIERS) or any(not (0.5 <= v <= 5.0) for v in payload.values):
+        raise HTTPException(status_code=400, detail="Each rank needs a difficulty between 0.5 and 5.0.")
+    doc = {"values": [round(float(v), 2) for v in payload.values]}
+    await db.meta.update_one({"_id": "ranked_bot_difficulty"}, {"$set": doc}, upsert=True)
+    _apply_ranked_bot_difficulty(doc)
+    return _ranked_bot_difficulty_public()
 
 
 @api.get("/admin/queue_fill_config")
