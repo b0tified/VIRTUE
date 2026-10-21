@@ -7736,7 +7736,7 @@ async def _server_health_monitor() -> None:
 
 
 def _all_rooms() -> List[tuple]:
-    rooms = [("Quick Match", game_room), ("Team Deathmatch", tdm_room), ("Ranked", ranked_room),
+    rooms = [("Casual", game_room), ("Team Deathmatch", tdm_room), ("Ranked", ranked_room),
              ("Practice", practice_room), ("Practice TDM", practice_tdm_room), ("Big FFA", bigffa_room)]
     for label, d in (("Offline", OFFLINE_ROOMS), ("Offline TDM", OFFLINE_TDM_ROOMS),
                      ("Ranked vs Bots", RANKED_BOT_ROOMS), ("Party", PARTY_ROOMS)):
@@ -8760,7 +8760,7 @@ async def season_status():
     return season_payload(doc)
 
 
-RANKED_MIN_LEVEL = 2
+RANKED_MIN_LEVEL = 0
 
 
 async def _party_for_user(user_id: str) -> Optional[dict]:
@@ -10941,6 +10941,31 @@ class QueueFillConfigIn(BaseModel):
     ranked: List[List[float]]
 
 
+@api.get("/admin/rank_distribution")
+async def admin_rank_distribution(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    roman = {1: "I", 2: "II", 3: "III"}
+    buckets = [{"key": "UNRANKED", "label": "UNRANKED", "tier": -1, "count": 0}]
+    for i, (_, name) in enumerate(RANK_TIERS):
+        if i == len(RANK_TIERS) - 1:
+            buckets.append({"key": name, "label": name, "tier": i, "count": 0})
+        else:
+            buckets += [{"key": f"{name}_{d}", "label": f"{name} {roman[d]}", "tier": i, "count": 0} for d in (3, 2, 1)]
+    idx = {b["key"]: b for b in buckets}
+    cur = db.users.find({"is_seeded": {"$ne": True}}, {"rank_points": 1, "placement_matches_played": 1})
+    async for u in cur:
+        if not placements_done(u):
+            idx["UNRANKED"]["count"] += 1
+            continue
+        pts = int(u.get("rank_points", 0) or 0)
+        t, name = rank_for_points(pts)
+        d = rank_division_for_points(pts, t)
+        idx[name if d == 0 else f"{name}_{d}"]["count"] += 1
+    total = sum(b["count"] for b in buckets)
+    return {"buckets": buckets, "total": total, "ranked": total - idx["UNRANKED"]["count"]}
+
+
 @api.get("/admin/queue_fill_config")
 async def admin_get_queue_fill_config(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
@@ -10953,7 +10978,7 @@ async def admin_set_queue_fill_config(payload: QueueFillConfigIn, user: dict = D
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     if payload.casual_min > payload.casual_max:
-        raise HTTPException(status_code=400, detail="Quick Match min must be ≤ max.")
+        raise HTTPException(status_code=400, detail="Casual min must be ≤ max.")
     if payload.bigffa_min > payload.bigffa_max:
         raise HTTPException(status_code=400, detail="Big FFA min must be ≤ max.")
     if len(payload.ranked) != len(RANK_TIERS) or any(len(r) != 2 or not (0 <= r[0] <= r[1] <= 1800) for r in payload.ranked):

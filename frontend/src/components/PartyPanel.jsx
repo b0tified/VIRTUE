@@ -1,6 +1,6 @@
 /* Persistent party panel — shown in the lobby when the user is in a party.
    Polls /api/party/me every 5s via the parent. Leader can:
-     - Queue Quick Match (whole party enters the shared casual queue)
+     - Queue Casual (whole party enters the shared casual queue)
      - Queue Ranked together (whole party enters the ranked queue at the
        max tier across all members)
    Members can:
@@ -63,10 +63,10 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
     try {
       const r = await joinCasual();
       if (r && !r.ok) {
-        setErr(r.error || "Couldn't join Quick Match queue.");
+        setErr(r.error || "Couldn't join Casual queue.");
       }
     } catch (e) {
-      setErr(e.response?.data?.detail || "Couldn't join Quick Match queue.");
+      setErr(e.response?.data?.detail || "Couldn't join Casual queue.");
     } finally {
       setBusy(false);
     }
@@ -207,7 +207,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 data-testid="party-start-button"
               >
                 <span className="flex items-center justify-center gap-2">
-                  <Play size={14} strokeWidth={3} /> QUICK MATCH
+                  <Play size={14} strokeWidth={3} /> CASUAL
                 </span>
               </button>
             ) : (

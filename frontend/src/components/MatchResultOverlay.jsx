@@ -263,7 +263,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                     className="inline-flex items-center gap-1 px-2 py-0.5 border-2 text-xs"
                     style={{ background: palette.ink, color: palette.accent, borderColor: palette.ink }}
                   >
-                    {isRanked ? "RANKED" : "QUICK MATCH"}{isTdm ? " · TDM" : ""}
+                    {isRanked ? "RANKED" : "CASUAL"}{isTdm ? " · TDM" : ""}
                   </span>
                 )}
               </div>

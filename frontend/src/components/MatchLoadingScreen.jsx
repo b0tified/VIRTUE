@@ -23,7 +23,7 @@ import { Loader2, Zap, Check } from "lucide-react";
 import useTinyScreen from "@/hooks/useTinyScreen";
 
 const MODE_LABELS = {
-  casual:   { title: "QUICK MATCH",   accent: "#FFD700" },
+  casual:   { title: "CASUAL",   accent: "#FFD700" },
   ranked:   { title: "RANKED MATCH",  accent: "#E62429" },
   party:    { title: "PARTY MATCH",   accent: "#0055FF" },
   offline:  { title: "PRACTICE",      accent: "#9B59B6" },

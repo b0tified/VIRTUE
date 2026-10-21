@@ -7142,7 +7142,7 @@ export class GameEngine {
   /* Auto Performance watchdog — invoked once per ~500ms FPS window.
 
      Previously scoped only to BigFFA (12P FFA) where perf headroom
-     was tightest. User asked to enable in all modes — a Quick Match
+     was tightest. User asked to enable in all modes — a Casual
      TDM on an iPad / low-end laptop can also drop below 60fps when
      too many muzzle flashes stack up. Now runs in every mode.
 

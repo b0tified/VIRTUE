@@ -346,7 +346,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
               <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
               {/* Suffix the queue label with the specific kind so a
                   friend hunting for a duo partner can tell at a glance
-                  whether the target is queueing Ranked, Quick Match,
+                  whether the target is queueing Ranked, Casual,
                   or 12P FFA. Fallback keeps the old "IN QUEUE" copy
                   for any deploys mid-rollout where the server hasn't
                   yet exposed `queue_kind`. */}

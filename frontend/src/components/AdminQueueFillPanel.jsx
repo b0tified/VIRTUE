@@ -70,9 +70,9 @@ export default function AdminQueueFillPanel({ onToast }) {
       {!vals ? <Loader2 size={16} className="animate-spin" /> : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl">
-            <label className="flex flex-col gap-1"><Label>Quick Match min</Label>
+            <label className="flex flex-col gap-1"><Label>Casual min</Label>
               <Sec value={vals.casual_min} onChange={(v) => setVals({ ...vals, casual_min: v })} testid="queue-casual-min-input" /></label>
-            <label className="flex flex-col gap-1"><Label>Quick Match max</Label>
+            <label className="flex flex-col gap-1"><Label>Casual max</Label>
               <Sec value={vals.casual_max} onChange={(v) => setVals({ ...vals, casual_max: v })} testid="queue-casual-max-input" /></label>
             <label className="flex flex-col gap-1"><Label>Big FFA min</Label>
               <Sec value={vals.bigffa_min} onChange={(v) => setVals({ ...vals, bigffa_min: v })} testid="queue-bigffa-min-input" /></label>

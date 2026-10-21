@@ -10,6 +10,7 @@ import { ArrowLeft, Flag, Shield, ShieldOff, ShieldAlert, X, CheckCircle, Filter
 import api from "@/api";
 import AdminCoinPanel from "@/components/AdminCoinPanel";
 import AdminQueueFillPanel from "@/components/AdminQueueFillPanel";
+import AdminRankDistributionPanel from "@/components/AdminRankDistributionPanel";
 import AdminServerHealthPanel from "@/components/AdminServerHealthPanel";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { TitleChip } from "@/components/ShopTitlesTab";
@@ -242,6 +243,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <AdminQueueFillPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <AdminRankDistributionPanel />
       </div>
 
       <div className="max-w-6xl mx-auto mb-6">

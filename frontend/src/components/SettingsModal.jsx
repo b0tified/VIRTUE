@@ -565,7 +565,7 @@ export default function SettingsModal({ open, onClose }) {
               </div>
               <ToggleRow
                 label="Mobile Only"
-                note="Only match against other mobile players in Quick Match, Ranked, and 12P FFA. Cross-play resumes when off."
+                note="Only match against other mobile players in Casual, Ranked, and 12P FFA. Cross-play resumes when off."
                 checked={!!s.mobileOnlyMatchmaking}
                 onChange={(v) => patch({ mobileOnlyMatchmaking: v })}
                 testid="settings-mobile-only"

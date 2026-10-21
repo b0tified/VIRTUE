@@ -155,7 +155,7 @@ export default function Lobby() {
   };
 
   // Ranked unlock gate — server enforces too. Mirrors RANKED_MIN_LEVEL in server.py.
-  const RANKED_MIN_LEVEL = 2;
+  const RANKED_MIN_LEVEL = 0;
   // Mirrors RANKED_LEAVE_RP_LOSS in server.py — for the tooltip copy.
   const RANKED_LEAVE_RP_LOSS = 30;
   const userLevel = user?.level ?? 1;
@@ -1075,13 +1075,13 @@ export default function Lobby() {
               data-testid="lobby-play-button"
               aria-label={
                 queueState && !casualInQueue ? "You're already in the ranked queue"
-                : bigffaInQueue ? "Cancel the 12P FFA queue to play Quick Match"
+                : bigffaInQueue ? "Cancel the 12P FFA queue to play Casual"
                 : undefined
               }
             >
               <span className="flex items-center gap-3">
                 {casualInQueue ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
-                {casualInQueue ? `MATCHING...` : "QUICK MATCH"}
+                {casualInQueue ? `MATCHING...` : "CASUAL"}
               </span>
             </button>
             {/* Quick-Match mode picker — 3-way segmented control so
@@ -1092,7 +1092,7 @@ export default function Lobby() {
             <div
               className="flex items-stretch gap-1 w-full rounded-md border-2 border-black bg-white/90 p-1"
               data-testid="lobby-quickmatch-mode-picker"
-              aria-label="Quick Match mode"
+              aria-label="Casual mode"
             >
               {[
                 { key: "both", label: "BOTH", title: "FFA or TDM — server rolls per match" },
@@ -1130,7 +1130,7 @@ export default function Lobby() {
               aria-label={
                 rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
                 : rankedBanned ? `Ranked locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
-                : casualInQueue ? "You're already in the Quick Match queue"
+                : casualInQueue ? "You're already in the Casual queue"
                 : bigffaInQueue ? "Cancel the 12P FFA queue to play Ranked"
                 : undefined
               }
@@ -1176,7 +1176,7 @@ export default function Lobby() {
               data-testid="lobby-bigffa-button"
               aria-label={
                 bigffaInQueue ? "Cancel 12P FFA queue"
-                : casualInQueue ? "Cancel Quick Match queue to play 12P FFA"
+                : casualInQueue ? "Cancel Casual queue to play 12P FFA"
                 : queueState ? "Cancel Ranked queue to play 12P FFA"
                 : undefined
               }
@@ -1205,7 +1205,7 @@ export default function Lobby() {
               className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-practice-button"
               aria-label={
-                casualInQueue ? "Cancel Quick Match queue to play Practice"
+                casualInQueue ? "Cancel Casual queue to play Practice"
                 : queueState ? "Cancel Ranked queue to play Practice"
                 : undefined
               }
@@ -1412,7 +1412,7 @@ export default function Lobby() {
           without them personally hitting the queue button (i.e. the
           party leader kicked off the queue). Distinct from the full
           match-found overlay so followers get an instant "your leader
-          just started Quick Match" cue in the ~1s gap before the
+          just started Casual" cue in the ~1s gap before the
           overlay lands. */}
       {followerToast && (
         <div
@@ -1425,7 +1425,7 @@ export default function Lobby() {
           <div className="flex-1 min-w-0">
             <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 leading-none">Party</div>
             <div className="font-display text-sm leading-tight truncate">
-              Leader started {followerToast.mode === "ranked" ? "Ranked" : "Quick Match"}
+              Leader started {followerToast.mode === "ranked" ? "Ranked" : "Casual"}
             </div>
           </div>
           <style>{`

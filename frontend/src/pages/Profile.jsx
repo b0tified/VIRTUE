@@ -395,7 +395,7 @@ export default function Profile() {
           {history !== null && history.length === 0 && (
             <div className="px-5 py-8 text-center" data-testid="profile-history-empty">
               <Bot size={32} strokeWidth={3} className="inline text-neutral-400" />
-              <div className="font-anton uppercase mt-2 text-neutral-500">No matches yet — go drop into a Quick Match!</div>
+              <div className="font-anton uppercase mt-2 text-neutral-500">No matches yet — go drop into a Casual match!</div>
             </div>
           )}
 
