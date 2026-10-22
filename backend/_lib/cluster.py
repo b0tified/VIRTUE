@@ -128,8 +128,13 @@ class ClusterProxyMiddleware:
 
     async def _ws(self, target, path, scope, receive, send, fwd):
         try:
+            # No per-message compression on the in-cluster hop: it only burns relay CPU.
             upstream = await websockets.connect(f"ws://{target}{path}", additional_headers=fwd,
-                                                open_timeout=3, max_size=None, ping_interval=None)
+                                                open_timeout=3, max_size=None, ping_interval=None,
+                                                compression=None, write_limit=2 ** 20)
+            sock = upstream.transport.get_extra_info("socket")
+            if sock is not None:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         except Exception as e:
             _mark_bad(e)
             return await self.app(scope, receive, send)
