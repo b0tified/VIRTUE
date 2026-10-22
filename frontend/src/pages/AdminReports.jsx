@@ -12,6 +12,7 @@ import AdminCoinPanel from "@/components/AdminCoinPanel";
 import AdminQueueFillPanel from "@/components/AdminQueueFillPanel";
 import AdminRankDistributionPanel from "@/components/AdminRankDistributionPanel";
 import AdminRankResetPreview from "@/components/AdminRankResetPreview";
+import AdminComebackPanel from "@/components/AdminComebackPanel";
 import AdminRankedBotDifficultyPanel from "@/components/AdminRankedBotDifficultyPanel";
 import AdminServerHealthPanel from "@/components/AdminServerHealthPanel";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
@@ -253,6 +254,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <AdminRankDistributionPanel />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <AdminComebackPanel onToast={setToast} />
       </div>
 
       <div className="max-w-6xl mx-auto mb-6">

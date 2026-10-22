@@ -16,6 +16,7 @@ import LobbyBackgroundSnow from "@/components/LobbyBackgroundSnow";
 import LobbyBackgroundFall from "@/components/LobbyBackgroundFall";
 import NewTitlePopup from "@/components/NewTitlePopup";
 import DailyRewardModal from "@/components/DailyRewardModal";
+import ComebackGiftModal from "@/components/ComebackGiftModal";
 import SeasonRecapModal from "@/components/SeasonRecapModal";
 import PlacementTracker from "@/components/PlacementTracker";
 import LobbyBackgroundCastle from "@/components/LobbyBackgroundCastle";
@@ -1439,6 +1440,7 @@ export default function Lobby() {
       <ShopModal open={showShop} onClose={() => { setShowShop(false); setShopTab("skins"); }} initialTab={shopTab} />
       <NewTitlePopup onView={() => { setShopTab("titles"); setShowShop(true); }} />
       <DailyRewardModal />
+      <ComebackGiftModal />
       <SeasonRecapModal />
       <ProgressionModal open={showProgression} onClose={() => setShowProgression(false)} />
       <PracticeMapSelector

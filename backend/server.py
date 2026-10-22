@@ -9696,7 +9696,7 @@ async def presence_heartbeat(user: dict = Depends(get_current_user), body: Optio
     gid = (body or {}).get("guest_id")
     if isinstance(gid, str):
         GUEST_HEARTBEAT.pop(gid, None)
-    await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
+    await _stamp_last_seen(user)
     return {"online": True, "ttl": HEARTBEAT_TTL}
 
 
@@ -10934,6 +10934,7 @@ async def _queue_fill_config_loop() -> None:
         try:
             _apply_queue_fill_config(await db.meta.find_one({"_id": "queue_fill_config"}) or {})
             _apply_ranked_bot_difficulty(await db.meta.find_one({"_id": "ranked_bot_difficulty"}) or {})
+            _apply_comeback_config(await db.meta.find_one({"_id": "comeback_config"}) or {})
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -11114,6 +11115,94 @@ async def get_season_recap(user: dict = Depends(get_current_user)):
 async def mark_season_recap_seen(user: dict = Depends(get_current_user)):
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"season_recap_seen": True}})
     return {"ok": True}
+
+
+# Comeback gift: tiers sorted by days away; biggest tier reached wins (db.meta "comeback_config").
+COMEBACK_DEFAULTS: List[Dict[str, int]] = [
+    {"days": 14, "coins": 600, "xp": 1000},
+    {"days": 30, "coins": 1000, "xp": 2000},
+    {"days": 60, "coins": 2000, "xp": 4000},
+]
+COMEBACK_TIERS: List[Dict[str, int]] = [dict(t) for t in COMEBACK_DEFAULTS]
+
+
+def _apply_comeback_config(doc: dict) -> None:
+    tiers = doc.get("tiers")
+    if isinstance(tiers, list) and tiers:
+        COMEBACK_TIERS[:] = sorted(({k: int(t[k]) for k in ("days", "coins", "xp")} for t in tiers), key=lambda t: t["days"])
+
+
+def comeback_gift_for_days(days_away: float) -> Optional[Dict[str, int]]:
+    hit = [t for t in COMEBACK_TIERS if days_away >= t["days"]]
+    return hit[-1] if hit else None
+
+
+async def _stamp_last_seen(user: dict) -> None:
+    """Stamp last_seen_at; if the player was away long enough, queue a comeback gift first."""
+    now = time.time()
+    upd: Dict[str, Any] = {"last_seen_at": now}
+    last = user.get("last_seen_at")
+    if last and not user.get("comeback_pending"):
+        days = (now - float(last)) / 86400
+        gift = comeback_gift_for_days(days)
+        if gift:
+            coins = int(round(gift["coins"] * coin_multiplier()))
+            upd["comeback_pending"] = {"days_away": int(days), "coins": coins, "xp": gift["xp"]}
+            user["comeback_pending"] = upd["comeback_pending"]
+    user["last_seen_at"] = now
+    await db.users.update_one({"_id": user["_id"]}, {"$set": upd})
+
+
+@api.get("/rewards/comeback")
+async def comeback_status(user: dict = Depends(get_current_user)):
+    if not user.get("comeback_pending"):
+        await _stamp_last_seen(user)
+    return {"pending": user.get("comeback_pending")}
+
+
+@api.post("/rewards/comeback/claim")
+async def comeback_claim(user: dict = Depends(get_current_user)):
+    gift = user.get("comeback_pending")
+    if not gift:
+        raise HTTPException(status_code=400, detail="No comeback gift to claim.")
+    res = await db.users.update_one(
+        {"_id": user["_id"], "comeback_pending": {"$ne": None}},
+        {"$unset": {"comeback_pending": ""}, "$inc": {"coins": int(gift["coins"]), "season_coins": int(gift["coins"]), "stats.bonus_xp": int(gift["xp"])}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=400, detail="No comeback gift to claim.")
+    fresh = await db.users.find_one({"_id": user["_id"]}, {"coins": 1})
+    return {"claimed": gift, "coins": int((fresh or {}).get("coins", 0) or 0)}
+
+
+class ComebackTierIn(BaseModel):
+    days: int = Field(ge=1, le=365)
+    coins: int = Field(ge=0, le=100000)
+    xp: int = Field(ge=0, le=100000)
+
+
+class ComebackConfigIn(BaseModel):
+    tiers: List[ComebackTierIn] = Field(min_length=1, max_length=6)
+
+
+@api.get("/admin/comeback_config")
+async def admin_get_comeback_config(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return {"tiers": COMEBACK_TIERS, "defaults": COMEBACK_DEFAULTS}
+
+
+@api.post("/admin/comeback_config")
+async def admin_set_comeback_config(payload: ComebackConfigIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    days = [t.days for t in payload.tiers]
+    if len(set(days)) != len(days):
+        raise HTTPException(status_code=400, detail="Each tier needs a different number of days.")
+    doc = {"tiers": [t.model_dump() for t in payload.tiers]}
+    await db.meta.update_one({"_id": "comeback_config"}, {"$set": doc}, upsert=True)
+    _apply_comeback_config(doc)
+    return {"tiers": COMEBACK_TIERS, "defaults": COMEBACK_DEFAULTS}
 
 
 @api.get("/rewards/daily")
@@ -13611,7 +13700,7 @@ async def ws_game(
     # Stamp last_seen on connect — also covered on disconnect below — so the
     # friends-list "last seen N min ago" stays accurate without heartbeat.
     try:
-        await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})
+        await _stamp_last_seen(user)
     except Exception:
         pass
     player = Player(websocket, user=user, is_bot=False)
