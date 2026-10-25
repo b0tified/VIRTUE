@@ -32,6 +32,7 @@ from pydantic import BaseModel, EmailStr, Field
 # existing callers (`server.RANK_TIERS`, `server.hash_password`, ...)
 # and the entire pytest suite keep working unchanged.
 from _lib import cluster
+from _lib import anticheat
 from _lib.ranks import (  # noqa: F401 — re-exported public API
     RANK_TIERS,
     MASTERS_TIER_IDX,
@@ -4323,6 +4324,14 @@ def random_spawn(arena: Optional[dict] = None, *, occupants: Optional[List["Play
 # Player & Bot
 # -------------------------------------------------------------------
 class Player:
+    def reset_aim_stats(self) -> None:
+        # Per-match hitscan aim counters for anti-cheat flagging (real players only).
+        self.shots_fired = 0
+        self.shots_hit = 0
+        self.head_hits = 0
+        self.snap_hits = 0
+        self._last_snap_ms = 0
+
     def __init__(self, ws: Optional[WebSocket], user: Optional[dict] = None, is_bot: bool = False, bot_name: str = ""):
         self.ws = ws
         self.is_bot = is_bot
@@ -4380,6 +4389,7 @@ class Player:
         self.hp = self.max_hp
         self.kills = 0
         self.deaths = 0
+        self.reset_aim_stats()
         self.alive = True
         self.last_shot_ms = 0
         self.last_melee_ms = 0
@@ -5084,6 +5094,7 @@ class GameRoom:
                 for p in self.players.values():
                     p.kills = 0
                     p.deaths = 0
+                    p.reset_aim_stats()
                 self.team_scores = {"red": 0, "blue": 0}
                 self._tdm_early_end_armed = False
             # Assign a team (TDM only). Done while holding the lock so a
@@ -5686,7 +5697,13 @@ class GameRoom:
             lookback = (ping_ms / 1000.0) / 2.0 + 0.05
             at_time = time.time() - lookback
         hit, body_part, dist = self.raycast_hit(shooter, yaw_override=yaw, pitch_override=pitch, at_time=at_time)
+        if not shooter.is_bot:
+            shooter.shots_fired += 1
         if hit and hit.alive:
+            if not shooter.is_bot and time.time() >= hit.invuln_until:
+                shooter.shots_hit += 1
+                shooter.head_hits += body_part == "head"
+                shooter.snap_hits += int(time.time() * 1000) - shooter._last_snap_ms <= SNAP_HIT_WINDOW_MS
             if time.time() < hit.invuln_until:
                 return
             # TDM friendly fire — same-team hits deal no damage and emit
@@ -6052,6 +6069,8 @@ class GameRoom:
                 # practice (users reported "spawn immunity doesn't work").
                 if 0.02 < dist <= max_delta and player.invuln_until > time.time() and not player.spawn_shield:
                     player.invuln_until = 0.0
+            if abs((yaw - player.yaw + math.pi) % (2 * math.pi) - math.pi) > SNAP_YAW_RAD:
+                player._last_snap_ms = int(time.time() * 1000)
             player.yaw = yaw
             player.pitch = max(-1.5, min(1.5, pitch))
             if "ads" in msg:
@@ -7433,6 +7452,10 @@ class GameRoom:
                         "deaths": int(entry.get("deaths", pl.deaths) or 0),
                         "placement": placement_of.get(pl.id, 1),
                         "total_players": total_with_bots,
+                        "shots": pl.shots_fired,
+                        "hits": pl.shots_hit,
+                        "head_hits": pl.head_hits,
+                        "snap_hits": pl.snap_hits,
                         "rp_delta": int(entry.get("delta", 0) or 0),
                         "rank_points_after": int(entry.get("new_points", 0) or 0),
                         "rank_name_after": entry.get("rank_name") or "BRONZE",
@@ -7541,6 +7564,7 @@ class GameRoom:
         for p in self.players.values():
             p.kills = 0
             p.deaths = 0
+            p.reset_aim_stats()
             sx, sz = spawn_pool[spawn_idx % len(spawn_pool)]
             spawn_idx += 1
             p.x, p.z = float(sx), float(sz)
@@ -7578,6 +7602,7 @@ class GameRoom:
         for p in self.players.values():
             p.kills = 0
             p.deaths = 0
+            p.reset_aim_stats()
             p.hp = p.max_hp
             p.alive = True
             p.respawn_at = 0.0
@@ -10346,6 +10371,81 @@ async def admin_ban_user(
     return {"ok": True, "ban": {**ban_doc, "at": ban_doc["at"].isoformat(), "until": until.isoformat() if until else None}}
 
 
+def _require_admin(user: dict) -> None:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+
+def _flag_out(f: dict) -> dict:
+    out = {k: v for k, v in f.items() if k != "_id"}
+    for k in ("flagged_at", "updated_at", "resolved_at"):
+        if isinstance(out.get(k), datetime):
+            out[k] = out[k].isoformat()
+    for n in out.get("notes") or []:
+        if isinstance(n.get("at"), datetime):
+            n["at"] = n["at"].isoformat()
+    return out
+
+
+@api.get("/admin/cheat_flags")
+async def admin_list_cheat_flags(status: str = "active", user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    q = {"status": {"$in": ["open", "warned"]}} if status == "active" else {"status": status}
+    flags = await db.cheat_flags.find(q).sort("updated_at", -1).limit(100).to_list(length=100)
+    out = []
+    for f in flags:
+        recent = await db.match_history.find(
+            {"user_id": f["_id"], "shots": {"$exists": True}},
+            {"_id": 0, "mode": 1, "game_mode": 1, "kills": 1, "deaths": 1, "shots": 1, "hits": 1, "head_hits": 1, "snap_hits": 1, "placement": 1, "total_players": 1, "ended_at": 1},
+        ).sort("ended_at", -1).limit(5).to_list(length=5)
+        for r in recent:
+            if isinstance(r.get("ended_at"), datetime):
+                r["ended_at"] = r["ended_at"].isoformat()
+        out.append({**_flag_out(f), "recent_matches": recent})
+    counts = {s_: await db.cheat_flags.count_documents({"status": s_}) for s_ in ("open", "warned", "cleared", "banned")}
+    return {"flags": out, "counts": counts}
+
+
+class CheatFlagActionIn(BaseModel):
+    action: str = Field(pattern="^(clear|warn|ban)$")
+    note: str = Field(default="", max_length=500)
+    duration_hours: Optional[int] = Field(default=None, ge=1, le=24 * 365)
+
+
+@api.post("/admin/cheat_flags/{uid}/action")
+async def admin_cheat_flag_action(uid: str, payload: CheatFlagActionIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    flag = await db.cheat_flags.find_one({"_id": uid})
+    if not flag:
+        raise HTTPException(status_code=404, detail="Flag not found.")
+    now = datetime.now(timezone.utc)
+    note = payload.note.strip()
+    if payload.action == "ban":
+        await admin_ban_user(flag["username"], BanUserIn(reason=note or "Cheating (auto-flagged stats)", duration_hours=payload.duration_hours), user)
+    status = {"clear": "cleared", "warn": "warned", "ban": "banned"}[payload.action]
+    upd: Dict[str, Any] = {"$set": {"status": status, "updated_at": now}}
+    if status in ("cleared", "banned"):
+        upd["$set"]["resolved_at"] = now
+    upd["$push"] = {"notes": {"by": user.get("username"), "action": status, "text": note, "at": now}}
+    await db.cheat_flags.update_one({"_id": uid}, upd)
+    return _flag_out(await db.cheat_flags.find_one({"_id": uid}))
+
+
+@api.get("/admin/anticheat_config")
+async def admin_get_anticheat_config(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    return {"config": ANTICHEAT_CONFIG, "defaults": anticheat.DEFAULTS, "limits": anticheat.LIMITS}
+
+
+@api.post("/admin/anticheat_config")
+async def admin_set_anticheat_config(payload: Dict[str, float] = Body(...), user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    cfg = anticheat.clean_config(payload)
+    await db.meta.update_one({"_id": "anticheat_config"}, {"$set": cfg}, upsert=True)
+    ANTICHEAT_CONFIG.update(cfg)
+    return {"config": ANTICHEAT_CONFIG, "defaults": anticheat.DEFAULTS, "limits": anticheat.LIMITS}
+
+
 @api.post("/admin/users/{username}/unban")
 async def admin_unban_user(username: str, user: dict = Depends(get_current_user)):
     """Clear any active ban/suspension on the target user."""
@@ -10935,6 +11035,7 @@ async def _queue_fill_config_loop() -> None:
             _apply_queue_fill_config(await db.meta.find_one({"_id": "queue_fill_config"}) or {})
             _apply_ranked_bot_difficulty(await db.meta.find_one({"_id": "ranked_bot_difficulty"}) or {})
             _apply_comeback_config(await db.meta.find_one({"_id": "comeback_config"}) or {})
+            ANTICHEAT_CONFIG.update(anticheat.clean_config(await db.meta.find_one({"_id": "anticheat_config"}) or {}))
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -13130,6 +13231,39 @@ async def _persist_match_history(docs: list, user_ids: list, grants: list) -> No
             await _grant_first_match_skin(uid)
         except Exception:
             pass
+    for uid in user_ids:
+        try:
+            await _evaluate_cheat_flag(uid)
+        except Exception as _e:
+            logger.warning("anticheat eval failed for %s: %s", uid, _e)
+
+
+ANTICHEAT_CONFIG: Dict[str, float] = dict(anticheat.DEFAULTS)
+SNAP_YAW_RAD = 1.2            # one input turning >~70° counts as a flick
+SNAP_HIT_WINDOW_MS = 120      # a hit landing this soon after a flick is a "snap hit"
+
+
+async def _evaluate_cheat_flag(uid: str) -> None:
+    """Re-check a player's recent matches; open/refresh a flag in db.cheat_flags when limits are exceeded."""
+    flag = await db.cheat_flags.find_one({"_id": uid})
+    q: Dict[str, Any] = {"user_id": uid, "shots": {"$exists": True}}
+    if flag and flag.get("status") in ("cleared", "banned") and flag.get("resolved_at"):
+        q["ended_at"] = {"$gt": flag["resolved_at"]}
+    rows = await db.match_history.find(q, {"kills": 1, "deaths": 1, "shots": 1, "hits": 1, "head_hits": 1, "snap_hits": 1}) \
+        .sort("ended_at", -1).limit(int(ANTICHEAT_CONFIG["sample_matches"])).to_list(length=50)
+    res = anticheat.evaluate(rows, ANTICHEAT_CONFIG)
+    now = datetime.now(timezone.utc)
+    if not res["reasons"]:
+        if flag and flag.get("status") == "open":
+            await db.cheat_flags.update_one({"_id": uid}, {"$set": {"stats": res["stats"], "updated_at": now}})
+        return
+    u = await db.users.find_one({"_id": ObjectId(uid)}, {"username": 1, "role": 1})
+    if not u or u.get("role") == "admin":
+        return
+    set_doc = {"user_id": uid, "username": u.get("username"), "reasons": res["reasons"], "stats": res["stats"], "updated_at": now}
+    if not flag or flag.get("status") in ("cleared", "banned"):
+        set_doc.update({"status": "open", "flagged_at": now})
+    await db.cheat_flags.update_one({"_id": uid}, {"$set": set_doc}, upsert=True)
 
 
 async def _log_bot_matches(match, placements, roster, mode, total, now, match_id) -> None:
