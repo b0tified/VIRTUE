@@ -7030,8 +7030,9 @@ class GameRoom:
         """End a match: for ranked, award rank points; for casual, just show standings.
         Broadcasts a match_end payload, then resets the room after a 10s intermission."""
         self.in_intermission = True
-        if getattr(self, "is_bigffa", False) and not BIGFFA_SWITCH["enabled"]:
-            asyncio.create_task(_bigffa_send_home_after_match(self))
+        _sk = _room_switch_key(self)
+        if not MODE_SWITCHES[_sk]["enabled"]:
+            asyncio.create_task(_send_home_after_match(self, _sk))
         # Include all participants (real + bots) for placement ordering so
         # the match history shows the true total_players count. Real-player
         # RP updates still only target real_players further down.
@@ -7722,25 +7723,70 @@ bigffa_room = GameRoom(is_ranked=False, match_duration=120.0)
 bigffa_room.is_bigffa = True
 bigffa_room.bots_target_size = BIGFFA_LOBBY_SIZE
 
-# Admin Big FFA on/off switch (db.meta "bigffa_switch"); running matches finish, new joins blocked.
-BIGFFA_SWITCH: Dict[str, Any] = {"enabled": True, "changed_at": None, "changed_by": None}
+# Admin per-mode on/off switches (db.meta "mode_switches"); running matches finish, new joins blocked.
+MODE_LABELS: Dict[str, str] = {"casual_ffa": "Casual FFA", "casual_tdm": "Casual TDM", "ranked": "Ranked",
+                               "bigffa": "Big FFA", "party": "Party matches", "practice": "Practice"}
+MODE_SWITCHES: Dict[str, Dict[str, Any]] = {k: {"enabled": True, "changed_at": None, "changed_by": None} for k in MODE_LABELS}
+MAINTENANCE: Dict[str, Any] = {"active": False, "message": ""}
+BIGFFA_SWITCH = MODE_SWITCHES["bigffa"]
 
 
-def _apply_bigffa_switch(doc: dict) -> None:
-    if "enabled" in doc:
-        BIGFFA_SWITCH.update({"enabled": bool(doc["enabled"]), "changed_at": doc.get("changed_at"), "changed_by": doc.get("changed_by")})
-    if not BIGFFA_SWITCH["enabled"]:
+def mode_on(key: str, user: Optional[dict] = None) -> bool:
+    return MODE_SWITCHES[key]["enabled"] or bool(user and user.get("role") == "admin")
+
+
+def _room_switch_key(room: "GameRoom") -> str:
+    if getattr(room, "is_bigffa", False):
+        return "bigffa"
+    if getattr(room, "is_party", False):
+        return "party"
+    if getattr(room, "is_practice", False) or getattr(room, "is_offline", False):
+        return "practice"
+    if room.is_ranked:
+        return "ranked"
+    return "casual_tdm" if room.game_mode == "tdm" else "casual_ffa"
+
+
+def _apply_mode_switches(doc: dict) -> None:
+    for k, v in (doc.get("modes") or {}).items():
+        if k in MODE_SWITCHES and isinstance(v, dict) and "enabled" in v:
+            MODE_SWITCHES[k].update({"enabled": bool(v["enabled"]), "changed_at": v.get("changed_at"), "changed_by": v.get("changed_by")})
+    if isinstance(doc.get("maintenance"), dict):
+        MAINTENANCE.update({"active": bool(doc["maintenance"].get("active")), "message": str(doc["maintenance"].get("message") or "")})
+    if not MODE_SWITCHES["bigffa"]["enabled"]:
         BIGFFA_QUEUE.clear()
+    if not MODE_SWITCHES["ranked"]["enabled"]:
+        for q in RANKED_QUEUE.values():
+            q.clear()
+    ffa, tdm = MODE_SWITCHES["casual_ffa"]["enabled"], MODE_SWITCHES["casual_tdm"]["enabled"]
+    if not ffa and not tdm:
+        CASUAL_QUEUE.clear()
+    elif not ffa or not tdm:
+        for e in CASUAL_QUEUE:
+            e["mode_pref"] = "ffa" if ffa else "tdm"
 
 
-async def _bigffa_send_home_after_match(room: "GameRoom") -> None:
-    # Switch is off: after the results screen, send remaining players back to the lobby.
+def casual_pref_allowed(pref: str) -> str:
+    """Coerce a casual mode preference onto whichever casual mode is switched on."""
+    ffa, tdm = MODE_SWITCHES["casual_ffa"]["enabled"], MODE_SWITCHES["casual_tdm"]["enabled"]
+    if ffa and tdm:
+        return pref
+    return "ffa" if ffa else "tdm"
+
+
+def modes_public() -> dict:
+    return {"modes": {k: v["enabled"] for k, v in MODE_SWITCHES.items()}, "maintenance": dict(MAINTENANCE),
+            "bigffa_enabled": MODE_SWITCHES["bigffa"]["enabled"]}
+
+
+async def _send_home_after_match(room: "GameRoom", key: str) -> None:
+    # Mode is off: after the results screen, send remaining non-admin players back to the lobby.
     await asyncio.sleep(10)
-    if BIGFFA_SWITCH["enabled"]:
+    if MODE_SWITCHES[key]["enabled"]:
         return
     for p in list(room.players.values()):
-        if not p.is_bot and p.ws is not None:
-            await room._send(p, {"type": "mode_unavailable", "mode": "bigffa"})
+        if not p.is_bot and p.ws is not None and not getattr(p, "is_admin", False):
+            await room._send(p, {"type": "mode_unavailable", "mode": key})
 
 # ---- Server health (Moderation → Server Health panel) ----
 SERVER_STARTED_AT = time.time()
@@ -8350,7 +8396,7 @@ async def matchmaker_loop():
                 dispatched_any = True
                 while dispatched_any:
                     dispatched_any = False
-                    if not BIGFFA_QUEUE or not BIGFFA_SWITCH["enabled"]:
+                    if not BIGFFA_QUEUE:
                         break
                     # Find a "lead" entry — either the queue is at 12+ (any
                     # entry becomes lead) or an entry has waited past ITS
@@ -8983,6 +9029,8 @@ async def queue_ranked_join(
     """Enqueue the caller for ranked. If they're in a party, the whole
     party queues together at the *highest* member's tier; only the leader
     can press the button. Solo players are unchanged."""
+    if not mode_on("ranked", user):
+        raise HTTPException(status_code=403, detail="Ranked is temporarily unavailable.")
     user_id = str(user["_id"])
     # Gate: Ranked locks until Level 5 — protects new players + their MMR.
     user_level = compute_level(user.get("stats", {}))["level"]
@@ -9164,7 +9212,8 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
                         "is_party": bool(e.get("is_party")),
                         "party_size": len(uids),
                     }
-    return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill}
+    return {"in_queue": False, "matched": False, "tier": tier_idx, "tier_name": tier_name, "wait_seconds": 0, "bot_fill_seconds": fill,
+            "disabled": not mode_on("ranked", user)}
 
 
 @api.delete("/queue/ranked")
@@ -9213,6 +9262,8 @@ async def queue_casual_join(
     on the queue toast. The value re-rolls per join, but the client's
     lockedEtaRef preserves it for the lifetime of the queue session so
     the number doesn't tick down/jump around every second."""
+    if not (mode_on("casual_ffa", user) or mode_on("casual_tdm", user)):
+        raise HTTPException(status_code=403, detail="Casual is temporarily unavailable.")
     user_id = str(user["_id"])
     party = await _party_for_user(user_id)
     is_party = bool(party)
@@ -9257,6 +9308,8 @@ async def queue_casual_join(
                 (payload.mode_pref or "both").lower()
                 if payload and payload.mode_pref in ("ffa", "tdm", "both")
                 else "both"
+            ) if user.get("role") == "admin" else casual_pref_allowed(
+                (payload.mode_pref or "both").lower() if payload and payload.mode_pref in ("ffa", "tdm", "both") else "both"
             ),
         })
     return {
@@ -9317,7 +9370,8 @@ async def queue_casual_state(user: dict = Depends(get_current_user)):
                     # already carries the snapshot.
                     "estimated_wait_seconds": int(e.get("estimated_wait_seconds", int(CASUAL_BOT_FILL_SEC))),
                 }
-        return {"in_queue": False, "matched": False, "queue_size": len(CASUAL_QUEUE)}
+        return {"in_queue": False, "matched": False, "queue_size": len(CASUAL_QUEUE),
+                "disabled": not (mode_on("casual_ffa", user) or mode_on("casual_tdm", user))}
 
 
 @api.delete("/queue/casual")
@@ -9380,7 +9434,7 @@ async def queue_bigffa_join(
     """Enqueue the caller for a 12-player FFA lobby. Solo-only (parties
     should use their own party lobby). Yanks any existing casual/bigffa
     entry so a player can only be in one queue at a time."""
-    if not BIGFFA_SWITCH["enabled"]:
+    if not mode_on("bigffa", user):
         raise HTTPException(status_code=403, detail="Big FFA is temporarily unavailable.")
     user_id = str(user["_id"])
     async with QUEUE_LOCK:
@@ -9456,7 +9510,7 @@ async def queue_bigffa_state(user: dict = Depends(get_current_user)):
                     "bot_fill_seconds": int(BIGFFA_BOT_FILL_SEC),
                     "estimated_wait_seconds": int(e.get("estimated_wait_seconds", int(BIGFFA_BOT_FILL_SEC))),
                 }
-        return {"in_queue": False, "matched": False, "queue_size": len(BIGFFA_QUEUE), "disabled": not BIGFFA_SWITCH["enabled"]}
+        return {"in_queue": False, "matched": False, "queue_size": len(BIGFFA_QUEUE), "disabled": not mode_on("bigffa", user)}
 
 
 @api.delete("/queue/bigffa")
@@ -11141,7 +11195,11 @@ async def _queue_fill_config_loop() -> None:
             _apply_ranked_bot_difficulty(await db.meta.find_one({"_id": "ranked_bot_difficulty"}) or {})
             _apply_comeback_config(await db.meta.find_one({"_id": "comeback_config"}) or {})
             ANTICHEAT_CONFIG.update(anticheat.clean_config(await db.meta.find_one({"_id": "anticheat_config"}) or {}))
-            _apply_bigffa_switch(await db.meta.find_one({"_id": "bigffa_switch"}) or {})
+            _ms = await db.meta.find_one({"_id": "mode_switches"})
+            if _ms is None:
+                _legacy = await db.meta.find_one({"_id": "bigffa_switch"}) or {}
+                _ms = {"modes": {"bigffa": _legacy}} if "enabled" in _legacy else {}
+            _apply_mode_switches(_ms)
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -11497,7 +11555,59 @@ async def admin_server_health(user: dict = Depends(get_current_user)):
 
 @api.get("/modes/status")
 async def modes_status(user: dict = Depends(get_current_user)):
-    return {"bigffa_enabled": bool(BIGFFA_SWITCH["enabled"])}
+    return modes_public()
+
+
+def _mode_switches_admin() -> dict:
+    return {"modes": {k: {**v, "label": MODE_LABELS[k]} for k, v in MODE_SWITCHES.items()}, "maintenance": dict(MAINTENANCE)}
+
+
+async def _save_mode_switches(changes: Dict[str, bool], user: dict, maintenance: Optional[dict] = None) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    doc: Dict[str, Any] = {"modes": {k: {"enabled": v, "changed_at": now, "changed_by": user.get("username")} for k, v in changes.items()}}
+    if maintenance is not None:
+        doc["maintenance"] = maintenance
+    sets = {f"modes.{k}": v for k, v in doc["modes"].items()}
+    if maintenance is not None:
+        sets["maintenance"] = maintenance
+    await db.meta.update_one({"_id": "mode_switches"}, {"$set": sets}, upsert=True)
+    async with QUEUE_LOCK:
+        _apply_mode_switches(doc)
+    return _mode_switches_admin()
+
+
+class ModeSwitchIn(BaseModel):
+    mode: str
+    enabled: bool
+
+
+class MaintenanceIn(BaseModel):
+    active: bool
+    message: str = Field(default="", max_length=200)
+
+
+@api.get("/admin/mode_switches")
+async def admin_get_mode_switches(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    return _mode_switches_admin()
+
+
+@api.post("/admin/mode_switches")
+async def admin_set_mode_switch(payload: ModeSwitchIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    if payload.mode not in MODE_SWITCHES:
+        raise HTTPException(status_code=400, detail="Unknown mode.")
+    maint = None
+    if payload.enabled and MAINTENANCE["active"]:
+        maint = {"active": False, "message": ""}
+    return await _save_mode_switches({payload.mode: payload.enabled}, user, maint)
+
+
+@api.post("/admin/mode_switches/all")
+async def admin_set_all_modes(payload: MaintenanceIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    maint = {"active": payload.active, "message": payload.message.strip() if payload.active else ""}
+    return await _save_mode_switches({k: not payload.active for k in MODE_SWITCHES}, user, maint)
 
 
 class BigFfaSwitchIn(BaseModel):
@@ -11506,12 +11616,8 @@ class BigFfaSwitchIn(BaseModel):
 
 @api.post("/admin/bigffa_switch")
 async def admin_set_bigffa_switch(payload: BigFfaSwitchIn, user: dict = Depends(get_current_user)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required.")
-    doc = {"enabled": payload.enabled, "changed_at": datetime.now(timezone.utc).isoformat(), "changed_by": user.get("username")}
-    await db.meta.update_one({"_id": "bigffa_switch"}, {"$set": doc}, upsert=True)
-    async with QUEUE_LOCK:
-        _apply_bigffa_switch(doc)
+    _require_admin(user)
+    await _save_mode_switches({"bigffa": payload.enabled}, user)
     return dict(BIGFFA_SWITCH)
 
 
@@ -13215,6 +13321,8 @@ async def party_start(payload: dict = None, user: dict = Depends(get_current_use
     POST with no body still work — `bots_enabled` defaults to True
     (matches the old auto-fill behavior) and `tdm` to False.
     """
+    if not mode_on("party", user):
+        raise HTTPException(status_code=403, detail="Party matches are temporarily unavailable.")
     me_id = str(user["_id"])
     party_id = PARTY_MEMBER_INDEX.get(me_id)
     if not party_id or party_id not in PARTIES:
@@ -13873,15 +13981,6 @@ async def ws_game(
         # tops the room up to 12 with disguised bots so a solo joiner still
         # gets a full lobby.
         room = bigffa_room
-        already_in = any(str(p.user_id) == str(user["_id"]) for p in room.players.values() if not p.is_bot)
-        if not BIGFFA_SWITCH["enabled"] and not already_in:
-            try:
-                await websocket.accept()
-                await websocket.send_text(json.dumps({"type": "mode_unavailable", "mode": "bigffa"}))
-                await websocket.close(code=4403)
-            except Exception:
-                pass
-            return
     elif mode == "spectate":
         # Spectate a friend's match: find their current room and join read-only.
         if not target:
@@ -13966,6 +14065,17 @@ async def ws_game(
             {k: matched.get(k) for k in ("casual", "tdm", "vs_bot")} if matched else None,
             bool(tdm), _url_pref or None, wants_tdm, "tdm_room" if wants_tdm else "game_room",
         )
+    if mode != "spectate":
+        _sk = _room_switch_key(room)
+        already_in = any(str(p.user_id) == str(user["_id"]) for p in room.players.values() if not p.is_bot)
+        if not mode_on(_sk, user) and not already_in:
+            try:
+                await websocket.accept()
+                await websocket.send_text(json.dumps({"type": "mode_unavailable", "mode": _sk}))
+                await websocket.close(code=4403)
+            except Exception:
+                pass
+            return
     await websocket.accept()
     u_id_str = str(user["_id"])
     ONLINE_USERS[u_id_str] = ONLINE_USERS.get(u_id_str, 0) + 1
@@ -13976,6 +14086,7 @@ async def ws_game(
     except Exception:
         pass
     player = Player(websocket, user=user, is_bot=False)
+    player.is_admin = user.get("role") == "admin"
     # Client platform tagging — flips the room into "mobile mode" (weaker
     # bots + phone-icon scoreboard chips) whenever a mobile-only player
     # is present. Non-mobile players don't affect the room; the

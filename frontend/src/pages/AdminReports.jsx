@@ -16,6 +16,7 @@ import AdminComebackPanel from "@/components/AdminComebackPanel";
 import AdminCheatFlagsPanel from "@/components/AdminCheatFlagsPanel";
 import AdminRankedBotDifficultyPanel from "@/components/AdminRankedBotDifficultyPanel";
 import AdminServerHealthPanel from "@/components/AdminServerHealthPanel";
+import AdminModeSwitchesPanel, { ModesOffBanner } from "@/components/AdminModeSwitchesPanel";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { TitleChip } from "@/components/ShopTitlesTab";
 import BundleMakerPanel from "@/components/admin/BundleMakerPanel";
@@ -45,6 +46,7 @@ export default function AdminReports() {
   const [busy, setBusy] = useState(false);
   const [actionTarget, setActionTarget] = useState(null); // { report } for ban modal
   const [toast, setToast] = useState(null);
+  const [modeSwitches, setModeSwitches] = useState(null);
   // Separate spinner for the Seed Leaderboard action so the main report
   // table doesn't dim while seeding.
   const [seedingBusy, setSeedingBusy] = useState(false);
@@ -146,6 +148,7 @@ export default function AdminReports() {
 
   return (
     <div className="min-h-screen bg-pow-cream p-6" data-testid="admin-reports-page">
+      <ModesOffBanner data={modeSwitches} />
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -235,6 +238,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <DefaultLobbyScreenPanel onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <AdminModeSwitchesPanel data={modeSwitches} setData={setModeSwitches} onToast={setToast} />
       </div>
 
       <div className="max-w-6xl mx-auto mb-6">

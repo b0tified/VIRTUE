@@ -1,65 +1,68 @@
-# Big FFA Ping Check: Per-Mode Server Load + Big FFA Switch
+# Mode Switches: Turn Any or All Game Modes Off
 
-A way to find out whether the 12-player Big FFA mode is causing the higher ping on the live site. It adds live measurements for each game mode and a Moderation switch to turn Big FFA off and on, so ping can be compared with and without it.
+Extends the Big FFA on/off switch to every game mode, plus one "turn everything off" control. Lets the admin pause modes for testing, fixes, maintenance or diagnosing lag without redeploying.
 
 ## Who it's for
-- **The game's admin:** uses the Server Health panel and the switch to diagnose ping on live.
-- **Players:** only affected while Big FFA is switched off. They see it as temporarily unavailable.
+- **The game's admin:** pauses one mode, several, or the whole game from Moderation.
+- **Players:** see paused modes as unavailable in the lobby, with a clear message.
 
 ## Core features and experience
-1. **Per-mode load in Server Health**
-   - Each mode gets its own row: Casual FFA, TDM, Ranked, Big FFA, Party and Practice.
-   - Each row shows:
-     - active matches
-     - real players and bots
-     - average and worst server time per game update (in ms, with each update allowed 50 ms)
-     - data sent to players per second
-   - Totals for the whole server copy appear underneath, next to the existing event-loop lag and ping figures.
-   - The numbers refresh about every 5 seconds, like the rest of the panel.
-   - A short note explains how to read the numbers. Low server time with high ping means distance or relay cost, not the mode.
-2. **Big FFA on/off switch in Moderation**
-   - Switching it **off**:
-     - the Big FFA queue button in the lobby shows "Temporarily unavailable" and can't be pressed
-     - nobody new can queue
-     - players already queued are taken out with a short message
-     - **matches already running finish normally**
-   - Switching it **on** brings the mode back right away.
-   - The setting is saved, so it survives server restarts and applies to both live server copies within about 30 seconds.
-   - The panel shows when the switch was last changed and by whom.
-3. **Ping comparison readout**
-   - Server Health shows the average ping of real players over the last 15 minutes, split into "Big FFA on" and "Big FFA off" periods.
-   - This lets the admin compare the two without writing anything down.
+1. **One switch per mode in Moderation**
+   - Modes: Casual (FFA and TDM, together and separately), Ranked, Big FFA (the existing switch), Party matches, and Practice (range and vs AI).
+   - Each switch is ON/OFF, asks for confirmation when turning off, and shows when it was last changed and by whom.
+   - Switching a mode **off**:
+     - nobody new can queue for it or join it
+     - anyone already queued is taken out with a short message
+     - matches already running finish normally, then those players go back to the lobby
+     - Ranked results from those finishing matches still count
+   - Switching a mode **on** brings it back right away.
+2. **Casual FFA and TDM separately**
+   - With only one of them off, the Casual button still works and matchmaking uses the mode that's on.
+   - The FFA/TDM picker greys out the mode that's off.
+   - With both off, the Casual button itself shows as unavailable.
+3. **"Turn all modes off" (maintenance mode)**
+   - One button switches every mode off at once, after a stronger confirmation.
+   - It takes an optional short message for players, for example "Back in 20 minutes – server maintenance".
+   - "Turn all back on" restores every mode in one click.
+   - A red banner at the top of the Moderation page shows while any mode is off, listing which ones, so it isn't forgotten.
+4. **Player experience in the lobby**
+   - Each paused mode's button is greyed out with "Temporarily unavailable".
+   - When everything is off, a lobby banner shows the admin's message. The shop, profile, friends and other menus keep working.
+   - Party leaders can't start a party match while Party is off. The party itself stays together.
+   - Players already in a match at the moment of switching see nothing different until it ends.
+5. **Saved and shared**
+   - Settings survive restarts and apply to both live server copies within about 30 seconds.
+   - Admins can still join paused modes, so fixes can be tested while players are kept out.
 
 ## User flow
-1. The admin opens Moderation → Server Health and looks at the per-mode rows during normal play.
-2. If Big FFA's server time is low, it's very unlikely to be the cause. To test anyway, the admin flips the Big FFA switch off.
-3. Running Big FFA matches finish. New players can't join, and the lobby shows it as temporarily unavailable.
-4. The admin plays or watches for 15–30 minutes, then compares the on and off ping figures.
-5. The admin switches Big FFA back on and keeps it, or leaves it off if ping clearly improved.
+1. The admin opens Moderation and finds the "Mode Switches" panel next to Server Health.
+2. They flip one or more modes off, or press "Turn all modes off" and type a message.
+3. Players in the lobby see those buttons greyed out within about 30 seconds, or immediately if they try to join.
+4. Running matches finish and players return to the lobby.
+5. When done, the admin flips modes back on, or presses "Turn all back on", and the red banner disappears.
 
 ## UI/UX feel
-- Same comic Moderation style as the existing panels: thick black borders, bold uppercase labels and the yellow/red accents.
-- Per-mode rows turn yellow when server time per update goes over 15 ms and red over 30 ms.
-- The switch is a clear ON/OFF toggle. Turning it off asks for confirmation.
-- In the lobby, the disabled Big FFA button is greyed out with a small "Temporarily unavailable" label. The other buttons don't change.
+- Same comic Moderation style: thick black borders, bold uppercase labels, green ON and red OFF buttons.
+- "Turn all modes off" is a large red button, set apart from the per-mode switches.
+- Lobby buttons for paused modes are dimmed and show a clearly readable "Temporarily unavailable" tag on its own line.
+- The maintenance banner in the lobby is a bold strip near the top that doesn't cover the player card.
 
 ## Implementation phases
 - **Phase 1 (MVP, built now):**
-  - per-mode load measurements in Server Health
-  - the Big FFA on/off switch (current matches finish, queue blocked, lobby button disabled)
-  - the on/off ping comparison readout
-- **Phase 2:** a 24-hour history chart of ping and server time per mode, to spot the times of day when lag starts.
-- **Phase 3:** a pause switch for each mode (Casual, TDM, Ranked), plus a scheduled pause option (for example, off during peak hours).
+  - per-mode switches, including Casual FFA and TDM separately
+  - "Turn all modes off / back on" with a player message
+  - lobby unavailable states and messages
+  - the Moderation reminder banner
+  - admins can still join paused modes
+- **Phase 2:** scheduled pauses, for example off from 2–3 am, or a countdown warning in the lobby ("Ranked closes in 10 minutes").
+- **Phase 3:** a history log of every switch change, and an option to show the maintenance message as an in-game News post automatically.
 
 ## Assumptions
-- My expectation from earlier measurements is that Big FFA is **probably not** the cause:
-  - live CPU was about 4%
-  - match updates measured under 1.5 ms of the 50 ms allowed
-  - data sent was only about 10 KB/s per player
-- The plan measures to confirm this rather than assuming.
-- Measurements only cover the server copy the admin's panel is talking to. The other copy's figures appear only if that copy answers; otherwise they're labelled "this copy only".
-- "Data sent per second" counts game updates sent to players, not website or shop traffic.
-- Bots in Big FFA count towards its load figures. The always-running background rooms each count under their own mode.
-- The ping comparison uses the ping each player's game already reports. It needs at least 3 real players in the period to show a number; otherwise it shows "not enough data".
-- With Big FFA off, its background rooms also stop running new matches, so the test removes all of Big FFA's server cost.
-- Only admins can see the measurements and use the switch. No player-facing announcement is added.
+- The existing Big FFA switch becomes one of the switches in the new panel and keeps working the same way.
+- Casual has two separate switches (FFA and TDM), because Casual matchmaking already lets players pick one or both.
+- Practice is included even though it uses little server power, so maintenance mode can truly stop all play.
+- Ranked matches already in progress finish and count normally. Placement progress is unaffected.
+- The player message is used only for "Turn all modes off". Single-mode pauses show the standard "Temporarily unavailable" text.
+- Admin accounts can still queue for and join paused modes for testing.
+- Spectating friends' matches that are still running keeps working.
+- No automatic News post or email is sent to players.

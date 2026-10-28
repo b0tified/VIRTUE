@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import api from "@/api";
 import { Activity, Loader2 } from "lucide-react";
 import AdminModeLoadTable from "@/components/AdminModeLoadTable";
-import AdminBigFfaSwitch from "@/components/AdminBigFfaSwitch";
 
 const level = (v, warn, bad) => (v == null ? "#9CA3AF" : v >= bad ? "#E62429" : v >= warn ? "#F39C12" : "#06A35F");
 
@@ -59,7 +58,6 @@ export default function AdminServerHealthPanel() {
             <Metric label="Players / Bots" value={`${d.players_real} / ${d.bots}`} testid="health-players-bots" />
             <Metric label="Rooms (active)" value={`${d.rooms_total} (${d.rooms_active})`} testid="health-rooms" hint={`Uptime ${fmtUptime(d.uptime_s)}`} />
           </div>
-          <AdminBigFfaSwitch state={d.bigffa} onChanged={(b) => setD({ ...d, bigffa: b })} />
           <AdminModeLoadTable d={d} />
           <div className="border-2 border-black max-h-64 overflow-y-auto" data-testid="health-rooms-table">
             <div className="grid grid-cols-12 bg-black text-white font-anton uppercase tracking-widest text-[10px] px-3 py-1.5 sticky top-0">

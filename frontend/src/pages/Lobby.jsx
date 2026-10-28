@@ -53,6 +53,13 @@ function formatLobbyBoostRemaining(seconds) {
 }
 
 
+const ModeUnavailableTag = ({ testid }) => (
+  <span className="!block w-fit font-anton text-xs tracking-widest uppercase bg-black text-white px-1.5 mt-0.5" data-testid={testid}>
+    Temporarily unavailable
+  </span>
+);
+
+
 export default function Lobby() {
   // logout still available via Settings modal — it pulls its own useAuth().
   const { user, refreshMe } = useAuth();
@@ -538,17 +545,28 @@ export default function Lobby() {
   // dispatches them into the shared bigffa_room together; if 12s pass
   // without a full lobby, everyone in the queue is dispatched anyway
   // and the room bot-fills the remaining slots on arrival.
-  const [bigffaEnabled, setBigffaEnabled] = useState(true);
+  const [modeStatus, setModeStatus] = useState(null);
+  const modeOn = (k) => isAdmin || modeStatus?.modes?.[k] !== false;
+  const bigffaEnabled = modeOn("bigffa");
+  const casualFfaOn = modeOn("casual_ffa");
+  const casualTdmOn = modeOn("casual_tdm");
+  const casualOn = casualFfaOn || casualTdmOn;
+  const qmEffectivePref = casualFfaOn && casualTdmOn ? qmModePref : casualFfaOn ? "ffa" : "tdm";
+  const maintenance = !isAdmin && modeStatus?.maintenance?.active ? modeStatus.maintenance : null;
   const [bigffaNotice, setBigffaNotice] = useState(searchParams.get("mode_unavailable") === "1");
+  const loadModeStatus = useCallback(() => api.get("/modes/status").then(({ data }) => setModeStatus(data)).catch(() => {}), []);
   useEffect(() => {
-    let alive = true;
-    const load = () => api.get("/modes/status").then(({ data }) => alive && setBigffaEnabled(!!data.bigffa_enabled)).catch(() => {});
-    load();
-    const id = setInterval(load, 30000);
-    const onOff = () => { setBigffaEnabled(false); setBigffaNotice(true); };
+    loadModeStatus();
+    const id = setInterval(loadModeStatus, 30000);
+    const onOff = () => { loadModeStatus(); setBigffaNotice(true); };
     window.addEventListener("virtue-bigffa-unavailable", onOff);
-    return () => { alive = false; clearInterval(id); window.removeEventListener("virtue-bigffa-unavailable", onOff); };
-  }, []);
+    window.addEventListener("virtue-mode-unavailable", onOff);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("virtue-bigffa-unavailable", onOff);
+      window.removeEventListener("virtue-mode-unavailable", onOff);
+    };
+  }, [loadModeStatus]);
   useEffect(() => {
     if (!bigffaNotice) return undefined;
     const t = setTimeout(() => setBigffaNotice(false), 6000);
@@ -566,7 +584,7 @@ export default function Lobby() {
     if (casualInQueue || !!queueState) return;
     const r = await queueCtx?.joinBigffa?.();
     if (r && !r.ok) {
-      if (/temporarily unavailable/i.test(r.error || "")) { setBigffaEnabled(false); setBigffaNotice(true); return; }
+      if (/temporarily unavailable/i.test(r.error || "")) { loadModeStatus(); setBigffaNotice(true); return; }
       alert("Failed to join queue: " + r.error);
       return;
     }
@@ -1090,7 +1108,7 @@ export default function Lobby() {
             )}
             <button
               onClick={casualInQueue ? undefined : startQuickQueue}
-              disabled={casualInQueue || !!queueState || bigffaInQueue || (party && party.leader_id !== user?.id)}
+              disabled={casualInQueue || !!queueState || bigffaInQueue || (party && party.leader_id !== user?.id) || !casualOn}
               className="btn-pow bg-[#E62429] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-play-button"
               aria-label={
@@ -1099,9 +1117,12 @@ export default function Lobby() {
                 : undefined
               }
             >
+              <span className="!flex !flex-col items-start">
               <span className="flex items-center gap-3">
                 {casualInQueue ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
                 {casualInQueue ? `MATCHING...` : "CASUAL"}
+              </span>
+              {!casualOn && <ModeUnavailableTag testid="lobby-casual-unavailable" />}
               </span>
             </button>
             {/* Quick-Match mode picker — 3-way segmented control so
@@ -1119,12 +1140,13 @@ export default function Lobby() {
                 { key: "ffa",  label: "FFA",  title: "Free-for-all only" },
                 { key: "tdm",  label: "TDM",  title: "Team Deathmatch only" },
               ].map(({ key, label, title }) => {
-                const active = qmModePref === key;
+                const active = qmEffectivePref === key;
+                const modeOff = (key === "ffa" && !casualFfaOn) || (key === "tdm" && !casualTdmOn) || (key === "both" && !(casualFfaOn && casualTdmOn));
                 return (
                   <button
                     key={key}
                     type="button"
-                    disabled={casualInQueue}
+                    disabled={casualInQueue || modeOff}
                     onClick={() => setQuickMatchModePref(key)}
                     aria-label={title}
                     data-testid={`lobby-quickmatch-mode-${key}`}
@@ -1144,7 +1166,7 @@ export default function Lobby() {
             </div>
             <button
               onClick={queueState ? undefined : joinRankedQueue}
-              disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue || bigffaInQueue}
+              disabled={!!queueState || rankedLocked || rankedBanned || casualInQueue || bigffaInQueue || !modeOn("ranked")}
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
               aria-label={
@@ -1155,6 +1177,7 @@ export default function Lobby() {
                 : undefined
               }
             >
+              <span className="!flex !flex-col items-start">
               <span className="flex items-center gap-3">
                 {rankedLocked || rankedBanned ? (
                   <Lock size={20} strokeWidth={3} />
@@ -1173,6 +1196,8 @@ export default function Lobby() {
                   : queueState
                   ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...")
                   : "RANKED MATCH"}
+              </span>
+              {!modeOn("ranked") && <ModeUnavailableTag testid="lobby-ranked-unavailable" />}
               </span>
             </button>
             {/* Mobile-landscape compaction: on short viewports (height
@@ -1210,9 +1235,9 @@ export default function Lobby() {
                   </span>
                 </span>
               ) : (
-                <span className="flex flex-col items-start leading-tight">
+                <span className="!flex !flex-col items-start leading-tight">
                   <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
-                  {!bigffaEnabled && <span className="font-anton text-xs tracking-widest uppercase bg-black text-white px-1.5 mt-0.5" data-testid="lobby-bigffa-unavailable">Temporarily unavailable</span>}
+                  {!bigffaEnabled && <ModeUnavailableTag testid="lobby-bigffa-unavailable" />}
                 </span>
               )}
             </button>
@@ -1224,7 +1249,7 @@ export default function Lobby() {
             <button
               type="button"
               onClick={() => setPracticeSelectorMode("practice")}
-              disabled={casualInQueue || !!queueState}
+              disabled={casualInQueue || !!queueState || !modeOn("practice")}
               className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-practice-button"
               aria-label={
@@ -1233,7 +1258,10 @@ export default function Lobby() {
                 : undefined
               }
             >
+              <span className="!flex !flex-col items-start">
               <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE</span>
+              {!modeOn("practice") && <ModeUnavailableTag testid="lobby-practice-unavailable" />}
+              </span>
             </button>
             </div>
             {/* Leaderboard + Profile — same short-viewport 2-col
@@ -1679,11 +1707,20 @@ export default function Lobby() {
           </div>
         </div>
       )}
+      {maintenance && (
+        <div className="fixed top-28 left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4 pointer-events-none" data-testid="lobby-maintenance-banner">
+          <div className="border-4 border-black px-4 py-3 bg-[#E62429] text-white text-center shadow-[4px_4px_0_#000]">
+            <div className="font-anton uppercase tracking-widest text-sm">All modes are paused</div>
+            <div className="text-sm mt-0.5" data-testid="lobby-maintenance-message">{maintenance.message || "Back soon. Shop, profile and friends still work."}</div>
+          </div>
+        </div>
+      )}
+
       {bigffaNotice && (
         <div className="fixed top-28 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="bigffa-unavailable-toast">
           <div className="card-pow px-4 py-3 bg-[#FF7A00] text-black flex items-center gap-2">
             <Swords size={18} strokeWidth={3} />
-            <span className="font-anton uppercase tracking-widest text-sm flex-1">12P FFA is temporarily unavailable</span>
+            <span className="font-anton uppercase tracking-widest text-sm flex-1">That mode is temporarily unavailable</span>
             <button onClick={() => setBigffaNotice(false)} className="font-anton hover:opacity-80" data-testid="bigffa-unavailable-toast-close" aria-label="Dismiss">
               <X size={16} strokeWidth={3} />
             </button>

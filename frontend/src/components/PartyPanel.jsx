@@ -16,6 +16,7 @@ import api from "@/api";
 import { Avatar } from "@/components/PlayerCard";
 import { divisionRoman } from "@/game/rankIcons";
 import { useQueue } from "@/context/QueueContext";
+import { useAuth } from "@/context/AuthContext";
 
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
@@ -26,6 +27,11 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
     casualQueueState, casualWaitSec, joinCasual, cancelCasual,
   } = useQueue();
   const [busy, setBusy] = useState(false);
+  const { user } = useAuth();
+  const [partyOn, setPartyOn] = useState(true);
+  useEffect(() => {
+    api.get("/modes/status").then(({ data }) => setPartyOn(user?.role === "admin" || data?.modes?.party !== false)).catch(() => {});
+  }, [user?.role]);
   const [err, setErr] = useState(null);
   // Custom Lobby settings — persisted only on the leader's client
   // until they hit Start. Members receive the leader's final choice
@@ -258,7 +264,8 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
             <div className="flex items-stretch gap-1.5">
               <button
                 onClick={startCustomLobby}
-                disabled={busy || inRankedQueue || inCasualQueue}
+                disabled={busy || inRankedQueue || inCasualQueue || !partyOn}
+                title={partyOn ? undefined : "Party matches are temporarily unavailable"}
                 className="btn-pow bg-[#9D4EDD] text-white flex-1 [&]:py-1.5 [&]:text-sm"
                 data-testid="party-custom-lobby-button"
                 aria-label="Start a private lobby with just your party (and optionally bots)"

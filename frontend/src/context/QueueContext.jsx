@@ -201,6 +201,10 @@ export function QueueProvider({ children }) {
             }
           }, 1000);
         } else if (!s.in_queue) {
+          if (s.disabled) {
+            missesRef.current = 9;
+            try { window.dispatchEvent(new CustomEvent("virtue-mode-unavailable")); } catch {}
+          }
           // Tolerate transient `in_queue: false` blips — only tear down
           // after 10 consecutive misses (~10s). Bumped from 5 because
           // some slow-network / mobile-backgrounded scenarios still
@@ -433,6 +437,10 @@ export function QueueProvider({ children }) {
             setCasualWaitSec(0);
           }, 1200);
         } else if (!s.in_queue) {
+          if (s.disabled) {
+            casualMissesRef.current = 9;
+            try { window.dispatchEvent(new CustomEvent("virtue-mode-unavailable")); } catch {}
+          }
           casualMissesRef.current += 1;
           if (casualMissesRef.current >= 10) {
             casualCancelGuardUntilRef.current = Date.now() + 6000;
