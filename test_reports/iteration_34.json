@@ -1,0 +1,40 @@
+{
+  "summary": "Big FFA ON/OFF switch, per-mode server load table and ping comparison. Backend: 8 pytest tests (server_health shape, admin-only guards, switch off->403 queue / queue purge / disabled:true / modes_status / back on, WS gate, live per-mode load). Found and FIXED 1 bug: WS gate for mode=bigffa while OFF sent mode_unavailable before websocket.accept() -> RuntimeError -> handshake returned HTTP 500 (client never got mode_unavailable or 4403). After adding accept(), client receives {type: mode_unavailable} and close code 4403. All 8 tests pass. Frontend: Moderation panel (switch, confirm dialog on OFF only, meta text updates, 6 mode rows + totals, ping cards 'Not enough data'), lobby 12P FFA button disabled + 'Temporarily unavailable' when OFF / enabled when ON, and queued player kicked out within ~1s with bigffa-unavailable-toast - all verified. Switch left ON.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "WS /api/ws/game?mode=bigffa (switch OFF)", "issue": "FIXED by testing agent: websocket.send_text called before websocket.accept() -> 500 on handshake; added `await websocket.accept()` before sending mode_unavailable + close(4403).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/modes/status", "issue": "One flaky run returned 200 to an unauthenticated requests.get; 15 curl retries + rerun all returned 401. Could not reproduce (1/17)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Lobby 12P FFA button (OFF)", "issues": ["'Temporarily unavailable' label is very small (~10px) and squeezed right after '12P FFA' text on the dimmed orange button; hard to read"]},
+      {"screen": "Lobby bigffa-unavailable-toast", "issues": ["Toast at top-center overlaps the player card in the header at 1920 width"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_bigffa_switch_server_health.py", "/app/test_reports/pytest/pytest_bigffa_switch.xml"],
+  "action_items": [
+    "Review the WS accept() fix in server.py ws_game bigffa branch (already applied)",
+    "Game.jsx closes the socket itself on match_end, so _bigffa_send_home_after_match (10s later) will rarely find a connected player - harmless, but the real 'sent to lobby' path is the match-end overlay / 20s fallback; consider navigating with ?mode_unavailable=1 there when switch is off",
+    "Possible race in Game.jsx: on WS gate rejection server sends mode_unavailable then closes 4403 - verify onClose(non-intentional) doesn't override the nav with /lobby?disconnected=1 (only reachable for a matched-but-not-yet-connected user when switch flips)",
+    "Increase size/contrast of lobby-bigffa-unavailable label"
+  ],
+  "critical_code_review_comments": [
+    "_queue_fill_config_loop calls _apply_bigffa_switch (clears BIGFFA_QUEUE) outside QUEUE_LOCK - fine in single-threaded asyncio but inconsistent with the endpoint",
+    "MATCHED_USERS bigffa entries are not cleared when switch goes OFF; those users' WS connects get rejected (not already_in)",
+    "kb_per_s only computed when server_health is polled (snapshot >=2s); first poll for a room always shows 0",
+    "ping_compare 'minutes' counts samples even with 0 real players (shows '2 min sampled' with 0 players)",
+    "server.py is 14k+ lines - should be split into modules"
+  ],
+  "updated_files": ["/app/backend/server.py (added websocket.accept() in bigffa OFF gate)", "/app/backend/tests/test_bigffa_switch_server_health.py"],
+  "success_rate": {"backend": "100% (8/8 after fix; 7/8 before)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "None. db.meta bigffa_switch updated by tests; left enabled:true, changed_by 'hi'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "WS endpoint is /api/ws/game?token=...&mode=bigffa (token from login JSON / access_token cookie). /play is wrapped by MatchEntryGuard so direct nav to /play?mode=bigffa bounces to /lobby; in-game mode_unavailable handler (Game.jsx) was NOT exercised end-to-end (would need a 2+ min Big FFA match). App shows a loading screen; wait up to 40s for selectors.",
+  "rca of the issue": "Starlette requires accept() before send(); the bigffa OFF gate called send_text on a CONNECTING socket, raising RuntimeError swallowed by the except, so close(4403) was skipped and the server returned HTTP 500. Repro: switch OFF, connect wss://.../api/ws/game?token=T&mode=bigffa -> InvalidStatus 500. Mitigation: await websocket.accept() first (applied, retested OK)."
+}

@@ -1210,8 +1210,9 @@ export default function Lobby() {
                   </span>
                 </span>
               ) : (
-                <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA
-                  {!bigffaEnabled && <span className="ml-auto font-anton text-[10px] tracking-widest uppercase" data-testid="lobby-bigffa-unavailable">Temporarily unavailable</span>}
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
+                  {!bigffaEnabled && <span className="font-anton text-xs tracking-widest uppercase bg-black text-white px-1.5 mt-0.5" data-testid="lobby-bigffa-unavailable">Temporarily unavailable</span>}
                 </span>
               )}
             </button>
@@ -1679,7 +1680,7 @@ export default function Lobby() {
         </div>
       )}
       {bigffaNotice && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="bigffa-unavailable-toast">
+        <div className="fixed top-28 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="bigffa-unavailable-toast">
           <div className="card-pow px-4 py-3 bg-[#FF7A00] text-black flex items-center gap-2">
             <Swords size={18} strokeWidth={3} />
             <span className="font-anton uppercase tracking-widest text-sm flex-1">12P FFA is temporarily unavailable</span>

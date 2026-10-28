@@ -13876,6 +13876,7 @@ async def ws_game(
         already_in = any(str(p.user_id) == str(user["_id"]) for p in room.players.values() if not p.is_bot)
         if not BIGFFA_SWITCH["enabled"] and not already_in:
             try:
+                await websocket.accept()
                 await websocket.send_text(json.dumps({"type": "mode_unavailable", "mode": "bigffa"}))
                 await websocket.close(code=4403)
             except Exception:
