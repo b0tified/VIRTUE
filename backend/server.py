@@ -13880,6 +13880,12 @@ async def ws_game(
     if not user:
         await websocket.close(code=4401)
         return
+    if mode in ("practice", "offline") and not mode_on("practice", user):
+        # Reject before room selection so a blocked user can't trigger map swaps / room creation.
+        await websocket.accept()
+        await websocket.send_text(json.dumps({"type": "mode_unavailable", "mode": "practice"}))
+        await websocket.close(code=4403)
+        return
 
     if mode == "ranked":
         # Block under-leveled players from joining ranked games entirely.

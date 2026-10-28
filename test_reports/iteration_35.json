@@ -1,0 +1,27 @@
+{
+  "summary": "Mode Switches feature tested end-to-end. Backend: 21/21 pytest pass (admin GET/POST mode_switches + /all, non-admin 403, unknown mode 400, /modes/status shape, legacy /admin/bigffa_switch syncs to modes.bigffa, casual both-off 403 + disabled:true, TDM-off coerces mode_pref tdm -> matched tdm:false, ranked/bigffa off 403 + disabled:true, queued players removed from ranked/bigffa/casual on switch-off, party/start 403 'Party matches are temporarily unavailable.', admin bypasses all queues, WS gate returns {type:mode_unavailable} + close 4403 for casual/ranked/bigffa/practice/offline/party, admin WS allowed (welcome/join)). Frontend: Moderation panel toggles (confirm dismiss keeps ON, accept -> OFF, meta 'Changed ... by hi'), red banner 'PAUSED: RANKED' and disappears when back on, 'Turn all modes off' prompt rejects 'off' and accepts 'OFF', maintenance message persisted, banner persists across reload, all-on works. Lobby as player1: all-off -> 4 buttons disabled with 'Temporarily unavailable' tag on its own line + maintenance banner showing admin message; TDM-only off -> Casual enabled, BOTH/TDM picker disabled, FFA active; queued in Casual then casual both off -> toast 'That mode is temporarily unavailable' within ~1s, queue cancelled, Casual button disabled. Admin lobby with all off: nothing disabled, no banner. All modes turned back ON at the end (verified via /api/modes/status).",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "WS /api/ws/game?mode=practice|offline", "issue": "Mode gate runs AFTER room selection side effects: a blocked non-admin with ?map=<id> still hot-swaps the shared practice_room arena/healthpacks, and offline mode creates/tears down a per-user offline room before being rejected with 4403. Move the gate (or at least the map override/room creation) so blocked users cause no side effects."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Moderation > Mode Switches", "issues": ["When all modes are off the maintenance message input is hidden and the current maintenance message is not displayed anywhere in the admin panel (only in red banner as 'Maintenance mode on'). Consider showing the active message.", "'Turn all modes off' stays enabled when everything is already off (harmless, re-prompts)."]},
+      {"screen": "Lobby (admin)", "issues": ["Admin sees no hint that modes are paused for players (by design bypass, but a small 'paused for players' indicator would help)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_mode_switches.py", "/app/test_reports/pytest/pytest_mode_switches.xml"],
+  "action_items": ["(Minor) Move WS mode gate before practice map override / offline room creation to avoid side effects from blocked users", "(Optional) Show current maintenance message in admin panel when all modes off"],
+  "critical_code_review_comments": [
+    "Single-mode ON via POST /admin/mode_switches clears maintenance (active+message) even if other modes stay off - acceptable but banner then just says 'Paused: ...' without message.",
+    "Generic mode-unavailable toast reuses testid 'bigffa-unavailable-toast' / state 'bigffaNotice' - naming is misleading now that it covers all modes.",
+    "server.py is >14k lines (pre-existing) - should be split into modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_mode_switches.py"],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100%"},
+  "seed_data_creation": "None. Mode switches reset to all ON (maintenance inactive) at end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Admin username is 'hi'. test_mode_switches.py has autouse fixture that resets all modes ON before/after each test. Casual bot-fill ~6s; matched entry shows tdm flag. WS auth via ?token=<access_token cookie value>. Toggle via python requests session outside browser context to avoid cookie clobbering in playwright."
+}

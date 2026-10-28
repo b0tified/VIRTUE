@@ -1707,6 +1707,12 @@ export default function Lobby() {
           </div>
         </div>
       )}
+      {isAdmin && modeStatus && Object.values(modeStatus.modes || {}).some((v) => v === false) && (
+        <div className="fixed bottom-3 left-3 z-40 bg-[#E62429] text-white border-2 border-black px-3 py-1 font-anton uppercase tracking-widest text-[10px]" data-testid="lobby-admin-paused-hint">
+          Admin: some modes are paused for players
+        </div>
+      )}
+
       {maintenance && (
         <div className="fixed top-28 left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4 pointer-events-none" data-testid="lobby-maintenance-banner">
           <div className="border-4 border-black px-4 py-3 bg-[#E62429] text-white text-center shadow-[4px_4px_0_#000]">

@@ -24,17 +24,22 @@ function SwitchRow({ k, m, busy, onFlip }) {
   );
 }
 
-function MaintenanceControls({ allOff, busy, onAll }) {
+function MaintenanceControls({ allOff, active, busy, onAll }) {
   const [msg, setMsg] = useState("");
   return (
     <div className="border-4 border-[#E62429] p-3 mt-3 space-y-2" data-testid="mode-switches-maintenance">
       <div className="font-anton uppercase tracking-widest text-xs text-[#E62429]">Maintenance mode</div>
+      {active?.active && (
+        <div className="text-xs" data-testid="mode-switches-active-message">
+          Showing players: <span className="font-anton">{active.message || "(default message)"}</span>
+        </div>
+      )}
       {!allOff && (
         <input value={msg} onChange={(e) => setMsg(e.target.value)} maxLength={200} placeholder='Message for players, e.g. "Back in 20 minutes – server maintenance"'
           className="border-2 border-black px-2 py-1 text-xs w-full" data-testid="mode-switches-maintenance-message" />
       )}
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={() => onAll(true, msg)} className="btn-pow bg-[#E62429] text-white text-sm px-5 py-2" data-testid="mode-switches-all-off">
+        <button type="button" disabled={busy || allOff} onClick={() => onAll(true, msg)} className="btn-pow bg-[#E62429] text-white text-sm px-5 py-2 disabled:opacity-50" data-testid="mode-switches-all-off">
           Turn all modes off
         </button>
         <button type="button" disabled={busy} onClick={() => onAll(false, "")} className="btn-pow bg-[#06A35F] text-white text-sm px-5 py-2" data-testid="mode-switches-all-on">
@@ -95,7 +100,7 @@ export default function AdminModeSwitchesPanel({ data, setData, onToast }) {
           <div className="grid sm:grid-cols-2 gap-2">
             {ORDER.map((k) => <SwitchRow key={k} k={k} m={data.modes[k]} busy={busy} onFlip={flip} />)}
           </div>
-          <MaintenanceControls allOff={allOff} busy={busy} onAll={all} />
+          <MaintenanceControls allOff={allOff} active={data.maintenance} busy={busy} onAll={all} />
         </>
       )}
     </div>
