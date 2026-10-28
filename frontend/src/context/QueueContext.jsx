@@ -321,8 +321,10 @@ export function QueueProvider({ children }) {
         // observation, treat it as stale residue and skip. The server
         // also stale-sweeps entries >60s old, this is a belt-and-braces
         // guard for entries within that window.
-        if (isFirst && s && s.matched && !s.in_queue) return;
-        if (s && s.matched && !sawInQueue) return;
+        // Party followers can miss the in_queue window when the leader's queue resolves fast.
+        const freshParty = !!(s && s.matched && s.party && Number(s.wait_seconds || 0) <= 45);
+        if (!freshParty && isFirst && s && s.matched && !s.in_queue) return;
+        if (!freshParty && s && s.matched && !sawInQueue) return;
         if (s && (s.in_queue || s.matched)) {
           // Follower detection: the bg poll only enters this branch
           // when THIS client didn't press the ranked button but the
@@ -540,9 +542,10 @@ export function QueueProvider({ children }) {
         const isFirst = firstTick;
         firstTick = false;
         if (s && s.in_queue) sawInQueue = true;
-        // Suppress stale matched on first tick with no prior in_queue.
-        if (isFirst && s && s.matched && !s.in_queue) return;
-        if (s && s.matched && !sawInQueue) return;
+        // Suppress stale matched with no prior in_queue — unless it's a fresh party match.
+        const freshParty = !!(s && s.matched && s.party && Number(s.matched_ago || 0) <= 45);
+        if (!freshParty && isFirst && s && s.matched && !s.in_queue) return;
+        if (!freshParty && s && s.matched && !sawInQueue) return;
         // If matched, `wait_seconds` from the server is "time since
         // match" not "time since join" — so we bind joinTimestamp to
         // now for the local timer (short-lived, only used for the

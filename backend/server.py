@@ -8287,8 +8287,9 @@ async def matchmaker_loop():
                         mid = uuid.uuid4().hex[:10]
                         a_uids = a.get("user_ids") or ([a["user_id"]] if a.get("user_id") else [])
                         b_uids = b.get("user_ids") or ([b["user_id"]] if b.get("user_id") else [])
-                        for uid in a_uids + b_uids:
-                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now}
+                        for e_, uids_ in ((a, a_uids), (b, b_uids)):
+                            for uid in uids_:
+                                MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "party": bool(e_.get("is_party"))}
                         # Record wait-to-match for the ETA estimator. Using max
                         # of both entries' waits = the longer wait, which is
                         # what new entrants will most likely experience.
@@ -8318,7 +8319,7 @@ async def matchmaker_loop():
                         # so all followers resolve to the same GameRoom.
                         shared_key = a_uids[0] if a_uids else None
                         for uid in a_uids:
-                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True, "room_key": shared_key}
+                            MATCHED_USERS[uid] = {"match_id": mid, "tier": tier_idx, "matched_at": now, "vs_bot": True, "room_key": shared_key, "party": bool(a.get("is_party"))}
                         RECENT_MATCH_WAITS[tier_idx].append(now - a["joined_at"])
                         logger.info(
                             "Bot-filled tier=%d entry=%s (party=%s, %d users) after %ds queue",
@@ -8356,8 +8357,9 @@ async def matchmaker_loop():
                     # players land in the same shared room. Honours
                     # each side's mode_pref (both/both → 50/50 roll).
                     match_tdm = _resolve_casual_match_mode(a, b)
-                    for uid in a_uids + b_uids:
-                        MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "tdm": match_tdm}
+                    for e_, uids_ in ((a, a_uids), (b, b_uids)):
+                        for uid in uids_:
+                            MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "tdm": match_tdm, "party": bool(e_.get("is_party"))}
                     logger.info(
                         "Casual matched entryA=%s (pref=%s) vs entryB=%s (pref=%s) mid=%s tdm=%s",
                         ",".join(a.get("usernames") or [a.get("username", "?")]),
@@ -8376,7 +8378,7 @@ async def matchmaker_loop():
                     # exactly like head-to-head casual.
                     bot_tdm = _resolve_casual_match_mode(a, None)
                     for uid in a_uids:
-                        MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "vs_bot": True, "room_key": shared_key, "tdm": bot_tdm}
+                        MATCHED_USERS[uid] = {"match_id": mid, "casual": True, "matched_at": now, "vs_bot": True, "room_key": shared_key, "tdm": bot_tdm, "party": bool(a.get("is_party"))}
                     logger.info(
                         "Casual bot-filled entry=%s (pref=%s, %d users) after %ds queue tdm=%s",
                         ",".join(a.get("usernames") or [a.get("username", "?")]),
@@ -9197,7 +9199,7 @@ async def queue_ranked_status(user: dict = Depends(get_current_user)):
         if m and ("tier" not in m or m.get("casual") or m.get("bigffa")):
             m = None
         if m:
-            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill}
+            return {"matched": True, "match_id": m["match_id"], "tier": m["tier"], "tier_name": tier_name, "wait_seconds": int(now_ts - m.get("matched_at", now_ts)), "bot_fill_seconds": fill, "party": bool(m.get("party"))}
         for ti, q in RANKED_QUEUE.items():
             for i, e in enumerate(q):
                 uids = e.get("user_ids") or ([e["user_id"]] if e.get("user_id") else [])
@@ -9353,6 +9355,8 @@ async def queue_casual_state(user: dict = Depends(get_current_user)):
                 "room_key": match.get("room_key"),
                 "tdm": bool(match.get("tdm", False)),
                 "bot_fill_seconds": int(CASUAL_BOT_FILL_SEC),
+                "party": bool(match.get("party")),
+                "matched_ago": int(now_ts - float(match.get("matched_at", now_ts))),
             }
         for idx, e in enumerate(CASUAL_QUEUE):
             uids = e.get("user_ids") or ([e.get("user_id")] if e.get("user_id") else [])
