@@ -1,0 +1,36 @@
+{
+  "summary": "Tested the Match server node picker end to end. Backend: 12 pytest cases in test_match_node_picker.py all pass on a stable rerun. They cover /api/cluster/nodes shape and auth, the /api/ws/nodeping node gate and echo (closes after 12 echoes), and /api/ws/game with a pinned node, node=auto, no node param, a wrong node rejected with 403 before node_try 6, and a wrong node at node_try=6 (landed false). The first cold run had 3 transient failures (2 game-WS recv timeouts, 1 cluster/nodes auth check) that did not recur. Frontend: Settings > Account shows settings-node-picker with Auto and Node 9A5E64 · HOSTS MATCHES · 44MS. Clicking a node saves matchNode in localStorage (virtue-settings-v1) and highlights it; Auto can be selected again. Casual with Auto connects using node=9A5E64&node_try=0. Casual with the node pinned gets node_info {landed:true} then welcome, and no high-ping-notice. Casual with fake ZZZZZZ retries node_try 0..6 (each rejected handshake shows as close 1006), then accepts with node_info {landed:false}. The red 'HIGH PING' notice appears and is gone after 8s, and the match plays normally. Practice runs on LocalSim (offline, no WebSocket), so the node param does not apply there; the game still loads with Auto and with a pinned node.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "WS /api/ws/game and /api/ws/nodeping", "issue": "A non-numeric node_try (e.g. node_try=abc) raises ValueError in ClusterProxyMiddleware (int(...)) and returns HTTP 500 with a traceback in backend.err.log. Wrap it in try/except and default to 0."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Game HUD", "issues": ["high-ping-notice (fixed top-14, centered) overlaps the 'SPAWN PROTECTED' badge and match timer at spawn, so both are partly hidden. Move it lower or to a side."]},
+      {"screen": "Settings > Account > Server", "issues": ["Server row shows HTTP ping (~72ms) while the node chip shows WS ping (~44ms). Two different numbers for the same server can confuse users; consider labelling them or showing one."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_match_node_picker.py", "/app/test_reports/pytest/pytest_node_picker.xml"],
+  "action_items": [
+    "Guard int(node_try) parsing in backend/_lib/cluster.py so a malformed value gets a clean reject or a default instead of a 500.",
+    "Optional: move high-ping-notice so it does not cover the SPAWN PROTECTED badge and timer.",
+    "Observation: when a pin misses, the retries take ~0.6-2.2s each through the ingress (7 handshakes, ~13s total to connect with fake node ZZZZZZ). Consider a capped total retry time or a 'connecting to node…' UI hint."
+  ],
+  "critical_code_review_comments": [
+    "cluster.py: a node=AUTO handshake that lands on a follower is rejected until node_try>=6, then accepted with landed=false and relayed. This is by design but means up to 7 handshakes on multi-node clusters. Fine, but monitor connect latency in prod.",
+    "network.js: GameSocket retries on any pre-open close while pinned, including auth or other server rejections (up to 6 extra handshakes). It also re-runs the connect closure with the same token, which is OK.",
+    "Settings are cached in memory by settingsStore. Editing localStorage directly needs a page reload to take effect (a test-flow note, not a bug).",
+    "Under React StrictMode (dev) two try0 sockets are opened; the first never opens and closes with 1006 (~4.8s). Dev-only."
+  ],
+  "updated_files": ["/app/backend/tests/test_match_node_picker.py"],
+  "success_rate": {"backend": "100% (12/12 on stable rerun; first cold run 9/12, see flaky_tests)", "frontend": "100% of requested flows"},
+  "flaky_tests": ["test_game_ws_pinned_node, test_game_ws_auto (recv timeouts), test_cluster_nodes_requires_auth: failed only on the first cold run (1 of 3 runs); passed on both later runs"],
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Preview has a single node, 9A5E64 (leader). Practice uses LocalSim (no WS), so node params apply only to online modes (Casual etc.). To force a node in a test, set localStorage 'virtue-settings-v1'.matchNode and reload /lobby (settingsStore caches in memory). The daily reward popup appears several seconds after the lobby loads; wait for daily-reward-close before clicking lobby buttons. Mode switches were not changed. Each browser session was a fresh context and matchNode was reset to 'auto'."
+}

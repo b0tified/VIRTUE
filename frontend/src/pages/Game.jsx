@@ -814,7 +814,7 @@ export default function Game() {
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
       {highPingNotice && (
-        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[60] bg-[#E62429] text-white border-2 border-black px-3 py-1 font-anton uppercase tracking-widest text-xs pointer-events-none" data-testid="high-ping-notice">
+        <div className="fixed top-28 right-4 z-[60] bg-[#E62429] text-white border-2 border-black px-3 py-1 font-anton uppercase tracking-widest text-xs pointer-events-none" data-testid="high-ping-notice">
           High ping
         </div>
       )}

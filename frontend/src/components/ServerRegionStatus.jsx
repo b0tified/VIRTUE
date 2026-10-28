@@ -76,8 +76,8 @@ export default function ServerRegionStatus({ open }) {
           {info?.node && <span className="text-[10px] text-neutral-500 font-anton" data-testid="settings-server-node">NODE {info.node}</span>}
         </span>
         <span className="flex items-center gap-2">
-          <span className="font-anton tabular-nums text-xs" data-testid="settings-server-ping">
-            {loading ? "…" : error ? "offline" : `${ping}ms`}
+          <span className="font-anton tabular-nums text-xs" data-testid="settings-server-ping" title="Website response time">
+            {loading ? "…" : error ? "offline" : `web ${ping}ms`}
           </span>
           <button type="button" onClick={run} disabled={loading} className="text-neutral-400 hover:text-white" aria-label="Re-test ping" data-testid="settings-server-retest">
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} />

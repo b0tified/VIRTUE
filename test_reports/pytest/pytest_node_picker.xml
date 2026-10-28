@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="12" time="31.792" timestamp="2026-10-28T21:17:15.318385+00:00" hostname="agent-env-25d45d6b-753b-41d1-946d-c22b86c106d9"><testcase classname="test_match_node_picker" name="test_cluster_nodes_shape" time="0.589" /><testcase classname="test_match_node_picker" name="test_cluster_nodes_requires_auth" time="0.171"><failure message="assert 200 in (401, 403)&#10; +  where 200 = &lt;Response [200]&gt;.status_code">backend/tests/test_match_node_picker.py:50: in test_cluster_nodes_requires_auth
+    assert r.status_code in (401, 403)
+E   assert 200 in (401, 403)
+E    +  where 200 = &lt;Response [200]&gt;.status_code</failure></testcase><testcase classname="test_match_node_picker" name="test_nodeping_correct_node" time="0.495" /><testcase classname="test_match_node_picker" name="test_nodeping_wrong_node_rejected" time="0.173" /><testcase classname="test_match_node_picker" name="test_nodeping_wrong_node_try6_accepted_landed_false" time="0.298" /><testcase classname="test_match_node_picker" name="test_nodeping_closes_after_12" time="0.797" /><testcase classname="test_match_node_picker" name="test_game_ws_pinned_node" time="10.220"><failure message="TimeoutError">/usr/local/lib/python3.11/asyncio/tasks.py:500: in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/connection.py:305: in recv
+    return await self.recv_messages.get(decode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/messages.py:158: in get
+    frame = await self.frames.get(not self.closed)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/messages.py:51: in get
+    await self.get_waiter
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+backend/tests/test_match_node_picker.py:115: in test_game_ws_pinned_node
+    fr = run(_game_frames(f"{WS_BASE}/api/ws/game?token={token}&amp;mode=practice&amp;node={node_code}&amp;node_try=0"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_match_node_picker.py:32: in run
+    return asyncio.get_event_loop().run_until_complete(coro) if False else asyncio.run(coro)
+                                                                           ^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/tests/test_match_node_picker.py:104: in _game_frames
+    m = await asyncio.wait_for(ws.recv(), 10)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/tasks.py:502: in wait_for
+    raise exceptions.TimeoutError() from exc
+E   TimeoutError</failure></testcase><testcase classname="test_match_node_picker" name="test_game_ws_auto" time="10.248"><failure message="TimeoutError">/usr/local/lib/python3.11/asyncio/tasks.py:500: in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/connection.py:305: in recv
+    return await self.recv_messages.get(decode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/messages.py:158: in get
+    frame = await self.frames.get(not self.closed)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/websockets/asyncio/messages.py:51: in get
+    await self.get_waiter
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+backend/tests/test_match_node_picker.py:123: in test_game_ws_auto
+    fr = run(_game_frames(f"{WS_BASE}/api/ws/game?token={token}&amp;mode=practice&amp;node=auto&amp;node_try=0"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_match_node_picker.py:32: in run
+    return asyncio.get_event_loop().run_until_complete(coro) if False else asyncio.run(coro)
+                                                                           ^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/tests/test_match_node_picker.py:104: in _game_frames
+    m = await asyncio.wait_for(ws.recv(), 10)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/tasks.py:502: in wait_for
+    raise exceptions.TimeoutError() from exc
+E   TimeoutError</failure></testcase><testcase classname="test_match_node_picker" name="test_game_ws_no_node" time="7.814" /><testcase classname="test_match_node_picker" name="test_game_ws_wrong_node_rejected" time="0.208" /><testcase classname="test_match_node_picker" name="test_game_ws_wrong_node_try6" time="0.368" /><testcase classname="test_match_node_picker" name="test_game_ws_bad_node_try_value" time="0.224" /></testsuite></testsuites>

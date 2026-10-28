@@ -17,7 +17,7 @@ logger = logging.getLogger("cluster")
 
 LEASE_TTL_S = 10.0
 RENEW_EVERY_S = 3.0
-BAD_LEADER_COOLDOWN_S = 60.0
+BAD_LEADER_COOLDOWN_S = 10.0
 PROXY_HEADER = "x-virtue-proxied"
 POD_PORT = 8001
 HOP_HEADERS = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "upgrade",
@@ -132,7 +132,10 @@ class ClusterProxyMiddleware:
             want = (q.get("node") or [""])[0].upper()
             landed = None
             if want:
-                tries = int((q.get("node_try") or ["0"])[0] or 0)
+                try:
+                    tries = int((q.get("node_try") or ["0"])[0] or 0)
+                except ValueError:
+                    tries = 0
                 want = (STATE["leader_code"] or STATE["code"]) if want == "AUTO" else want
                 if want != STATE["code"] and tries < MAX_NODE_TRIES:
                     await receive()
