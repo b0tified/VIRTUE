@@ -412,6 +412,11 @@ export default function Game() {
           }, 200);
           // Don't return — let the engine consume the welcome too.
         }
+        if (msg.type === "mode_unavailable") {
+          try { document.exitPointerLock?.(); } catch {}
+          nav("/lobby?mode_unavailable=1", { replace: true });
+          return;
+        }
         if (msg.type === "pong") {
           const rtt = Date.now() - (msg.ts || 0);
           pingRef.current.value = rtt;

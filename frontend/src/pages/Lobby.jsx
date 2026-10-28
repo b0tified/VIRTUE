@@ -538,7 +538,25 @@ export default function Lobby() {
   // dispatches them into the shared bigffa_room together; if 12s pass
   // without a full lobby, everyone in the queue is dispatched anyway
   // and the room bot-fills the remaining slots on arrival.
+  const [bigffaEnabled, setBigffaEnabled] = useState(true);
+  const [bigffaNotice, setBigffaNotice] = useState(searchParams.get("mode_unavailable") === "1");
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.get("/modes/status").then(({ data }) => alive && setBigffaEnabled(!!data.bigffa_enabled)).catch(() => {});
+    load();
+    const id = setInterval(load, 30000);
+    const onOff = () => { setBigffaEnabled(false); setBigffaNotice(true); };
+    window.addEventListener("virtue-bigffa-unavailable", onOff);
+    return () => { alive = false; clearInterval(id); window.removeEventListener("virtue-bigffa-unavailable", onOff); };
+  }, []);
+  useEffect(() => {
+    if (!bigffaNotice) return undefined;
+    const t = setTimeout(() => setBigffaNotice(false), 6000);
+    return () => clearTimeout(t);
+  }, [bigffaNotice]);
+
   const startBigFfa = async () => {
+    if (!bigffaEnabled && !bigffaInQueue) return;
     if (bigffaInQueue) {
       await queueCtx?.cancelBigffa?.();
       return;
@@ -548,6 +566,7 @@ export default function Lobby() {
     if (casualInQueue || !!queueState) return;
     const r = await queueCtx?.joinBigffa?.();
     if (r && !r.ok) {
+      if (/temporarily unavailable/i.test(r.error || "")) { setBigffaEnabled(false); setBigffaNotice(true); return; }
       alert("Failed to join queue: " + r.error);
       return;
     }
@@ -1168,7 +1187,7 @@ export default function Lobby() {
               type="button"
               onClick={startBigFfa}
               disabled={
-                (!bigffaInQueue && (casualInQueue || !!queueState)) ||
+                (!bigffaInQueue && (casualInQueue || !!queueState || !bigffaEnabled)) ||
                 (party && party.leader_id !== user?.id)
               }
               className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed ${
@@ -1191,7 +1210,9 @@ export default function Lobby() {
                   </span>
                 </span>
               ) : (
-                <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
+                <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA
+                  {!bigffaEnabled && <span className="ml-auto font-anton text-[10px] tracking-widest uppercase" data-testid="lobby-bigffa-unavailable">Temporarily unavailable</span>}
+                </span>
               )}
             </button>
             {/* Combined PRACTICE button — opens the map/mode selector
@@ -1657,6 +1678,19 @@ export default function Lobby() {
           </div>
         </div>
       )}
+      {bigffaNotice && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4" data-testid="bigffa-unavailable-toast">
+          <div className="card-pow px-4 py-3 bg-[#FF7A00] text-black flex items-center gap-2">
+            <Swords size={18} strokeWidth={3} />
+            <span className="font-anton uppercase tracking-widest text-sm flex-1">12P FFA is temporarily unavailable</span>
+            <button onClick={() => setBigffaNotice(false)} className="font-anton hover:opacity-80" data-testid="bigffa-unavailable-toast-close" aria-label="Dismiss">
+              <X size={16} strokeWidth={3} />
+            </button>
+          </div>
+        </div>
+      )}
+
+
 
       {/* Disconnected toast — auto-kicked back from a match */}
       {disconnected && (

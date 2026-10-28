@@ -674,6 +674,13 @@ export function QueueProvider({ children }) {
                 setBigffaMatchFoundSec(sec);
               }
             }, 1000);
+          } else if (s.disabled) {
+            stopBigffa();
+            bigffaJoinedAtRef.current = 0;
+            setBigffaWaitSec(0);
+            setBigffaQueueState(null);
+            bigffaLockedEtaRef.current = null;
+            try { window.dispatchEvent(new CustomEvent("virtue-bigffa-unavailable")); } catch {}
           } else if (!s.in_queue) {
             // Server reports we're no longer in queue AND not matched.
             // This can happen during a matchmaker cycle (server briefly

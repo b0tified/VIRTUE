@@ -5291,7 +5291,9 @@ class GameRoom:
             # Per-client send timeout — a wedged TCP send buffer used to stall
             # the entire 20Hz tick (gather() in broadcast() awaits all sends).
             # 1.5s is well above a healthy round-trip and well below "frozen".
-            await asyncio.wait_for(player.ws.send_text(json.dumps(msg)), timeout=1.5)
+            data = json.dumps(msg)
+            self.bytes_sent = getattr(self, "bytes_sent", 0) + len(data)
+            await asyncio.wait_for(player.ws.send_text(data), timeout=1.5)
         except (Exception, asyncio.TimeoutError):
             # Drop the slow/dead socket so we don't keep blocking on it.
             try:
@@ -5311,6 +5313,7 @@ class GameRoom:
         targets = [p for p in list(self.players.values()) if not p.is_bot and p.ws is not None]
         if not targets:
             return
+        self.bytes_sent = getattr(self, "bytes_sent", 0) + len(data) * len(targets)
 
         async def _send_one(ws):
             # 1.5s send budget per client. Anything slower means TCP backpressure
@@ -7027,6 +7030,8 @@ class GameRoom:
         """End a match: for ranked, award rank points; for casual, just show standings.
         Broadcasts a match_end payload, then resets the room after a 10s intermission."""
         self.in_intermission = True
+        if getattr(self, "is_bigffa", False) and not BIGFFA_SWITCH["enabled"]:
+            asyncio.create_task(_bigffa_send_home_after_match(self))
         # Include all participants (real + bots) for placement ordering so
         # the match history shows the true total_players count. Real-player
         # RP updates still only target real_players further down.
@@ -7717,6 +7722,26 @@ bigffa_room = GameRoom(is_ranked=False, match_duration=120.0)
 bigffa_room.is_bigffa = True
 bigffa_room.bots_target_size = BIGFFA_LOBBY_SIZE
 
+# Admin Big FFA on/off switch (db.meta "bigffa_switch"); running matches finish, new joins blocked.
+BIGFFA_SWITCH: Dict[str, Any] = {"enabled": True, "changed_at": None, "changed_by": None}
+
+
+def _apply_bigffa_switch(doc: dict) -> None:
+    if "enabled" in doc:
+        BIGFFA_SWITCH.update({"enabled": bool(doc["enabled"]), "changed_at": doc.get("changed_at"), "changed_by": doc.get("changed_by")})
+    if not BIGFFA_SWITCH["enabled"]:
+        BIGFFA_QUEUE.clear()
+
+
+async def _bigffa_send_home_after_match(room: "GameRoom") -> None:
+    # Switch is off: after the results screen, send remaining players back to the lobby.
+    await asyncio.sleep(10)
+    if BIGFFA_SWITCH["enabled"]:
+        return
+    for p in list(room.players.values()):
+        if not p.is_bot and p.ws is not None:
+            await room._send(p, {"type": "mode_unavailable", "mode": "bigffa"})
+
 # ---- Server health (Moderation → Server Health panel) ----
 SERVER_STARTED_AT = time.time()
 SERVER_REGION_LABEL = "US West (Oregon)"
@@ -7750,6 +7775,8 @@ async def _server_health_monitor() -> None:
         SERVER_HEALTH["loop_lag_ms"] = round(sum(lag_window[-6:]) / len(lag_window[-6:]), 1)
         SERVER_HEALTH["loop_lag_max_ms"] = round(max(lag_window), 1)
         n += 1
+        if n % 20 == 0:
+            _sample_ping_history()
         if n % 4 == 0:
             try:
                 cpu, wall = _proc_cpu_seconds(), time.time()
@@ -7758,6 +7785,82 @@ async def _server_health_monitor() -> None:
                 last_cpu, last_wall = cpu, wall
             except Exception:
                 pass
+
+
+# (ts, bigffa_enabled, {user_id: ping_ms}) samples every ~10s, kept 60 min.
+PING_HISTORY: List[tuple] = []
+PING_HISTORY_WINDOW_S = 3600
+
+
+def _sample_ping_history() -> None:
+    now = time.time()
+    pings = {}
+    for _, r in _all_rooms():
+        for p in r.players.values():
+            ms = int(getattr(p, "last_ping_ms", 0) or 0)
+            if not p.is_bot and ms > 0 and p.user_id:
+                pings[str(p.user_id)] = ms
+    PING_HISTORY.append((now, bool(BIGFFA_SWITCH["enabled"]), pings))
+    while PING_HISTORY and PING_HISTORY[0][0] < now - PING_HISTORY_WINDOW_S:
+        PING_HISTORY.pop(0)
+
+
+def _ping_comparison() -> dict:
+    out = {}
+    for key, flag in (("bigffa_on", True), ("bigffa_off", False)):
+        vals, users, secs = [], set(), 0
+        for ts, en, pings in PING_HISTORY:
+            if en is flag:
+                secs += 10
+                vals += pings.values()
+                users |= set(pings)
+        out[key] = {"avg_ms": round(sum(vals) / len(vals)) if len(users) >= 3 and vals else None,
+                    "players": len(users), "minutes": round(secs / 60)}
+    return out
+
+
+def _mode_of(label: str, r: "GameRoom") -> str:
+    if label == "Big FFA":
+        return "Big FFA"
+    if label in ("Practice", "Practice TDM", "Offline", "Offline TDM"):
+        return "Practice"
+    if label in ("Ranked", "Ranked vs Bots"):
+        return "Ranked"
+    if label == "Party":
+        return "Party"
+    return "TDM" if r.game_mode == "tdm" else "Casual FFA"
+
+
+MODE_ORDER = ["Casual FFA", "TDM", "Ranked", "Big FFA", "Party", "Practice"]
+
+
+def _per_mode_load(rooms_with_labels: List[tuple]) -> List[dict]:
+    now = time.time()
+    agg = {m: {"mode": m, "matches": 0, "real": 0, "bots": 0, "tick_ms": 0.0, "tick_ms_max": 0.0, "kb_per_s": 0.0, "_n": 0} for m in MODE_ORDER}
+    for label, r in rooms_with_labels:
+        a = agg[_mode_of(label, r)]
+        real = sum(1 for p in r.players.values() if not p.is_bot)
+        a["real"] += real
+        a["bots"] += sum(1 for p in r.players.values() if p.is_bot)
+        sent, last_b, last_t = getattr(r, "bytes_sent", 0), getattr(r, "_bytes_snap", 0), getattr(r, "_bytes_snap_t", now)
+        if now - last_t >= 2.0 or not hasattr(r, "_bytes_snap_t"):
+            r._kbps = (sent - last_b) / 1024.0 / max(1e-6, now - last_t) if hasattr(r, "_bytes_snap_t") else 0.0
+            r._bytes_snap, r._bytes_snap_t = sent, now
+        if real > 0:
+            a["matches"] += 1
+            a["tick_ms"] += float(getattr(r, "tick_ms_avg", 0.0))
+            a["_n"] += 1
+            a["tick_ms_max"] = max(a["tick_ms_max"], float(getattr(r, "tick_ms_max", 0.0)))
+            a["kb_per_s"] += float(getattr(r, "_kbps", 0.0))
+    out = []
+    for m in MODE_ORDER:
+        a = agg.pop(m)
+        n = a.pop("_n")
+        a["tick_ms"] = round(a["tick_ms"] / n, 2) if n else 0.0
+        a["tick_ms_max"] = round(a["tick_ms_max"], 2)
+        a["kb_per_s"] = round(a["kb_per_s"], 1)
+        out.append(a)
+    return out
 
 
 def _all_rooms() -> List[tuple]:
@@ -8247,7 +8350,7 @@ async def matchmaker_loop():
                 dispatched_any = True
                 while dispatched_any:
                     dispatched_any = False
-                    if not BIGFFA_QUEUE:
+                    if not BIGFFA_QUEUE or not BIGFFA_SWITCH["enabled"]:
                         break
                     # Find a "lead" entry — either the queue is at 12+ (any
                     # entry becomes lead) or an entry has waited past ITS
@@ -9277,6 +9380,8 @@ async def queue_bigffa_join(
     """Enqueue the caller for a 12-player FFA lobby. Solo-only (parties
     should use their own party lobby). Yanks any existing casual/bigffa
     entry so a player can only be in one queue at a time."""
+    if not BIGFFA_SWITCH["enabled"]:
+        raise HTTPException(status_code=403, detail="Big FFA is temporarily unavailable.")
     user_id = str(user["_id"])
     async with QUEUE_LOCK:
         _remove_user_from_casual_queue(user_id)
@@ -9351,7 +9456,7 @@ async def queue_bigffa_state(user: dict = Depends(get_current_user)):
                     "bot_fill_seconds": int(BIGFFA_BOT_FILL_SEC),
                     "estimated_wait_seconds": int(e.get("estimated_wait_seconds", int(BIGFFA_BOT_FILL_SEC))),
                 }
-        return {"in_queue": False, "matched": False, "queue_size": len(BIGFFA_QUEUE)}
+        return {"in_queue": False, "matched": False, "queue_size": len(BIGFFA_QUEUE), "disabled": not BIGFFA_SWITCH["enabled"]}
 
 
 @api.delete("/queue/bigffa")
@@ -11036,6 +11141,7 @@ async def _queue_fill_config_loop() -> None:
             _apply_ranked_bot_difficulty(await db.meta.find_one({"_id": "ranked_bot_difficulty"}) or {})
             _apply_comeback_config(await db.meta.find_one({"_id": "comeback_config"}) or {})
             ANTICHEAT_CONFIG.update(anticheat.clean_config(await db.meta.find_one({"_id": "anticheat_config"}) or {}))
+            _apply_bigffa_switch(await db.meta.find_one({"_id": "bigffa_switch"}) or {})
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -11383,7 +11489,30 @@ async def admin_server_health(user: dict = Depends(get_current_user)):
         "node": SERVER_NODE_ID,
         "cluster": {k: cluster.STATE[k] for k in ("is_leader", "leader_node", "proxied_http", "proxied_ws")},
         "rooms": rooms,
+        "modes": _per_mode_load(_all_rooms()),
+        "ping_compare": _ping_comparison(),
+        "bigffa": dict(BIGFFA_SWITCH),
     }
+
+
+@api.get("/modes/status")
+async def modes_status(user: dict = Depends(get_current_user)):
+    return {"bigffa_enabled": bool(BIGFFA_SWITCH["enabled"])}
+
+
+class BigFfaSwitchIn(BaseModel):
+    enabled: bool
+
+
+@api.post("/admin/bigffa_switch")
+async def admin_set_bigffa_switch(payload: BigFfaSwitchIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    doc = {"enabled": payload.enabled, "changed_at": datetime.now(timezone.utc).isoformat(), "changed_by": user.get("username")}
+    await db.meta.update_one({"_id": "bigffa_switch"}, {"$set": doc}, upsert=True)
+    async with QUEUE_LOCK:
+        _apply_bigffa_switch(doc)
+    return dict(BIGFFA_SWITCH)
 
 
 @api.get("/admin/bot_loadout")
@@ -13744,6 +13873,14 @@ async def ws_game(
         # tops the room up to 12 with disguised bots so a solo joiner still
         # gets a full lobby.
         room = bigffa_room
+        already_in = any(str(p.user_id) == str(user["_id"]) for p in room.players.values() if not p.is_bot)
+        if not BIGFFA_SWITCH["enabled"] and not already_in:
+            try:
+                await websocket.send_text(json.dumps({"type": "mode_unavailable", "mode": "bigffa"}))
+                await websocket.close(code=4403)
+            except Exception:
+                pass
+            return
     elif mode == "spectate":
         # Spectate a friend's match: find their current room and join read-only.
         if not target:
