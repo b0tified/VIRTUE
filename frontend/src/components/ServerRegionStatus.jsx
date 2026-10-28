@@ -1,7 +1,7 @@
 // Settings → Server: the one real game server with a live measured ping.
 import { useCallback, useEffect, useState } from "react";
 import { Globe, RefreshCw } from "lucide-react";
-import api from "@/api";
+import { listNodes, measureNode } from "@/game/nodePicker";
 import settingsStore from "@/game/settings";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -9,12 +9,18 @@ const API = process.env.REACT_APP_BACKEND_URL;
 // Match connection node: "auto" = straight to the node hosting matches.
 function NodePicker({ open }) {
   const [nodes, setNodes] = useState([]);
+  const [pings, setPings] = useState({});
   const [sel, setSel] = useState(() => settingsStore.get().matchNode || "auto");
   useEffect(() => {
-    if (open) api.get("/cluster/nodes").then(({ data }) => setNodes(data.nodes || [])).catch(() => {});
+    if (!open) return;
+    listNodes().then((ns) => {
+      setNodes(ns);
+      ns.forEach((n) => measureNode(n.code).then((ms) => setPings((p) => ({ ...p, [n.code]: ms }))));
+    }).catch(() => {});
   }, [open]);
   const pick = (v) => { setSel(v); settingsStore.set({ matchNode: v }); };
-  const opts = [{ code: "auto", label: "Auto (fastest)" }, ...nodes.map((n) => ({ code: n.code, label: `Node ${n.code}${n.hosts_matches ? " · hosts matches" : ""}` }))];
+  const pingTxt = (c) => (c in pings ? (pings[c] == null ? " · unreachable" : ` · ${pings[c]}ms`) : " · …");
+  const opts = [{ code: "auto", label: "Auto (fastest)" }, ...nodes.map((n) => ({ code: n.code, label: `Node ${n.code}${n.hosts_matches ? " · hosts matches" : ""}${pingTxt(n.code)}` }))];
   if (sel !== "auto" && !nodes.some((n) => n.code === sel)) opts.push({ code: sel, label: `Node ${sel} · offline` });
   return (
     <div className="mt-3" data-testid="settings-node-picker">
@@ -28,7 +34,7 @@ function NodePicker({ open }) {
           </button>
         ))}
       </div>
-      <p className="text-[10px] text-neutral-500 mt-1">Applies from your next match. Picking a node that doesn't host matches adds a relay hop.</p>
+      <p className="text-[10px] text-neutral-500 mt-1">Applies from your next match. Auto tests every node and picks the lowest ping.</p>
     </div>
   );
 }

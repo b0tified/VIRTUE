@@ -90,6 +90,19 @@ def _with_node_info(send, landed: bool):
     return _send
 
 
+async def _nodeping(receive, send) -> None:
+    """Tiny per-node echo so clients can measure each node's network RTT (never proxied)."""
+    if (await receive()).get("type") != "websocket.connect":
+        return
+    await send({"type": "websocket.accept"})
+    for _ in range(12):
+        msg = await receive()
+        if msg.get("type") != "websocket.receive":
+            return
+        await send({"type": "websocket.send", "text": msg.get("text") or ""})
+    await send({"type": "websocket.close", "code": 1000})
+
+
 def _proxy_target() -> str | None:
     if STATE["is_leader"] or not STATE["leader_addr"] or time.time() < STATE["bad_until"]:
         return None
@@ -114,9 +127,10 @@ class ClusterProxyMiddleware:
         headers = [(k.decode().lower(), v.decode()) for k, v in scope.get("headers", [])]
         if any(k == PROXY_HEADER for k, _ in headers) or scope.get("path") == "/api/server_info_local":
             return await self.app(scope, receive, send)
-        if scope["type"] == "websocket" and scope.get("path") == "/api/ws/game":
+        if scope["type"] == "websocket" and scope.get("path") in ("/api/ws/game", "/api/ws/nodeping"):
             q = parse_qs(scope.get("query_string", b"").decode())
             want = (q.get("node") or [""])[0].upper()
+            landed = None
             if want:
                 tries = int((q.get("node_try") or ["0"])[0] or 0)
                 want = (STATE["leader_code"] or STATE["code"]) if want == "AUTO" else want
@@ -124,7 +138,10 @@ class ClusterProxyMiddleware:
                     await receive()
                     await send({"type": "websocket.close", "code": 4409})
                     return
-                send = _with_node_info(send, want == STATE["code"])
+                landed = want == STATE["code"]
+                send = _with_node_info(send, landed)
+            if scope["path"] == "/api/ws/nodeping":
+                return await _nodeping(receive, send)
         target = _proxy_target()
         if not target:
             return await self.app(scope, receive, send)

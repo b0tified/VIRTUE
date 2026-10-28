@@ -7,6 +7,7 @@ import { GameSocket } from "@/game/network";
 import { LocalSim } from "@/game/localSim";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
+import { pickFastestNode } from "@/game/nodePicker";
 import { detectIsMobile } from "@/game/useIsMobile";
 import Hud, { ReportPlayerModal } from "@/components/Hud";
 import TouchControls from "@/components/TouchControls";
@@ -578,8 +579,13 @@ export default function Game() {
               ...(mode === "casual" && casualModePref ? { mode_pref: casualModePref } : {}),
             };
       sock.onNodeMiss = () => setHighPingNotice(true);
-      const withNode = { ...(extra || {}), node: settingsStore.get().matchNode || "auto" };
-      sock.connect(accessToken, mode, withNode);
+      const nodePref = settingsStore.get().matchNode || "auto";
+      const go = (node) => {
+        if (sock._intentional) return;
+        sock.connect(accessToken, mode, { ...(extra || {}), node });
+      };
+      if (nodePref === "auto") pickFastestNode().then(go);
+      else go(nodePref);
     }
 
     // Network send loop @ 20Hz
