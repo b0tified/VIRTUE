@@ -59,6 +59,12 @@ export default function Game() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
+  const [highPingNotice, setHighPingNotice] = useState(false);
+  useEffect(() => {
+    if (!highPingNotice) return undefined;
+    const t = setTimeout(() => setHighPingNotice(false), 8000);
+    return () => clearTimeout(t);
+  }, [highPingNotice]);
   const [hud, setHud] = useState({
     hp: 100,
     alive: true,
@@ -571,7 +577,9 @@ export default function Game() {
               ...platformFlags,
               ...(mode === "casual" && casualModePref ? { mode_pref: casualModePref } : {}),
             };
-      sock.connect(accessToken, mode, Object.keys(extra || {}).length ? extra : null);
+      sock.onNodeMiss = () => setHighPingNotice(true);
+      const withNode = { ...(extra || {}), node: settingsStore.get().matchNode || "auto" };
+      sock.connect(accessToken, mode, withNode);
     }
 
     // Network send loop @ 20Hz
@@ -799,6 +807,11 @@ export default function Game() {
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden" data-testid="game-page">
+      {highPingNotice && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[60] bg-[#E62429] text-white border-2 border-black px-3 py-1 font-anton uppercase tracking-widest text-xs pointer-events-none" data-testid="high-ping-notice">
+          High ping
+        </div>
+      )}
       {/* WebGL context-lost recovery overlay. Some laptops (integrated
           GPU + power-save + hybrid graphics) drop the WebGL context
           when a second player joins the match, freezing the canvas

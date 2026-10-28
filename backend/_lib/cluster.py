@@ -2,6 +2,9 @@
 other pod transparently proxies /api HTTP + WebSocket traffic to it, so all
 players share the same in-memory matches, queues, parties and presence."""
 import asyncio
+import hashlib
+import json
+from urllib.parse import parse_qs
 import logging
 import os
 import socket
@@ -29,6 +32,8 @@ def _pod_ip() -> str:
 
 
 STATE = {
+    "code": hashlib.sha1(socket.gethostname().encode()).hexdigest()[:6].upper(),
+    "leader_code": None,
     "node": f"{socket.gethostname()}-{os.getpid()}",
     "addr": f"{_pod_ip()}:{POD_PORT}",
     "is_leader": True,
@@ -47,20 +52,22 @@ async def leader_loop(db) -> None:
         try:
             doc = await db.meta.find_one_and_update(
                 {"_id": "cluster_leader", "$or": [{"expires": {"$lt": now}}, {"node": STATE["node"]}]},
-                {"$set": {"node": STATE["node"], "addr": STATE["addr"], "expires": now + LEASE_TTL_S}},
+                {"$set": {"node": STATE["node"], "addr": STATE["addr"], "code": STATE["code"], "expires": now + LEASE_TTL_S}},
                 upsert=False, return_document=True,
             )
             if doc is None:
                 try:
-                    await db.meta.insert_one({"_id": "cluster_leader", "node": STATE["node"],
+                    await db.meta.insert_one({"_id": "cluster_leader", "node": STATE["node"], "code": STATE["code"],
                                               "addr": STATE["addr"], "expires": now + LEASE_TTL_S})
-                    doc = {"node": STATE["node"], "addr": STATE["addr"]}
+                    doc = {"node": STATE["node"], "addr": STATE["addr"], "code": STATE["code"]}
                 except Exception:
                     doc = await db.meta.find_one({"_id": "cluster_leader"})
             was = STATE["is_leader"]
             STATE["is_leader"] = bool(doc) and doc.get("node") == STATE["node"]
             STATE["leader_addr"] = None if STATE["is_leader"] else (doc or {}).get("addr")
             STATE["leader_node"] = (doc or {}).get("node")
+            STATE["leader_code"] = STATE["code"] if STATE["is_leader"] else (doc or {}).get("code")
+            await db.cluster_nodes.update_one({"_id": STATE["code"]}, {"$set": {"addr": STATE["addr"], "last_seen": now}}, upsert=True)
             if was != STATE["is_leader"]:
                 logger.info("cluster role: %s (leader=%s)", "LEADER" if STATE["is_leader"] else "follower", STATE["leader_node"])
         except Exception as e:
@@ -68,6 +75,19 @@ async def leader_loop(db) -> None:
             STATE["is_leader"] = True
             STATE["leader_addr"] = None
         await asyncio.sleep(RENEW_EVERY_S)
+
+
+MAX_NODE_TRIES = 6  # game WS: reject a wrong-node handshake this many times so the client can retry
+
+
+def _with_node_info(send, landed: bool):
+    """Wrap ASGI send so the client learns which node it reached right after accept."""
+    async def _send(msg):
+        await send(msg)
+        if msg.get("type") == "websocket.accept":
+            await send({"type": "websocket.send", "text": json.dumps(
+                {"type": "node_info", "node": STATE["code"], "landed": landed, "relayed": not STATE["is_leader"]})})
+    return _send
 
 
 def _proxy_target() -> str | None:
@@ -94,6 +114,17 @@ class ClusterProxyMiddleware:
         headers = [(k.decode().lower(), v.decode()) for k, v in scope.get("headers", [])]
         if any(k == PROXY_HEADER for k, _ in headers) or scope.get("path") == "/api/server_info_local":
             return await self.app(scope, receive, send)
+        if scope["type"] == "websocket" and scope.get("path") == "/api/ws/game":
+            q = parse_qs(scope.get("query_string", b"").decode())
+            want = (q.get("node") or [""])[0].upper()
+            if want:
+                tries = int((q.get("node_try") or ["0"])[0] or 0)
+                want = (STATE["leader_code"] or STATE["code"]) if want == "AUTO" else want
+                if want != STATE["code"] and tries < MAX_NODE_TRIES:
+                    await receive()
+                    await send({"type": "websocket.close", "code": 4409})
+                    return
+                send = _with_node_info(send, want == STATE["code"])
         target = _proxy_target()
         if not target:
             return await self.app(scope, receive, send)

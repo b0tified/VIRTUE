@@ -11503,6 +11503,15 @@ async def server_info():
     return {"region": SERVER_REGION_LABEL, "node": SERVER_NODE_ID, "leader": cluster.STATE["is_leader"]}
 
 
+@api.get("/cluster/nodes")
+async def cluster_nodes(user: dict = Depends(get_current_user)):
+    cutoff = time.time() - 20
+    rows = await db.cluster_nodes.find({"last_seen": {"$gt": cutoff}}, {"_id": 1}).to_list(length=20)
+    codes = sorted({r["_id"] for r in rows} | {SERVER_NODE_ID})
+    leader = cluster.STATE["leader_code"] or SERVER_NODE_ID
+    return {"nodes": [{"code": c, "hosts_matches": c == leader} for c in codes], "leader": leader}
+
+
 @api.get("/admin/server_health")
 async def admin_server_health(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":

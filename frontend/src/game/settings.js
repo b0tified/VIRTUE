@@ -6,6 +6,7 @@ const EVT = "virtue-settings-changed";
 
 const DEFAULTS = Object.freeze({
   graphics: "high",         // "low" | "medium" | "high"
+  matchNode: "auto",        // "auto" = node hosting matches, or a node code
   shadows: true,
   antialias: true,
   fpsCap: 0,                // 0 = unlimited, else 30/60/120/144
