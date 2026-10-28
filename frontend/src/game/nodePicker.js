@@ -59,7 +59,7 @@ export async function pickFastestNode() {
     if (c && Date.now() - c.at < CACHE_MS) return c.code;
   } catch {}
   try {
-    const nodes = await listNodes();
+    const nodes = (await listNodes()).filter((n) => n.online !== false);
     if (nodes.length <= 1) return nodes[0]?.code || "auto";
     const results = await Promise.all(nodes.map(async (n) => ({ code: n.code, ms: await measureNode(n.code) })));
     const best = results.filter((r) => r.ms != null).sort((a, b) => a.ms - b.ms)[0];

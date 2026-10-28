@@ -11505,11 +11505,13 @@ async def server_info():
 
 @api.get("/cluster/nodes")
 async def cluster_nodes(user: dict = Depends(get_current_user)):
-    cutoff = time.time() - 20
-    rows = await db.cluster_nodes.find({"last_seen": {"$gt": cutoff}}, {"_id": 1}).to_list(length=20)
-    codes = sorted({r["_id"] for r in rows} | {SERVER_NODE_ID})
+    now = time.time()
+    rows = await db.cluster_nodes.find({"last_seen": {"$gt": now - 6 * 3600}}, {"_id": 1, "last_seen": 1}).sort("last_seen", -1).to_list(length=20)
+    online = {r["_id"] for r in rows if r["last_seen"] > now - 20} | {SERVER_NODE_ID}
+    offline = [r["_id"] for r in rows if r["_id"] not in online][: max(0, 2 - len(online))]
     leader = cluster.STATE["leader_code"] or SERVER_NODE_ID
-    return {"nodes": [{"code": c, "hosts_matches": c == leader} for c in codes], "leader": leader}
+    codes = sorted(online) + offline
+    return {"nodes": [{"code": c, "label": f"Node {i + 1}", "online": c in online, "hosts_matches": c == leader} for i, c in enumerate(codes)], "leader": leader}
 
 
 @api.get("/admin/server_health")

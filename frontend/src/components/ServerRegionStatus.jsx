@@ -15,20 +15,28 @@ function NodePicker({ open }) {
     if (!open) return;
     listNodes().then((ns) => {
       setNodes(ns);
-      ns.forEach((n) => measureNode(n.code).then((ms) => setPings((p) => ({ ...p, [n.code]: ms }))));
+      ns.filter((n) => n.online).forEach((n) => measureNode(n.code).then((ms) => setPings((p) => ({ ...p, [n.code]: ms }))));
+      const cur = settingsStore.get().matchNode || "auto";
+      if (cur !== "auto" && !ns.some((n) => n.code === cur && n.online)) { setSel("auto"); settingsStore.set({ matchNode: "auto" }); }
     }).catch(() => {});
   }, [open]);
   const pick = (v) => { setSel(v); settingsStore.set({ matchNode: v }); };
   const pingTxt = (c) => (c in pings ? (pings[c] == null ? " · unreachable" : ` · ${pings[c]}ms`) : " · …");
-  const opts = [{ code: "auto", label: "Auto (fastest)" }, ...nodes.map((n) => ({ code: n.code, label: `Node ${n.code}${n.hosts_matches ? " · hosts matches" : ""}${pingTxt(n.code)}` }))];
-  if (sel !== "auto" && !nodes.some((n) => n.code === sel)) opts.push({ code: sel, label: `Node ${sel} · offline` });
+  const opts = [
+    { code: "auto", label: "Auto (fastest)" },
+    ...nodes.map((n) => ({
+      code: n.code,
+      offline: !n.online,
+      label: `${n.label} · ${n.code}${n.hosts_matches ? " · hosts matches" : ""}${n.online ? pingTxt(n.code) : " · offline"}`,
+    })),
+  ];
   return (
     <div className="mt-3" data-testid="settings-node-picker">
       <div className="font-anton uppercase tracking-widest text-[10px] text-neutral-400 mb-1">Match server node</div>
       <div className="flex flex-wrap gap-2">
         {opts.map((o) => (
-          <button key={o.code} type="button" onClick={() => pick(o.code)}
-            className={`px-2.5 py-1 rounded border text-xs font-anton uppercase tracking-wider ${sel === o.code ? "border-[#FFD700] bg-[#FFD700] text-black" : "border-neutral-600 text-neutral-300 hover:border-neutral-400"}`}
+          <button key={o.code} type="button" onClick={() => pick(o.code)} disabled={o.offline}
+            className={`px-2.5 py-1 rounded border text-xs font-anton uppercase tracking-wider ${o.offline ? "border-neutral-800 text-neutral-600 cursor-not-allowed line-through" : sel === o.code ? "border-[#FFD700] bg-[#FFD700] text-black" : "border-neutral-600 text-neutral-300 hover:border-neutral-400"}`}
             data-testid={`settings-node-option-${o.code}`}>
             {o.label}
           </button>
