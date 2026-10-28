@@ -14099,6 +14099,7 @@ async def ws_game(
             return
     await websocket.accept()
     u_id_str = str(user["_id"])
+    ws_connected_at = time.time()
     ONLINE_USERS[u_id_str] = ONLINE_USERS.get(u_id_str, 0) + 1
     # Stamp last_seen on connect — also covered on disconnect below — so the
     # friends-list "last seen N min ago" stays accurate without heartbeat.
@@ -14171,7 +14172,10 @@ async def ws_game(
         # just exited. Client also sets a 10s cancel guard on exit, so
         # this is a redundancy layer for cases where the client crashes
         # / tab-closes mid-match without going through handleExit.
-        MATCHED_USERS.pop(u_id_str, None)
+        # Keep entries created AFTER this socket connected (party leader re-queued us mid-match).
+        _m = MATCHED_USERS.get(u_id_str)
+        if _m and float(_m.get("matched_at", 0.0)) <= ws_connected_at:
+            MATCHED_USERS.pop(u_id_str, None)
         # Stamp last_seen on disconnect so "last seen" timer starts from now.
         try:
             await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_seen_at": time.time()}})

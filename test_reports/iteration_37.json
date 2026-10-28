@@ -1,0 +1,41 @@
+{
+  "summary": "Tested the party re-queue fix ('party doesn't place people in the same match again'). Backend party flag / matched_ago fields: PASS (6/6 in the new pytest). TEST1 casual party (2 browser contexts): PASS, both players hit /play?mode=casual in about 9s with the same match_id. TEST3 party ranked: PASS, same match_id and both usernames in the in-match kill feed. Solo regression: PASS, player1 login gets no stray overlay. TEST2 (the 'again' case) FAILED on E1's fix as shipped because of 2 more bugs. Tester applied minimal fixes for both (frontend 1 line, backend 4 lines) and TEST2 now PASSES: the follower returns to the lobby 6s after the leader's re-queue, is pulled in within 1s, gets the same match_id, and their nametag shows in the leader's game.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "WS /api/ws/game finally-block (server.py ~14174)", "issue": "When a socket disconnected, the code ran an unconditional MATCHED_USERS.pop(user). A follower still in match 1 when the leader re-queues gets a fresh party MATCHED_USERS entry for match 2. When the follower leaves /play, the match-1 socket closes and deletes that match-2 entry, so the follower's GET /queue/casual flips from matched:true to matched:false and they are never pulled in. Verified: matched:true (match c4148b1c87) while on /play, then matched:false 1.5s after leaving. FIXED by tester: record ws_connected_at when the socket connects and only pop entries with matched_at <= ws_connected_at.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "tests/test_queue_endpoints_regression.py::test_ranked_get_status_while_queued", "issue": "Timing-flaky. Ranked solo bot-fills instantly (bot_fill_seconds 0), so the GET already returns matched instead of in_queue. Not caused by this fix."},
+      {"endpoint": "POST /api/queue/ranked", "issue": "The second pytest run of the party ranked test returned 403 'Ranked locked for 527s' because the browser test left a ranked match. Expected product behaviour, but it makes reruns order-dependent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "QueueContext.beginCasualActivePoll", "issue": "When the casual background poll found a party match that had already been made (the new freshParty path), it called beginCasualActivePoll(s) with s.matched=true. That set casualMatchedRef.current=true, so every active-poll tick returned early: no navigation and no match-loading event. The follower was stuck forever on the 'MATCH FOUND' toast and 'MATCHING...' button. Reproduced deterministically (server returned matched:true, party:true, matched_ago 18..25 and the follower stayed on /lobby). FIXED by tester: casualMatchedRef.current = false in beginCasualActivePoll, so the first tick runs the matched -> nav handler.", "selector": "casual toast / party-quick-cancel", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Leader returns to lobby soon after a match starts", "issue": "Seen once before the fixes (5s after landing on /play, page reload to /lobby): the leader's own background poll found its old match-1 party entry (WS probably not yet connected, so it was never used up). The freshParty bypass then put the leader into the stuck 'MATCHING...' state. With the frontend fix the leader would instead be sent back into that old match (still <=45s old). Edge case; consider sending the match_id to the client and ignoring a match the client has already joined or left.", "affected_selectors": ["party-start-button"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_party_requeue_matched_flag.py", "/app/test_reports/pytest/pytest_party_requeue.xml"],
+  "action_items": [
+    "Review and keep the tester's 2 fixes: QueueContext.jsx beginCasualActivePoll (casualMatchedRef=false) and the server.py ws_game finally-block, which now only pops MATCHED_USERS entries created before this socket connected.",
+    "Do the same check in any other path that pops MATCHED_USERS when leaving a match (e.g. the handleExit / leave-match endpoints): it must not delete a newer party match entry.",
+    "Optional: make the freshParty guard ignore a match_id this client has already joined (stale entry on a fast leader reload).",
+    "Fix tests/test_party_casual_queue.py (calls queue_casual_join() without payload) and the flaky ranked in_queue assertion."
+  ],
+  "critical_code_review_comments": [
+    "The freshParty bypass opened a code path (bg poll -> beginCasualActivePoll with matched initial) that had never worked: casualMatchedRef was set to true before the first poll tick, so the matched handler could never run.",
+    "The unconditional MATCHED_USERS.pop on WS disconnect conflicts with party re-queue while a member is still in a match. Pops should compare against connect time or match_id.",
+    "QueueContext.jsx is about 790 lines. Ranked, casual and bigffa polling are near-duplicates and should be pulled into a shared hook."
+  ],
+  "updated_files": ["/app/frontend/src/context/QueueContext.jsx", "/app/backend/server.py", "/app/backend/tests/test_party_requeue_matched_flag.py"],
+  "success_rate": {"backend": "100% of the new feature tests (6/6); 2 unrelated regression flakes", "frontend": "100% after tester fixes (TEST1, TEST2, TEST3, solo regression); TEST2 failed before the fixes"},
+  "test_credentials": "partyleader@test.com / pw123456, partyfollower@test.com / pw123456, player1@shooter.com / player123",
+  "seed_data_creation": "none (parties created via /api/party/invite + accept)",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "PARTIES are in memory and are wiped on backend hot reload, so re-create them via /api/party/invite + /api/party/accept right before UI tests. The Daily Reward modal appears late; close it with daily-reward-close. Wait up to 25s for party-start-button. Repro for TEST2: run round 1, reload the leader to /lobby, click party-start-button, wait about 6s, then page.goto('/lobby') for the follower; expect /play within about 3s. Leaving a ranked match causes about a 10 min ranked lockout for the party accounts.",
+  "rca of the issue": "Bug 1 (frontend): beginCasualActivePoll set casualMatchedRef=!!initial.matched, so the matched-first follower path never navigated. Bug 2 (backend): the ws_game disconnect cleanup popped MATCHED_USERS for the user without checking which match it belonged to, so leaving match 1 deleted the follower's match-2 entry. Both are fixed minimally and verified end to end with 2 real browser sessions."
+}

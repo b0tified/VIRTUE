@@ -37,6 +37,13 @@ function _quickMatchModePref() {
 
 const QueueContext = createContext(null);
 
+const SEEN_KEY = "virtue_seen_match_ids";
+const seenMatch = (id) => { try { return !!id && JSON.parse(sessionStorage.getItem(SEEN_KEY) || "[]").includes(id); } catch { return false; } };
+const markMatch = (id) => {
+  if (!id) return;
+  try { sessionStorage.setItem(SEEN_KEY, JSON.stringify([id, ...JSON.parse(sessionStorage.getItem(SEEN_KEY) || "[]")].slice(0, 20))); } catch {}
+};
+
 export function QueueProvider({ children }) {
   const nav = useNavigate();
   // Used to gate the background queue-poll: once the player is on
@@ -146,6 +153,7 @@ export function QueueProvider({ children }) {
           }
         }
         if (s.matched) {
+          markMatch(s.match_id);
           missesRef.current = 0;
           setQueueState(s);
           if (pollIdRef.current) { clearInterval(pollIdRef.current); pollIdRef.current = null; }
@@ -322,7 +330,7 @@ export function QueueProvider({ children }) {
         // also stale-sweeps entries >60s old, this is a belt-and-braces
         // guard for entries within that window.
         // Party followers can miss the in_queue window when the leader's queue resolves fast.
-        const freshParty = !!(s && s.matched && s.party && Number(s.wait_seconds || 0) <= 45);
+        const freshParty = !!(s && s.matched && s.party && !seenMatch(s.match_id) && Number(s.wait_seconds || 0) <= 45);
         if (!freshParty && isFirst && s && s.matched && !s.in_queue) return;
         if (!freshParty && s && s.matched && !sawInQueue) return;
         if (s && (s.in_queue || s.matched)) {
@@ -397,7 +405,9 @@ export function QueueProvider({ children }) {
   const beginCasualActivePoll = useCallback((initial, joinTimestampMs) => {
     if (casualPollRef.current) return;
     stopCasual();
-    casualMatchedRef.current = !!(initial && initial.matched);
+    // Always false here so the first active tick can run the matched → nav handler
+    // (a matched-first follower would otherwise be stuck on "Matching..." forever).
+    casualMatchedRef.current = false;
     casualMissesRef.current = 0;
     casualJoinedAtRef.current = joinTimestampMs || Date.now();
     // Prefer the server's stable ETA on first observation; fall back to
@@ -421,6 +431,7 @@ export function QueueProvider({ children }) {
         if (Date.now() < casualCancelGuardUntilRef.current) return;
         if (casualMatchedRef.current) return;
         if (s.matched) {
+          markMatch(s.match_id);
           casualMatchedRef.current = true;
           stopCasual();
           casualCancelGuardUntilRef.current = Date.now() + 15000;
@@ -543,7 +554,7 @@ export function QueueProvider({ children }) {
         firstTick = false;
         if (s && s.in_queue) sawInQueue = true;
         // Suppress stale matched with no prior in_queue — unless it's a fresh party match.
-        const freshParty = !!(s && s.matched && s.party && Number(s.matched_ago || 0) <= 45);
+        const freshParty = !!(s && s.matched && s.party && !seenMatch(s.match_id) && Number(s.matched_ago || 0) <= 45);
         if (!freshParty && isFirst && s && s.matched && !s.in_queue) return;
         if (!freshParty && s && s.matched && !sawInQueue) return;
         // If matched, `wait_seconds` from the server is "time since
