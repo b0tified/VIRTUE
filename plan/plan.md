@@ -1,35 +1,36 @@
-# Start-Up Screen Background Picture
+# VIRTUE Icon: Cool Blue and Silver Edition
 
-A single, clean picture of the VIRTUE start-up screen background, with no logo, text or loading bar.
-It is delivered in chat as an image file the user can save. Nothing in the game changes.
+A recoloured copy of the current VIRTUE icon in cool blue and silver, with the same design and only the colours changed.
+It is delivered as a picture file to download. Nothing in the game changes.
 
 ## Who it's for
-The game owner, for use in promo posts, thumbnails, store pages or other artwork.
+The game owner, for promo posts, thumbnails, social profiles or other artwork.
 
 ## Core features and experience
-- One picture of the background exactly as players see it when the game opens:
-  - the dark red-to-black glow,
-  - the gold comic halftone dots,
-  - the red-and-gold speed lines streaking across.
-- Removed from the picture: the VIRTUE logo, the "Season N" line, the loading bar, the "Loading" label and the percentage.
-- Widescreen desktop size (1920 × 1080), saved as a sharp PNG.
+- The current VIRTUE icon, with the same shape, lettering, outlines and layout.
+- New colours:
+  - the reds and golds become ice blue and silver,
+  - black outlines stay black, so it keeps the comic look,
+  - shading and highlights follow the new colours so it still reads as one finished piece.
+- Square, high resolution (1024 × 1024 or the original icon size, whichever is larger), saved as a PNG.
+- The transparent background is kept if the original has one.
 
 ## User flow
-1. The start-up screen is opened with its text and bar hidden, for this capture only.
-2. The background is captured while the speed lines are mid-streak, so they show up in the picture.
-3. The picture is sent in chat and the user downloads it.
+1. The current app icon is used as the starting point.
+2. Its colours are swapped to blue and silver, keeping the design exactly the same.
+3. The finished picture is shared in chat as a download link.
 
 ## UI/UX feel
-It matches the live start-up screen pixel for pixel: the same gritty comic look and gold/red palette, with nothing added or restyled.
+Cold, sleek and metallic. It is clearly the same VIRTUE icon, but looks like a frosted or "chrome" alternate edition.
 
 ## Implementation phases
-- **Phase 1 (now, MVP):** capture and send the clean 1920 × 1080 background picture. The game itself is not touched.
-- **Phase 2 (later, optional):** extra sizes, such as phone portrait (1080 × 1920) and square (1080 × 1080) for social posts.
-- **Phase 3 (later, optional):** a short looping video or GIF of the moving speed lines, for animated promo use.
+- **Phase 1 (now, MVP):** one blue-and-silver icon picture, delivered as a download.
+- **Phase 2 (later, optional):** more colour editions, such as purple and pink, green and gold, or black and white.
+- **Phase 3 (later, optional):** use an edition in the game, for example as a selectable app icon or a seasonal browser-tab icon.
 
 ## Assumptions
-- "Loading screen" means the game start-up screen with the VIRTUE logo, not the screen shown before a match (the user confirmed this).
-- Only the picture is wanted. No permanent no-text mode is added to the game (the user confirmed this).
-- Size is widescreen 1920 × 1080, because the screen fills the whole window.
-- The speed lines move, so the picture is one frozen moment of the animation. A capture with a good spread of visible lines will be used.
-- The picture is taken from the preview version, which looks the same as the live version.
+- "VIRTUE icon" means the game's current app icon (the one used for the home-screen install and the browser tab).
+- The colours are changed by editing the picture directly, not by AI redrawing, so every line and letter stays exactly in place.
+- Black outlines and any pure white highlights stay as they are. Only the coloured areas are recoloured.
+- The file is saved in the preview's public folder so it can be downloaded from a link. It will also go to the live site on the next publish, but nothing in the game uses it.
+- The game's own icon is not replaced.
