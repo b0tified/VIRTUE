@@ -22,6 +22,7 @@ export default function News() {
   const isAdmin = user?.role === "admin";
   const [posts, setPosts] = useState(null); // null = loading
   const [showCompose, setShowCompose] = useState(false);
+  const [editing, setEditing] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -98,6 +99,7 @@ export default function News() {
                 x.id === p.id ? { ...x, likes } : x
               ));
             }}
+            onEdit={() => setEditing(p)}
             onDelete={async () => {
               if (!window.confirm(`Delete "${p.title}"?`)) return;
               try {
@@ -113,6 +115,16 @@ export default function News() {
       </main>
 
       <ComposeModal
+        open={!!editing}
+        post={editing}
+        onClose={() => setEditing(null)}
+        onPosted={(upd) => {
+          setPosts((arr) => arr.map((x) => (x.id === upd.id ? { ...x, ...upd } : x)));
+          setEditing(null);
+          refresh();
+        }}
+      />
+      <ComposeModal
         open={showCompose}
         onClose={() => setShowCompose(false)}
         onPosted={(newPost) => {
@@ -127,7 +139,7 @@ export default function News() {
   );
 }
 
-function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testid }) {
+function NewsCard({ post, isAdmin, onEdit, onDelete, onLikeToggled, onLikesEdited, testid }) {
   const dt = formatRelative(post.created_at);
   // Optimistic-first like toggle. We flip the button state on click and
   // fire the request in the background; if it fails we roll back.
@@ -194,12 +206,10 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
           className="font-body text-sm sm:text-base text-neutral-800 whitespace-pre-wrap leading-relaxed"
           data-testid={`${testid}-body`}
         >
-          {post.body}
+          <Linkified text={post.body} testid={testid} />
         </p>
         <div className="mt-4 pt-3 border-t border-black/10 flex items-center justify-between flex-wrap gap-2">
           <div className="font-anton uppercase tracking-widest text-[11px] text-neutral-500">
-            <span className="text-black">{post.author_username}</span>
-            <span className="mx-2 opacity-50">·</span>
             <span data-testid={`${testid}-timestamp`}>{dt}</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -281,6 +291,16 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
             )}
             {isAdmin && (
               <button
+                onClick={onEdit}
+                className="btn-pow bg-[#0055FF] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
+                data-testid={`${testid}-edit`}
+                aria-label="Edit post"
+              >
+                <span className="flex items-center gap-1"><Pencil size={12} strokeWidth={3} /> EDIT</span>
+              </button>
+            )}
+            {isAdmin && (
+              <button
                 onClick={onDelete}
                 className="btn-pow bg-[#E62429] text-white [&]:px-2 [&]:py-1 [&]:text-xs"
                 data-testid={`${testid}-delete`}
@@ -296,7 +316,7 @@ function NewsCard({ post, isAdmin, onDelete, onLikeToggled, onLikesEdited, testi
   );
 }
 
-function ComposeModal({ open, onClose, onPosted }) {
+function ComposeModal({ open, post, onClose, onPosted }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [pinned, setPinned] = useState(false);
@@ -306,8 +326,10 @@ function ComposeModal({ open, onClose, onPosted }) {
   useEffect(() => {
     if (!open) {
       setTitle(""); setBody(""); setPinned(false); setError(""); setSubmitting(false);
+    } else if (post) {
+      setTitle(post.title || ""); setBody(post.body || ""); setPinned(!!post.pinned);
     }
-  }, [open]);
+  }, [open, post]);
 
   if (!open) return null;
 
@@ -319,12 +341,14 @@ function ComposeModal({ open, onClose, onPosted }) {
     }
     setSubmitting(true);
     try {
-      const { data } = await api.post("/admin/news", {
-        title: title.trim(),
-        body: body.trim(),
-        pinned,
-      });
-      onPosted?.(data);
+      const fields = { title: title.trim(), body: body.trim(), pinned };
+      if (post) {
+        await api.patch(`/admin/news/${post.id}`, fields);
+        onPosted?.({ id: post.id, ...fields });
+      } else {
+        const { data } = await api.post("/admin/news", fields);
+        onPosted?.(data);
+      }
     } catch (e) {
       setError(e.response?.data?.detail || "Publish failed.");
       setSubmitting(false);
@@ -343,7 +367,7 @@ function ComposeModal({ open, onClose, onPosted }) {
       >
         <div className="bg-black text-white px-5 py-3 flex items-center justify-between">
           <div className="font-display text-2xl text-[#FFD700] flex items-center gap-2">
-            <Megaphone size={20} strokeWidth={3} /> NEW POST
+            <Megaphone size={20} strokeWidth={3} /> {post ? "EDIT POST" : "NEW POST"}
           </div>
           <button onClick={onClose} className="font-anton" data-testid="news-compose-close" disabled={submitting}>
             <X size={20} strokeWidth={3} />
@@ -370,7 +394,7 @@ function ComposeModal({ open, onClose, onPosted }) {
               onChange={(e) => setBody(e.target.value)}
               maxLength={4000}
               rows={8}
-              placeholder="What's new? Line breaks preserved."
+              placeholder="What's new? Line breaks preserved. Paste https:// links and they become clickable."
               className="w-full border-2 border-black px-3 py-2 font-body text-sm resize-y"
               data-testid="news-compose-body"
               disabled={submitting}
@@ -416,13 +440,30 @@ function ComposeModal({ open, onClose, onPosted }) {
           >
             <span className="flex items-center gap-2">
               {submitting ? <Loader2 size={14} strokeWidth={3} className="animate-spin" /> : <Plus size={14} strokeWidth={3} />}
-              PUBLISH
+              {post ? "SAVE" : "PUBLISH"}
             </span>
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+// Turns http(s):// and www. addresses into links that open in a new tab.
+const URL_RE = /((?:https?:\/\/|www\.)[^\s<]+[^\s<.,;:!?)\]'"])/gi;
+function Linkified({ text, testid }) {
+  let n = 0;
+  return (text || "").split(URL_RE).map((part, i) => {
+    if (i % 2 === 0) return part;
+    const href = part.startsWith("www.") ? `https://${part}` : part;
+    return (
+      <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+        className="text-[#0055FF] underline font-semibold break-all hover:text-[#E62429]"
+        data-testid={`${testid}-link-${n++}`}>
+        {part}
+      </a>
+    );
+  });
 }
 
 // "5 minutes ago" / "2 hours ago" / "Mar 14" style relative timestamp.
