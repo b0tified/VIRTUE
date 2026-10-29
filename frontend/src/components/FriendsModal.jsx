@@ -11,6 +11,7 @@ import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import { divisionRoman } from "@/game/rankIcons";
 import PublicProfileModal from "@/components/PublicProfileModal";
 import WhisperChat from "@/components/WhisperChat";
+import { modeName } from "@/lib/modeNames";
 
 const TABS = [
   { id: "friends",  label: "FRIENDS" },
@@ -351,9 +352,7 @@ function FriendRow({ idx, u, mode, onChange, nav, onInspect, unreadCount = 0, on
                   for any deploys mid-rollout where the server hasn't
                   yet exposed `queue_kind`. */}
               IN QUEUE{
-                u.queue_kind === "casual" ? " · QUICK" :
-                u.queue_kind === "bigffa" ? " · 12P FFA" :
-                u.queue_kind === "ranked" ? " · RANKED" : ""
+                ["casual", "bigffa", "ranked"].includes(u.queue_kind) ? ` · ${modeName(u.queue_kind).toUpperCase()}` : ""
               }
             </span>
           ) : (

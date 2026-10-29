@@ -1,0 +1,30 @@
+{
+  "summary": "Tested the admin-editable mode names feature end to end. Backend: 13/13 pytest pass. GET/POST /api/admin/mode_names admin-only (403 for players, 401 when logged out). POST merges new names with existing ones, collapses extra whitespace, rejects empty, whitespace-only, >20-char and unknown-key names with 400 and saves nothing when any field is invalid. /api/modes/status returns names. The names are saved in the db.meta mode_names doc. UI: the Moderation Mode Names panel works: 5 inputs, Save disabled at first, enabled after a change, disabled when any field is empty, 20-char maxLength, 'Mode names saved.' toast, values still there after reload. After renaming to Arcade/Competitive/Mega Brawl/Squad/Training: Lobby buttons show ARCADE, COMPETITIVE MATCH, MEGA BRAWL, TRAINING. Party panel shows SQUAD, ARCADE, COMPETITIVE @ BRONZE. Practice selector shows TRAINING RANGE. Casual match loading title shows ARCADE. HUD timer label shows ARCADE. Profile history badges show ARCADE. Names restored to defaults at the end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Lobby quick-queue toast", "issue": "Hardcoded 'CASUAL · FFA' chip (Lobby.jsx ~line 1585) does not use mn('casual', true)", "selector": "[data-testid=quick-queue-timer] sibling chip", "priority": "LOW"},
+      {"component": "FriendsModal friend status", "issue": "Hardcoded ' · 12P FFA' / ' · RANKED' queue labels (FriendsModal.jsx ~355-356) ignore renamed modes; also ' · QUICK' for casual", "selector": "[data-testid^=friend-status-]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "In-match HUD", "issues": ["'SPAWN PROTECTED' badge overlaps the timer/mode label panel at top center during spawn protection (existing issue, not part of this feature)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_mode_names.py", "/app/test_reports/pytest/pytest_mode_names.xml"],
+  "action_items": [
+    "Use mn('casual', true) for the 'CASUAL · FFA' chip in the Lobby quick-queue toast",
+    "Use the mode names in the FriendsModal queue status labels (bigffa/ranked/casual)",
+    "Optional: SettingsModal mobile-only note hardcodes 'Casual, Ranked, and 12P FFA'"
+  ],
+  "critical_code_review_comments": [
+    "Backend implementation is clean: validation is done before saving, so a request with any invalid field changes nothing, and the 30s sync loop keeps pods in step.",
+    "Not tested in a live match: ranked HUD label (COMPETITIVE), MatchResultOverlay header and PublicProfileModal badges. They use the same modeName() getters as the screens that were checked."
+  ],
+  "updated_files": ["/app/backend/tests/test_mode_names.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% of requested surfaces (2 minor missed spots found)"},
+  "seed_data_creation": "Temporarily formed party partyleader+partyfollower via API, then both left. Mode names restored to defaults.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Mode names live in db.meta _id=mode_names. Admin panel is on /admin/reports. Always restore the defaults after tests. Casual queue fills in about 6s, so a casual match starts quickly with player1."
+}

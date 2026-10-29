@@ -1582,7 +1582,7 @@ export default function Lobby() {
               </div>
               <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#E62429] text-white">
-                  CASUAL · FFA
+                  {mn("casual", true)} · FFA
                 </div>
               </div>
               {!casualQueueState?.matched && Number.isFinite(casualQueueState?.estimated_wait_seconds) && (

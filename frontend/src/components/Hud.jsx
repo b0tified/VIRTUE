@@ -157,7 +157,7 @@ export default function Hud({ hud, username, pointerLocked, onStart, onExit, eng
           can't be damaged this brief window. */}
       {hud.alive && hud.invuln && (
         <div
-          className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 border-pow shadow-pow-sm"
+          className="pointer-events-none fixed top-28 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 border-pow shadow-pow-sm"
           style={{
             background: "#FFD700",
             color: "#0A0A0A",
