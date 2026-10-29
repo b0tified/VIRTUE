@@ -10,6 +10,7 @@ import { rankIconFor, divisionRoman } from "@/game/rankIcons";
 import AnimatedRankIcon from "@/components/AnimatedRankIcon";
 import audioBus from "@/game/audio";
 import useTinyScreen from "@/hooks/useTinyScreen";
+import { useModeNames, modeName } from "@/lib/modeNames";
 
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 // Team accent colors — matches the in-game team tint (red / blue).
@@ -17,6 +18,7 @@ const TEAM_COLORS = { red: "#E62429", blue: "#0055FF" };
 const TEAM_LABELS = { red: "TEAM RED", blue: "TEAM BLUE" };
 
 export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby }) {
+  useModeNames();
   const placements = matchEnd?.placements || [];
   // TDM detection — the server tags the match_end payload with
   // `game_mode: "tdm"` and includes `team_scores` + `winning_team` +
@@ -263,7 +265,7 @@ export default function MatchResultOverlay({ matchEnd, youId, isRanked, onLobby 
                     className="inline-flex items-center gap-1 px-2 py-0.5 border-2 text-xs"
                     style={{ background: palette.ink, color: palette.accent, borderColor: palette.ink }}
                   >
-                    {isRanked ? "RANKED" : "CASUAL"}{isTdm ? " · TDM" : ""}
+                    {isRanked ? modeName("ranked").toUpperCase() : modeName("casual").toUpperCase()}{isTdm ? " · TDM" : ""}
                   </span>
                 )}
               </div>

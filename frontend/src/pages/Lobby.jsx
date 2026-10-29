@@ -32,6 +32,7 @@ import LobbyDailyPanel from "@/components/LobbyDailyPanel";
 import AdminFogLobby from "@/components/AdminFogLobby";
 import { navigateToMatch } from "@/lib/navigateToMatch";
 import { useQueue } from "@/context/QueueContext";
+import { useModeNames, setModeNames } from "@/lib/modeNames";
 import useIsMobile, { detectIsMobile } from "@/game/useIsMobile";
 
 const LOBBY_BG = "https://static.prod-images.emergentagent.com/jobs/956e5f81-3c5a-4b45-a2da-bf26ea4fc4d1/images/3fd8a6f43a33db82e29a81462fb7d356c6de26372ea5ffabff63ed8db4358583.png";
@@ -64,6 +65,7 @@ export default function Lobby() {
   // logout still available via Settings modal — it pulls its own useAuth().
   const { user, refreshMe } = useAuth();
   const nav = useNavigate();
+  const mn = useModeNames();
   const [searchParams, setSearchParams] = useSearchParams();
   const [disconnected, setDisconnected] = useState(searchParams.get("disconnected") === "1");
   const [spectateEnded, setSpectateEnded] = useState(searchParams.get("spectate_ended") === "1");
@@ -554,7 +556,7 @@ export default function Lobby() {
   const qmEffectivePref = casualFfaOn && casualTdmOn ? qmModePref : casualFfaOn ? "ffa" : "tdm";
   const maintenance = !isAdmin && modeStatus?.maintenance?.active ? modeStatus.maintenance : null;
   const [bigffaNotice, setBigffaNotice] = useState(searchParams.get("mode_unavailable") === "1");
-  const loadModeStatus = useCallback(() => api.get("/modes/status").then(({ data }) => setModeStatus(data)).catch(() => {}), []);
+  const loadModeStatus = useCallback(() => api.get("/modes/status").then(({ data }) => { setModeStatus(data); setModeNames(data?.names); }).catch(() => {}), []);
   useEffect(() => {
     loadModeStatus();
     const id = setInterval(loadModeStatus, 30000);
@@ -1113,14 +1115,14 @@ export default function Lobby() {
               data-testid="lobby-play-button"
               aria-label={
                 queueState && !casualInQueue ? "You're already in the ranked queue"
-                : bigffaInQueue ? "Cancel the 12P FFA queue to play Casual"
+                : bigffaInQueue ? `Cancel the ${mn("bigffa")} queue to play ${mn("casual")}`
                 : undefined
               }
             >
               <span className="!flex !flex-col items-start">
               <span className="flex items-center gap-3">
                 {casualInQueue ? <Loader2 size={22} strokeWidth={3} className="animate-spin" /> : <Play size={22} strokeWidth={3} />}
-                {casualInQueue ? `MATCHING...` : "CASUAL"}
+                {casualInQueue ? `MATCHING...` : mn("casual", true)}
               </span>
               {!casualOn && <ModeUnavailableTag testid="lobby-casual-unavailable" />}
               </span>
@@ -1133,7 +1135,7 @@ export default function Lobby() {
             <div
               className="flex items-stretch gap-1 w-full rounded-md border-2 border-black bg-white/90 p-1"
               data-testid="lobby-quickmatch-mode-picker"
-              aria-label="Casual mode"
+              aria-label={`${mn("casual")} mode`}
             >
               {[
                 { key: "both", label: "BOTH", title: "FFA or TDM — server rolls per match" },
@@ -1170,10 +1172,10 @@ export default function Lobby() {
               className="btn-pow bg-[#0055FF] text-white w-full text-lg sm:text-3xl [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-base disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-ranked-button"
               aria-label={
-                rankedLocked ? `Ranked unlocks at Level ${RANKED_MIN_LEVEL}`
-                : rankedBanned ? `Ranked locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
-                : casualInQueue ? "You're already in the Casual queue"
-                : bigffaInQueue ? "Cancel the 12P FFA queue to play Ranked"
+                rankedLocked ? `${mn("ranked")} unlocks at Level ${RANKED_MIN_LEVEL}`
+                : rankedBanned ? `${mn("ranked")} locked for ${rankedBanLabel} — left a previous match (-${RANKED_LEAVE_RP_LOSS} RP)`
+                : casualInQueue ? `You're already in the ${mn("casual")} queue`
+                : bigffaInQueue ? `Cancel the ${mn("bigffa")} queue to play ${mn("ranked")}`
                 : undefined
               }
             >
@@ -1187,15 +1189,15 @@ export default function Lobby() {
                   <Trophy size={20} strokeWidth={3} />
                 )}
                 {rankedLocked
-                  ? `RANKED · LV ${RANKED_MIN_LEVEL}`
+                  ? `${mn("ranked", true)} · LV ${RANKED_MIN_LEVEL}`
                   : rankedBanned
                   /* Ranked early-leave penalty countdown lives directly
                      on the button so the player sees the lock fall
                      without clicking through to discover a 403. */
-                  ? `RANKED LOCKED · ${rankedBanLabel}`
+                  ? `${mn("ranked", true)} LOCKED · ${rankedBanLabel}`
                   : queueState
                   ? (queueState.matched ? "MATCH FOUND" : "IN QUEUE...")
-                  : "RANKED MATCH"}
+                  : `${mn("ranked", true)} MATCH`}
               </span>
               {!modeOn("ranked") && <ModeUnavailableTag testid="lobby-ranked-unavailable" />}
               </span>
@@ -1220,23 +1222,23 @@ export default function Lobby() {
               }`}
               data-testid="lobby-bigffa-button"
               aria-label={
-                bigffaInQueue ? "Cancel 12P FFA queue"
-                : casualInQueue ? "Cancel Casual queue to play 12P FFA"
-                : queueState ? "Cancel Ranked queue to play 12P FFA"
+                bigffaInQueue ? `Cancel ${mn("bigffa")} queue`
+                : casualInQueue ? `Cancel ${mn("casual")} queue to play ${mn("bigffa")}`
+                : queueState ? `Cancel ${mn("ranked")} queue to play ${mn("bigffa")}`
                 : undefined
               }
             >
               {bigffaInQueue ? (
                 <span className="flex items-center gap-3">
                   <Loader2 size={18} strokeWidth={3} className="animate-spin" />
-                  CANCEL 12P FFA
+                  CANCEL {mn("bigffa", true)}
                   <span className="ml-auto font-display text-xl tabular-nums" data-testid="lobby-bigffa-wait">
                     {String(Math.floor(bigffaWaitSec / 60)).padStart(2, "0")}:{String(bigffaWaitSec % 60).padStart(2, "0")}
                   </span>
                 </span>
               ) : (
                 <span className="!flex !flex-col items-start leading-tight">
-                  <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> 12P FFA</span>
+                  <span className="flex items-center gap-3"><Swords size={18} strokeWidth={3} /> {mn("bigffa", true)}</span>
                   {!bigffaEnabled && <ModeUnavailableTag testid="lobby-bigffa-unavailable" />}
                 </span>
               )}
@@ -1253,13 +1255,13 @@ export default function Lobby() {
               className="btn-pow bg-[#9B59B6] text-white w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="lobby-practice-button"
               aria-label={
-                casualInQueue ? "Cancel Casual queue to play Practice"
-                : queueState ? "Cancel Ranked queue to play Practice"
+                casualInQueue ? `Cancel ${mn("casual")} queue to play ${mn("practice")}`
+                : queueState ? `Cancel ${mn("ranked")} queue to play ${mn("practice")}`
                 : undefined
               }
             >
               <span className="!flex !flex-col items-start">
-              <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> PRACTICE</span>
+              <span className="flex items-center gap-3"><Mouse size={18} strokeWidth={3} /> {mn("practice", true)}</span>
               {!modeOn("practice") && <ModeUnavailableTag testid="lobby-practice-unavailable" />}
               </span>
             </button>
@@ -1474,9 +1476,9 @@ export default function Lobby() {
         >
           <Loader2 size={14} strokeWidth={3} className="animate-spin flex-shrink-0" style={{ color: followerToast.mode === "ranked" ? "#0055FF" : "#E62429" }} />
           <div className="flex-1 min-w-0">
-            <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 leading-none">Party</div>
+            <div className="font-anton uppercase tracking-widest text-[10px] opacity-70 leading-none">{mn("party")}</div>
             <div className="font-display text-sm leading-tight truncate">
-              Leader started {followerToast.mode === "ranked" ? "Ranked" : "Casual"}
+              Leader started {mn(followerToast.mode === "ranked" ? "ranked" : "casual")}
             </div>
           </div>
           <style>{`
@@ -1621,7 +1623,7 @@ export default function Lobby() {
                 <Loader2 size={18} strokeWidth={3} className="animate-spin" />
               )}
               <span className="font-anton uppercase tracking-widest text-sm flex-1" data-testid="bigffa-queue-header">
-                {bigffaQueueState?.matched ? "Match Found!" : "Searching · 12P FFA"}
+                {bigffaQueueState?.matched ? "Match Found!" : `Searching · ${mn("bigffa")}`}
               </span>
               {!bigffaQueueState?.matched && (
                 <button
@@ -1654,7 +1656,7 @@ export default function Lobby() {
               )}
               <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-[#FF7A00] text-black flex items-center gap-1">
-                  <Swords size={12} strokeWidth={3} /> 12P FFA
+                  <Swords size={12} strokeWidth={3} /> {mn("bigffa", true)}
                 </div>
                 <div className="border-pow-thin font-anton uppercase tracking-widest text-xs px-2 py-0.5 bg-black text-white flex items-center gap-1" data-testid="bigffa-queue-players">
                   <Users size={12} strokeWidth={3} />

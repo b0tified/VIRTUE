@@ -17,11 +17,13 @@ import { Avatar } from "@/components/PlayerCard";
 import { divisionRoman } from "@/game/rankIcons";
 import { useQueue } from "@/context/QueueContext";
 import { useAuth } from "@/context/AuthContext";
+import { useModeNames } from "@/lib/modeNames";
 
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 
 export default function PartyPanel({ party, myId, refresh, className = "" }) {
   const navigate = useNavigate();
+  const mn = useModeNames();
   const {
     queueState, waitSec, joinRanked, cancelRanked,
     casualQueueState, casualWaitSec, joinCasual, cancelCasual,
@@ -136,7 +138,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
           <Users size={14} strokeWidth={3} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-anton uppercase tracking-widest text-xs leading-tight opacity-80">PARTY</div>
+          <div className="font-anton uppercase tracking-widest text-xs leading-tight opacity-80">{mn("party", true)}</div>
           <div className="font-display text-lg leading-none">
             {party.members.length} <span className="text-white/60">/ {party.max_size}</span>
           </div>
@@ -213,7 +215,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 data-testid="party-start-button"
               >
                 <span className="flex items-center justify-center gap-2">
-                  <Play size={14} strokeWidth={3} /> CASUAL
+                  <Play size={14} strokeWidth={3} /> {mn("casual", true)}
                 </span>
               </button>
             ) : (
@@ -225,7 +227,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
               >
                 <span className="flex items-center justify-center gap-2">
                   <Loader2 size={14} strokeWidth={3} className="animate-spin" />
-                  QUICK QUEUE · {casualWaitSec}s · CANCEL
+                  {mn("casual", true)} QUEUE · {casualWaitSec}s · CANCEL
                 </span>
               </button>
             )}
@@ -241,7 +243,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
                 aria-label={`Queues whole party at ${tier}`}
               >
                 <span className="flex items-center justify-center gap-2">
-                  <Shield size={14} strokeWidth={3} /> RANKED @ {tier}
+                  <Shield size={14} strokeWidth={3} /> {mn("ranked", true)} @ {tier}
                 </span>
               </button>
             ) : (
@@ -298,7 +300,7 @@ export default function PartyPanel({ party, myId, refresh, className = "" }) {
               data-testid="party-member-queue-info"
             >
               <Loader2 size={12} strokeWidth={3} className="animate-spin" />
-              IN RANKED QUEUE @ {tier} · {waitSec}s
+              IN {mn("ranked", true)} QUEUE @ {tier} · {waitSec}s
             </div>
           ) : inCasualQueue ? (
             <div

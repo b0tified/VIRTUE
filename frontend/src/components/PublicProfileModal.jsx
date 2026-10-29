@@ -10,6 +10,7 @@ import UltimateGoonerBadge from "@/components/UltimateGoonerBadge";
 import { formatBannerTitle, bannerTitleAnimClass, bannerTitleStyle } from "@/game/bannerTitle";
 import { useAuth } from "@/context/AuthContext";
 import { ReportPlayerModal } from "@/components/Hud";
+import { useModeNames, modeName } from "@/lib/modeNames";
 
 const RANK_COLORS = ["#E67E22", "#B8C4CC", "#F1C40F", "#8FD3F4", "#2ECC71", "#4A90E2", "#7BE04C", "#8E44FF", "#D959D9"];
 const TIER_NAMES = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "GOONMASTER"];
@@ -19,9 +20,9 @@ const seasonTierIdx = (e) => {
 };
 
 const MODE_META = {
-  ranked:  { label: "RANKED",  color: "#0055FF", Icon: Trophy },
-  casual:  { label: "QUICK",   color: "#E62429", Icon: Swords },
-  offline: { label: "OFFLINE", color: "#06A35F", Icon: WifiOff },
+  ranked:  { get label() { return modeName("ranked").toUpperCase(); },   color: "#0055FF", Icon: Trophy },
+  casual:  { get label() { return modeName("casual").toUpperCase(); },   color: "#E62429", Icon: Swords },
+  offline: { get label() { return modeName("practice").toUpperCase(); }, color: "#06A35F", Icon: WifiOff },
 };
 
 /* `isBot` prop: when true the modal renders a "private profile" state
@@ -30,6 +31,7 @@ const MODE_META = {
    private. Report button is hidden for bots and for the viewer's own
    profile. */
 export default function PublicProfileModal({ username, isBot = false, onClose }) {
+  useModeNames();
   const { user: me } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");

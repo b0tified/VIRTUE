@@ -21,12 +21,13 @@ import MapPreview from "@/components/MapPreview";
 import { MAPS_META, pickRandomMapMeta } from "@/game/mapsMeta";
 import { Loader2, Zap, Check } from "lucide-react";
 import useTinyScreen from "@/hooks/useTinyScreen";
+import { useModeNames, modeName } from "@/lib/modeNames";
 
 const MODE_LABELS = {
-  casual:   { title: "CASUAL",   accent: "#FFD700" },
-  ranked:   { title: "RANKED MATCH",  accent: "#E62429" },
-  party:    { title: "PARTY MATCH",   accent: "#0055FF" },
-  offline:  { title: "PRACTICE",      accent: "#9B59B6" },
+  casual:   { get title() { return modeName("casual").toUpperCase(); },  accent: "#FFD700" },
+  ranked:   { get title() { return `${modeName("ranked").toUpperCase()} MATCH`; }, accent: "#E62429" },
+  party:    { get title() { return `${modeName("party").toUpperCase()} MATCH`; },  accent: "#0055FF" },
+  offline:  { get title() { return modeName("practice").toUpperCase(); }, accent: "#9B59B6" },
 };
 
 // Sub-headline rendered under the big mode title. Drives directly from
@@ -43,6 +44,7 @@ const SAFETY_DISMISS_MS = 8000;     // hard fallback if welcome never arrives
 const REVEAL_HOLD_MS    = 900;      // how long the "CONFIRMED" screen lingers
 
 export default function MatchLoadingScreen() {
+  useModeNames();
   const [phase, setPhase] = useState("idle"); // 'idle' | 'loading' | 'confirmed'
   const [mode, setMode] = useState("casual");
   const [username, setUsername] = useState(null);

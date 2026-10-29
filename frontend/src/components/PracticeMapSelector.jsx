@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { MAPS_META } from "@/game/mapsMeta";
 import MapPreview from "@/components/MapPreview";
+import { useModeNames } from "@/lib/modeNames";
 import { Shuffle, X, Play } from "lucide-react";
 
 export default function PracticeMapSelector({ open, onClose, onSelect, mode: initialMode = "practice" }) {
@@ -21,8 +22,9 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
   const [trainingMode, setTrainingMode] = useState(initialMode);
   // Practice is FFA-only (Team Deathmatch removed from practice).
   const gameMode = "ffa";
+  const mn = useModeNames();
   if (!open) return null;
-  const modeLabel = trainingMode === "practice" ? "PRACTICE RANGE" : "OFFLINE VS AI";
+  const modeLabel = trainingMode === "practice" ? `${mn("practice", true)} RANGE` : "OFFLINE VS AI";
   return (
     <div
       className="fixed inset-0 z-[8000] bg-black/85 flex items-center justify-center p-4"
@@ -67,7 +69,7 @@ export default function PracticeMapSelector({ open, onClose, onSelect, mode: ini
                 testid="practice-type-card-range"
                 active={trainingMode === "practice"}
                 onClick={() => setTrainingMode("practice")}
-                title="PRACTICE RANGE"
+                title={`${mn("practice", true)} RANGE`}
                 subtitle="Stationary targets · no enemies"
                 accent="#9B59B6"
               />

@@ -19,6 +19,7 @@ import WeaponLoadoutPicker from "@/components/WeaponLoadoutPicker";
 import PublicProfileModal from "@/components/PublicProfileModal";
 import { SeasonRecapView } from "@/components/SeasonRecapModal";
 import PlacementTracker from "@/components/PlacementTracker";
+import { useModeNames, modeName } from "@/lib/modeNames";
 
 // Avatar unlock gates — must mirror server.py set_avatar gating.
 const AVATAR_LOCKS = {
@@ -101,9 +102,9 @@ export function bannerColorMeta(idx) {
 }
 
 const MODE_META = {
-  ranked:  { label: "RANKED",   color: "#0055FF", Icon: Trophy },
-  casual:  { label: "QUICK",    color: "#E62429", Icon: Swords },
-  offline: { label: "OFFLINE",  color: "#06A35F", Icon: WifiOff },
+  ranked:  { get label() { return modeName("ranked").toUpperCase(); },   color: "#0055FF", Icon: Trophy },
+  casual:  { get label() { return modeName("casual").toUpperCase(); },   color: "#E62429", Icon: Swords },
+  offline: { get label() { return modeName("practice").toUpperCase(); }, color: "#06A35F", Icon: WifiOff },
 };
 
 // TDM gets its own badge — different label/icon/color so a player
@@ -125,6 +126,7 @@ const TDM_OUTCOME_META = {
 };
 
 export default function Profile() {
+  useModeNames();
   const { user, refreshMe } = useAuth();
   const s = user?.stats || { kills: 0, deaths: 0, matches: 0, wins: 0 };
   const kd = s.deaths > 0 ? (s.kills / s.deaths).toFixed(2) : String(s.kills);
@@ -652,7 +654,7 @@ function HistoryRow({ idx, m, onOpen }) {
             style={{ background: MODE_META.ranked.color, color: "#fff" }}
             data-testid={`history-tdm-ranked-${idx}`}
           >
-            <Trophy size={10} strokeWidth={3} /> RANKED
+            <Trophy size={10} strokeWidth={3} /> {modeName("ranked").toUpperCase()}
           </span>
         )}
       </div>

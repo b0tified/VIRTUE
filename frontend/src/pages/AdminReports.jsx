@@ -17,6 +17,7 @@ import AdminCheatFlagsPanel from "@/components/AdminCheatFlagsPanel";
 import AdminRankedBotDifficultyPanel from "@/components/AdminRankedBotDifficultyPanel";
 import AdminServerHealthPanel from "@/components/AdminServerHealthPanel";
 import AdminModeSwitchesPanel, { ModesOffBanner } from "@/components/AdminModeSwitchesPanel";
+import AdminModeNamesPanel from "@/components/AdminModeNamesPanel";
 import { LOBBY_SCREENS } from "@/game/lobbyScreens";
 import { TitleChip } from "@/components/ShopTitlesTab";
 import BundleMakerPanel from "@/components/admin/BundleMakerPanel";
@@ -242,6 +243,10 @@ export default function AdminReports() {
 
       <div className="max-w-6xl mx-auto mb-6">
         <AdminModeSwitchesPanel data={modeSwitches} setData={setModeSwitches} onToast={setToast} />
+      </div>
+
+      <div className="max-w-6xl mx-auto mb-6">
+        <AdminModeNamesPanel onToast={setToast} />
       </div>
 
       <div className="max-w-6xl mx-auto mb-6">

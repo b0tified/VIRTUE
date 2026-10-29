@@ -7776,7 +7776,18 @@ def casual_pref_allowed(pref: str) -> str:
 
 def modes_public() -> dict:
     return {"modes": {k: v["enabled"] for k, v in MODE_SWITCHES.items()}, "maintenance": dict(MAINTENANCE),
-            "bigffa_enabled": MODE_SWITCHES["bigffa"]["enabled"]}
+            "bigffa_enabled": MODE_SWITCHES["bigffa"]["enabled"], "names": dict(MODE_NAMES)}
+
+
+# Admin-editable player-facing mode names (db.meta "mode_names").
+MODE_NAME_DEFAULTS: Dict[str, str] = {"casual": "Casual", "ranked": "Ranked", "bigffa": "12P FFA", "party": "Party", "practice": "Practice"}
+MODE_NAMES: Dict[str, str] = dict(MODE_NAME_DEFAULTS)
+
+
+def _apply_mode_names(doc: dict) -> None:
+    for k, d in MODE_NAME_DEFAULTS.items():
+        v = str((doc.get("names") or {}).get(k) or "").strip()
+        MODE_NAMES[k] = v[:20] or d
 
 
 async def _send_home_after_match(room: "GameRoom", key: str) -> None:
@@ -11204,6 +11215,7 @@ async def _queue_fill_config_loop() -> None:
                 _legacy = await db.meta.find_one({"_id": "bigffa_switch"}) or {}
                 _ms = {"modes": {"bigffa": _legacy}} if "enabled" in _legacy else {}
             _apply_mode_switches(_ms)
+            _apply_mode_names(await db.meta.find_one({"_id": "mode_names"}) or {})
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -11627,6 +11639,35 @@ async def admin_set_all_modes(payload: MaintenanceIn, user: dict = Depends(get_c
 
 class BigFfaSwitchIn(BaseModel):
     enabled: bool
+
+
+class ModeNamesIn(BaseModel):
+    names: Dict[str, str]
+
+
+@api.get("/admin/mode_names")
+async def admin_get_mode_names(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    return {"names": dict(MODE_NAMES), "defaults": MODE_NAME_DEFAULTS}
+
+
+@api.post("/admin/mode_names")
+async def admin_set_mode_names(payload: ModeNamesIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    clean = {}
+    for k, v in payload.names.items():
+        if k not in MODE_NAME_DEFAULTS:
+            raise HTTPException(status_code=400, detail="Unknown mode.")
+        v = " ".join(str(v).split())
+        if not v:
+            raise HTTPException(status_code=400, detail="Mode names can't be empty.")
+        if len(v) > 20:
+            raise HTTPException(status_code=400, detail="Mode names can be at most 20 characters.")
+        clean[k] = v
+    merged = {**MODE_NAMES, **clean}
+    await db.meta.update_one({"_id": "mode_names"}, {"$set": {"names": merged}}, upsert=True)
+    _apply_mode_names({"names": merged})
+    return {"names": dict(MODE_NAMES), "defaults": MODE_NAME_DEFAULTS}
 
 
 @api.post("/admin/bigffa_switch")
