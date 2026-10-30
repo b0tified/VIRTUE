@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords, Smartphone } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords, Smartphone, ExternalLink } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -1266,6 +1266,14 @@ export default function Lobby() {
               </span>
             </button>
             </div>
+            {modeStatus?.custom && (
+              <a href={modeStatus.custom.url} target="_blank" rel="noopener noreferrer" draggable={false}
+                className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm select-none ${modeStatus.custom.color === "gold" ? "text-black" : "text-white"}`}
+                style={{ background: modeStatus.custom.hex }}
+                data-testid="lobby-custom-mode-button">
+                <span className="flex items-center gap-3 uppercase"><ExternalLink size={18} strokeWidth={3} /> {modeStatus.custom.name}</span>
+              </a>
+            )}
             {/* Leaderboard + Profile — same short-viewport 2-col
                 treatment as 12P FFA / Practice above. Height-gated so
                 narrow desktop windows aren't compacted. */}

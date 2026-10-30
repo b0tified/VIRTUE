@@ -7776,7 +7776,19 @@ def casual_pref_allowed(pref: str) -> str:
 
 def modes_public() -> dict:
     return {"modes": {k: v["enabled"] for k, v in MODE_SWITCHES.items()}, "maintenance": dict(MAINTENANCE),
-            "bigffa_enabled": MODE_SWITCHES["bigffa"]["enabled"], "names": dict(MODE_NAMES)}
+            "bigffa_enabled": MODE_SWITCHES["bigffa"]["enabled"], "names": dict(MODE_NAMES),
+            "custom": {**CUSTOM_MODE, "hex": CUSTOM_MODE_COLORS.get(CUSTOM_MODE["color"], "#0055FF")} if CUSTOM_MODE["enabled"] and CUSTOM_MODE["url"] else None}
+
+
+# Admin-defined lobby button that opens an external link (db.meta "custom_mode").
+CUSTOM_MODE_COLORS = {"red": "#E62429", "gold": "#FFD700", "blue": "#0055FF", "green": "#06A35F", "purple": "#9B59B6", "orange": "#FF7A00"}
+CUSTOM_MODE: Dict[str, Any] = {"enabled": False, "name": "", "url": "", "color": "blue"}
+
+
+def _apply_custom_mode(doc: dict) -> None:
+    for k in CUSTOM_MODE:
+        if k in doc:
+            CUSTOM_MODE[k] = doc[k]
 
 
 # Admin-editable player-facing mode names (db.meta "mode_names").
@@ -11216,6 +11228,7 @@ async def _queue_fill_config_loop() -> None:
                 _ms = {"modes": {"bigffa": _legacy}} if "enabled" in _legacy else {}
             _apply_mode_switches(_ms)
             _apply_mode_names(await db.meta.find_one({"_id": "mode_names"}) or {})
+            _apply_custom_mode(await db.meta.find_one({"_id": "custom_mode"}) or {})
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -11643,6 +11656,38 @@ class BigFfaSwitchIn(BaseModel):
 
 class ModeNamesIn(BaseModel):
     names: Dict[str, str]
+
+
+class CustomModeIn(BaseModel):
+    enabled: bool
+    name: str = Field(default="", max_length=40)
+    url: str = Field(default="", max_length=500)
+    color: str = "blue"
+
+
+@api.get("/admin/custom_mode")
+async def admin_get_custom_mode(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    return {**CUSTOM_MODE, "colors": CUSTOM_MODE_COLORS}
+
+
+@api.post("/admin/custom_mode")
+async def admin_set_custom_mode(payload: CustomModeIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    name = " ".join(payload.name.split())
+    url = payload.url.strip()
+    if payload.color not in CUSTOM_MODE_COLORS:
+        raise HTTPException(status_code=400, detail="Unknown colour.")
+    if len(name) > 20:
+        raise HTTPException(status_code=400, detail="Button name can be at most 20 characters.")
+    if url and not re.match(r"^https?://[^\s/$.?#][^\s]*$", url, re.I):
+        raise HTTPException(status_code=400, detail="Link must start with http:// or https://")
+    if payload.enabled and (not name or not url):
+        raise HTTPException(status_code=400, detail="Add a name and a link before turning the button on.")
+    doc = {"enabled": payload.enabled, "name": name, "url": url, "color": payload.color}
+    await db.meta.update_one({"_id": "custom_mode"}, {"$set": doc}, upsert=True)
+    _apply_custom_mode(doc)
+    return {**CUSTOM_MODE, "colors": CUSTOM_MODE_COLORS}
 
 
 @api.get("/admin/mode_names")
