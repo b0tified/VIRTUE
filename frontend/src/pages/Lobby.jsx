@@ -1267,7 +1267,7 @@ export default function Lobby() {
             </button>
             </div>
             {modeStatus?.custom && (
-              <a href={modeStatus.custom.url} target="_blank" rel="noopener noreferrer" draggable={false}
+              <a href={modeStatus.custom.url} {...(modeStatus.custom.new_tab !== false ? { target: "_blank", rel: "noopener noreferrer" } : {})} draggable={false}
                 className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm select-none ${modeStatus.custom.color === "gold" ? "text-black" : "text-white"}`}
                 style={{ background: modeStatus.custom.hex }}
                 data-testid="lobby-custom-mode-button">

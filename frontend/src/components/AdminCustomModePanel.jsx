@@ -14,7 +14,7 @@ export default function AdminCustomModePanel({ onToast }) {
     const next = { ...d, ...patch };
     setBusy(true);
     try {
-      const { data } = await api.post("/admin/custom_mode", { enabled: next.enabled, name: next.name, url: next.url, color: next.color });
+      const { data } = await api.post("/admin/custom_mode", { enabled: next.enabled, name: next.name, url: next.url, color: next.color, new_tab: next.new_tab !== false });
       setD(data);
       onToast?.({ kind: "ok", text: data.enabled ? "Custom button saved and showing." : "Custom button saved (hidden)." });
     } catch (e) {
@@ -33,7 +33,7 @@ export default function AdminCustomModePanel({ onToast }) {
         <ExternalLink size={16} strokeWidth={3} className="text-[#0055FF]" />
         <span>Custom Mode Button</span>
       </div>
-      <div className="text-xs text-neutral-600 mb-3">An extra lobby button that opens your link in a new tab.</div>
+      <div className="text-xs text-neutral-600 mb-3">An extra lobby button that opens your link.</div>
       <div className="grid sm:grid-cols-2 gap-2">
         <input value={d.name} maxLength={20} onChange={(e) => setD({ ...d, name: e.target.value })} placeholder="Button name"
           className="border-2 border-black px-2 py-1 text-sm font-anton uppercase tracking-wider" data-testid="custom-mode-name-input" />
@@ -47,6 +47,11 @@ export default function AdminCustomModePanel({ onToast }) {
             style={{ background: c }} data-testid={`custom-mode-color-${k}`} />
         ))}
       </div>
+      <label className="flex items-center gap-2 mt-2 text-xs font-anton uppercase tracking-wider cursor-pointer select-none">
+        <input type="checkbox" checked={d.new_tab !== false} onChange={(e) => setD({ ...d, new_tab: e.target.checked })}
+          className="w-4 h-4 accent-black" data-testid="custom-mode-new-tab-toggle" />
+        Open in a new tab {d.new_tab === false && <span className="text-neutral-500 normal-case font-sans">(players leave the game page)</span>}
+      </label>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className={`btn-pow text-sm px-4 py-2 pointer-events-none uppercase ${d.color === "gold" ? "text-black" : "text-white"}`} style={{ background: hex }} data-testid="custom-mode-preview">
           <span className="flex items-center gap-2"><ExternalLink size={14} strokeWidth={3} /> {d.name || "Button name"}</span>
