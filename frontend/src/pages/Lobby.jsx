@@ -1266,7 +1266,7 @@ export default function Lobby() {
               </span>
             </button>
             </div>
-            {modeStatus?.custom && (
+            {modeStatus?.custom && !(modeStatus.custom.hide_mobile && window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches) && (
               <a href={modeStatus.custom.url} {...(modeStatus.custom.new_tab !== false ? { target: "_blank", rel: "noopener noreferrer" } : {})} draggable={false}
                 className={`btn-pow w-full text-base sm:text-lg [&]:py-2 sm:[&]:py-3 [@media(max-height:500px)]:[&]:!py-1 [@media(max-height:500px)]:!text-sm select-none ${modeStatus.custom.color === "gold" ? "text-black" : "text-white"}`}
                 style={{ background: modeStatus.custom.hex }}

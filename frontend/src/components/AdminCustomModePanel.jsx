@@ -14,7 +14,7 @@ export default function AdminCustomModePanel({ onToast }) {
     const next = { ...d, ...patch };
     setBusy(true);
     try {
-      const { data } = await api.post("/admin/custom_mode", { enabled: next.enabled, name: next.name, url: next.url, color: next.color, new_tab: next.new_tab !== false });
+      const { data } = await api.post("/admin/custom_mode", { enabled: next.enabled, name: next.name, url: next.url, color: next.color, new_tab: next.new_tab !== false, hide_mobile: !!next.hide_mobile });
       setD(data);
       onToast?.({ kind: "ok", text: data.enabled ? "Custom button saved and showing." : "Custom button saved (hidden)." });
     } catch (e) {
@@ -51,6 +51,11 @@ export default function AdminCustomModePanel({ onToast }) {
         <input type="checkbox" checked={d.new_tab !== false} onChange={(e) => setD({ ...d, new_tab: e.target.checked })}
           className="w-4 h-4 accent-black" data-testid="custom-mode-new-tab-toggle" />
         Open in a new tab {d.new_tab === false && <span className="text-neutral-500 normal-case font-sans">(players leave the game page)</span>}
+      </label>
+      <label className="flex items-center gap-2 mt-2 text-xs font-anton uppercase tracking-wider cursor-pointer select-none">
+        <input type="checkbox" checked={!!d.hide_mobile} onChange={(e) => setD({ ...d, hide_mobile: e.target.checked })}
+          className="w-4 h-4 accent-black" data-testid="custom-mode-hide-mobile-toggle" />
+        Hide on phones and tablets <span className="text-neutral-500 normal-case font-sans">(still shows on PC)</span>
       </label>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className={`btn-pow text-sm px-4 py-2 pointer-events-none uppercase ${d.color === "gold" ? "text-black" : "text-white"}`} style={{ background: hex }} data-testid="custom-mode-preview">

@@ -7782,7 +7782,7 @@ def modes_public() -> dict:
 
 # Admin-defined lobby button that opens an external link (db.meta "custom_mode").
 CUSTOM_MODE_COLORS = {"red": "#E62429", "gold": "#FFD700", "blue": "#0055FF", "green": "#06A35F", "purple": "#9B59B6", "orange": "#FF7A00"}
-CUSTOM_MODE: Dict[str, Any] = {"enabled": False, "name": "", "url": "", "color": "blue", "new_tab": True}
+CUSTOM_MODE: Dict[str, Any] = {"enabled": False, "name": "", "url": "", "color": "blue", "new_tab": True, "hide_mobile": False}
 
 
 def _apply_custom_mode(doc: dict) -> None:
@@ -11664,6 +11664,7 @@ class CustomModeIn(BaseModel):
     url: str = Field(default="", max_length=500)
     color: str = "blue"
     new_tab: bool = True
+    hide_mobile: bool = False
 
 
 @api.get("/admin/custom_mode")
@@ -11685,7 +11686,7 @@ async def admin_set_custom_mode(payload: CustomModeIn, user: dict = Depends(get_
         raise HTTPException(status_code=400, detail="Link must start with http:// or https://")
     if payload.enabled and (not name or not url):
         raise HTTPException(status_code=400, detail="Add a name and a link before turning the button on.")
-    doc = {"enabled": payload.enabled, "name": name, "url": url, "color": payload.color, "new_tab": payload.new_tab}
+    doc = {"enabled": payload.enabled, "name": name, "url": url, "color": payload.color, "new_tab": payload.new_tab, "hide_mobile": payload.hide_mobile}
     await db.meta.update_one({"_id": "custom_mode"}, {"$set": doc}, upsert=True)
     _apply_custom_mode(doc)
     return {**CUSTOM_MODE, "colors": CUSTOM_MODE_COLORS}
