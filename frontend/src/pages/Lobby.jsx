@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import audioBus from "@/game/audio";
 import settingsStore from "@/game/settings";
 import api from "@/api";
-import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords, Smartphone, ExternalLink } from "lucide-react";
+import { Trophy, User, Play, Mouse, Users, Award, X, Loader2, Star, WifiOff, Settings as SettingsIcon, UserPlus, Lock, Coins, ShoppingBag, Sparkles, Shield, LogOut, Megaphone, Flame, Zap, Swords, Smartphone, ExternalLink, AlertTriangle } from "lucide-react";
 import SettingsModal from "@/components/SettingsModal";
 import PlayerCard from "@/components/PlayerCard";
 import FriendsModal from "@/components/FriendsModal";
@@ -820,6 +820,12 @@ export default function Lobby() {
         </>
       )}
 
+      {modeStatus?.warning && (
+        <div className="relative z-30 bg-[#E62429] text-white border-b-4 border-black px-3 py-1.5 md:py-2 flex items-center justify-center gap-2 text-center" role="alert" data-testid="lobby-warning-banner">
+          <AlertTriangle size={16} strokeWidth={3} className="shrink-0" />
+          <span className="font-anton uppercase tracking-wider text-xs sm:text-sm whitespace-pre-line break-words" data-testid="lobby-warning-text">{modeStatus.warning}</span>
+        </div>
+      )}
       <header className="relative z-20 flex items-center justify-end flex-wrap gap-y-1.5 px-2 sm:px-6 md:px-12 py-1.5 md:py-3">
         {/* Mobile-landscape-only VIRTUE logo (top-left of the header row,
             same visual level as the tier card + coins + PASS/FRIENDS

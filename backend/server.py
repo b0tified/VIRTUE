@@ -7777,7 +7777,12 @@ def casual_pref_allowed(pref: str) -> str:
 def modes_public() -> dict:
     return {"modes": {k: v["enabled"] for k, v in MODE_SWITCHES.items()}, "maintenance": dict(MAINTENANCE),
             "bigffa_enabled": MODE_SWITCHES["bigffa"]["enabled"], "names": dict(MODE_NAMES),
-            "custom": {**CUSTOM_MODE, "hex": CUSTOM_MODE_COLORS.get(CUSTOM_MODE["color"], "#0055FF")} if CUSTOM_MODE["enabled"] and CUSTOM_MODE["url"] else None}
+            "custom": {**CUSTOM_MODE, "hex": CUSTOM_MODE_COLORS.get(CUSTOM_MODE["color"], "#0055FF")} if CUSTOM_MODE["enabled"] and CUSTOM_MODE["url"] else None,
+            "warning": LOBBY_WARNING["text"] or None}
+
+
+# Admin-set permanent lobby warning banner (db.meta "lobby_warning"); shown whenever text is set.
+LOBBY_WARNING: Dict[str, str] = {"text": ""}
 
 
 # Admin-defined lobby button that opens an external link (db.meta "custom_mode").
@@ -11229,6 +11234,7 @@ async def _queue_fill_config_loop() -> None:
             _apply_mode_switches(_ms)
             _apply_mode_names(await db.meta.find_one({"_id": "mode_names"}) or {})
             _apply_custom_mode(await db.meta.find_one({"_id": "custom_mode"}) or {})
+            LOBBY_WARNING["text"] = ((await db.meta.find_one({"_id": "lobby_warning"})) or {}).get("text", "")
         except Exception as e:
             logger.warning("queue fill config load failed: %s", e)
         await asyncio.sleep(30)
@@ -11656,6 +11662,25 @@ class BigFfaSwitchIn(BaseModel):
 
 class ModeNamesIn(BaseModel):
     names: Dict[str, str]
+
+
+class LobbyWarningIn(BaseModel):
+    text: str = Field(default="", max_length=300)
+
+
+@api.get("/admin/lobby_warning")
+async def admin_get_lobby_warning(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    return dict(LOBBY_WARNING)
+
+
+@api.post("/admin/lobby_warning")
+async def admin_set_lobby_warning(payload: LobbyWarningIn, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    text = "\n".join(" ".join(line.split()) for line in payload.text.strip().splitlines()).strip()
+    await db.meta.update_one({"_id": "lobby_warning"}, {"$set": {"text": text}}, upsert=True)
+    LOBBY_WARNING["text"] = text
+    return dict(LOBBY_WARNING)
 
 
 class CustomModeIn(BaseModel):
